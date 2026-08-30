@@ -19,11 +19,12 @@ The tool must make simple, single-language work pleasant while supporting public
 
 1. **One language-neutral orchestrator.** The main product is a standalone binary; it never embeds R, Python, or Julia.
 2. **Processes, not FFI.** Workers communicate through a versioned protocol over pipes. No `rpy2`, PythonCall, RCall, or embedded interpreters.
-3. **Native workflows remain native.** An R-only benchmark may use `renv`; a Python-only benchmark may use `uv`; neither requires the other language.
+3. **Native workflows remain native.** An R-only benchmark may use `renv`; a Python-only benchmark may use `uv`; a Nix-based benchmark may provide any or all worker environments from flakes. None requires another environment backend.
 4. **Reproducibility is explicit.** Datasets, source files, lockfiles, images, and configurations are hashed or pinned.
 5. **Parameter namespaces are explicit.** Dataset, problem, solver, budget, and execution parameters are never conflated.
 6. **Evaluation is independent of solvers.** Solvers return canonical results; a benchmark-owned evaluator computes objectives, gaps, feasibility, and other metrics.
 7. **Strictness is graduated.** Local exploratory, locked, and isolated execution modes make distinct, limited guarantees.
+8. **Automation is a first-class interface.** The CLI is deterministic, noninteractive, inspectable, and machine-readable so the same workflows compose cleanly in shells, CI, and agent loops.
 
 ## 2. User model
 
@@ -33,6 +34,8 @@ A repository contains a manifest, optional native lockfiles, dataset materialize
 benchmark/
 ├── metewand.toml
 ├── metewand.lock
+├── flake.nix                 # optional Nix environments
+├── flake.lock
 ├── datasets/
 │   └── leukemia.py
 ├── evaluators/
@@ -99,8 +102,10 @@ project = "python"
 lockfile = "python/uv.lock"
 
 [environments.native]
-kind = "oci"
-image = "ghcr.io/example/native-solver@sha256:..."
+kind = "nix"
+flake = "."
+installable = ".#native-solver"
+system = "x86_64-linux"
 
 [solvers.glmnet]
 runner = "r"
@@ -159,9 +164,13 @@ Primary commands:
 
 ```text
 metewand check                 validate manifest, schemas, and workers
+metewand schema                print versioned public schemas
+metewand plan                  show the expanded, side-effect-free run plan
 metewand lock                  resolve artifacts and write metewand.lock
 metewand run                   exploratory run; record what was used
 metewand run --locked          refuse any lock or artifact mismatch
+metewand status                inspect attempts and resumable state
+metewand explain <id>          explain a specification, artifact, or failure
 metewand export --format csv   export tidy results
 ```
 
@@ -199,6 +208,7 @@ metewand/
 ├── examples/
 │   ├── r-only/
 │   ├── python-only/
+│   ├── nix-locked/
 │   └── mixed/
 └── docs/
 ```
@@ -223,6 +233,26 @@ Language SDKs own only:
 
 Any executable may implement the protocol directly; an SDK is never required.
 
+### Automation and agentic workflows
+
+The command-line interface is the universal automation API. It must work without a terminal, browser, editor integration, or model-specific plugin. Claude, Codex, other agents, CI jobs, and ordinary scripts receive the same semantics; an optional MCP adapter may later expose these operations without creating a second behavioral API.
+
+Every command supports a versioned machine-readable output mode. In that mode, standard output contains only JSON or JSON Lines conforming to published schemas; progress and human diagnostics go to standard error. Exit codes and diagnostic codes are stable and documented. Structured diagnostics include source spans, affected stable identities, causal chains, and concrete remediation where it can be stated safely. Human-readable output is rendered from the same typed records rather than maintained as a separate source of truth.
+
+Commands are noninteractive by default and never silently rewrite manifests, native lockfiles, or source files. An operation that requires an additional mutation or capability fails with an explanation and the explicit flag or command that authorizes it. Destructive cleanup is a separate command with a dry-run mode and exact artifact targets.
+
+The read-only `plan` command performs schema validation, deterministic expansion, compatibility checks, and logical run-ID assignment without downloads, builds, worker launches, or filesystem mutation. Resolution through `lock` adds artifact and environment fingerprints and produces a separate resolved execution ID. This distinction keeps plans inspectable before expensive provisioning without pretending that an unresolved environment is known. Its output includes:
+
+- every dataset, problem, solver, and logical run specification identity;
+- the number and order of planned attempts;
+- required artifacts, environment resolutions, executors, and controls;
+- anticipated network access, builds, commands, and writable paths;
+- unsupported capabilities and blockers known before execution.
+
+Long-running operations emit append-only structured events and journal state atomically. `run --resume` continues from finalized artifacts and terminal attempt states without repeating successful work; interrupted staging directories are diagnosed and either safely resumed or quarantined. Filters operate on stable logical or resolved identities, and explicit bounds such as maximum attempts or selected run IDs let an agent test a small change before expanding to the complete benchmark.
+
+This interface is agent-friendly, not agent-dependent. Metewand does not embed a model, send source or results to an external service, generate scientific conclusions, or grant an agent authority beyond the invoked command. All operations remain usable and auditable as ordinary local CLI calls.
+
 ### Main domain types
 
 ```text
@@ -239,11 +269,14 @@ Evaluator             benchmark-owned computation of trusted metrics
 Environment           reproducible software context for a worker
 Executor              mechanism that launches and constrains a worker
 ExecutionPolicy       resources, isolation, timing policy, and repetition policy
-RunSpecification      problem instance + solver configuration + budget + policy + solver seed
-RunAttempt            one observed execution of a run specification
+LogicalRunSpecification
+                      dataset + problem + solver configurations + budget + policy + solver seed
+ResolvedRunSpecification
+                      logical specification + materialized instance + resolved artifacts/environments
+RunAttempt            one observed execution of a resolved run specification
 ```
 
-Definitions describe parameterized families; configurations bind canonical parameter values; instances and run specifications bind every input needed for execution. Each layer has a stable identifier derived from its canonical representation and the identities of its dependencies. A `RunAttempt` adds observed state, timestamps, and results without changing the identity of the specification it attempts.
+Definitions describe parameterized families, and configurations bind canonical parameter values. Logical specifications can therefore be identified before acquisition or environment provisioning. Resolution binds immutable artifacts and environment fingerprints into a second identity containing every declared input needed for execution. A `RunAttempt` adds observed controls, machine context, state, timestamps, and results without changing either identity.
 
 `SolverDefinition` and `Environment` remain deliberately separate. The same adapter may run locally during development and in an OCI image for an archival run.
 
@@ -334,7 +367,7 @@ The protocol and executor are not a security boundary for hostile benchmark code
 
 ## 5. Reproducibility model
 
-`metewand.lock` is a **lockfile of definitions, configurations, artifacts, and native lockfiles**. It does not replace `renv.lock`, `uv.lock`, Julia `Manifest.toml`, OCI manifests, or Nix; it records and binds their identities into the benchmark.
+`metewand.lock` is a **lockfile of definitions, configurations, artifacts, and native lockfiles**. It does not replace `renv.lock`, `uv.lock`, `flake.lock`, Julia `Manifest.toml`, or OCI manifests; it records and binds their identities into the benchmark.
 
 It must contain at least:
 
@@ -344,18 +377,20 @@ It must contain at least:
 - dataset source hashes, materialization recipes, and output-tree hashes;
 - hashes of native environment lockfiles;
 - resolved runtime and package-manager requirements and fingerprints;
+- for Nix environments, the evaluated flake source and lock identities, installable, target system, derivation, realized outputs, and the digest of a recursive closure manifest;
 - OCI image digests; tags alone are invalid in locked mode;
 - tool and wire-protocol versions;
 - generator inputs, parameters, seeds, environment identity, and expected output hash for generated datasets.
 
 Artifact resolution may use the network. Actual benchmark runs default to no network access.
 
-Three environment-resolution modes are supported:
+Four environment-resolution classes are supported:
 
 | Mode | Environment | Guarantee |
 |---|---|---|
 | Development | Existing local runtime | Observed provenance only; convenient, but not reliably recreatable |
-| Locked | `uv`, `renv`, later Julia `Pkg` or Nix | Declared dependencies and inputs must match their locks; system and platform dependencies remain recorded limitations |
+| Ecosystem-locked | `uv`, `renv`, later Julia `Pkg` | Declared dependencies and inputs must match their locks; undeclared system and platform dependencies remain recorded limitations |
+| Closure-locked | Nix flake installable | Evaluated source, derivation, realized store outputs, and dependency closure are identified; runtime kernel and hardware remain external |
 | Image-pinned | OCI image by digest | Immutable declared userspace image; host kernel, hardware, runtime, and explicitly mounted inputs remain external |
 
 Environment resolution and execution isolation are independent. A digest-pinned image does not by itself prove that networking, memory, CPU use, or filesystem writes were constrained. Each executor advertises its controls, and each run records every control as requested, enforced, best-effort, or unsupported. With `enforcement = "required"`, planning fails before execution if the selected executor cannot enforce a requested control. Best-effort execution remains available for exploratory runs but is never presented as equivalent to enforced execution.
@@ -384,10 +419,29 @@ Environment backends produce a resolved worker launch specification and a finger
 local     use an existing executable; provenance only
 uv        create/sync a Python project with its lockfile
 renv      restore an R project with its lockfile
+nix       build a flake installable and launch from its store output
 oci       execute an image pinned by digest
 ```
 
-Julia `Pkg` and Nix are planned additions. Conda is not a privileged dependency and need not be supported initially.
+Julia `Pkg` is a planned addition. Conda is not a privileged dependency and need not be supported initially.
+
+### Nix environments
+
+Nix is a first-class locked environment backend. A Nix environment names a flake reference, an installable, and a target system. It may provide an environment for a dataset materializer, evaluator, solver, or later analysis worker. The worker definition still owns its entrypoint or command; the resolved Nix output supplies the executable and runtime environment. Standard flake installables are the integration boundary, and Metewand does not require a separate `devenv` backend.
+
+Resolution builds the installable before any benchmark timing and returns a launch specification rooted in the realized store output. Workers are launched directly from that output; `nix run`, `nix develop`, evaluation, substitution, and build time are never included in worker startup or solve timing.
+
+In locked mode, Metewand forbids impure evaluation and refuses any operation that would create, update, or rewrite `flake.lock`. The environment fingerprint records:
+
+- the exact evaluated flake source-tree hash and `flake.lock` hash;
+- the selected installable and target system;
+- the Nix version and relevant evaluation configuration;
+- the derivation path and realized output paths;
+- NAR hashes for the outputs and their recursive runtime closure, stored as a content-addressed closure manifest.
+
+Recording realized NAR hashes matters because a store path identifies a build recipe but does not, by itself, establish that independently rebuilt output bytes are identical. Local flake inputs are bound by their evaluated source-tree hash rather than by `flake.lock` alone. Metewand's environment cache creates GC roots for resolved outputs; only explicit cache garbage collection removes them. Run records retain the complete fingerprint after removal, and Metewand may recreate the environment by rebuilding or substituting the locked installable, subject to source and cache availability.
+
+Nix remains an environment provider, not an executor. Its build sandbox does not constrain the later benchmark process. CPU, memory, network, filesystem, and process-tree controls remain the responsibility of the selected executor and are reported with the same enforcement levels as every other environment backend. Dataset and run outputs remain Metewand artifacts rather than Nix store outputs.
 
 Executor backends consume the launch specification:
 
@@ -417,7 +471,19 @@ logs/                role- and attempt-scoped worker output
 manifest.json        hashes and sizes of finalized output files
 ```
 
-A top-level index is stored as JSON Lines or Parquet and can be exported to CSV. It includes successful, invalid, censored, and failed attempts; metrics are nullable and carry schema version, units, and optimization direction where applicable. Plotting and statistical analysis should initially be done in R/Python rather than duplicated in the core.
+A top-level index is stored as JSON Lines or Parquet and can be exported to CSV. It includes successful, invalid, censored, and failed attempts; metrics are nullable and carry schema version, units, and optimization direction where applicable. The schema preserves pairing keys, component seeds, warm-up status, timeout limits, run order, machine/environment blocks, and the execution policy's authoritative timing measure. Metewand never silently averages repetitions or drops failed attempts.
+
+Metewand owns this analysis-ready schema and its provenance, but publication analysis and graphics are not part of the execution core. The R and Python packages provide typed result readers and uncontroversial operations such as filtering warm-ups, pairing compatible attempts, and validating result-set compatibility. Statistical estimators and publication plots remain downstream code owned by the benchmark author.
+
+A later analysis layer may produce immutable, provenance-tracked artifacts:
+
+```text
+AnalysisArtifact = result set + analysis definition + parameters + environment
+```
+
+Analysis artifacts do not alter the identity or validity of their source runs. This allows statistical choices to evolve without rerunning solvers while keeping the analysis reproducible.
+
+Metewand may provide a read-only interactive diagnostic viewer over the same public result schema. Its purpose is to inspect run coverage, failures, parameter slices, raw metric distributions, timing, and provenance. Views are deliberately fixed and generic; the viewer does not provide a plotting grammar, themes, figure composition, annotations, statistical-test selection, or publication-format guarantees. It may export the selected underlying data, but publication figures are produced in R, Python, Julia, or another downstream tool.
 
 ## 7. Initial SDK APIs
 
@@ -455,19 +521,20 @@ The SDKs also provide analogous, small helpers for dataset materializers and eva
 The architectural MVP is a narrow vertical slice:
 
 1. Rust CLI with manifest and schema validation, deterministic parameter expansion, stable identities, and typed run outcomes.
-2. Version-1 dataset, solver, and evaluator protocol over JSON Lines.
-3. Existing local environments and the local process executor, with explicit reporting of unsupported controls.
-4. Small R and Python SDKs plus raw command workers.
-5. SHA-256-pinned downloads, hashed local/generated datasets, a content-addressed cache, and finalized run manifests.
-6. Independent evaluation of canonical file-based results.
-7. One-shot final-result benchmarking under a versioned execution policy.
-8. Tidy JSONL/CSV export containing both successful and failed attempts; no dashboard.
+2. Side-effect-free planning, versioned JSON/JSONL command output, stable diagnostics and exit codes, append-only journals, and resumable runs.
+3. Version-1 dataset, solver, and evaluator protocol over JSON Lines.
+4. Existing local environments and the local process executor, with explicit reporting of unsupported controls.
+5. Small R and Python SDKs plus raw command workers.
+6. SHA-256-pinned downloads, hashed local/generated datasets, a content-addressed cache, and finalized run manifests.
+7. Independent evaluation of canonical file-based results.
+8. One-shot final-result benchmarking under a versioned execution policy.
+9. Tidy JSONL/CSV export containing both successful and failed attempts; no dashboard.
 
 The MVP proves the riskiest proposition: one benchmark definition can materialize parameterized data and compare parameterized R, Python, and native solvers fairly through a small process protocol.
 
 Reproducible environment provisioning follows in two milestones:
 
-1. **Locked environments:** `metewand.lock`, `uv`, and `renv`, followed later by Julia `Pkg` or Nix.
+1. **Locked environments:** `metewand.lock` and the Nix backend first, followed by `uv` and `renv`; Julia `Pkg` may follow later. Nix is the reference closure-locked backend but remains optional for benchmark users.
 2. **Isolated archival execution:** OCI by digest, enforceable resource and network controls, and comprehensive machine provenance.
 
 Problem-defined evaluation, iteration, and time budgets may be added after one-shot execution is reliable. Streaming checkpoints, trajectories, distributed execution, and richer scheduling remain later extensions.
@@ -476,12 +543,14 @@ The architecture is accepted when these examples require no special cases:
 
 - **R-only:** compare `glmnet` and `ncvreg` under `renv`;
 - **Python-only:** compare scikit-learn and `skglm` under `uv`;
-- **Mixed:** compare an R package, a Python package, and a native executable;
-- **Parameterized matrix:** dataset, problem, and solver grids expand deterministically, preserve their namespaces, and produce stable run-specification identities;
+- **Nix-locked:** resolve a flake installable once, launch its worker directly from the realized output, and reject source, lock, derivation, or closure mismatches;
+- **Mixed:** compare an R package under `renv`, a Python package under `uv`, and a native executable from Nix;
+- **Parameterized matrix:** dataset, problem, and solver grids expand deterministically, preserve their namespaces, and produce stable logical IDs and, after locking, stable resolved execution IDs;
 - **Semantic equivalence:** every solver receives the same problem instance, and the independent evaluator rejects results that violate its problem contract;
-- **Locked failure:** modifying a parameter, dataset, schema, adapter, native lockfile, or image reference causes `run --locked` to refuse execution;
+- **Locked failure:** modifying a parameter, dataset, schema, adapter, native lockfile, flake source or lock, realized Nix closure, or image reference causes `run --locked` to refuse execution;
 - **Control failure:** required isolation or resource controls fail during planning when the executor cannot enforce them;
 - **Failure records:** crashes, timeouts, invalid results, and evaluator errors remain visible in exports;
+- **Agent loop:** a noninteractive client can inspect a JSON plan, run selected stable IDs, diagnose structured failures, modify an adapter, and resume without repeating completed work;
 - **Provenance:** every result identifies all software/data inputs and the machine on which it ran.
 
 ### Explicit non-goals for v1
@@ -489,7 +558,9 @@ The architecture is accepted when these examples require no special cases:
 - inventing a universal package manager or lockfile;
 - embedding language runtimes or transferring native language objects;
 - replacing general workflow engines, BenchExec, or SLURM;
-- distributed execution, hosted benchmark registries, or a web UI;
+- distributed execution, hosted benchmark registries, or a remote multi-user service;
+- embedded language models or provider-specific agent orchestration;
+- publication-ready plotting, figure composition, or reporting;
 - bitwise-identical performance across hardware;
 - automatic adapters for arbitrary optimization APIs.
 
