@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "mode": {
+      "$ref": "definitions.json#/$defs/mode"
+    }
+  },
+  "required": ["mode"],
+  "additionalProperties": false
+}

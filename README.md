@@ -34,6 +34,11 @@ the language-neutral value domain and the exact bytes used for hashing and
 transport. All implementations share the corresponding
 [conformance vectors](fixtures/canonical-json/v1.json).
 
+Version 1 also defines [offline JSON Schema validation and parameter-default
+resolution](docs/schema-validation.md). Repository-relative references resolve
+only through an explicitly supplied schema catalog; validation never retrieves
+schemas from the filesystem or network.
+
 ## Development
 
 The development environment pins Rust 1.98.0 and includes rustfmt, Clippy, and

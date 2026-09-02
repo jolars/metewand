@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "iterations": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "nested": {
+      "type": "object",
+      "properties": {
+        "alpha": { "type": "number" },
+        "beta": { "type": "number" },
+        "gamma": { "type": "number" }
+      },
+      "required": ["alpha", "beta"],
+      "additionalProperties": false
+    },
+    "literal_array": {
+      "type": "array"
+    },
+    "table": {},
+    "nullable": {
+      "type": ["string", "null"]
+    },
+    "annotated_default": {
+      "type": "string",
+      "default": "must-not-be-inserted"
+    }
+  },
+  "required": ["iterations", "nested", "literal_array", "table", "nullable"],
+  "additionalProperties": false
+}

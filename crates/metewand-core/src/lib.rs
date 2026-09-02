@@ -1,6 +1,8 @@
 //! Core domain types, planning, scheduling, and run records for Metewand.
 
 pub mod canonical;
+pub mod parameters;
+pub mod schema;
 
 /// Version of the typed Metewand manifest format.
 pub const MANIFEST_VERSION: u32 = 1;

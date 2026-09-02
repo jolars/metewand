@@ -41,9 +41,9 @@ See [Schemas, canonical values, and identities](DESIGN.md#schemas-canonical-valu
       strings, and rejection of duplicate keys and invalid numbers.
 - [x] Implement RFC 8785 canonicalization for that domain and use the exact
       canonical bytes for hashing and transport.
-- [ ] Add JSON Schema 2020-12 validation with explicit dialect declarations,
+- [x] Add JSON Schema 2020-12 validation with explicit dialect declarations,
       repository-local external `$ref` resolution, and no network retrieval.
-- [ ] Implement recursive `parameter_defaults` merging before validation;
+- [x] Implement recursive `parameter_defaults` merging before validation;
       preserve literal arrays, tables, and `null`, and never apply JSON Schema
       `default` annotations.
 - [ ] Publish versioned schemas for machine output and the initial manifest,
