@@ -36,7 +36,7 @@ A repository contains a manifest, optional native lockfiles, dataset materialize
 benchmark/
 ├── metewand.toml
 ├── metewand.lock
-├── flake.nix                 # optional Nix environments
+├── flake.nix                 # optional root-scoped Nix environment
 ├── flake.lock
 ├── datasets/
 │   └── leukemia.py
@@ -52,12 +52,13 @@ benchmark/
 │   ├── glmnet.R
 │   ├── sklearn.py
 │   └── native.toml
-├── r/
-│   ├── renv.lock
-│   └── renv/
-├── python/
-│   ├── pyproject.toml
-│   └── uv.lock
+├── environments/
+│   ├── r/
+│   │   ├── renv.lock
+│   │   └── renv/
+│   └── python/
+│       ├── pyproject.toml
+│       └── uv.lock
 ├── schemas/
 │   ├── lasso-problem-parameters.json
 │   ├── lasso-semantics.json
@@ -71,6 +72,8 @@ benchmark/
 ```
 
 The `datasets/` directory contains definitions that acquire, generate, or transform data. The optional `assets/` directory contains repository-local source files referenced by those definitions. Materialized dataset instances live in Metewand's content-addressed cache, not in either directory. A problem's evaluator is colocated with its contract because it is part of that problem, although Metewand launches it as an independent worker in its declared environment.
+
+The `environments/` directory is a convention, not a semantic boundary. Environment names are benchmark-defined and need not correspond to one language; every backend-native project or lockfile is located through an explicit manifest path. A self-contained Nix flake may therefore live under `environments/` like any other definition. The example keeps `flake.nix` at the repository root because that flake builds sources across the repository; its adjacent `flake.lock` follows the flake root. Conda, OCI, and Nix environments may provide several language runtimes or commands from one resolved software context.
 
 A representative manifest is:
 
@@ -101,13 +104,13 @@ sha256 = "..."
 
 [environments.r]
 kind = "renv"
-project = "r"
-lockfile = "r/renv.lock"
+project = "environments/r"
+lockfile = "environments/r/renv.lock"
 
 [environments.python]
 kind = "uv"
-project = "python"
-lockfile = "python/uv.lock"
+project = "environments/python"
+lockfile = "environments/python/uv.lock"
 
 [environments.native]
 kind = "nix"
@@ -383,7 +386,10 @@ ProblemConfiguration        definition + canonical parameters
 ProblemInstance             dataset instance + problem configuration
 ImplementationDefinition    adapter, supported contracts, parameter schema, and capabilities
 ImplementationConfiguration definition + canonical parameters + selected environment
-Environment                 reproducible software context for a worker
+Environment                 reproducible software context for one or more workers
+ResolvedEnvironment         resolved context, fingerprint, and launch capabilities
+Runner                      launch convention for an SDK or raw command worker
+ResolvedLaunchSpecification exact executable, arguments, variables, and working directory
 Executor                    mechanism that launches and constrains a worker
 ExecutionPolicy             resources, isolation, timing policy, and repetition policy
 LogicalRunSpecification
@@ -397,9 +403,9 @@ ResolvedAttemptSlot   logical slot + resolved specification
 RunAttempt            resolved slot + retry identity + one observed execution
 ```
 
-Definitions describe parameterized families, and configurations bind canonical parameter values. Logical specifications and slots can therefore be identified before acquisition or environment provisioning. Resolution binds immutable artifacts and environment fingerprints into corresponding resolved identities containing every declared dependency needed for execution. A `ResolvedAttemptSlot` represents one planned statistical observation under one resolved dependency set; it has at most one accepted attempt but may retain multiple failed or superseded retries. A `RunAttempt` adds observed controls, machine context, state, timestamps, and results without changing the logical or resolved identities.
+Definitions describe parameterized families, and configurations bind canonical parameter values. Logical specifications and slots can therefore be identified before acquisition or environment provisioning. Resolution binds immutable artifacts, environment fingerprints, and exact launch specifications into corresponding resolved identities containing every declared dependency needed for execution. A `ResolvedAttemptSlot` represents one planned statistical observation under one resolved dependency set; it has at most one accepted attempt but may retain multiple failed or superseded retries. A `RunAttempt` adds observed controls, machine context, state, timestamps, and results without changing the logical or resolved identities.
 
-`ImplementationDefinition` and `Environment` remain deliberately separate. The same adapter may run locally during development and in an OCI image for an archival run.
+`ImplementationDefinition` and `Environment` remain deliberately separate. The same adapter may run locally during development and in an OCI image for an archival run. An environment is not identified with a language or a single executable: one resolved Conda prefix, Nix output, or OCI image may launch workers through different runners. Each resolved launch remains a separate dependency of the run identity.
 
 ### Problem and fairness contracts
 
@@ -563,35 +569,39 @@ The execution policy identifies a primary executor-observed timing measure cover
 
 ## 6. Environments, execution, and artifacts
 
-Environment backends produce a resolved worker launch specification and a fingerprint:
+Environment resolution and worker launch resolution are separate stages. An environment backend produces a resolved software context, its fingerprint, backend-required variables, and its declared launch capabilities:
 
 ```text
-local     use an existing executable; provenance only
-uv        create/sync a Python project with its lockfile
+local     observe an existing host software context; provenance only
+uv        create or sync a Python project with its lockfile
 renv      restore an R project with its lockfile
-nix       build a flake installable and launch from its store output
-oci       execute an image pinned by digest
+nix       realize a selected flake output and its closure
+oci       resolve a userspace image pinned by digest
 ```
 
-Julia `Pkg` is a planned addition. Conda is not a privileged dependency and need not be supported initially.
+The worker's runner then resolves a launch within that context. The result contains the exact executable, argument prefix, worker entrypoint or program arguments, allowlisted environment, and working directory. Built-in Python and R runners select the corresponding interpreter supplied or admitted by the environment; the command runner selects an explicitly declared program. Resolution fails if the environment cannot satisfy the runner. Environment fingerprints and launch fingerprints are distinct: two workers may share one resolved environment while using different interpreters or programs, and a launch change does not pretend that the underlying environment changed.
 
-Every backend returns an exact executable or interpreter, argument prefix, allowlisted environment, and immutable environment fingerprint. For `uv` and `renv`, the native lockfile is necessary but not sufficient: resolution also records the interpreter, package-manager version, platform tags, repository identities, hashes of every downloaded wheel, archive, or source checkout, and a manifest of the realized environment. Local or editable dependencies are declared source bundles. Locked execution uses the already realized environment without network access and verifies its manifest before launch.
+For `uv` and `renv`, the native lockfile is necessary but not sufficient: environment resolution also records the package-manager version, platform tags, repository identities, hashes of every downloaded wheel, archive, or source checkout, and a manifest of the realized environment. Launch resolution separately records the exact interpreter. Local or editable dependencies are declared source bundles. Locked execution uses the already realized environment without network access, verifies its manifest before launch, and verifies the selected executable before every use.
+
+Julia `Pkg` and Conda may be added later. Conda is not a privileged dependency and need not be supported initially, but its architectural contract is explicit: one platform-specific locked prefix may satisfy Python, R, Julia, and command launches without being split into artificial per-language environments. OCI images and Nix package outputs obey the same rule.
 
 ### Nix environments
 
-Nix is a first-class locked environment backend. A Nix environment names a flake reference, an installable, a target system, and an `output_kind` of `package` or `app`. The output kind selects the exact `packages.<system>` or `apps.<system>` attribute namespace; Metewand does not reproduce the Nix CLI's fallback search between namespaces. It may provide an environment for a dataset materializer, problem evaluator, implementation, or later analysis worker. Standard flake outputs are the integration boundary, and Metewand does not require a separate `devenv` backend.
+Nix is a first-class locked environment backend. A Nix environment names a flake reference, an installable, a target system, and an `output_kind` of `package` or `app`. The output kind selects the exact `packages.<system>` or `apps.<system>` attribute namespace; Metewand does not reproduce the Nix CLI's fallback search between namespaces. It may provide a shared environment for dataset materializers, problem evaluators, implementations, or later analysis workers. Standard flake outputs are the integration boundary, and Metewand does not require a separate `devenv` backend.
 
-For a package output, resolution realizes the selected derivation outputs, and a command worker's `program` is a normalized path relative to one designated output root. For an app output, resolution evaluates the app's store-resident `program`; the worker definition owns only its arguments and protocol role. In both cases, Metewand validates that the resolved program is an executable regular file in the realized closure and locks its exact store path. It never guesses a binary name from a derivation name.
+For a package output, environment resolution realizes the selected derivation outputs. Launch resolution selects an interpreter or an explicitly declared command program as a normalized path relative to one designated output root. For an app output, environment resolution realizes the app closure, and launch resolution selects the app's store-resident `program`; the worker definition owns only its arguments and protocol role. In every case, Metewand validates that the resolved executable is a regular executable file in the realized closure and locks its exact store path. It never guesses a binary name from a derivation name.
 
-Resolution realizes the closure before any benchmark timing and returns the exact launch program and environment. Workers are launched directly from that program; `nix run`, `nix develop`, evaluation, substitution, and build time are never included in worker startup or problem-execution timing.
+The two resolution stages realize the closure and select the launch program before any benchmark timing. Workers are launched directly from that program; `nix run`, `nix develop`, evaluation, substitution, and build time are never included in worker startup or problem-execution timing.
 
 In locked mode, Metewand forbids impure evaluation and refuses any operation that would create, update, or rewrite `flake.lock`. The environment fingerprint records:
 
 - the exact evaluated source hash of the root and every transitive local or `path:` flake input, plus the `flake.lock` hash;
-- the selected installable, output kind, target system, designated output, and resolved program;
+- the selected installable, output kind, target system, and designated output;
 - the Nix version and relevant evaluation configuration;
 - the derivation path and realized output paths;
 - NAR hashes for the outputs and their recursive runtime closure, stored as a content-addressed closure manifest.
+
+The corresponding launch fingerprint records the exact store-resident program and arguments selected from that environment. The program remains part of the resolved run identity and `metewand.lock`, but it is not conflated with the reusable environment fingerprint.
 
 Recording realized NAR hashes matters because a store path identifies a build recipe but does not, by itself, establish that independently rebuilt output bytes are identical. Every local flake input is bound by the exact filtered source imported by Nix rather than by `flake.lock` alone. Metewand supports an explicit tested range of Nix versions and rejects versions outside it in locked mode because flake and installable CLI behavior is not a stable integration API. Metewand's environment cache creates GC roots for resolved outputs; only explicit cache garbage collection removes them. Run records retain the complete fingerprint after removal, and Metewand may recreate the environment by rebuilding or substituting the locked installable, subject to source and cache availability.
 
@@ -715,6 +725,7 @@ The user-facing architecture is accepted when these examples require no special 
 - **Python-only:** compare scikit-learn and `skglm` under `uv`;
 - **Nix-locked:** resolve a flake installable once, launch its worker directly from the realized output, and reject source, lock, derivation, or closure mismatches;
 - **Mixed:** compare an R package under `renv`, a Python package under `uv`, and a native executable from Nix;
+- **Cross-language environment:** launch Python and R workers from one locked Conda prefix or pinned OCI image, reuse its environment identity, and bind each exact interpreter and command into a distinct launch identity;
 - **Posterior sampling:** compare implementations that return canonical draws under a problem contract defining the target distribution, chain semantics, sample budget, and evaluator-owned diagnostics;
 - **Dataset-free computation:** compare implementations that integrate a contract-defined function over problem-parameterized domains; omitting `datasets` produces one run per remaining configuration through the built-in unit dataset;
 - **Parameterized matrix:** dataset, problem, and implementation grids expand deterministically, preserve their namespaces, and produce stable logical and resolved run and slot IDs plus immutable attempt IDs;
@@ -733,6 +744,7 @@ The following automated tests are release-blocking:
 - an `A x M` implementation-by-measurement design creates exactly `A x M` slots, shares seeds only where specified, and preserves every retry;
 - timing fixtures that sleep or work in startup, `prepare`, `execute`, and result writing are included or excluded exactly according to each timing scope;
 - reference problem instances produce expected metrics, and deliberately malformed, numerically wrong, or semantically invalid results are rejected;
+- one multi-runtime fixture launches workers through at least two different runners from the same resolved environment, shares the environment fingerprint, and records distinct exact launch programs;
 - a dataset-free problem expands through exactly one built-in unit dataset and rejects selected dataset definitions, while a dataset-requiring problem rejects zero selections and expands multiple selections into separate single-dataset problem instances;
 - protocol tests cover fragmented input, duplicate keys, invalid UTF-8, oversized messages, early EOF, extra responses, log floods, timeouts, and escaped child processes;
 - fault injection terminates the process at every database, file-sync, rename, and finalization boundary, after which resume yields no false success and no duplicate accepted slot;
