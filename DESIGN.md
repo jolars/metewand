@@ -8,17 +8,20 @@ packages, Julia packages, native executables, or any mixture of them without
 privileging one host language.
 
 The execution model covers bounded computations that map a configured dataset
-and problem to a canonical result that can be evaluated independently.
-Optimization, estimation, sampling, simulation, prediction, numerical
-integration, and similar scientific computations fit this model. Long-running
-services, interactive systems, request-throughput benchmarks, and distributed
-systems with no bounded result artifact do not.
+and problem to a canonical result that can be evaluated independently. It also
+covers bounded convergence profiles in which an implementation produces a
+sequence of canonical checkpoint results and a problem-owned evaluator decides
+whether a shared quality target has been reached. Optimization, estimation,
+sampling, simulation, prediction, numerical integration, and similar scientific
+computations fit this model. Long-running services, interactive systems,
+request-throughput benchmarks, and distributed systems with no bounded result
+artifact do not.
 
 The central object is an immutable experiment composed of:
 
 ```text
 configured dataset + configured problem + configured implementation
-    + software environment + execution policy
+    + software environment + execution policy + observation policy
 ```
 
 Datasets, problems, and implementations are parameterized definitions rather
@@ -54,6 +57,12 @@ execution, and complete provenance.
 8. **Automation is a first-class interface.** The CLI is deterministic,
    noninteractive, inspectable, and machine-readable so the same workflows
    compose cleanly in shells, CI, and agent loops.
+9. **Applicability is explicit.** A configuration that an implementation cannot
+   support is recorded as not applicable with structured evidence; it is never
+   silently omitted or misreported as an execution failure.
+10. **Profiles use common evaluation.** Implementations may expose different
+    observation controls, but convergence targets are expressed in
+    problem-owned metrics and evaluated independently of the implementations.
 
 ## 2. User model
 
@@ -195,6 +204,7 @@ problem = "lasso"
 datasets = ["leukemia"]
 implementations = ["glmnet", "sklearn", "native"]
 execution_policy = "controlled"
+observation_policy = "final"
 implementation_repetitions = 5
 measurement_repetitions = 2
 seed = 2025
@@ -226,6 +236,10 @@ timing_scope = "prepare_and_execute"
 primary_time = "timed_wall_time"
 run_order = "randomized"
 enforcement = "best_effort"
+
+[observation_policies.final]
+version = 1
+kind = "one_shot"
 ```
 
 The referenced problem contract is also concrete and reviewable. For example:
@@ -255,8 +269,10 @@ intercept_column = "absent"
 [semantics.preprocessing]
 allowed_outside_timed_scope = []
 
-[semantics.acceptance]
+[semantics.validity]
 nonfinite = "reject"
+
+[semantics.one_shot_completion]
 objective_relative_tolerance = 1e-8
 maximum_kkt_violation = 1e-6
 
@@ -281,6 +297,9 @@ metewand run --locked          refuse any lock or artifact mismatch
 metewand status                inspect attempts and resumable state
 metewand explain <id>          explain a specification, artifact, or failure
 metewand export --format csv   export tidy results
+metewand snapshot create       create a portable, selected result snapshot
+metewand snapshot verify       verify a snapshot without importing it
+metewand snapshot import       import a verified snapshot into the run store
 ```
 
 ### Authoring and scaffolding
@@ -294,9 +313,9 @@ Component scaffolding is explicit and incremental. `metewand scaffold dataset`,
 `metewand scaffold problem`, and `metewand scaffold implementation` create only
 the structural files required for the requested component and update the
 manifest accordingly. Generated code may implement protocol and schema
-boilerplate, but it must not choose problem semantics, acceptance criteria,
-parameter meanings, reference results, or library-specific translations. Those
-choices remain visible work for the benchmark author.
+boilerplate, but it must not choose problem semantics, validity criteria,
+completion criteria, parameter meanings, reference results, or library-specific
+translations. Those choices remain visible work for the benchmark author.
 
 Metewand does not replace native environment initialization commands such as
 `uv init` or `renv::init()`. Complete runnable benchmarks, including examples
@@ -306,8 +325,38 @@ exposed as privileged built-in templates.
 Each parameter entry is either a literal `value` or an expansion `grid`. This
 distinction permits arrays and tables to be literal parameter values. Grids form
 a Cartesian product across the dataset, problem, and applicable implementation
-namespaces. In version 1, selected non-Cartesian combinations are expressed as
-separate named experiment entries; zipped axes may be added later.
+namespaces.
+
+An experiment may instead contain named `cases`. Each case supplies a partial
+set of dataset, problem, and implementation parameter values that is merged with
+the experiment defaults before validation and expansion. Cases are unioned, not
+multiplied, so coupled configurations such as `(n_samples, n_features,
+density)` remain flat, reviewable parameter objects without requiring many
+nearly identical experiments. Grids inside one case still form a Cartesian
+product. The planner rejects duplicate logical candidates produced by
+overlapping cases; statistical replication must use the explicit repetition
+fields.
+
+For example, these two cases select two coupled dataset shapes rather than four
+independent grid combinations:
+
+```toml
+[[experiments.cases]]
+name = "tall_dense"
+
+[experiments.cases.dataset_parameters.generated]
+n = { value = 10000 }
+p = { value = 100 }
+density = { value = 1.0 }
+
+[[experiments.cases]]
+name = "wide_sparse"
+
+[experiments.cases.dataset_parameters.generated]
+n = { value = 1000 }
+p = { value = 10000 }
+density = { value = 0.01 }
+```
 
 ### Schemas, canonical values, and identities
 
@@ -343,10 +392,10 @@ a locked Nix store program, may appear alongside their content hashes.
 Definition identities include their schemas, contracts, declared source bundles,
 and unresolved environment definitions. Resolved identities additionally include
 materialized artifact hashes, the resolved environments and launch programs for
-every worker role, the executor definition, the wire-protocol version, and a
-Metewand execution-semantics version. The exact Metewand build remains attempt
-provenance; a behavior change that can affect execution increments the semantics
-version.
+every worker role, applicability decisions, observation policies and controls,
+the executor definition, the wire-protocol version, and a Metewand
+execution-semantics version. The exact Metewand build remains attempt provenance;
+a behavior change that can affect execution increments the semantics version.
 
 The whole-manifest hash is computed from the versioned typed manifest after
 built-in defaults, path normalization, and name resolution, not from TOML
@@ -400,9 +449,10 @@ value is an open, stable tag rather than a closed Metewand enumeration. A
 family-specific `semantics` object binds the remaining rules and is validated
 against the contract's `semantics_schema`. Metewand hashes this object but does
 not need to understand it. For example, an optimization contract binds its
-objective, constraints, scaling, preprocessing, and acceptance tolerances; other
-problem families bind their own domain-specific semantics. A contract may link
-explanatory prose, but every rule that affects execution or acceptance is
+objective, constraints, scaling, preprocessing, result-validity rules, and
+one-shot completion tolerances; other problem families bind their own
+domain-specific semantics. A contract may link explanatory prose, but every rule
+that affects execution, observation validity, or completion is
 represented in its validated structure. Each problem ships small reference
 instances and expected metrics that `metewand check --workers` evaluates as
 conformance tests.
@@ -429,6 +479,26 @@ rejects any implementation/problem pairing outside the set; `prepare` receives
 the selected contract identity, and contract conformance fixtures test that
 declaration against the actual worker.
 
+An implementation may additionally declare the `applicability` capability when
+support depends on resolved problem parameters or materialized dataset
+properties. Before allocating a measured attempt, Metewand asks the worker to
+decide applicability from the immutable dataset instance, its manifest, the
+problem contract and parameters, and the implementation parameters. The response
+is either `applicable` or `not_applicable` with a stable code, a human-readable
+reason, and optional structured details. Absence of this capability asserts that
+the implementation is applicable to every configuration admitted by its
+declared problem contracts and schemas.
+
+Applicability checks run outside every performance timing scope and may inspect
+but not mutate the private dataset view. Their worker definition, environment,
+inputs, response, and observed controls form a typed, hashed decision record. A
+not-applicable candidate produces no measured attempt slots, remains visible in
+status and exports, and is not a failure. In locked mode the decision is recorded
+during resolution and must be reproduced before execution. This mechanism is
+for intrinsic support constraints, such as unsupported intercepts, sparse
+matrices, or unsafe problem dimensions; using it to suppress slow or
+unfavorable results is a reviewable benchmark-definition error.
+
 The experiment seed deterministically derives separately recorded dataset,
 implementation, and scheduling seeds using
 `SHA-256("metewand-seed-v1" || NUL || role || NUL || canonical seed fields)`.
@@ -446,18 +516,21 @@ although Metewand does not claim that different random-number generators produce
 paired random streams.
 
 `implementation_repetitions` creates distinct logical run specifications by
-varying the implementation seed. `measurement_repetitions` creates distinct
-logical attempt slots for the same logical specification and seed; resolution
-later binds each slot to a resolved specification. Dataset replication is
-expressed through an explicit parameter such as `replicate`, which participates
-in the dataset seed. Version 1 has no hidden problem seed: random quantities
-that define the requested computation must appear explicitly in canonical
-problem parameters or be materialized into the dataset instance. A problem
-`replicate` value is therefore an ordinary explicit parameter interpreted by the
-contract. Deterministic scheduling assigns pseudorandom block and within-block
-priorities derived from the scheduling seed and typed block or slot identity,
-then sorts by those priorities. Adding an unrelated slot therefore does not
-reorder existing slots relative to one another.
+varying the implementation seed. `measurement_repetitions` repeats the selected
+observation policy for the same logical specification and seed. Each one-shot
+repetition creates one observation and attempt slot; each profile repetition
+creates its own bounded observation slots and one or more execution slots
+according to the selected delivery mode. Resolution later binds each slot to a
+resolved specification. Dataset replication is expressed through an explicit
+parameter such as `replicate`, which participates in the dataset seed. Version 1
+has no hidden problem seed: random quantities that define the requested
+computation must appear explicitly in canonical problem parameters or be
+materialized into the dataset instance. A problem `replicate` value is therefore
+an ordinary explicit parameter interpreted by the contract. Deterministic
+scheduling assigns pseudorandom block and within-block priorities derived from
+the scheduling seed and typed block or slot identity, then sorts by those
+priorities. Adding an unrelated slot therefore does not reorder existing slots
+relative to one another.
 
 ## 3. Core architecture
 
@@ -474,7 +547,7 @@ metewand/
 ├── sdk/
 │   ├── r/
 │   ├── python/
-│   └── julia/                 after the initial release
+│   └── julia/
 ├── schemas/
 ├── examples/
 │   ├── r-only/
@@ -535,51 +608,66 @@ user; it never invokes an ecosystem package manager or modifies a native
 lockfile.
 
 The read-only `plan` command performs schema validation, deterministic
-expansion, declared-capability compatibility checks, and logical run-ID
+expansion, declared-capability compatibility checks, and logical candidate-ID
 assignment without downloads, builds, worker launches, or filesystem mutation.
 Worker and executor capabilities in a plan are explicitly labeled `declared`,
-not verified. `check --workers`, `lock`, and `run` may launch workers and
-preflight executors; they require every declared capability used by the plan to
-be observed and label it `verified_now` or fail. Additional observed
-capabilities are recorded but not selected implicitly. A lock records the
-complete capabilities observed during resolution as `previously_verified`, and
-`run` verifies the selected subset again before use. This distinction prevents a
-side-effect-free plan from claiming knowledge that requires execution.
+not verified. Configuration-dependent applicability that requires a materialized
+dataset or worker call is labeled `unchecked`; the plan reports both the
+candidate count and the number of attempt slots whose applicability is already
+known. `check --workers`, `lock`, and `run` may launch workers, resolve
+applicability, and preflight executors. They require every declared capability
+used by an applicable candidate to be observed and label it `verified_now` or
+fail. Additional observed capabilities are recorded but not selected
+implicitly. A lock records the complete capabilities and applicability
+decisions observed during resolution as `previously_verified`, and `run`
+verifies the selected subset and decisions again before use. This distinction
+prevents a side-effect-free plan from claiming knowledge that requires
+execution.
 
 Resolution through `lock` adds artifact and environment fingerprints and
 produces a separate resolved execution ID. This distinction keeps plans
 inspectable before expensive provisioning without pretending that an unresolved
 environment is known. Its output includes:
 
-- every dataset, problem, implementation, logical run, and logical attempt-slot
-  identity;
-- the number and order of planned slots;
+- every dataset, problem, implementation, logical candidate, applicable run,
+  observation, and logical attempt-slot identity;
+- the number and order of candidate combinations, applicable runs, observation
+  slots, and execution slots;
 - required artifacts, environment resolutions, executors, and controls;
 - anticipated network access, builds, commands, and writable paths;
-- unsupported capabilities and blockers known before execution, with each
-  capability's verification state.
+- checked and unchecked applicability, structured reasons for known exclusions,
+  and unsupported capabilities or blockers, with each capability's verification
+  state.
 
 Long-running operations emit append-only structured events. An authoritative
 SQLite database in WAL mode with full synchronous durability coordinates
-resolved attempt slots, leases, transitions, and finalized artifact references;
-event rows are insert-only, and state changes occur in transactions. A
-uniqueness constraint permits at most one accepted attempt per resolved slot.
-Before writing its immutable outcome record, a successful candidate atomically
+applicability decisions, resolved attempt and observation slots, leases,
+transitions, durable checkpoint observations, and finalized artifact references;
+event rows are insert-only, and state changes occur in transactions. Uniqueness
+constraints permit at most one accepted attempt per resolved execution slot and
+one selected valid observation per resolved observation slot.
+Before writing its immutable outcome record, a successful attempt atomically
 acquires a leased finalization claim; a concurrent loser is finalized as
 superseded. The claim alone never satisfies the slot: acceptance becomes
 terminal only after durable artifact publication and the final database
 transaction. Recovery resolves an expired claim from its completed directory or
-marks the interrupted attempt failed before another candidate can claim the
+marks the interrupted attempt failed before another retry can claim the
 slot. The run store checks required locking, synchronization, and atomic-rename
 behavior at initialization and refuses durable mode on an unsupported
 filesystem. Immutable attempt directories remain self-describing, so the
 database and export indexes can be rebuilt from finalized artifacts.
-`run --resume` fills unsatisfied resolved slots without repeating accepted
-measurements. A failed slot is retried only with an explicit retry policy or
-flag, and every retry remains a distinct `RunAttempt`. Interrupted staging
-directories carry leases and are either safely resumed by their owner or
-quarantined after the lease expires. Filters operate on stable logical or
-resolved run, slot, or attempt identities, and explicit bounds such as maximum
+`run --resume` fills unsatisfied resolved slots without replacing selected valid
+observations or rerunning satisfied one-shot or fresh-sequence execution slots.
+It does not claim to restore opaque implementation state: unless an
+implementation later declares a contracted checkpoint-restore capability, a
+failed streaming attempt restarts from clean state and may recompute earlier
+checkpoint indices. Those checkpoints remain associated with their existing
+observation slots and cannot overwrite selected observations. A failed slot is
+retried only with an explicit retry policy or flag, and every retry remains a
+distinct `RunAttempt`. Interrupted staging directories carry leases and are
+either safely resumed by their owner or quarantined after the lease expires.
+Filters operate on stable logical or resolved candidate, run, observation,
+slot, attempt, or applicability identities, and explicit bounds such as maximum
 attempts or selected IDs let an agent test a small change before expanding to
 the complete benchmark.
 
@@ -606,27 +694,45 @@ Runner                      launch convention for an SDK or raw command worker
 ResolvedLaunchSpecification exact executable, arguments, variables, and working directory
 Executor                    mechanism that launches and constrains a worker
 ExecutionPolicy             resources, isolation, timing policy, and repetition policy
+ObservationPolicy           one-shot or profile kind, controls, target metric, and bounds
+LogicalCandidateSpecification
+                      dataset + problem + implementation configurations + policies
+ApplicabilityDecision candidate + evidence + applicable or not-applicable outcome
 LogicalRunSpecification
-                      dataset + problem + implementation configurations + budget + policy
+                      applicable candidate + optional scientific budget
                       + implementation-replication index + implementation seed
 ResolvedRunSpecification
                       logical specification + materialized dataset instance + resolved source,
                       environment, launch, problem evaluator, and executor artifacts
-LogicalAttemptSlot    logical specification + measurement index + warm-up role + schedule priority
+LogicalObservationSlot
+                      logical specification + observation control or checkpoint index
+                      + measurement index
+ResolvedObservationSlot logical observation slot + resolved specification
+LogicalAttemptSlot    one-shot, fresh-observation, or stream execution + warm-up role
+                      + schedule priority
 ResolvedAttemptSlot   logical slot + resolved specification
 RunAttempt            resolved slot + retry identity + one observed execution
+RunObservation        resolved observation slot + producing attempt + canonical result,
+                      evaluator metrics, and observation timing
+ResultSnapshot        selected attempts and observations + artifacts + export lineage
 ```
 
 Definitions describe parameterized families, and configurations bind canonical
-parameter values. Logical specifications and slots can therefore be identified
-before acquisition or environment provisioning. Resolution binds immutable
-artifacts, environment fingerprints, and exact launch specifications into
-corresponding resolved identities containing every declared dependency needed
-for execution. A `ResolvedAttemptSlot` represents one planned statistical
-observation under one resolved dependency set; it has at most one accepted
-attempt but may retain multiple failed or superseded retries. A `RunAttempt`
-adds observed controls, machine context, state, timestamps, and results without
-changing the logical or resolved identities.
+parameter values. Logical candidate identities can therefore be assigned before
+acquisition or environment provisioning even when applicability is still
+unchecked. Potential logical run, observation, and execution-slot identities
+are deterministic from the candidate, but Metewand admits them to the run plan
+only after the candidate is found applicable. Resolution binds immutable
+artifacts, environment fingerprints, exact launch specifications, and
+applicability evidence into corresponding resolved identities containing every
+declared dependency needed for execution. A `ResolvedAttemptSlot` represents
+one planned execution under one resolved dependency set; it has at most one
+accepted attempt but may retain multiple failed or superseded retries. A
+`RunAttempt` adds observed controls, machine context, state, timestamps, and an
+outcome without changing the logical or resolved identities. Each independently
+evaluated result is a `RunObservation`; a one-shot attempt has exactly one,
+while a profile attempt may produce several durable observations before it
+terminates.
 
 `ImplementationDefinition` and `Environment` remain deliberately separate. The
 same adapter may run locally during development and in an OCI image for an
@@ -689,11 +795,87 @@ discarded worker's warm-ups never satisfy a replacement worker. These rules make
 the timing claim mechanically observable, while the independent evaluator makes
 the result checkable.
 
-Work-unit counts are not presumed comparable across implementations. Evaluation,
-iteration, sample, and time budgets are permitted only when the problem contract
-defines their meaning and the worker declares the corresponding capability.
-Otherwise, the benchmark compares final results under explicit implementation
-completion or stopping rules.
+Every experiment also selects an observation policy. A `one_shot` policy
+produces one canonical result per run under an optional problem-defined
+scientific budget. A `profile` policy produces a time-quality curve; each
+selected implementation binds one of two delivery modes under the same policy:
+
+- `fresh_sequence` executes a bounded sequence of implementation-specific
+  observation controls from clean algorithmic state and independently evaluates
+  each result;
+- `streaming_profile` executes once and cooperatively publishes bounded
+  checkpoint results for independent evaluation while preserving algorithmic
+  state between checkpoints.
+
+For example, one profile may bind heterogeneous SLOPE adapters without treating
+their controls as a common budget:
+
+```toml
+[observation_policies.target_gap]
+version = 1
+kind = "profile"
+metric = "relative_duality_gap"
+direction = "at_most"
+threshold = 1e-7
+max_observations = 100
+max_active_time = "30 s"
+
+[observation_policies.target_gap.implementations.iterative]
+delivery = "fresh_sequence"
+control_schema = "schemas/iteration-control.json"
+schedule = { kind = "linear", field = "iterations", start = 1, step = 1, count = 100 }
+
+[observation_policies.target_gap.implementations.tolerance]
+delivery = "fresh_sequence"
+control_schema = "schemas/tolerance-control.json"
+schedule = { kind = "geometric", field = "tolerance", start = 0.1, ratio = 0.1, count = 12 }
+
+[observation_policies.target_gap.implementations.callback]
+delivery = "streaming_profile"
+control_schema = "schemas/callback-progress.json"
+```
+
+An observation policy may run a fixed number of observations or stop when a
+named evaluator metric reaches a threshold. The metric, direction, threshold,
+maximum observation count, and time bound are canonical policy fields. The
+metric name must exist in the problem's metric schema. The evaluator, not the
+implementation, decides whether a target has been reached. Later planned
+observation and execution slots that are no longer needed receive the terminal
+disposition `skipped_target_reached` rather than disappearing or masquerading as
+observed data.
+
+Scientific budgets and observation controls are distinct. Evaluation, sample,
+or domain-specific budgets are permitted only when the problem contract defines
+their shared semantics and the worker declares the corresponding capability.
+An observation control merely asks one implementation for an operating point,
+such as an iteration limit or library tolerance. Each implementation bound
+through `fresh_sequence` declares a separate observation-control schema and a
+finite explicit, linear, or geometric schedule in the manifest. Controls and
+their schedules are hashed and recorded, but their numeric values are not
+presumed comparable across implementations. Comparison is based on
+executor-observed time and common evaluator metrics.
+
+The problem contract distinguishes result validity from profile completion. A
+schema-valid, finite, semantically meaningful early checkpoint may be retained
+as a valid observation even though it has not reached the policy's quality
+target. Invalid or infeasible results terminate the producing attempt under the
+contract's rules. A one-shot policy may require a completion threshold before
+accepting its attempt; a profile policy uses its explicit target and bound.
+
+For `fresh_sequence`, every observation control receives clean implementation
+state; worker-process reuse and process-local warm-up remain governed by the
+execution policy. For `streaming_profile`, the worker pauses after publishing a
+checkpoint until Metewand validates and evaluates it and replies with
+`continue` or `stop`. Checkpoint result writing is included in active execution
+time, while independent evaluation is excluded and recorded separately. The
+orchestrator records cumulative executor-observed active wall and process-tree
+CPU time at every checkpoint as well as total elapsed wall time. Scientific
+timeouts apply to active timed execution; separate operational limits bound
+checkpoint evaluation and total session lifetime.
+
+Work-unit counts are therefore useful controls and diagnostics, not an assumed
+fair comparison scale. A benchmark that does not request a profile compares
+final results under explicit implementation completion or stopping rules.
 
 ## 4. Worker protocol
 
@@ -719,16 +901,18 @@ draining to a sink so the child cannot block on a full pipe.
 
 Every request and response carries a string request ID. Version negotiation,
 role, resolved worker identity, SDK version, and capabilities are established
-before any work begins. Version 1 permits at most one outstanding request per
-worker, but IDs make timeouts, late responses, and diagnostics unambiguous. The
-orchestrator supplies a minimal allowlisted environment, fixed working
-directory, locale, timezone, and umask; `HOME`, temporary directories, and
-ecosystem cache directories point to private worker or attempt storage so user
-configuration and caches are not inherited accidentally. Their resolved
-templates and behavior-affecting values are recorded, while ephemeral absolute
-paths are attempt provenance rather than identity inputs. Secrets are passed
-only through explicitly declared redacted channels and are never included
-verbatim in plans, logs, identities, or provenance.
+before any work begins. Version 1 permits at most one orchestrator-initiated
+request per worker, but IDs make timeouts, late responses, and diagnostics
+unambiguous. A streaming `execute` request may contain the bounded checkpoint
+event/decision subexchange defined below without permitting an unrelated
+concurrent request. The orchestrator supplies a minimal allowlisted environment,
+fixed working directory, locale, timezone, and umask; `HOME`, temporary
+directories, and ecosystem cache directories point to private worker or attempt
+storage so user configuration and caches are not inherited accidentally. Their
+resolved templates and behavior-affecting values are recorded, while ephemeral
+absolute paths are attempt provenance rather than identity inputs. Secrets are
+passed only through explicitly declared redacted channels and are never
+included verbatim in plans, logs, identities, or provenance.
 
 The orchestrator begins a worker session with a handshake:
 
@@ -739,7 +923,7 @@ The orchestrator begins a worker session with a handshake:
 The worker responds with supported capabilities, such as:
 
 ```json
-{"id":"0","ok":true,"protocol":1,"worker_id":"mw1-worker-...","sdk":{"name":"metewand-python","version":"0.1.0"},"capabilities":["one_shot"]}
+{"id":"0","ok":true,"protocol":1,"worker_id":"mw1-worker-...","sdk":{"name":"metewand-python","version":"0.1.0"},"capabilities":["one_shot","applicability","fresh_sequence","streaming_profile"]}
 ```
 
 Direct protocol workers return `sdk: null`. The orchestrator rejects a worker
@@ -763,14 +947,23 @@ opaque binary data. A dataset definition without a materializer treats its
 verified source tree as the dataset instance and therefore cannot accept
 materialization parameters.
 
-Mandatory implementation operations:
+Implementation workers support:
 
 ```text
+check_applicability(dataset_dir, dataset_manifest, problem_contract_id,
+                    problem_parameters, implementation_parameters)  # optional
 prepare(dataset_dir, problem_contract_id, problem_parameters, implementation_parameters, implementation_seed)
-execute(result_dir, optional_budget)
+execute(result_dir, optional_scientific_budget, optional_observation_control)
+execute_stream(checkpoint_root, optional_scientific_budget)           # optional
 reset()
 shutdown()
 ```
+
+`check_applicability` is required only when the worker declares the
+`applicability` capability. `execute` is used by `one_shot` and
+`fresh_sequence`; the latter passes one canonical observation-control value from
+the implementation's declared schema and schedule. `execute_stream` is required
+for `streaming_profile`.
 
 `execute` returns scalar metadata and a manifest of files under `result_dir`:
 
@@ -779,6 +972,7 @@ shutdown()
   "id": "2",
   "ok": true,
   "implementation_time_ns": 18342011,
+  "observation_control": {"iterations": 40},
   "result": {"manifest": "result.json"},
   "statistics": {"iterations": 37}
 }
@@ -792,6 +986,18 @@ path, hash, size, media-type, and representation metadata as dataset manifests.
 Result serialization is therefore inside every timing scope that includes
 `execute`.
 
+During `execute_stream`, the worker may emit a bounded `checkpoint` event
+containing its sequence index, canonical observation control or work-unit
+metadata, cumulative in-worker diagnostic time, statistics, and a completed
+result manifest beneath its assigned checkpoint root. Metewand stops the active
+execution timer only after the complete checkpoint is visible, validates the
+result, invokes the independent evaluator, durably publishes the observation,
+and replies with a `checkpoint_decision` of `continue` or `stop`. The decision
+includes only orchestrator state and evaluator-owned target status; it does not
+return trusted metric computation to the implementation. Sequence indices and
+the policy's maximum observation count bound the subexchange, and a worker that
+continues after `stop` or emits an undeclared checkpoint is a protocol failure.
+
 Problem evaluator workers support:
 
 ```text
@@ -800,10 +1006,11 @@ evaluate(dataset_dir, problem_contract_id, problem_parameters, result_dir, metri
 
 They compute problem-defined quality and correctness metrics—for example,
 objective values, sampling diagnostics, prediction error, numerical error, or
-constraint violations. The orchestrator validates the completed metrics document
-against the contract's metric schema and acceptance rules before it can accept
-the attempt. Implementation-reported metric values may be stored as diagnostics
-but are not authoritative.
+constraint violations. The orchestrator validates the completed metrics
+document against the contract's metric schema and result-validity rules before
+it retains an observation. It then applies the observation policy's completion
+rule. Implementation-reported metric values may be stored as diagnostics but
+are not authoritative.
 
 Workers may be persistent according to the execution policy so interpreter
 startup and package loading can be separated from problem execution.
@@ -817,12 +1024,17 @@ worker that times out, crashes, violates the protocol, or fails to reset is
 discarded. If process-local warm-ups were requested, its replacement repeats
 them before accepting a measurement.
 
-A run attempt advances through `reserved`, `materializing`, `starting`,
-`preparing`, `executing`, `validating`, `evaluating`, and `finalizing` states.
-`accepted` and each typed failure are terminal attempt outcomes. A slot is
-satisfied only by an `accepted` attempt. State transitions and timestamps are
-transactional, but success becomes visible only after the finalized attempt
-directory has been durably published.
+A candidate advances through applicability resolution before any measured
+attempt is reserved. A run attempt then advances through `reserved`,
+`materializing`, `starting`, `preparing`, `executing`, repeated
+`checkpointing`/`validating`/`evaluating` transitions when applicable, and
+`finalizing` states. `accepted`, `censored`, and each typed failure are terminal
+attempt outcomes. A one-shot or fresh-observation slot is satisfied only by an
+accepted attempt. A streaming attempt may be censored by a time or observation
+bound while retaining its durably finalized valid observations. State
+transitions and timestamps are transactional, but an attempt or observation
+becomes visible as complete only after its immutable directory has been durably
+published.
 
 The orchestrator validates every referenced path and output manifest, rejects
 absolute paths, path traversal, special files, escaping links, and undeclared
@@ -831,10 +1043,10 @@ Each attempt receives a private dataset view and output directory. Strong
 executors expose immutable datasets with read-only mounts. The local executor
 prefers copy-on-write snapshots or copies; if it can provide only
 permission-based read-only views, Metewand verifies all dataset artifacts
-immediately before and after each worker operation and records immutability
-enforcement as best-effort. Any mutation invalidates the attempt and discards
-its private view; if the canonical cache object itself changed, Metewand
-quarantines it before another run can consume it.
+immediately before and after each worker operation or checkpoint subexchange
+and records immutability enforcement as best-effort. Any mutation invalidates
+the attempt and discards its private view; if the canonical cache object itself
+changed, Metewand quarantines it before another run can consume it.
 
 Errors have stable machine-readable codes, a human-readable message, and
 optional structured details. The orchestrator distinguishes at least invalid
@@ -846,13 +1058,16 @@ than disappearing because it did not produce metrics. A timeout initiates an
 executor-defined termination sequence—interrupt, bounded grace period, then
 forced process-tree termination. An executor that cannot contain and terminate
 the complete process tree reports that limitation before execution and cannot
-satisfy a required process-control policy. Partial outputs are retained only as
-diagnostic artifacts and never accepted as canonical results.
+satisfy a required process-control policy. Incomplete checkpoint outputs are
+retained only as diagnostic artifacts and never selected as observations.
+Previously finalized valid observations remain visible when a later checkpoint
+or the enclosing streaming attempt fails.
 
-The first release requires one-shot executions without a budget; the optional
-budget field is reserved and must be absent. Repeated fresh runs at
-problem-defined iteration, evaluation, sample, or time budgets, streaming
-checkpoints, and callback-based trajectories are later protocol extensions.
+The conformance kernel initially implements `one_shot` without a scientific
+budget. The first general release additionally implements applicability,
+canonical problem-defined scientific budgets, `fresh_sequence`, and
+`streaming_profile`; adaptive budget schedules and checkpoint state restoration
+require later protocol capabilities.
 
 The protocol and executor are not a security boundary for hostile benchmark
 code. Benchmark repositories and workers are trusted inputs; isolation controls
@@ -869,10 +1084,11 @@ into the benchmark.
 
 It must contain at least:
 
-- normalized manifest and execution-policy hashes;
+- normalized manifest, execution-policy, and observation-policy hashes;
 - hashes of dataset materializers, each problem's contract and evaluator,
   schemas, implementation adapters, and every declared source bundle;
-- canonical dataset, problem, and implementation configuration identities;
+- canonical dataset, problem, implementation, observation-control, and
+  applicability-decision identities;
 - dataset source hashes, materialization recipes, and output-tree hashes;
 - hashes of native environment lockfiles;
 - resolved runtime and package-manager requirements and fingerprints;
@@ -914,17 +1130,26 @@ including untimed startup, evaluation workers, reset, and shutdown. Excluding a
 phase from performance timing never excludes it from isolation or accounting
 provenance.
 
-An attempt is `accepted` only if all of the following hold:
+An observation is valid only if all of the following hold:
 
 1. every declared dependency resolves to its expected typed identity, and every
    resolved identity matches the selected lock state when locked mode was
    requested;
-2. the worker completed the negotiated protocol and produced a schema-valid
-   canonical result manifest;
-3. the problem's evaluator accepted the result under its contract;
+2. the worker completed the applicable result or checkpoint exchange and
+   produced a schema-valid canonical result manifest;
+3. the problem's evaluator accepted the result as valid under its contract;
 4. every control marked required was observed as enforced throughout its
    applicable scope;
-5. the finalized artifact and provenance record were durably published.
+5. the finalized observation artifact and provenance record were durably
+   published.
+
+An attempt is `accepted` only when it completes its one-shot result, its selected
+fresh observation, or its streaming policy according to the policy's fixed or
+target-based completion rule and durably publishes the enclosing attempt
+record. A streaming profile attempt that reaches a bound before its target is
+`censored`, and an attempt that violates the protocol or result-validity rules
+fails, but any earlier valid observations remain part of the result set with
+their relationship to the terminal attempt outcome intact.
 
 Acceptance is distinct from the environment reproducibility class and the
 observed control class. An accepted development or best-effort attempt may be
@@ -951,6 +1176,8 @@ prepare_time           the complete prepare request
 implementation_time    monotonic in-worker timing around the implementation call
 execute_request_time   executor-observed execute request and result serialization
 timed_wall_time        orchestrator-observed selected timing scope
+active_timed_wall_time cumulative timed execution excluding checkpoint evaluation
+elapsed_wall_time      total elapsed profile-session time including evaluator pauses
 evaluation_time        independent result evaluation
 cpu_time / peak_rss    executor-observed process-tree use where supported
 ```
@@ -958,8 +1185,10 @@ cpu_time / peak_rss    executor-observed process-tree use where supported
 The execution policy identifies a primary executor-observed timing measure
 covering its complete timing scope. Measurements that cannot include the
 complete worker process tree are marked partial and cannot satisfy a policy that
-requires complete accounting. Warm-up and untimed preparation are recorded even
-when excluded from the primary measure.
+requires complete accounting. For a streaming profile, the authoritative curve
+coordinate is cumulative `active_timed_wall_time`; `elapsed_wall_time` exposes
+the orchestration and evaluation pauses rather than hiding them. Warm-up and
+untimed preparation are recorded even when excluded from the primary measure.
 
 ## 6. Environments, execution, and artifacts
 
@@ -977,9 +1206,9 @@ oci       resolve a userspace image pinned by digest
 
 The worker's runner then resolves a launch within that context. The result
 contains the exact executable, argument prefix, worker entrypoint or program
-arguments, allowlisted environment, and working directory. Built-in Python and R
-runners select the corresponding interpreter supplied or admitted by the
-environment; the command runner selects an explicitly declared program.
+arguments, allowlisted environment, and working directory. Built-in Python, R,
+and Julia runners select the corresponding interpreter supplied or admitted by
+the environment; the command runner selects an explicitly declared program.
 Resolution fails if the environment cannot satisfy the runner. Environment
 fingerprints and launch fingerprints are distinct: two workers may share one
 resolved environment while using different interpreters or programs, and a
@@ -1066,7 +1295,7 @@ Executor backends consume the launch specification:
 
 ```text
 local process       Gate 2
-OCI runtime         Gate 4 on Linux via Docker or Podman
+OCI runtime         Gate 5 on Linux via Docker or Podman
 SLURM/remote        later
 ```
 
@@ -1085,9 +1314,14 @@ implementation-replication index, and measurement index; it orders
 implementation configurations within each block and the blocks themselves by
 their deterministic scheduling priorities. This interleaves comparable
 implementations without making seeds or identities depend on completion order. A
-sequential order remains available when explicitly requested. Concurrent
-execution is opt-in and becomes part of the run identity and provenance because
-contention changes the comparison conditions.
+fresh-sequence profile adds observation rounds ordered by each implementation's
+schedule index, allowing operating points from different implementations to be
+interleaved without asserting that their control values are equivalent. A
+streaming profile occupies one serial execution slot; its internal checkpoints
+are not interleaved with another implementation. A sequential order remains
+available when explicitly requested. Concurrent execution is opt-in and becomes
+part of the run identity and provenance because contention changes the
+comparison conditions.
 
 Artifacts live in a content-addressed cache. Downloaded files are verified
 before extraction. Local trees are hashed from sorted normalized paths, entry
@@ -1126,29 +1360,61 @@ deletion by a broad path.
 Finalized attempt outputs are immutable directories containing:
 
 ```text
-attempt.json         slot, retry, outcome, identities, controls, and full provenance
-metrics.json         evaluator output when available
-result/               canonical implementation result files when available
+attempt.json          slot, retry, outcome, observation references, and provenance
 logs/                 role- and attempt-scoped worker output
-manifest.json        completion marker plus hashes and sizes of all other files
+manifest.json         completion marker plus hashes and sizes of all other files
 ```
 
+Each one-shot result or streaming checkpoint is independently finalized before
+the attempt record may reference it:
+
+```text
+observation.json      slot, producing attempt, control, timing, and validity
+metrics.json          evaluator output
+result/               canonical implementation result files
+manifest.json         completion marker plus hashes and sizes of all other files
+```
+
+Publishing observations separately allows a later timeout or worker crash to
+leave earlier valid convergence points durable without exposing an incomplete
+attempt directory as successful.
+
 A top-level JSON Lines or Parquet index is a rebuildable projection of the
-metadata database and finalized attempt directories, never authoritative state.
-It includes accepted, invalid, censored, superseded, and failed attempts;
-metrics are nullable and carry schema version, units, and comparison direction
-where applicable. The schema preserves slot and retry identities, pairing keys,
+metadata database and finalized attempt and observation directories, never
+authoritative state. It includes applicable and not-applicable candidates,
+valid observations, and accepted, invalid, censored, superseded, and failed
+attempts. Metrics are nullable and carry schema version, units, and comparison
+direction where applicable. The schema preserves applicability evidence,
+observation controls and target status, slot and retry identities, pairing keys,
 component seeds, warm-up status, timeout limits, run order, machine/environment
 blocks, observed controls, guarantee classes, and the execution policy's
 authoritative timing measure. Metewand never silently averages repetitions or
 drops failed attempts.
 
+Every export has an adjacent or enveloping export manifest containing the
+canonical selector, the ordered source candidate, attempt, and observation
+identities, the result and metric schema identities, compatibility classes, the
+export schema and tool versions, and a content hash of each emitted file. This
+manifest gives a committed CSV or Parquet figure table an exact lineage without
+making the downstream statistical transformation part of Metewand.
+
+`metewand snapshot create` packages a selected result set as a portable,
+content-addressed directory or archive. A snapshot contains its export manifest,
+the selected applicability, attempt, and observation records, referenced
+canonical results and metrics, required schemas and contracts, selected lock
+state when available, and the resolved dependency and provenance records needed
+to interpret them. It contains no cache or workspace paths. `snapshot verify`
+validates the complete Merkle graph and may run without a local Metewand store;
+`snapshot import` verifies first and adds objects with atomic no-replace
+publication. Snapshotting does not upgrade the recorded environment or control
+guarantee of any attempt.
+
 Metewand owns this analysis-ready schema and its provenance, but publication
-analysis and graphics are not part of the execution core. The R and Python
-packages provide typed result readers and uncontroversial operations such as
-filtering warm-ups, pairing compatible attempts, and validating result-set
-compatibility. Statistical estimators and publication plots remain downstream
-code owned by the benchmark author.
+analysis and graphics are not part of the execution core. The R, Python, and
+Julia packages provide typed result and snapshot readers and uncontroversial
+operations such as filtering warm-ups, pairing compatible attempts, and
+validating result-set compatibility. Statistical estimators and publication
+plots remain downstream code owned by the benchmark author.
 
 A later analysis layer may produce immutable, provenance-tracked artifacts:
 
@@ -1171,17 +1437,21 @@ tool.
 
 ## 7. Initial SDK APIs
 
-The R and Python packages should be intentionally small and usable without
-knowledge of the orchestrator internals.
+The R, Python, and Julia packages should be intentionally small and usable
+without knowledge of the orchestrator internals.
 
 R sketch:
 
 ```r
 metewand::serve_implementation(
+  applicable = function(
+    dataset_instance, problem_contract, problem_parameters, implementation_parameters
+  ) { ... },
   prepare = function(
     dataset_instance, problem_contract, problem_parameters, implementation_parameters, seed
   ) { ... },
-  execute = function(state, budget) { ... },
+  execute = function(state, budget, observation_control) { ... },
+  execute_stream = function(state, budget, checkpoint) { ... },
   result = function(state, directory) { ... }
 )
 ```
@@ -1192,23 +1462,33 @@ Python sketch:
 from metewand import Implementation, serve_implementation
 
 class SklearnImplementation(Implementation):
+    def applicable(
+        self, dataset_instance, problem_contract, problem_parameters,
+        implementation_parameters
+    ): ...
     def prepare(
         self, dataset_instance, problem_contract, problem_parameters,
         implementation_parameters, seed
     ): ...
-    def execute(self, budget): ...
+    def execute(self, budget, observation_control): ...
+    def execute_stream(self, budget, checkpoint): ...
     def write_result(self, directory): ...
 
 serve_implementation(SklearnImplementation())
 ```
 
-The SDK may report monotonic `implementation_time` around only the user execute
-callback, but it writes the canonical result before replying to the `execute`
-request; the orchestrator's timing envelope therefore includes serialization.
-The SDKs also provide analogous, small helpers for dataset materializers and
-problem evaluators. They must not provision environments, acquire source
-artifacts, schedule runs, define parameter semantics, or calculate trusted
-metrics independently of user-supplied evaluator code.
+The Julia API provides the same callbacks using ordinary Julia functions and
+structs; it is covered by the same canonicalization, seed, protocol, and error
+golden vectors as R and Python.
+
+An SDK may report monotonic `implementation_time` around only the user execute
+callback. It writes each canonical result before replying to `execute` or
+invoking the streaming `checkpoint` callback, so the orchestrator's active
+timing envelope includes serialization. The SDKs also provide analogous, small
+helpers for dataset materializers and problem evaluators. They must not
+provision environments, acquire source artifacts, choose observation schedules,
+apply target stopping, define parameter semantics, or calculate trusted metrics
+independently of user-supplied evaluator code.
 
 ## 8. MVP and acceptance criteria
 
@@ -1217,20 +1497,21 @@ Implementation proceeds through explicit acceptance gates.
 ### Gate 1: conformance kernel
 
 1. Parse and validate manifests, problem contracts, schemas, canonical parameter
-   values, source bundles, identities, and seed derivations.
-2. Expand a deterministic run matrix into logical specifications and attempt
-   slots.
+   values, source bundles, one-shot observation policies, identities, and seed
+   derivations.
+2. Expand a deterministic run matrix into logical candidates, one-shot run
+   specifications, observation slots, and attempt slots.
 3. Implement the bounded version-1 protocol and raw fixture workers for dataset
    materializer, implementation, and problem evaluator roles.
 4. Run a fixed local dataset through one raw implementation and its problem's
    independent evaluator under `prepare_and_execute` timing.
-5. Finalize one self-describing attempt directory and emit versioned
-   machine-readable command output.
+5. Finalize one self-describing observation and attempt directory and emit
+   versioned machine-readable command output.
 
 This gate proves the riskiest architectural proposition without environment
 provisioning, downloads, SDKs, resume, or a general cache.
 
-### Gate 2: reliable local MVP
+### Gate 2: reliable local foundation
 
 1. Add pinned downloads, safe extraction, generated datasets, the
    content-addressed cache, private dataset views, and mutation checks.
@@ -1245,26 +1526,50 @@ provisioning, downloads, SDKs, resume, or a general cache.
    replication, selected-ID execution, status, explanation, and JSONL/CSV export
    containing all outcomes.
 
-This is the first release called an MVP. It supports reproducible dataset
-artifacts and execution records but makes only development-environment and
-observed-control claims.
+This gate supports reliable one-shot execution and is intentionally not called
+the general MVP. It proves the durable execution substrate before profile and
+applicability semantics add more state transitions.
 
-### Gate 3: locked environments
+### Gate 3: comparative local MVP
+
+1. Add configuration-dependent applicability checks, hashed decision records,
+   explicit unchecked plan states, and exported not-applicable candidates.
+2. Add canonical problem-defined scientific budgets, fixed and target-based
+   observation policies, implementation-specific control schemas and schedules,
+   fresh-sequence execution, and the bounded streaming checkpoint subprotocol.
+3. Add durable observation publication, evaluator-controlled continuation,
+   active-time accounting, target and bound censoring, and crash recovery that
+   retains valid observations without claiming implementation-state recovery.
+4. Add the Julia SDK for implementations, dataset materializers, evaluators,
+   applicability checks, and streaming checkpoints, including all cross-language
+   golden vectors.
+5. Add export lineage manifests and portable snapshot creation, offline
+   verification, and atomic import.
+6. Port representative experiments from the motivating intercept-strategy and
+   SLOPE-package studies and make their smoke-sized forms release-blocking.
+
+This is the first release called an MVP. It can run final-result comparisons and
+evaluator-controlled convergence profiles locally with reproducible data
+artifacts, durable execution records, and explicit observed-control claims. It
+still makes only development-environment guarantees until Gate 4.
+
+### Gate 4: locked environments
 
 Add `metewand.lock` and the Nix package/app backend first, followed by `uv` and
 `renv`; Julia `Pkg` may follow later. Nix is the reference closure-locked
 backend but remains optional for benchmark users. Locked mode is accepted only
 after transitive source-bundle and environment-closure mismatch tests pass.
 
-### Gate 4: isolated archival execution
+### Gate 5: isolated archival execution
 
 Add OCI images by digest, enforceable resource and network controls, read-only
 mounts, complete process-tree accounting, and comprehensive machine provenance.
-This gate, not the local MVP, supports the strongest publication-archive claim.
+This gate, not the comparative local MVP, supports the strongest
+publication-archive claim.
 
-Problem-defined evaluation, iteration, sample, and time budgets may be added
-after one-shot execution is reliable. Streaming checkpoints, trajectories,
-distributed execution, and richer scheduling remain later extensions.
+Additional problem-defined scientific budget types, checkpoint state
+restoration, distributed execution, and richer scheduling remain later
+extensions.
 
 The user-facing architecture is accepted when these examples require no special
 cases:
@@ -1276,9 +1581,11 @@ cases:
   mismatches;
 - **Mixed:** compare an R package under `renv`, a Python package under `uv`, and
   a native executable from Nix;
-- **Cross-language environment:** launch Python and R workers from one locked
-  Conda prefix or pinned OCI image, reuse its environment identity, and bind
-  each exact interpreter and command into a distinct launch identity;
+- **Cross-language environment:** launch Python, R, and Julia workers from one
+  Nix closure or pinned OCI image, reuse its environment identity, and bind each
+  exact interpreter and command into a distinct launch identity; a Devenv-based
+  repository exercises this through standard flake outputs without requiring a
+  separate Devenv backend;
 - **Posterior sampling:** compare implementations that return canonical draws
   under a problem contract defining the target distribution, chain semantics,
   sample budget, and evaluator-owned diagnostics;
@@ -1286,9 +1593,17 @@ cases:
   contract-defined function over problem-parameterized domains; omitting
   `datasets` produces one run per remaining configuration through the built-in
   unit dataset;
-- **Parameterized matrix:** dataset, problem, and implementation grids expand
-  deterministically, preserve their namespaces, and produce stable logical and
-  resolved run and slot IDs plus immutable attempt IDs;
+- **Parameterized matrix:** dataset, problem, and implementation grids and named
+  coupled cases expand deterministically, preserve their namespaces, reject
+  duplicates, and produce stable candidate, run, observation, slot, and attempt
+  IDs;
+- **Conditional applicability:** an implementation may reject an unsupported
+  intercept, sparse layout, or unsafe dimension with a structured,
+  reproducible not-applicable decision that remains visible without becoming a
+  failed attempt;
+- **Convergence profile:** iteration-, tolerance-, and callback-controlled
+  implementations produce time-quality curves under one evaluator-owned target;
+  target completion and timeout censoring retain every valid observation;
 - **Semantic equivalence:** every implementation receives the same problem
   instance, and its independent evaluator rejects results that violate the
   problem contract;
@@ -1300,6 +1615,9 @@ cases:
   while lost runtime capability or enforcement produces a typed failed attempt;
 - **Failure records:** crashes, timeouts, invalid results, and evaluator errors
   remain visible in exports;
+- **Publication snapshot:** a selected result set can be snapshotted, verified
+  without the originating cache, imported without overwriting existing objects,
+  and traced exactly to a committed CSV or Parquet export;
 - **Agent loop:** a noninteractive client can inspect a JSON plan, run selected
   stable IDs, diagnose structured failures, modify an adapter, and resume
   without duplicating an accepted slot;
@@ -1309,17 +1627,21 @@ cases:
 
 The following automated tests are release-blocking:
 
-- canonicalization, identity, and seed golden vectors agree in Rust, R, and
-  Python;
+- canonicalization, identity, and seed golden vectors agree in Rust, R, Python,
+  and Julia;
 - reordering tables or files does not change identities, while changing any
   transitive dependency does;
 - adding an unrelated experiment leaves existing component and run identities
   unchanged;
+- named cases express coupled parameter combinations without unintended
+  Cartesian products and reject duplicate logical candidates;
 - an `A x M` implementation-by-measurement design creates exactly `A x M` slots,
   shares seeds only where specified, and preserves every retry;
 - timing fixtures that sleep or work in startup, `prepare`, `execute`, and
   result writing are included or excluded exactly according to each timing
-  scope;
+  scope; streaming fixtures additionally prove that active wall time includes
+  checkpoint serialization but excludes evaluator pauses while elapsed wall time
+  retains them;
 - reference problem instances produce expected metrics, and deliberately
   malformed, numerically wrong, or semantically invalid results are rejected;
 - one multi-runtime fixture launches workers through at least two different
@@ -1331,7 +1653,15 @@ The following automated tests are release-blocking:
   single-dataset problem instances;
 - protocol tests cover fragmented input, duplicate keys, invalid UTF-8,
   oversized messages, early EOF, extra responses, log floods, timeouts, and
-  escaped child processes;
+  escaped child processes, plus checkpoint sequence violations, continuation
+  after stop, and observation-count bounds;
+- applicability fixtures cover parameter-, sparse-layout-, and dimension-based
+  exclusions, decision changes, locked re-verification, and attempts to mutate
+  the dataset during a check;
+- fresh-sequence fixtures reset algorithmic state between controls, while
+  streaming fixtures preserve state, stop on an evaluator metric, retain valid
+  observations before failure, and never treat work-unit values as comparable
+  across implementations;
 - fault injection terminates the process at every database, file-sync, rename,
   and finalization boundary, after which resume yields no false success and no
   duplicate accepted slot;
@@ -1343,8 +1673,16 @@ The following automated tests are release-blocking:
   or enforcement loss produces a typed failure;
 - Nix package and app fixtures reject changes to any local flake input, lock,
   derivation, resolved program, output NAR, or recursive closure;
-- exports retain invalid, censored, superseded, and failed attempts and refuse
-  to silently pool incompatible timing, environment, or control classes.
+- exports retain not-applicable candidates, valid observations, and invalid,
+  censored, superseded, and failed attempts and refuse to silently pool
+  incompatible timing, environment, or control classes;
+- snapshot round trips preserve every selected identity and artifact, and
+  verification rejects a changed manifest, result, metric, schema, contract, or
+  provenance record;
+- smoke-sized ports of the intercept-strategy grid and the SLOPE convergence
+  benchmark exercise Julia/R/Python data interchange, per-cell resume, pinned
+  implementation variants, conditional applicability, fresh controls,
+  streaming callbacks, and evaluator-owned stopping.
 
 ### Explicit non-goals for v1
 
@@ -1362,8 +1700,10 @@ The following automated tests are release-blocking:
 The central invariant is:
 
 > An attempt is accepted only when every declared dependency resolves to its
-> expected typed identity, the canonical result satisfies the problem contract,
-> all required controls were enforced over the selected timing scope, and the
-> complete observation was durably published. Its environment and control
-> guarantee classes remain explicit and independent of the language in which any
-> worker is implemented.
+> expected typed identity, every selected observation satisfies the problem's
+> validity contract, the observation policy's completion rule is met, all
+> required controls were enforced over the selected timing scope, and the
+> complete attempt and its observations were durably published. Censored and
+> failed attempts retain earlier valid observations without being reported as
+> accepted. Environment and control guarantee classes remain explicit and
+> independent of the language in which any worker is implemented.

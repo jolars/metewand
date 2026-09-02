@@ -47,7 +47,8 @@ See [Schemas, canonical values, and identities](DESIGN.md#schemas-canonical-valu
       preserve literal arrays, tables, and `null`, and never apply JSON Schema
       `default` annotations.
 - [ ] Publish versioned schemas for machine output and the initial manifest,
-      contract, artifact-manifest, result-manifest, and metrics envelopes.
+      contract, one-shot observation policy, artifact-manifest,
+      result-manifest, observation, attempt, and metrics envelopes.
 
 ### 1.2 Definitions and source bundles
 
@@ -55,11 +56,13 @@ See [User model](DESIGN.md#2-user-model) and
 [Problem and fairness contracts](DESIGN.md#problem-and-fairness-contracts).
 
 - [ ] Parse the version-1 manifest into typed dataset, problem,
-      implementation, environment, experiment, and execution-policy definitions
-      with source-spanned diagnostics and unknown-field rejection.
+      implementation, environment, experiment, execution-policy, and
+      observation-policy definitions with source-spanned diagnostics and
+      unknown-field rejection.
 - [ ] Parse problem contracts, validate their common envelope and
       family-specific `semantics` object, and require schemas, evaluator
-      definitions, acceptance rules, and reference cases.
+      definitions, result-validity and one-shot completion rules, and reference
+      cases.
 - [ ] Validate parameter ownership and namespaces structurally while leaving
       their scientific classification visible to the benchmark author.
 - [ ] Normalize repository-relative paths and implement declared source-bundle
@@ -75,8 +78,9 @@ See [Schemas, canonical values, and identities](DESIGN.md#schemas-canonical-valu
 and [Main domain types](DESIGN.md#main-domain-types).
 
 - [ ] Define typed domain records for definitions, configurations, instances,
-      logical specifications, logical attempt slots, resolved specifications,
-      resolved slots, and run attempts.
+      logical candidates, one-shot logical specifications, observation and
+      attempt slots, resolved specifications and slots, run observations, and
+      run attempts.
 - [ ] Implement `mw1-<kind>-<sha256>` identities over typed, versioned canonical
       representations, with dependencies represented by their typed identities.
 - [ ] Implement normalized local-tree hashing over paths, entry types, bytes,
@@ -94,12 +98,13 @@ and [Main domain types](DESIGN.md#main-domain-types).
 
 See [Automation and agentic workflows](DESIGN.md#automation-and-agentic-workflows).
 
-- [ ] Expand literal values and Cartesian grids across their explicit
-      namespaces into deterministic dataset, problem, and implementation
-      configurations.
-- [ ] Expand configurations into logical run specifications and measurement
-      attempt slots, including implementation repetitions, measurement
-      repetitions, seeds, warm-up roles, and stable IDs.
+- [ ] Expand literal values, Cartesian grids, and named coupled cases across
+      their explicit namespaces into deterministic dataset, problem, and
+      implementation configurations; reject duplicate logical candidates.
+- [ ] Expand configurations into logical candidates, one-shot run
+      specifications, observation slots, and measurement attempt slots,
+      including implementation repetitions, measurement repetitions, seeds,
+      warm-up roles, and stable IDs.
 - [ ] Reject invalid pairings, missing datasets, unexpected datasets for
       dataset-free problems, unsupported budgets, and incompatible timing and
       worker-reuse policies before execution.
@@ -125,9 +130,10 @@ See [Worker protocol](DESIGN.md#4-worker-protocol).
       concurrency limit.
 - [ ] Implement dedicated POSIX protocol pipes and concurrent bounded draining
       of stdout and stderr, continuing to drain after log truncation.
-- [ ] Implement the `materialize`, `prepare`, `execute`, `reset`, `evaluate`,
-      and `shutdown` exchanges, including phase-specific timeouts and typed
-      failures.
+- [ ] Implement the one-shot `materialize`, `prepare`, `execute`, `reset`,
+      `evaluate`, and `shutdown` exchanges, including phase-specific timeouts
+      and typed failures; reserve negotiated capabilities for the later
+      applicability and profile subprotocols.
 - [ ] Validate worker-returned manifests and paths; reject absolute or escaping
       paths, special files, undeclared entries, incomplete files, and invalid
       canonical results or metrics.
@@ -146,20 +152,22 @@ and [Gate 1](DESIGN.md#gate-1-conformance-kernel).
 - [ ] Validate the canonical result and evaluator metrics before accepting the
       attempt; retain typed records for crashes, timeouts, invalid results, and
       evaluator failures.
-- [ ] Finalize one self-describing attempt directory containing `attempt.json`,
-      optional metrics and results, scoped logs, and a hash-complete
-      `manifest.json` completion marker.
+- [ ] Finalize one self-describing observation directory containing its result,
+      metrics, provenance, and completion marker, then one attempt directory
+      that references it and contains scoped logs and its own hash-complete
+      completion marker.
 - [ ] Expose this vertical path through `metewand run` and emit versioned
       machine-readable events and final output.
 - [ ] Pass Gate 1 acceptance tests, including dataset-free expansion, reference
       evaluation, timing-boundary fixtures, protocol abuse, identity vectors,
       seed vectors, and deterministic plan snapshots.
 
-## 2. Gate 2: reliable local MVP
+## 2. Gate 2: reliable local foundation
 
-This is the first release called an MVP. It provides reproducible artifacts and
-complete execution records while making only development-environment and
-observed-control claims. See [Gate 2](DESIGN.md#gate-2-reliable-local-mvp).
+This gate provides reliable one-shot artifacts and execution records while
+making only development-environment and observed-control claims. It is the
+substrate for the comparative local MVP, not the general MVP itself. See
+[Gate 2](DESIGN.md#gate-2-reliable-local-foundation).
 
 ### 2.1 Sources, datasets, and artifact cache
 
@@ -184,9 +192,10 @@ See [Environments, execution, and artifacts](DESIGN.md#6-environments-execution-
 
 See [Automation and agentic workflows](DESIGN.md#automation-and-agentic-workflows).
 
-- [ ] Design the SQLite schema for resolved slots, attempts, leases,
-      insert-only events, state transitions, finalization claims, artifact
-      references, and the one-accepted-attempt-per-slot constraint.
+- [ ] Design the SQLite schema for resolved observation and attempt slots, run
+      observations, attempts, leases, insert-only events, state transitions,
+      finalization claims, artifact references, and the uniqueness constraints
+      for selected observations and accepted attempts.
 - [ ] Initialize SQLite in WAL mode with full synchronous durability and refuse
       durable operation when required locking, synchronization, or atomic rename
       behavior is unavailable.
@@ -272,11 +281,12 @@ See [Authoring and scaffolding](DESIGN.md#authoring-and-scaffolding) and
 - [ ] Implement `metewand check --workers` with capability verification and
       problem reference-case execution.
 - [ ] Implement a rebuildable JSONL index and tidy JSONL/CSV export that retain
-      accepted, invalid, censored, superseded, and failed attempts without
-      silently combining incompatible timing or guarantee classes.
-- [ ] Add exact-target cache verification and garbage collection with snapshot
-      roots, lease awareness, a dry-run mode, and no deletion authorized solely
-      by a stale index.
+      valid observations and accepted, invalid, censored, superseded, and failed
+      attempts without silently combining incompatible timing or guarantee
+      classes.
+- [ ] Add exact-target cache verification and garbage collection from a
+      transactional database snapshot, with root and lease awareness, a dry-run
+      mode, and no deletion authorized solely by a stale index.
 - [ ] Add representative raw-command, Python-only, R-only, dataset-free, and
       parameter-matrix local examples without privileged built-in scientific
       templates.
@@ -285,14 +295,149 @@ See [Authoring and scaffolding](DESIGN.md#authoring-and-scaffolding) and
       recovery, cache concurrency, garbage collection, exports, and the complete
       agent loop.
 
-## 3. Gate 3: locked environments
+## 3. Gate 3: comparative local MVP
+
+This is the first general MVP. It adds the applicability and convergence-profile
+semantics required by the motivating research workflows, the Julia SDK, and a
+portable publication handoff while retaining development-environment and
+observed-control guarantees. See
+[Gate 3](DESIGN.md#gate-3-comparative-local-mvp).
+
+### 3.1 Applicability and profile schemas
+
+See [Problem and fairness contracts](DESIGN.md#problem-and-fairness-contracts)
+and [Main domain types](DESIGN.md#main-domain-types).
+
+- [ ] Publish versioned schemas for applicability decisions, profile policies,
+      observation-control values and schedules, checkpoint events and
+      decisions, run observations, export lineage, and result snapshots.
+- [ ] Validate `one_shot` and `profile` policies, metric names and directions
+      against problem metric schemas, finite explicit/linear/geometric
+      schedules, delivery capabilities, maximum observation counts, and active
+      time bounds.
+- [ ] Validate canonical problem-defined scientific budget values against each
+      contract's budget schema and every selected implementation's declared
+      capability without conflating them with observation controls.
+- [ ] Represent applicability as `unchecked`, `applicable`, or
+      `not_applicable` with typed evidence; make a side-effect-free plan report
+      candidate, applicable, observation-slot, and execution-slot counts without
+      claiming that a worker was run.
+- [ ] Extend identities so applicability inputs and decisions, observation
+      policies, schedules, controls, and observation slots invalidate exactly
+      their dependent records.
+
+### 3.2 Configuration-dependent applicability
+
+See [Schemas, canonical values, and identities](DESIGN.md#schemas-canonical-values-and-identities)
+and [Worker protocol](DESIGN.md#4-worker-protocol).
+
+- [ ] Implement the optional `check_applicability` exchange before measured
+      preparation, passing the immutable dataset view and manifest, exact
+      contract and problem parameters, and implementation parameters.
+- [ ] Validate stable reason codes and structured details, hash and durably
+      record each decision, and verify dataset immutability around the check.
+- [ ] Produce no measured slots for a not-applicable candidate, but retain it in
+      plans, status, explanation, indexes, and exports without classifying it as
+      an attempt failure.
+- [ ] Add fixtures for unsupported intercepts, sparse layouts, and
+      dimension/implementation-parameter combinations, plus fixtures proving
+      that the exact checked inputs and reasons remain visible for scientific
+      review.
+
+### 3.3 Fresh-sequence profiles
+
+See [Problem and fairness contracts](DESIGN.md#problem-and-fairness-contracts).
+
+- [ ] Expand each implementation's explicit, linear, or geometric control
+      schedule into stable observation slots without treating controls from
+      different implementations as comparable budgets.
+- [ ] Execute every fresh observation from clean algorithmic state while
+      preserving the execution policy's process-reuse and warm-up semantics.
+- [ ] Evaluate every result independently, apply fixed-count or evaluator-owned
+      metric-target completion, and mark later unneeded observation and
+      execution slots as `skipped_target_reached` without creating observations.
+- [ ] Extend block-randomized scheduling with deterministic observation rounds
+      that preserve each implementation's schedule order and stable relative
+      ordering when unrelated candidates are added.
+
+### 3.4 Streaming profiles and durable observations
+
+See [Worker protocol](DESIGN.md#4-worker-protocol) and
+[Environments, execution, and artifacts](DESIGN.md#6-environments-execution-and-artifacts).
+
+- [ ] Implement the bounded checkpoint event/decision subexchange inside one
+      active `execute_stream` request, including strict sequence, count, path,
+      and continuation-after-stop validation.
+- [ ] Pause at each complete checkpoint, validate and independently evaluate
+      it, durably publish its observation, and return only a `continue` or
+      `stop` decision based on evaluator-owned metrics and policy bounds.
+- [ ] Record cumulative executor-observed active wall and process-tree CPU time
+      at each checkpoint, include result serialization, exclude evaluator
+      pauses, and retain total elapsed wall and evaluation time separately.
+- [ ] Retain finalized valid observations when a later checkpoint times out,
+      crashes, or fails, while leaving the enclosing attempt censored or failed.
+      On retry, restart clean state unless a future restoration capability is
+      explicitly selected; never claim implicit state recovery.
+- [ ] Add fault injection around every checkpoint publication and decision
+      boundary, proving that resume selects at most one valid observation per
+      slot and never manufactures an accepted attempt.
+
+### 3.5 Julia SDK and cross-language conformance
+
+See [Initial SDK APIs](DESIGN.md#7-initial-sdk-apis).
+
+- [ ] Build Julia helpers for implementation, dataset-materializer, evaluator,
+      applicability, fresh-sequence, and streaming-profile callbacks without
+      exposing orchestrator responsibilities.
+- [ ] Include Julia in canonicalization, identity, seed, error, framing, and
+      protocol golden vectors alongside Rust, R, and Python.
+- [ ] Add a local multi-runtime fixture in which Julia materializes one dataset
+      and Julia, R, and Python implementations return the same canonical result
+      for one independent evaluator.
+
+### 3.6 Export lineage and portable snapshots
+
+See [Environments, execution, and artifacts](DESIGN.md#6-environments-execution-and-artifacts).
+
+- [ ] Emit an export manifest containing the canonical selector, ordered source
+      identities, schema and compatibility identities, tool version, and hashes
+      of every JSONL, CSV, or Parquet output.
+- [ ] Implement `metewand snapshot create` for an exact selected result set,
+      including applicability, attempt, observation, result, metric, schema,
+      contract, resolved-dependency, lock-state, and provenance records without
+      cache or workspace paths.
+- [ ] Implement offline `snapshot verify` over the complete Merkle graph and
+      atomic, no-replace `snapshot import` after verification.
+- [ ] Add corruption, omission, path-traversal, incompatible-schema, duplicate
+      object, and round-trip tests; prove that snapshotting preserves rather
+      than upgrades recorded guarantee classes.
+
+### 3.7 Motivating workflow ports
+
+- [ ] Port a smoke-sized intercept-strategy grid with a seeded Julia
+      materializer, Julia/R/Python implementations, paired data across
+      strategies, per-cell resume, pinned pre/post implementation variants, and
+      an export used to compute a shared downstream summary.
+- [ ] Port a smoke-sized SLOPE comparison with dense and sparse datasets,
+      coupled dataset cases, iteration and tolerance fresh schedules, one
+      callback stream, conditional implementation applicability, a common
+      evaluator-owned relative-duality-gap target, and timeout censoring.
+- [ ] Document the resulting adapter, schema, and manifest surface and simplify
+      it until both ports are materially easier to inspect and resume than their
+      source workflows; keep their smoke tests release-blocking.
+- [ ] Pass Gate 3 acceptance tests for applicability, observation identities,
+      fresh resets, checkpoint protocol and timing, target stopping, durable
+      partial curves, Julia conformance, export lineage, snapshot round trips,
+      and both motivating ports.
+
+## 4. Gate 4: locked environments
 
 Add locking without making any environment backend mandatory for benchmark
 authors. See [Reproducibility model](DESIGN.md#5-reproducibility-model),
 [Nix environments](DESIGN.md#nix-environments), and
-[Gate 3](DESIGN.md#gate-3-locked-environments).
+[Gate 4](DESIGN.md#gate-4-locked-environments).
 
-### 3.1 Resolution and lockfile model
+### 4.1 Resolution and lockfile model
 
 - [ ] Separate unresolved definitions and logical IDs from resolved
       environments, launches, artifacts, runs, and attempt slots.
@@ -304,10 +449,11 @@ authors. See [Reproducibility model](DESIGN.md#5-reproducibility-model),
 - [ ] Implement `metewand lock` with explicit network/build/write reporting and
       atomic lockfile replacement only when the command was directly requested.
 - [ ] Implement `metewand run --locked` so every definition, source, artifact,
-      environment, executable, SDK, protocol, executor, and semantics identity
-      must match before execution.
+      environment, executable, SDK, protocol, executor, observation policy,
+      applicability decision, and semantics identity must match before
+      execution.
 
-### 3.2 Nix package and app environments
+### 4.2 Nix package and app environments
 
 - [ ] Resolve exact `packages.<system>` outputs without fallback lookup,
       recording filtered local inputs, `flake.lock`, installable, system,
@@ -321,10 +467,12 @@ authors. See [Reproducibility model](DESIGN.md#5-reproducibility-model),
 - [ ] Reject impure evaluation, unsupported Nix versions, lockfile rewrites,
       executable escapes, and changes to local inputs, derivations, outputs,
       programs, or recursive closures.
-- [ ] Add a multi-runtime Nix fixture that launches Python and R from one
-      environment fingerprint through distinct exact launch specifications.
+- [ ] Add a multi-runtime Nix fixture that launches Python, R, and Julia from
+      one environment fingerprint through distinct exact launch specifications;
+      exercise a Devenv repository through standard flake outputs without a
+      separate environment backend.
 
-### 3.3 Ecosystem-locked environments
+### 4.3 Ecosystem-locked environments
 
 - [ ] Implement `uv` environment resolution, recording the native lockfile,
       package-manager version, platform tags, source repositories, downloaded
@@ -334,19 +482,20 @@ authors. See [Reproducibility model](DESIGN.md#5-reproducibility-model),
 - [ ] Treat local and editable dependencies as declared source bundles, and run
       locked environments offline after verifying their realized manifests and
       launch programs.
-- [ ] Add Nix-locked, `uv`-locked, `renv`-locked, and mixed R/Python/native
-      examples.
-- [ ] Pass Gate 3 mismatch tests for every transitive source, schema, contract,
+- [ ] Add Nix-locked, `uv`-locked, `renv`-locked, and mixed
+      R/Python/Julia/native examples.
+- [ ] Pass Gate 4 mismatch tests for every transitive source, schema, contract,
       fixture, adapter, helper, native lockfile, environment artifact, closure,
-      and resolved launch program.
+      resolved launch program, applicability decision, observation policy, and
+      control schedule.
 
-## 4. Gate 4: isolated archival execution
+## 5. Gate 5: isolated archival execution
 
 This gate supports the strongest publication-archive claim while continuing to
 treat benchmark code as trusted input. See
-[Gate 4](DESIGN.md#gate-4-isolated-archival-execution).
+[Gate 5](DESIGN.md#gate-5-isolated-archival-execution).
 
-### 4.1 OCI environments and executor
+### 5.1 OCI environments and executor
 
 - [ ] Resolve OCI images exclusively by immutable digest and record the runtime,
       image configuration, userspace identity, and exact worker launches.
@@ -359,7 +508,7 @@ treat benchmark code as trusted input. See
 - [ ] Fail preflight or the attempt—according to when the deficiency becomes
       known—when a required control cannot be applied or observed continuously.
 
-### 4.2 Archival provenance and qualification
+### 5.2 Archival provenance and qualification
 
 - [ ] Record hardware, operating system, kernel, selected cores, memory,
       runtime, language, BLAS, thread settings, repository revision and dirty
@@ -379,12 +528,12 @@ treat benchmark code as trusted input. See
 
 ## Deferred work
 
-These items begin only after Gate 4. Their order remains deliberately unset
+These items begin only after Gate 5. Their order remains deliberately unset
 until the version-1 execution model is reliable.
 
-- [ ] Problem-defined evaluation, iteration, sample, and time budgets.
-- [ ] Streaming checkpoints, trajectories, and callback-based progress.
-- [ ] Julia SDK and Julia `Pkg` environments.
+- [ ] Adaptive or richer schedules for problem-defined scientific budgets.
+- [ ] Contracted checkpoint-state serialization and restoration.
+- [ ] Julia `Pkg` environments.
 - [ ] Conda environments shared across multiple language runners.
 - [ ] BenchExec or another stronger isolation backend.
 - [ ] SLURM and remote execution.
