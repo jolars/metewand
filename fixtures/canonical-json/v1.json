@@ -1,0 +1,117 @@
+{
+  "version": 1,
+  "accepted": [
+    {
+      "name": "literals, whitespace, and recursive object ordering",
+      "input": " { \"b\" : [true, null, {\"z\": 1, \"a\": 2}], \"a\" : false } ",
+      "canonical": "{\"a\":false,\"b\":[true,null,{\"a\":2,\"z\":1}]}"
+    },
+    {
+      "name": "safe integer boundaries",
+      "input": "{\"minimum\":-9007199254740991,\"maximum\":9007199254740991}",
+      "canonical": "{\"maximum\":9007199254740991,\"minimum\":-9007199254740991}"
+    },
+    {
+      "name": "equivalent number spellings and negative zero",
+      "input": "[1.0,1e3,-0,-0.0,0.000001,1e-7,333333333.33333329]",
+      "canonical": "[1,1000,0,0,0.000001,1e-7,333333333.3333333]"
+    },
+    {
+      "name": "smallest positive and negative binary64 values",
+      "input": "[5e-324,-5e-324]",
+      "canonical": "[5e-324,-5e-324]"
+    },
+    {
+      "name": "RFC 8785 binary64 formatting boundaries",
+      "input": "[9.999999999999997e-7,0.000001,333333333.3333332,333333333.33333325,333333333.3333333,333333333.3333334,333333333.33333343,-0.0000033333333333333333,1424953923781206.25]",
+      "canonical": "[9.999999999999997e-7,0.000001,333333333.3333332,333333333.33333325,333333333.3333333,333333333.3333334,333333333.33333343,-0.0000033333333333333333,1424953923781206.2]"
+    },
+    {
+      "name": "string escaping and Unicode scalar values",
+      "input": "{\"s\":\"€\\u000f\\n\\\"\\\\\",\"emoji\":\"😀\"}",
+      "canonical": "{\"emoji\":\"😀\",\"s\":\"€\\u000f\\n\\\"\\\\\"}"
+    },
+    {
+      "name": "RFC 8785 UTF-16 property ordering",
+      "input": "{\"\\u20ac\":\"Euro Sign\",\"\\r\":\"Carriage Return\",\"\\ufb33\":\"Hebrew Letter Dalet With Dagesh\",\"1\":\"One\",\"\\ud83d\\ude00\":\"Emoji: Grinning Face\",\"\\u0080\":\"Control\",\"\\u00f6\":\"Latin Small Letter O With Diaeresis\"}",
+      "canonical": "{\"\\r\":\"Carriage Return\",\"1\":\"One\",\"\":\"Control\",\"ö\":\"Latin Small Letter O With Diaeresis\",\"€\":\"Euro Sign\",\"😀\":\"Emoji: Grinning Face\",\"דּ\":\"Hebrew Letter Dalet With Dagesh\"}"
+    }
+  ],
+  "rejected": [
+    {
+      "name": "duplicate key",
+      "kind": "duplicate_key",
+      "input": "{\"a\":1,\"a\":2}"
+    },
+    {
+      "name": "duplicate key with an equivalent escape",
+      "kind": "duplicate_key",
+      "input": "{\"a\":1,\"\\u0061\":2}"
+    },
+    {
+      "name": "nested duplicate key",
+      "kind": "duplicate_key",
+      "input": "{\"outer\":{\"a\":1,\"a\":2}}"
+    },
+    {
+      "name": "integer above the safe range",
+      "kind": "unsafe_integer",
+      "input": "9007199254740992"
+    },
+    {
+      "name": "integer below the safe range",
+      "kind": "unsafe_integer",
+      "input": "-9007199254740992"
+    },
+    {
+      "name": "unsafe integral decimal",
+      "kind": "unsafe_integer",
+      "input": "9007199254740992.0"
+    },
+    {
+      "name": "unsafe integral exponent",
+      "kind": "unsafe_integer",
+      "input": "9.007199254740992e15"
+    },
+    {
+      "name": "large binary64 value that is numerically integral",
+      "kind": "unsafe_integer",
+      "input": "1.7976931348623157e308"
+    },
+    {
+      "name": "not a number",
+      "kind": "invalid_number",
+      "input": "NaN"
+    },
+    {
+      "name": "positive infinity",
+      "kind": "invalid_number",
+      "input": "Infinity"
+    },
+    {
+      "name": "negative infinity",
+      "kind": "invalid_number",
+      "input": "-Infinity"
+    },
+    {
+      "name": "binary64 overflow",
+      "kind": "invalid_number",
+      "input": "1e400"
+    },
+    {
+      "name": "leading zero",
+      "kind": "invalid_number",
+      "input": "01"
+    },
+    {
+      "name": "lone Unicode surrogate",
+      "kind": "invalid_unicode",
+      "input": "\"\\ud800\""
+    },
+    {
+      "name": "trailing JSON value",
+      "kind": "invalid_json",
+      "input": "null true"
+    }
+  ]
+}

@@ -27,6 +27,13 @@ runnable examples in `examples/`; and longer-form documentation in `docs/`.
 These directories are added only when they have real contents. Conformance
 fixtures are colocated with the contracts or components they exercise.
 
+## Compatibility contracts
+
+Metewand's [version-1 canonical JSON contract](docs/canonical-json.md) defines
+the language-neutral value domain and the exact bytes used for hashing and
+transport. All implementations share the corresponding
+[conformance vectors](fixtures/canonical-json/v1.json).
+
 ## Development
 
 The development environment pins Rust 1.98.0 and includes rustfmt, Clippy, and

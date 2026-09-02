@@ -36,10 +36,10 @@ environment provisioning, downloads, SDKs, or resume. See
 
 See [Schemas, canonical values, and identities](DESIGN.md#schemas-canonical-values-and-identities).
 
-- [ ] Write failing golden tests for the restricted JSON value domain: safe
+- [x] Write failing golden tests for the restricted JSON value domain: safe
       integers, finite binary64 values, normalized negative zero, Unicode scalar
       strings, and rejection of duplicate keys and invalid numbers.
-- [ ] Implement RFC 8785 canonicalization for that domain and use the exact
+- [x] Implement RFC 8785 canonicalization for that domain and use the exact
       canonical bytes for hashing and transport.
 - [ ] Add JSON Schema 2020-12 validation with explicit dialect declarations,
       repository-local external `$ref` resolution, and no network retrieval.
