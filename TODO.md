@@ -13,17 +13,17 @@ its tests and user-facing documentation are complete.
 See [Core architecture](DESIGN.md#3-core-architecture) and
 [Automation and agentic workflows](DESIGN.md#automation-and-agentic-workflows).
 
-- [ ] Enable the Rust toolchain in `devenv.nix`, including `rustfmt`, Clippy,
+- [x] Enable the Rust toolchain in `devenv.nix`, including `rustfmt`, Clippy,
       and the tools needed to build and test the workspace reproducibly.
-- [ ] Create the Cargo workspace with `metewand-cli`, `metewand-core`,
+- [x] Create the Cargo workspace with `metewand-cli`, `metewand-core`,
       `metewand-protocol`, and `metewand-runtime`; keep dependency directions
       explicit so protocol and core domain types do not depend on the CLI.
-- [ ] Establish repository conventions for schemas, fixtures, examples, SDKs,
+- [x] Establish repository conventions for schemas, fixtures, examples, SDKs,
       and documentation, creating directories only when their first contents
       are added.
-- [ ] Add baseline quality checks for formatting, warnings, unit tests, and
+- [x] Add baseline quality checks for formatting, warnings, unit tests, and
       integration tests, and make the same checks available through `devenv`.
-- [ ] Define the initial version constants for the manifest, public schemas,
+- [x] Define the initial version constants for the manifest, public schemas,
       wire protocol, identities, and execution semantics.
 
 ## 1. Gate 1: conformance kernel

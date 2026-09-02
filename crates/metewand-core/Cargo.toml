@@ -1,0 +1,11 @@
+[package]
+name = "metewand-core"
+description = "Core domain types, planning, scheduling, and run records for Metewand"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+readme.workspace = true
+publish.workspace = true
