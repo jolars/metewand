@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "metewand://schemas/v1/one-shot-observation-policy.schema.json",
+  "x-metewand-compatibility-version": 1,
+  "title": "Metewand one-shot observation policy",
+  "description": "The Gate 1 observation policy, which produces one result without a scientific budget.",
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "integer",
+      "const": 1
+    },
+    "kind": {
+      "type": "string",
+      "const": "one_shot"
+    }
+  },
+  "required": ["version", "kind"],
+  "additionalProperties": false
+}

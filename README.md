@@ -22,7 +22,7 @@ layers:
 Core and protocol are independent foundation crates. Runtime depends on both,
 and the CLI composes all three.
 
-Repository-level schemas will live in `schemas/`; language SDKs in `sdk/`;
+Repository-level schemas live in `schemas/`; language SDKs will live in `sdk/`;
 runnable examples in `examples/`; and longer-form documentation in `docs/`.
 These directories are added only when they have real contents. Conformance
 fixtures are colocated with the contracts or components they exercise.
@@ -38,6 +38,11 @@ Version 1 also defines [offline JSON Schema validation and parameter-default
 resolution](docs/schema-validation.md). Repository-relative references resolve
 only through an explicitly supplied schema catalog; validation never retrieves
 schemas from the filesystem or network.
+
+The [version-1 public schemas](docs/public-schemas.md) define the initial
+manifest, problem contract, one-shot policy, artifact and execution records,
+and strict envelopes for machine output, canonical results, and evaluator
+metrics. `metewand-core` embeds the checked-in documents for offline consumers.
 
 ## Development
 

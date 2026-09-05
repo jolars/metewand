@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "metewand://schemas/v1/observation.schema.json",
+  "x-metewand-compatibility-version": 1,
+  "title": "Metewand one-shot run observation",
+  "description": "An independently finalized canonical result and its evaluator-owned metrics.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "$ref": "common.schema.json#/$defs/schema_version"
+    },
+    "id": { "$ref": "common.schema.json#/$defs/identity" },
+    "slot_id": { "$ref": "common.schema.json#/$defs/identity" },
+    "attempt_id": { "$ref": "common.schema.json#/$defs/identity" },
+    "result": { "$ref": "common.schema.json#/$defs/artifact_reference" },
+    "metrics": { "$ref": "common.schema.json#/$defs/artifact_reference" },
+    "timing": {
+      "type": "object",
+      "properties": {
+        "primary_time": {
+          "type": "string",
+          "const": "timed_wall_time"
+        },
+        "timed_wall_time_ns": {
+          "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
+        },
+        "implementation_time_ns": {
+          "oneOf": [
+            { "$ref": "common.schema.json#/$defs/safe_nonnegative_integer" },
+            { "type": "null" }
+          ]
+        },
+        "evaluation_time_ns": {
+          "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
+        },
+        "cpu_time_ns": {
+          "oneOf": [
+            { "$ref": "common.schema.json#/$defs/safe_nonnegative_integer" },
+            { "type": "null" }
+          ]
+        },
+        "peak_rss_bytes": {
+          "oneOf": [
+            { "$ref": "common.schema.json#/$defs/safe_nonnegative_integer" },
+            { "type": "null" }
+          ]
+        }
+      },
+      "required": [
+        "primary_time",
+        "timed_wall_time_ns",
+        "implementation_time_ns",
+        "evaluation_time_ns",
+        "cpu_time_ns",
+        "peak_rss_bytes"
+      ],
+      "additionalProperties": false
+    },
+    "validity": {
+      "type": "object",
+      "properties": {
+        "valid": {
+          "type": "boolean",
+          "const": true
+        },
+        "completion": {
+          "type": "string",
+          "enum": ["not_required", "reached", "not_reached"]
+        }
+      },
+      "required": ["valid", "completion"],
+      "additionalProperties": false
+    },
+    "provenance": { "$ref": "common.schema.json#/$defs/provenance" }
+  },
+  "required": [
+    "schema_version",
+    "id",
+    "slot_id",
+    "attempt_id",
+    "result",
+    "metrics",
+    "timing",
+    "validity",
+    "provenance"
+  ],
+  "additionalProperties": false
+}

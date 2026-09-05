@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "metewand://schemas/v1/result-manifest.schema.json",
+  "x-metewand-compatibility-version": 1,
+  "title": "Metewand result manifest",
+  "description": "A strict Metewand envelope around problem-defined canonical result data.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "$ref": "common.schema.json#/$defs/schema_version"
+    },
+    "schema": {
+      "$ref": "common.schema.json#/$defs/schema_reference"
+    },
+    "data": { "type": "object" },
+    "files": {
+      "type": "array",
+      "items": { "$ref": "common.schema.json#/$defs/file" },
+      "uniqueItems": true
+    }
+  },
+  "required": ["schema_version", "schema", "data", "files"],
+  "additionalProperties": false
+}

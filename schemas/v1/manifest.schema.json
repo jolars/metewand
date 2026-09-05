@@ -1,0 +1,411 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "metewand://schemas/v1/manifest.schema.json",
+  "x-metewand-compatibility-version": 1,
+  "title": "Metewand benchmark manifest",
+  "description": "The initial typed manifest for deterministic one-shot benchmarks.",
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "integer",
+      "const": 1
+    },
+    "name": { "$ref": "common.schema.json#/$defs/name" },
+    "datasets": {
+      "type": "object",
+      "propertyNames": { "$ref": "common.schema.json#/$defs/name" },
+      "additionalProperties": { "$ref": "#/$defs/dataset" }
+    },
+    "problems": {
+      "type": "object",
+      "propertyNames": { "$ref": "common.schema.json#/$defs/name" },
+      "additionalProperties": { "$ref": "#/$defs/problem" }
+    },
+    "implementations": {
+      "type": "object",
+      "propertyNames": { "$ref": "common.schema.json#/$defs/name" },
+      "additionalProperties": { "$ref": "#/$defs/implementation" }
+    },
+    "environments": {
+      "type": "object",
+      "propertyNames": { "$ref": "common.schema.json#/$defs/name" },
+      "additionalProperties": { "$ref": "#/$defs/environment" }
+    },
+    "experiments": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/experiment" }
+    },
+    "execution_policies": {
+      "type": "object",
+      "propertyNames": { "$ref": "common.schema.json#/$defs/name" },
+      "additionalProperties": { "$ref": "#/$defs/execution_policy" }
+    },
+    "observation_policies": {
+      "type": "object",
+      "propertyNames": { "$ref": "common.schema.json#/$defs/name" },
+      "additionalProperties": {
+        "$ref": "one-shot-observation-policy.schema.json"
+      }
+    }
+  },
+  "required": ["version", "name"],
+  "additionalProperties": false,
+  "$defs": {
+    "source_bundle": {
+      "type": "array",
+      "items": { "$ref": "common.schema.json#/$defs/repository_path" },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "remote_source": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string",
+          "format": "uri"
+        },
+        "sha256": { "$ref": "common.schema.json#/$defs/sha256" }
+      },
+      "required": ["url", "sha256"],
+      "additionalProperties": false
+    },
+    "interpreted_launch": {
+      "type": "object",
+      "properties": {
+        "runner": {
+          "type": "string",
+          "enum": ["python", "r", "julia"]
+        },
+        "entrypoint": { "$ref": "common.schema.json#/$defs/repository_path" },
+        "args": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "sources": { "$ref": "#/$defs/source_bundle" },
+        "environment": { "$ref": "common.schema.json#/$defs/name" },
+        "protocol_transport": {
+          "type": "string",
+          "enum": ["pipes", "stdio"]
+        }
+      },
+      "required": ["runner", "entrypoint", "sources", "environment"]
+    },
+    "command_launch": {
+      "type": "object",
+      "properties": {
+        "runner": {
+          "type": "string",
+          "const": "command"
+        },
+        "program": {
+          "type": "string",
+          "minLength": 1
+        },
+        "args": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "sources": { "$ref": "#/$defs/source_bundle" },
+        "environment": { "$ref": "common.schema.json#/$defs/name" },
+        "protocol_transport": {
+          "type": "string",
+          "enum": ["pipes", "stdio"]
+        }
+      },
+      "required": ["runner", "program", "environment"]
+    },
+    "worker": {
+      "oneOf": [
+        {
+          "allOf": [
+            { "$ref": "#/$defs/interpreted_launch" }
+          ],
+          "unevaluatedProperties": false
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/command_launch" }
+          ],
+          "unevaluatedProperties": false
+        }
+      ]
+    },
+    "dataset_base": {
+      "type": "object",
+      "properties": {
+        "parameter_schema": { "$ref": "common.schema.json#/$defs/schema_reference" },
+        "parameter_defaults": { "type": "object" },
+        "output_schema": { "$ref": "common.schema.json#/$defs/schema_reference" },
+        "source": { "$ref": "#/$defs/remote_source" }
+      },
+      "required": ["output_schema"]
+    },
+    "fixed_dataset": {
+      "type": "object",
+      "properties": {
+        "output_schema": { "$ref": "common.schema.json#/$defs/schema_reference" },
+        "sources": { "$ref": "#/$defs/source_bundle" }
+      },
+      "required": ["output_schema", "sources"],
+      "additionalProperties": false
+    },
+    "interpreted_dataset": {
+      "allOf": [
+        { "$ref": "#/$defs/dataset_base" },
+        { "$ref": "#/$defs/interpreted_launch" }
+      ],
+      "unevaluatedProperties": false
+    },
+    "command_dataset": {
+      "allOf": [
+        { "$ref": "#/$defs/dataset_base" },
+        { "$ref": "#/$defs/command_launch" }
+      ],
+      "unevaluatedProperties": false
+    },
+    "dataset": {
+      "oneOf": [
+        { "$ref": "#/$defs/fixed_dataset" },
+        { "$ref": "#/$defs/interpreted_dataset" },
+        { "$ref": "#/$defs/command_dataset" }
+      ]
+    },
+    "problem": {
+      "type": "object",
+      "properties": {
+        "contract": { "$ref": "common.schema.json#/$defs/repository_path" },
+        "parameter_defaults": { "type": "object" },
+        "evaluator": { "$ref": "#/$defs/worker" }
+      },
+      "required": ["contract", "evaluator"],
+      "additionalProperties": false
+    },
+    "implementation_base": {
+      "type": "object",
+      "properties": {
+        "problem_contracts": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/name" },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "parameter_schema": { "$ref": "common.schema.json#/$defs/schema_reference" },
+        "parameter_defaults": { "type": "object" },
+        "capabilities": {
+          "type": "array",
+          "const": ["one_shot"]
+        }
+      },
+      "required": ["problem_contracts", "capabilities"]
+    },
+    "interpreted_implementation": {
+      "allOf": [
+        { "$ref": "#/$defs/implementation_base" },
+        { "$ref": "#/$defs/interpreted_launch" }
+      ],
+      "unevaluatedProperties": false
+    },
+    "command_implementation": {
+      "allOf": [
+        { "$ref": "#/$defs/implementation_base" },
+        { "$ref": "#/$defs/command_launch" }
+      ],
+      "unevaluatedProperties": false
+    },
+    "implementation": {
+      "oneOf": [
+        { "$ref": "#/$defs/interpreted_implementation" },
+        { "$ref": "#/$defs/command_implementation" }
+      ]
+    },
+    "environment": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": { "type": "string", "const": "local" }
+          },
+          "required": ["kind"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": { "type": "string", "const": "uv" },
+            "project": { "$ref": "common.schema.json#/$defs/repository_root_path" },
+            "lockfile": { "$ref": "common.schema.json#/$defs/repository_path" }
+          },
+          "required": ["kind", "project", "lockfile"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": { "type": "string", "const": "renv" },
+            "project": { "$ref": "common.schema.json#/$defs/repository_root_path" },
+            "lockfile": { "$ref": "common.schema.json#/$defs/repository_path" }
+          },
+          "required": ["kind", "project", "lockfile"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": { "type": "string", "const": "nix" },
+            "flake": { "$ref": "common.schema.json#/$defs/repository_root_path" },
+            "installable": { "type": "string", "minLength": 1 },
+            "system": { "type": "string", "minLength": 1 },
+            "output_kind": {
+              "type": "string",
+              "enum": ["package", "app"]
+            },
+            "output": { "type": "string", "minLength": 1 }
+          },
+          "required": [
+            "kind",
+            "flake",
+            "installable",
+            "system",
+            "output_kind",
+            "output"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": { "type": "string", "const": "oci" },
+            "image": {
+              "type": "string",
+              "pattern": "@sha256:[0-9a-f]{64}$"
+            }
+          },
+          "required": ["kind", "image"],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "parameter_axis": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": { "value": {} },
+          "required": ["value"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "grid": {
+              "type": "array",
+              "minItems": 1
+            }
+          },
+          "required": ["grid"],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "parameter_axes": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/parameter_axis" }
+    },
+    "named_parameter_axes": {
+      "type": "object",
+      "propertyNames": { "$ref": "common.schema.json#/$defs/name" },
+      "additionalProperties": { "$ref": "#/$defs/parameter_axes" }
+    },
+    "case": {
+      "type": "object",
+      "properties": {
+        "name": { "$ref": "common.schema.json#/$defs/name" },
+        "dataset_parameters": { "$ref": "#/$defs/named_parameter_axes" },
+        "problem_parameters": { "$ref": "#/$defs/parameter_axes" },
+        "implementation_parameters": { "$ref": "#/$defs/named_parameter_axes" }
+      },
+      "required": ["name"],
+      "additionalProperties": false
+    },
+    "experiment": {
+      "type": "object",
+      "properties": {
+        "name": { "$ref": "common.schema.json#/$defs/name" },
+        "problem": { "$ref": "common.schema.json#/$defs/name" },
+        "datasets": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/name" },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "implementations": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/name" },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "execution_policy": { "$ref": "common.schema.json#/$defs/name" },
+        "observation_policy": { "$ref": "common.schema.json#/$defs/name" },
+        "implementation_repetitions": {
+          "$ref": "common.schema.json#/$defs/safe_positive_integer"
+        },
+        "measurement_repetitions": {
+          "$ref": "common.schema.json#/$defs/safe_positive_integer"
+        },
+        "seed": { "$ref": "common.schema.json#/$defs/safe_nonnegative_integer" },
+        "dataset_parameters": { "$ref": "#/$defs/named_parameter_axes" },
+        "problem_parameters": { "$ref": "#/$defs/parameter_axes" },
+        "implementation_parameters": { "$ref": "#/$defs/named_parameter_axes" },
+        "cases": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/case" },
+          "minItems": 1
+        }
+      },
+      "required": [
+        "name",
+        "problem",
+        "implementations",
+        "execution_policy",
+        "observation_policy",
+        "implementation_repetitions",
+        "measurement_repetitions",
+        "seed"
+      ],
+      "additionalProperties": false
+    },
+    "execution_policy": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "type": "integer",
+          "const": 1
+        },
+        "cpus": { "$ref": "common.schema.json#/$defs/safe_positive_integer" },
+        "threads": { "$ref": "common.schema.json#/$defs/safe_positive_integer" },
+        "memory": { "type": "string", "minLength": 1 },
+        "network": { "type": "boolean" },
+        "worker_reuse": { "type": "boolean" },
+        "warmup_runs": { "$ref": "common.schema.json#/$defs/safe_nonnegative_integer" },
+        "timeout": { "type": "string", "minLength": 1 },
+        "timing_scope": {
+          "type": "string",
+          "enum": ["cold_end_to_end", "prepare_and_execute", "execute_only"]
+        },
+        "primary_time": {
+          "type": "string",
+          "enum": ["timed_wall_time", "cpu_time"]
+        },
+        "run_order": {
+          "type": "string",
+          "enum": ["sequential", "randomized"]
+        },
+        "enforcement": {
+          "type": "string",
+          "enum": ["best_effort", "required"]
+        }
+      },
+      "required": ["version"],
+      "additionalProperties": false
+    }
+  }
+}

@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "metewand://schemas/v1/attempt.schema.json",
+  "x-metewand-compatibility-version": 1,
+  "title": "Metewand one-shot run attempt",
+  "description": "A terminal execution attempt that retains its outcome and finalized observations.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "$ref": "common.schema.json#/$defs/schema_version"
+    },
+    "id": { "$ref": "common.schema.json#/$defs/identity" },
+    "slot_id": { "$ref": "common.schema.json#/$defs/identity" },
+    "retry_index": {
+      "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
+    },
+    "outcome": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "accepted"
+            }
+          },
+          "required": ["kind"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "failed"
+            },
+            "diagnostic": { "$ref": "common.schema.json#/$defs/diagnostic" }
+          },
+          "required": ["kind", "diagnostic"],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "observations": {
+      "type": "array",
+      "items": { "$ref": "common.schema.json#/$defs/identity" },
+      "uniqueItems": true
+    },
+    "started_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "finished_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "provenance": { "$ref": "common.schema.json#/$defs/provenance" }
+  },
+  "required": [
+    "schema_version",
+    "id",
+    "slot_id",
+    "retry_index",
+    "outcome",
+    "observations",
+    "started_at",
+    "finished_at",
+    "provenance"
+  ],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "outcome": {
+            "properties": { "kind": { "const": "accepted" } },
+            "required": ["kind"]
+          }
+        },
+        "required": ["outcome"]
+      },
+      "then": {
+        "properties": {
+          "observations": { "minItems": 1 }
+        }
+      }
+    }
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "metewand://schemas/v1/artifact-manifest.schema.json",
+  "x-metewand-compatibility-version": 1,
+  "title": "Metewand artifact manifest",
+  "description": "A hash-complete inventory written last when an immutable artifact is finalized.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "$ref": "common.schema.json#/$defs/schema_version"
+    },
+    "complete": {
+      "type": "boolean",
+      "const": true
+    },
+    "files": {
+      "type": "array",
+      "items": { "$ref": "common.schema.json#/$defs/file" },
+      "uniqueItems": true
+    }
+  },
+  "required": ["schema_version", "complete", "files"],
+  "additionalProperties": false
+}

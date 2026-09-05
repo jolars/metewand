@@ -46,7 +46,7 @@ See [Schemas, canonical values, and identities](DESIGN.md#schemas-canonical-valu
 - [x] Implement recursive `parameter_defaults` merging before validation;
       preserve literal arrays, tables, and `null`, and never apply JSON Schema
       `default` annotations.
-- [ ] Publish versioned schemas for machine output and the initial manifest,
+- [x] Publish versioned schemas for machine output and the initial manifest,
       contract, one-shot observation policy, artifact-manifest,
       result-manifest, observation, attempt, and metrics envelopes.
 

@@ -2,6 +2,7 @@
 
 pub mod canonical;
 pub mod parameters;
+pub mod public_schemas;
 pub mod schema;
 
 /// Version of the typed Metewand manifest format.

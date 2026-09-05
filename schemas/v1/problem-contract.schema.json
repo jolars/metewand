@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "metewand://schemas/v1/problem-contract.schema.json",
+  "x-metewand-compatibility-version": 1,
+  "title": "Metewand problem contract",
+  "description": "The common, language-neutral envelope for a version-1 problem and its family-specific semantics.",
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "integer",
+      "const": 1
+    },
+    "name": { "$ref": "common.schema.json#/$defs/name" },
+    "family": { "$ref": "common.schema.json#/$defs/name" },
+    "parameter_schema": {
+      "$ref": "common.schema.json#/$defs/schema_reference"
+    },
+    "dataset_schemas": {
+      "type": "array",
+      "items": { "$ref": "common.schema.json#/$defs/schema_reference" },
+      "uniqueItems": true
+    },
+    "result_schema": {
+      "$ref": "common.schema.json#/$defs/schema_reference"
+    },
+    "metric_schema": {
+      "$ref": "common.schema.json#/$defs/schema_reference"
+    },
+    "semantics_schema": {
+      "$ref": "common.schema.json#/$defs/schema_reference"
+    },
+    "allowed_timing_scopes": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["cold_end_to_end", "prepare_and_execute", "execute_only"]
+      },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "supported_budgets": {
+      "type": "array",
+      "const": ["none"]
+    },
+    "semantics": {
+      "type": "object"
+    },
+    "reference_cases": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/reference_case" },
+      "minItems": 1
+    }
+  },
+  "required": [
+    "version",
+    "name",
+    "family",
+    "parameter_schema",
+    "dataset_schemas",
+    "result_schema",
+    "metric_schema",
+    "semantics_schema",
+    "allowed_timing_scopes",
+    "supported_budgets",
+    "semantics",
+    "reference_cases"
+  ],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "dataset_schemas": { "maxItems": 0 }
+        },
+        "required": ["dataset_schemas"]
+      },
+      "then": {
+        "properties": {
+          "reference_cases": {
+            "items": { "not": { "required": ["dataset"] } }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "reference_cases": {
+            "items": { "required": ["dataset"] }
+          }
+        }
+      }
+    }
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "reference_case": {
+      "type": "object",
+      "properties": {
+        "dataset": { "$ref": "common.schema.json#/$defs/repository_path" },
+        "result": { "$ref": "common.schema.json#/$defs/repository_path" },
+        "expected_metrics": {
+          "$ref": "common.schema.json#/$defs/repository_path"
+        }
+      },
+      "required": ["result", "expected_metrics"],
+      "additionalProperties": false
+    }
+  }
+}

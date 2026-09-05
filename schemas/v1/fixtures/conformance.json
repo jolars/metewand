@@ -1,0 +1,561 @@
+{
+  "version": 1,
+  "valid": [
+    {
+      "name": "machine result with command-owned data",
+      "schema": "machine-output",
+      "instance": {
+        "schema_version": 1,
+        "kind": "result",
+        "data": { "candidate_count": 3 }
+      }
+    },
+    {
+      "name": "structured machine diagnostic",
+      "schema": "machine-output",
+      "instance": {
+        "schema_version": 1,
+        "kind": "diagnostic",
+        "data": {
+          "code": "invalid_manifest",
+          "message": "The manifest is invalid.",
+          "source_span": {
+            "path": "metewand.toml",
+            "line": 4,
+            "column": 1,
+            "end_line": 4,
+            "end_column": 12
+          },
+          "remediation": "Correct the selected problem name."
+        }
+      }
+    },
+    {
+      "name": "minimal authoring manifest",
+      "schema": "manifest",
+      "instance": {
+        "version": 1,
+        "name": "empty-benchmark"
+      }
+    },
+    {
+      "name": "complete one-shot benchmark manifest",
+      "schema": "manifest",
+      "instance": {
+        "version": 1,
+        "name": "lasso-comparison",
+        "datasets": {
+          "fixed": {
+            "output_schema": "schemas/regression-dataset.json",
+            "sources": ["datasets/fixed/**"]
+          },
+          "generated": {
+            "parameter_schema": "schemas/generated-parameters.json",
+            "parameter_defaults": { "standardize": true },
+            "output_schema": "schemas/regression-dataset.json",
+            "runner": "python",
+            "entrypoint": "datasets/generate.py",
+            "sources": ["datasets/generate.py"],
+            "environment": "python",
+            "source": {
+              "url": "https://example.org/source.tar.zst",
+              "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            }
+          }
+        },
+        "problems": {
+          "lasso": {
+            "contract": "problems/lasso.toml",
+            "parameter_defaults": { "fit_intercept": true },
+            "evaluator": {
+              "runner": "python",
+              "entrypoint": "problems/lasso.py",
+              "sources": ["problems/lasso.py"],
+              "environment": "python"
+            }
+          }
+        },
+        "implementations": {
+          "native": {
+            "runner": "command",
+            "program": "bin/native-lasso",
+            "args": ["--metewand-worker"],
+            "environment": "native",
+            "problem_contracts": ["lasso"],
+            "capabilities": ["one_shot"]
+          },
+          "sklearn": {
+            "runner": "python",
+            "entrypoint": "implementations/sklearn.py",
+            "sources": ["implementations/sklearn.py"],
+            "environment": "python",
+            "problem_contracts": ["lasso"],
+            "parameter_schema": "schemas/sklearn-parameters.json",
+            "parameter_defaults": { "selection": "cyclic" },
+            "capabilities": ["one_shot"]
+          }
+        },
+        "environments": {
+          "local": { "kind": "local" },
+          "python": {
+            "kind": "uv",
+            "project": "environments/python",
+            "lockfile": "environments/python/uv.lock"
+          },
+          "native": {
+            "kind": "nix",
+            "flake": ".",
+            "installable": ".#native-lasso",
+            "system": "x86_64-linux",
+            "output_kind": "package",
+            "output": "out"
+          }
+        },
+        "experiments": [
+          {
+            "name": "main",
+            "problem": "lasso",
+            "datasets": ["fixed", "generated"],
+            "implementations": ["native", "sklearn"],
+            "execution_policy": "controlled",
+            "observation_policy": "final",
+            "implementation_repetitions": 5,
+            "measurement_repetitions": 2,
+            "seed": 2025,
+            "dataset_parameters": {
+              "generated": {
+                "fold": { "grid": [1, 2, 3] },
+                "columns": { "value": ["x", "y"] }
+              }
+            },
+            "problem_parameters": {
+              "lambda": { "grid": [0.001, 0.01, 0.1] }
+            },
+            "implementation_parameters": {
+              "sklearn": {
+                "tolerance": { "value": 1e-7 }
+              }
+            },
+            "cases": [
+              {
+                "name": "intercept",
+                "problem_parameters": {
+                  "fit_intercept": { "value": true }
+                }
+              }
+            ]
+          }
+        ],
+        "execution_policies": {
+          "controlled": {
+            "version": 1,
+            "cpus": 1,
+            "threads": 1,
+            "memory": "8 GiB",
+            "network": false,
+            "worker_reuse": false,
+            "warmup_runs": 0,
+            "timeout": "10 min",
+            "timing_scope": "prepare_and_execute",
+            "primary_time": "timed_wall_time",
+            "run_order": "randomized",
+            "enforcement": "best_effort"
+          }
+        },
+        "observation_policies": {
+          "final": {
+            "version": 1,
+            "kind": "one_shot"
+          }
+        }
+      }
+    },
+    {
+      "name": "dataset problem contract",
+      "schema": "problem-contract",
+      "instance": {
+        "version": 1,
+        "name": "lasso",
+        "family": "optimization",
+        "parameter_schema": "schemas/lasso-problem-parameters.json",
+        "dataset_schemas": ["schemas/regression-dataset.json"],
+        "result_schema": "schemas/lasso-result.json",
+        "metric_schema": "schemas/lasso-metrics.json",
+        "semantics_schema": "schemas/lasso-semantics.json",
+        "allowed_timing_scopes": ["cold_end_to_end", "prepare_and_execute"],
+        "supported_budgets": ["none"],
+        "semantics": {
+          "objective": { "family": "least_squares_l1" },
+          "validity": { "nonfinite": "reject" }
+        },
+        "reference_cases": [
+          {
+            "dataset": "problems/fixtures/lasso-small/dataset",
+            "result": "problems/fixtures/lasso-small/result",
+            "expected_metrics": "problems/fixtures/lasso-small/metrics.json"
+          }
+        ]
+      }
+    },
+    {
+      "name": "dataset-free problem contract",
+      "schema": "problem-contract",
+      "instance": {
+        "version": 1,
+        "name": "pi",
+        "family": "numerical-integration",
+        "parameter_schema": "schemas/pi-parameters.json",
+        "dataset_schemas": [],
+        "result_schema": "schemas/pi-result.json",
+        "metric_schema": "schemas/pi-metrics.json",
+        "semantics_schema": "schemas/pi-semantics.json",
+        "allowed_timing_scopes": ["prepare_and_execute"],
+        "supported_budgets": ["none"],
+        "semantics": { "integrand": "unit-circle" },
+        "reference_cases": [
+          {
+            "result": "problems/fixtures/pi/result",
+            "expected_metrics": "problems/fixtures/pi/metrics.json"
+          }
+        ]
+      }
+    },
+    {
+      "name": "one-shot observation policy",
+      "schema": "one-shot-observation-policy",
+      "instance": { "version": 1, "kind": "one_shot" }
+    },
+    {
+      "name": "completed artifact manifest",
+      "schema": "artifact-manifest",
+      "instance": {
+        "schema_version": 1,
+        "complete": true,
+        "files": [
+          {
+            "path": "arrays/coefficients.f64",
+            "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "size_bytes": 24,
+            "media_type": "application/octet-stream",
+            "representation": {
+              "shape": [3],
+              "data_type": "float64",
+              "byte_order": "little"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "result envelope with nested scientific data",
+      "schema": "result-manifest",
+      "instance": {
+        "schema_version": 1,
+        "schema": "schemas/lasso-result.json",
+        "data": {
+          "coefficients": "arrays/coefficients.f64",
+          "intercept": 0.5
+        },
+        "files": [
+          {
+            "path": "arrays/coefficients.f64",
+            "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "size_bytes": 24,
+            "media_type": "application/octet-stream"
+          }
+        ]
+      }
+    },
+    {
+      "name": "metrics envelope with nested evaluator data",
+      "schema": "metrics",
+      "instance": {
+        "schema_version": 1,
+        "schema": "schemas/lasso-metrics.json",
+        "data": {
+          "objective": 12.5,
+          "maximum_kkt_violation": 1e-9
+        }
+      }
+    },
+    {
+      "name": "valid finalized observation",
+      "schema": "observation",
+      "instance": {
+        "schema_version": 1,
+        "id": "mw1-observation-cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "slot_id": "mw1-observation-slot-dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "attempt_id": "mw1-attempt-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "result": {
+          "id": "mw1-artifact-ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+          "path": "result/result.json",
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        "metrics": {
+          "id": "mw1-artifact-1111111111111111111111111111111111111111111111111111111111111111",
+          "path": "metrics.json",
+          "sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+        },
+        "timing": {
+          "primary_time": "timed_wall_time",
+          "timed_wall_time_ns": 18342011,
+          "implementation_time_ns": 17000000,
+          "evaluation_time_ns": 150000,
+          "cpu_time_ns": null,
+          "peak_rss_bytes": null
+        },
+        "validity": {
+          "valid": true,
+          "completion": "reached"
+        },
+        "provenance": {
+          "tool_version": "0.1.0",
+          "wire_protocol_version": 1,
+          "execution_semantics_version": 1,
+          "data": { "executor": "local" }
+        }
+      }
+    },
+    {
+      "name": "accepted one-shot attempt",
+      "schema": "attempt",
+      "instance": {
+        "schema_version": 1,
+        "id": "mw1-attempt-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "slot_id": "mw1-attempt-slot-2222222222222222222222222222222222222222222222222222222222222222",
+        "retry_index": 0,
+        "outcome": { "kind": "accepted" },
+        "observations": [
+          "mw1-observation-cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        ],
+        "started_at": "2026-09-05T10:00:00Z",
+        "finished_at": "2026-09-05T10:00:01Z",
+        "provenance": {
+          "tool_version": "0.1.0",
+          "wire_protocol_version": 1,
+          "execution_semantics_version": 1,
+          "data": { "machine": "fixture" }
+        }
+      }
+    },
+    {
+      "name": "failed one-shot attempt without observations",
+      "schema": "attempt",
+      "instance": {
+        "schema_version": 1,
+        "id": "mw1-attempt-3333333333333333333333333333333333333333333333333333333333333333",
+        "slot_id": "mw1-attempt-slot-2222222222222222222222222222222222222222222222222222222222222222",
+        "retry_index": 1,
+        "outcome": {
+          "kind": "failed",
+          "diagnostic": {
+            "code": "worker_crash",
+            "message": "The worker exited before replying."
+          }
+        },
+        "observations": [],
+        "started_at": "2026-09-05T10:00:00Z",
+        "finished_at": "2026-09-05T10:00:01Z",
+        "provenance": {
+          "tool_version": "0.1.0",
+          "wire_protocol_version": 1,
+          "execution_semantics_version": 1,
+          "data": {}
+        }
+      }
+    }
+  ],
+  "invalid": [
+    {
+      "name": "machine output rejects unknown envelope fields",
+      "schema": "machine-output",
+      "instance": {
+        "schema_version": 1,
+        "kind": "result",
+        "data": {},
+        "unexpected": true
+      }
+    },
+    {
+      "name": "diagnostic output requires a structured diagnostic",
+      "schema": "machine-output",
+      "instance": {
+        "schema_version": 1,
+        "kind": "diagnostic",
+        "data": { "message": "Missing a code." }
+      }
+    },
+    {
+      "name": "manifest rejects an unsupported version",
+      "schema": "manifest",
+      "instance": { "version": 2, "name": "future" }
+    },
+    {
+      "name": "manifest rejects profile policies in Gate 1",
+      "schema": "manifest",
+      "instance": {
+        "version": 1,
+        "name": "profile",
+        "observation_policies": {
+          "curve": { "version": 1, "kind": "profile" }
+        }
+      }
+    },
+    {
+      "name": "manifest rejects applicability capabilities in Gate 1",
+      "schema": "manifest",
+      "instance": {
+        "version": 1,
+        "name": "applicability",
+        "implementations": {
+          "worker": {
+            "runner": "command",
+            "program": "worker",
+            "environment": "local",
+            "problem_contracts": ["problem"],
+            "capabilities": ["one_shot", "applicability"]
+          }
+        }
+      }
+    },
+    {
+      "name": "dataset contracts require datasets in reference cases",
+      "schema": "problem-contract",
+      "instance": {
+        "version": 1,
+        "name": "lasso",
+        "family": "optimization",
+        "parameter_schema": "schemas/parameters.json",
+        "dataset_schemas": ["schemas/dataset.json"],
+        "result_schema": "schemas/result.json",
+        "metric_schema": "schemas/metrics.json",
+        "semantics_schema": "schemas/semantics.json",
+        "allowed_timing_scopes": ["prepare_and_execute"],
+        "supported_budgets": ["none"],
+        "semantics": {},
+        "reference_cases": [
+          {
+            "result": "fixtures/result",
+            "expected_metrics": "fixtures/metrics.json"
+          }
+        ]
+      }
+    },
+    {
+      "name": "problem contracts reject scientific budgets in Gate 1",
+      "schema": "problem-contract",
+      "instance": {
+        "version": 1,
+        "name": "lasso",
+        "family": "optimization",
+        "parameter_schema": "schemas/parameters.json",
+        "dataset_schemas": [],
+        "result_schema": "schemas/result.json",
+        "metric_schema": "schemas/metrics.json",
+        "semantics_schema": "schemas/semantics.json",
+        "allowed_timing_scopes": ["prepare_and_execute"],
+        "supported_budgets": ["iterations"],
+        "semantics": {},
+        "reference_cases": [
+          {
+            "result": "fixtures/result",
+            "expected_metrics": "fixtures/metrics.json"
+          }
+        ]
+      }
+    },
+    {
+      "name": "one-shot policies reject budget fields",
+      "schema": "one-shot-observation-policy",
+      "instance": {
+        "version": 1,
+        "kind": "one_shot",
+        "budget": { "iterations": 10 }
+      }
+    },
+    {
+      "name": "artifact manifests require lowercase hashes",
+      "schema": "artifact-manifest",
+      "instance": {
+        "schema_version": 1,
+        "complete": true,
+        "files": [
+          {
+            "path": "result.json",
+            "sha256": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            "size_bytes": 2,
+            "media_type": "application/json"
+          }
+        ]
+      }
+    },
+    {
+      "name": "result manifests reject flat scientific fields",
+      "schema": "result-manifest",
+      "instance": {
+        "schema_version": 1,
+        "schema": "schemas/result.json",
+        "data": {},
+        "files": [],
+        "objective": 1.0
+      }
+    },
+    {
+      "name": "metrics envelopes reject flat scientific fields",
+      "schema": "metrics",
+      "instance": {
+        "schema_version": 1,
+        "schema": "schemas/metrics.json",
+        "data": {},
+        "objective": 1.0
+      }
+    },
+    {
+      "name": "result scientific data must be an object",
+      "schema": "result-manifest",
+      "instance": {
+        "schema_version": 1,
+        "schema": "schemas/result.json",
+        "data": [1, 2, 3],
+        "files": []
+      }
+    },
+    {
+      "name": "metric scientific data must be an object",
+      "schema": "metrics",
+      "instance": {
+        "schema_version": 1,
+        "schema": "schemas/metrics.json",
+        "data": [1, 2, 3]
+      }
+    },
+    {
+      "name": "observations require timing records",
+      "schema": "observation",
+      "instance": {
+        "schema_version": 1,
+        "id": "mw1-observation-cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      }
+    },
+    {
+      "name": "accepted attempts require an observation",
+      "schema": "attempt",
+      "instance": {
+        "schema_version": 1,
+        "id": "mw1-attempt-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "slot_id": "mw1-attempt-slot-2222222222222222222222222222222222222222222222222222222222222222",
+        "retry_index": 0,
+        "outcome": { "kind": "accepted" },
+        "observations": [],
+        "started_at": "2026-09-05T10:00:00Z",
+        "finished_at": "2026-09-05T10:00:01Z",
+        "provenance": {
+          "tool_version": "0.1.0",
+          "wire_protocol_version": 1,
+          "execution_semantics_version": 1,
+          "data": {}
+        }
+      }
+    }
+  ]
+}
