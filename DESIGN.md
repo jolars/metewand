@@ -515,6 +515,39 @@ implementation-replication block therefore receive the same numeric seed,
 although Metewand does not claim that different random-number generators produce
 paired random streams.
 
+The role is exactly `dataset`, `implementation`, or `scheduling`. The canonical
+seed fields are the following restricted-domain JSON objects; identity values
+use their complete typed `mw1-<kind>-<sha256>` spelling, and
+`dataset_parameters` embeds the already resolved canonical value.
+
+```text
+dataset = {
+  "dataset_definition": <dataset-definition identity>,
+  "dataset_parameters": <resolved canonical parameters>,
+  "experiment_seed": <safe integer>
+}
+
+implementation = {
+  "dataset_configuration": <dataset-configuration identity>,
+  "experiment_seed": <safe integer>,
+  "implementation_repetition": <safe integer>,
+  "problem_configuration": <problem-configuration identity>
+}
+
+scheduling = {
+  "benchmark_name": <name>,
+  "experiment_name": <name>,
+  "experiment_seed": <safe integer>,
+  "scheduling_policy_version": <safe integer>
+}
+```
+
+`SEED_DERIVATION_VERSION` and `SCHEDULING_POLICY_VERSION` are both `1`. The
+former selects the `metewand-seed-v1` transcript; the latter is an explicit
+scheduling-seed field. Interpreting the digest as a big-endian bit string, the
+exposed value is bits 0 through 52, equivalently the leading big-endian `u64`
+shifted right by 11.
+
 `implementation_repetitions` creates distinct logical run specifications by
 varying the implementation seed. `measurement_repetitions` repeats the selected
 observation policy for the same logical specification and seed. Each one-shot

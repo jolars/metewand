@@ -65,6 +65,12 @@ The Gate 1 [domain-record graph](docs/domain-records.md) separates definitions,
 configurations, logical plans, resolved execution dependencies, observations,
 and attempts. Its [version-1 typed identities](docs/identities.md) hash explicit
 canonical representations and encode dependencies as typed IDs.
+The [whole-manifest hash](docs/manifest-hashing.md) instead binds the complete,
+defaulted, path-normalized, and name-resolved typed manifest without becoming a
+dependency of unrelated component identities.
+The [seed-derivation contract](docs/seeds.md) produces independently domain-
+separated dataset, implementation, and scheduling seeds while retaining each
+complete derivation digest.
 
 ## Development
 

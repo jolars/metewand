@@ -85,10 +85,10 @@ and [Main domain types](DESIGN.md#main-domain-types).
       representations, with dependencies represented by their typed identities.
 - [x] Implement normalized local-tree hashing over paths, entry types, bytes,
       link targets, and relevant executable bits.
-- [ ] Implement the whole-manifest hash after defaults, path normalization, and
+- [x] Implement the whole-manifest hash after defaults, path normalization, and
       name resolution without making it a dependency of unrelated component
       identities.
-- [ ] Implement dataset, implementation, and scheduling seed derivation exactly
+- [x] Implement dataset, implementation, and scheduling seed derivation exactly
       as specified, recording both the exposed 53-bit value and full digest.
 - [ ] Add golden and metamorphic tests showing that ordering and irrelevant
       manifest additions preserve identities, while every transitive dependency

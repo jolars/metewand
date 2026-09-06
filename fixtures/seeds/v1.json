@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "domain": "metewand-seed-v1",
+  "dataset": [
+    {
+      "name": "generated normal dataset",
+      "experiment_seed": 42,
+      "dataset_definition": "mw1-dataset-definition-0000000000000000000000000000000000000000000000000000000000000001",
+      "dataset_parameters": {
+        "nested": { "z": [true, null], "a": -0.0 },
+        "n": 1000,
+        "distribution": "normal"
+      },
+      "canonical_fields": "{\"dataset_definition\":\"mw1-dataset-definition-0000000000000000000000000000000000000000000000000000000000000001\",\"dataset_parameters\":{\"distribution\":\"normal\",\"n\":1000,\"nested\":{\"a\":0,\"z\":[true,null]}},\"experiment_seed\":42}",
+      "digest": "ac5c64ec10692e06a164b5ed34f61baf1d82bbf5ed33a3c82daefed854d29516",
+      "value": 6064410565152037
+    }
+  ],
+  "implementation": [
+    {
+      "name": "third implementation replication",
+      "experiment_seed": 42,
+      "dataset_configuration": "mw1-dataset-configuration-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "problem_configuration": "mw1-problem-configuration-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "implementation_repetition": 3,
+      "canonical_fields": "{\"dataset_configuration\":\"mw1-dataset-configuration-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"experiment_seed\":42,\"implementation_repetition\":3,\"problem_configuration\":\"mw1-problem-configuration-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"}",
+      "digest": "6e1255b90667171fbf94ee41fa84b1ce5714154055ec76580daa0163a21b2cf5",
+      "value": 3872800852987106
+    }
+  ],
+  "scheduling": [
+    {
+      "name": "version-one benchmark schedule",
+      "experiment_seed": 42,
+      "benchmark_name": "benchmark-v1",
+      "experiment_name": "scaling",
+      "scheduling_policy_version": 1,
+      "canonical_fields": "{\"benchmark_name\":\"benchmark-v1\",\"experiment_name\":\"scaling\",\"experiment_seed\":42,\"scheduling_policy_version\":1}",
+      "digest": "32810c77430d8b7dff6e2cdeda7c7ff82cd53724fc6e8519de8175a597c970dc",
+      "value": 1776954922000817
+    }
+  ]
+}

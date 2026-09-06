@@ -94,7 +94,7 @@ Every retry is a separate `RunAttemptRecord` with its resolved slot and retry
 index. Wall-clock timestamps and observed provenance remain on attempts and
 observations; they are not inputs to logical or resolved identities.
 
-The module does not parse manifests, expand parameter grids, derive seeds,
-resolve runtime resources, perform execution, or serialize the public attempt
-and observation schemas. Those operations consume these records in their later
-roadmap slices.
+The records module does not parse manifests, expand parameter grids, resolve
+runtime resources, perform execution, or serialize the public attempt and
+observation schemas. The separate seed module derives the seed records consumed
+here; the remaining operations consume these records in later roadmap slices.

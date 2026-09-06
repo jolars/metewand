@@ -298,12 +298,26 @@ pub struct ExecutionPolicyDefinition {
 }
 
 impl ExecutionPolicyDefinition {
+    /// Version-1 default for worker network access.
+    pub const DEFAULT_NETWORK: bool = false;
     /// Version-1 default for process reuse.
     pub const DEFAULT_WORKER_REUSE: bool = false;
     /// Version-1 default number of process-local warm-ups.
     pub const DEFAULT_WARMUP_RUNS: u64 = 0;
     /// Version-1 default timing boundary.
     pub const DEFAULT_TIMING_SCOPE: TimingScope = TimingScope::PrepareAndExecute;
+    /// Version-1 default authoritative time measure.
+    pub const DEFAULT_PRIMARY_TIME: PrimaryTime = PrimaryTime::TimedWallTime;
+    /// Version-1 default scheduling order.
+    pub const DEFAULT_RUN_ORDER: RunOrder = RunOrder::Sequential;
+    /// Version-1 default control-enforcement requirement.
+    pub const DEFAULT_ENFORCEMENT: Enforcement = Enforcement::BestEffort;
+
+    /// Returns network access after applying the version-1 default.
+    #[must_use]
+    pub fn resolved_network(&self) -> bool {
+        self.network.unwrap_or(Self::DEFAULT_NETWORK)
+    }
 
     /// Returns process reuse after applying the version-1 default.
     #[must_use]
@@ -321,6 +335,24 @@ impl ExecutionPolicyDefinition {
     #[must_use]
     pub fn resolved_timing_scope(&self) -> TimingScope {
         self.timing_scope.unwrap_or(Self::DEFAULT_TIMING_SCOPE)
+    }
+
+    /// Returns the primary time measure after applying the version-1 default.
+    #[must_use]
+    pub fn resolved_primary_time(&self) -> PrimaryTime {
+        self.primary_time.unwrap_or(Self::DEFAULT_PRIMARY_TIME)
+    }
+
+    /// Returns the scheduling order after applying the version-1 default.
+    #[must_use]
+    pub fn resolved_run_order(&self) -> RunOrder {
+        self.run_order.unwrap_or(Self::DEFAULT_RUN_ORDER)
+    }
+
+    /// Returns the enforcement requirement after applying the version-1 default.
+    #[must_use]
+    pub fn resolved_enforcement(&self) -> Enforcement {
+        self.enforcement.unwrap_or(Self::DEFAULT_ENFORCEMENT)
     }
 }
 
