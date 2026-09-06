@@ -101,7 +101,7 @@ See [Automation and agentic workflows](DESIGN.md#automation-and-agentic-workflow
 - [x] Expand literal values, Cartesian grids, and named coupled cases across
       their explicit namespaces into deterministic dataset, problem, and
       implementation configurations; reject duplicate logical candidates.
-- [ ] Expand configurations into logical candidates, one-shot run
+- [x] Expand configurations into logical candidates, one-shot run
       specifications, observation slots, and measurement attempt slots,
       including implementation repetitions, measurement repetitions, seeds,
       warm-up roles, and stable IDs.

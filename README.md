@@ -74,6 +74,10 @@ complete derivation digest.
 The deterministic [configuration expander](docs/configuration-expansion.md)
 resolves literal values, Cartesian grids, and coupled named cases within their
 explicit parameter namespaces and rejects duplicate logical candidates.
+The [one-shot logical planner](docs/logical-planning.md) then assigns stable
+typed identities, derives dataset, implementation, and scheduling values, and
+expands implementation repetitions, measurement repetitions, warm-ups,
+observation slots, and measurement attempt slots without runtime side effects.
 
 ## Development
 

@@ -565,6 +565,20 @@ the scheduling seed and typed block or slot identity, then sorts by those
 priorities. Adding an unrelated slot therefore does not reorder existing slots
 relative to one another.
 
+The version-1 attempt-slot priority transcript is:
+
+```text
+SHA-256("metewand-scheduling-priority-v1" || NUL ||
+        scheduling-seed digest || NUL || role || NUL || anchor)
+```
+
+The scheduling-seed digest is its raw 32 bytes. The measured anchor is the
+complete typed logical-observation-slot identity. The warm-up anchor is the
+complete typed logical-specification identity followed by `NUL` and the warm-up
+index as an eight-byte big-endian integer. The role is exactly `measured` or
+`warmup`. This priority is attached during logical planning; later scheduling
+composes it with the comparison-block priority.
+
 ## 3. Core architecture
 
 Metewand is a Rust workspace with one distributable executable and small

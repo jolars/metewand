@@ -3,22 +3,41 @@
 use std::{collections::BTreeMap, fmt};
 
 use serde_json::{Map, Value};
+use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 use crate::{
+    SCHEDULING_POLICY_VERSION,
     canonical::{CanonicalJsonError, CanonicalValue},
     compatibility::{ManifestCompatibilityError, validate_manifest_compatibility},
+    identity::{IdentityError, identify_record},
     manifest::{
-        DatasetDefinition, ExperimentCase, ExperimentDefinition, Manifest, Name, ParameterAxes,
-        ParameterAxis, WorkerDefinition,
+        DatasetDefinition, ExecutionPolicyDefinition, ExperimentCase, ExperimentDefinition,
+        Manifest, Name, ObservationPolicyDefinition, ParameterAxes, ParameterAxis,
+        WorkerDefinition,
     },
     parameters::{
         ParameterNamespaceError, ParameterResolutionError, resolve_parameters,
         validate_parameter_namespaces,
     },
-    problem_contract::ProblemContract,
+    problem_contract::{ProblemContract, ScientificBudget},
+    records::{
+        AttemptSlotRole, ContentDigest, DatasetConfigurationRecord, DatasetDefinitionRecord,
+        DerivedSeedRecord, EnvironmentDefinitionRecord, ExecutionPolicyRecord, IdentifiedRecord,
+        ImplementationConfigurationRecord, ImplementationDefinitionRecord,
+        LogicalAttemptSlotRecord, LogicalCandidateRecord, LogicalObservationSlotRecord,
+        ObservationPolicyRecord, OneShotLogicalSpecificationRecord, ProblemConfigurationRecord,
+        ProblemDefinitionRecord, RecordId,
+    },
     schema::SchemaCatalog,
+    seed::{
+        SeedDerivationError, derive_dataset_seed, derive_implementation_seed,
+        derive_scheduling_seed,
+    },
 };
+
+/// Domain separator for version-1 attempt-slot scheduling priorities.
+pub const SCHEDULING_PRIORITY_DOMAIN: &str = "metewand-scheduling-priority-v1";
 
 /// Expands every experiment into fully resolved configuration candidates.
 ///
@@ -70,6 +89,423 @@ pub struct ExpandedExperiment {
     pub name: Name,
     /// Deterministically ordered configuration candidates.
     pub candidates: Vec<ExpandedCandidate>,
+}
+
+/// Typed definition identities needed to turn expanded parameters into records.
+///
+/// Schema, source-bundle, contract, and environment resolution determines
+/// definition identities before this pure logical-planning pass. The built-in
+/// unit dataset, when needed, is keyed by
+/// [`DatasetConfigurationDefinition::Unit`].
+#[derive(Clone, Debug, Default)]
+pub struct LogicalPlanningCatalog {
+    /// Manifest and built-in dataset-definition identities.
+    pub dataset_definitions:
+        BTreeMap<DatasetConfigurationDefinition, RecordId<DatasetDefinitionRecord>>,
+    /// Problem-definition identities keyed by manifest-local name.
+    pub problem_definitions: BTreeMap<Name, RecordId<ProblemDefinitionRecord>>,
+    /// Implementation-definition identities keyed by manifest-local name.
+    pub implementation_definitions: BTreeMap<Name, RecordId<ImplementationDefinitionRecord>>,
+    /// Environment-definition identities keyed by manifest-local name.
+    pub environment_definitions: BTreeMap<Name, RecordId<EnvironmentDefinitionRecord>>,
+}
+
+/// A complete unresolved logical plan for all manifest experiments.
+#[derive(Clone, Debug, PartialEq)]
+pub struct LogicalPlan {
+    /// Experiments in their declared order.
+    pub experiments: Vec<LogicalExperimentPlan>,
+}
+
+/// One experiment expanded into identified logical records.
+#[derive(Clone, Debug, PartialEq)]
+pub struct LogicalExperimentPlan {
+    /// Manifest-local experiment name.
+    pub name: Name,
+    /// Seed used to derive stable scheduling priorities.
+    pub scheduling_seed: DerivedSeedRecord,
+    /// Selected, fully defaulted execution policy.
+    pub execution_policy: IdentifiedRecord<ExecutionPolicyRecord>,
+    /// Selected one-shot observation policy.
+    pub observation_policy: IdentifiedRecord<ObservationPolicyRecord>,
+    /// Logical candidates in deterministic configuration-expansion order.
+    pub candidates: Vec<LogicalCandidatePlan>,
+}
+
+/// One expanded configuration candidate with all logical identities attached.
+#[derive(Clone, Debug, PartialEq)]
+pub struct LogicalCandidatePlan {
+    /// Experiment defaults or named case that produced this candidate.
+    pub source: ConfigurationSource,
+    /// Identified dataset configuration, including its derived seed.
+    pub dataset_configuration: IdentifiedRecord<DatasetConfigurationRecord>,
+    /// Identified problem configuration.
+    pub problem_configuration: IdentifiedRecord<ProblemConfigurationRecord>,
+    /// Identified implementation configuration.
+    pub implementation_configuration: IdentifiedRecord<ImplementationConfigurationRecord>,
+    /// Identified comparison candidate.
+    pub candidate: IdentifiedRecord<LogicalCandidateRecord>,
+    /// One run specification per implementation repetition.
+    pub specifications: Vec<OneShotSpecificationPlan>,
+}
+
+/// One identified run specification and all of its planned slots.
+#[derive(Clone, Debug, PartialEq)]
+pub struct OneShotSpecificationPlan {
+    /// One-shot logical run with a fixed implementation seed.
+    pub specification: IdentifiedRecord<OneShotLogicalSpecificationRecord>,
+    /// One independently evaluated slot per measurement repetition.
+    pub observation_slots: Vec<IdentifiedRecord<LogicalObservationSlotRecord>>,
+    /// Warm-up slots followed by one measured slot per observation.
+    pub attempt_slots: Vec<IdentifiedRecord<LogicalAttemptSlotRecord>>,
+}
+
+/// Expands and identifies the complete unresolved one-shot logical plan.
+///
+/// This pass performs no filesystem access, materialization, environment
+/// resolution, or worker launch. The supplied catalog is the boundary between
+/// prior definition identity construction and logical planning.
+///
+/// # Errors
+///
+/// Returns the first deterministic configuration, catalog, seed, or identity
+/// error in manifest expansion order.
+pub fn expand_manifest_logical_plan(
+    manifest: &Manifest,
+    problem_contracts: &BTreeMap<Name, ProblemContract>,
+    schemas: &SchemaCatalog,
+    catalog: &LogicalPlanningCatalog,
+) -> Result<LogicalPlan, LogicalPlanningError> {
+    let expanded_experiments =
+        expand_manifest_configurations(manifest, problem_contracts, schemas)?;
+    let experiments = manifest
+        .experiments
+        .iter()
+        .zip(expanded_experiments)
+        .map(|(experiment, expanded)| plan_experiment(manifest, catalog, experiment, expanded))
+        .collect::<Result<Vec<_>, LogicalPlanningError>>()?;
+
+    Ok(LogicalPlan { experiments })
+}
+
+/// Derives a stable priority for one logical attempt-slot role.
+///
+/// The transcript hashes the complete scheduling-seed digest, the role, and a
+/// typed identity that already exists: the logical specification for a warm-up
+/// or the logical observation slot for a measurement. Warm-up indices use
+/// eight-byte big-endian encoding. No expansion position or unrelated member
+/// participates.
+#[must_use]
+pub fn derive_attempt_scheduling_priority(
+    scheduling_seed: &DerivedSeedRecord,
+    specification: RecordId<OneShotLogicalSpecificationRecord>,
+    role: &AttemptSlotRole,
+) -> ContentDigest {
+    let mut hasher = Sha256::new();
+    hasher.update(SCHEDULING_PRIORITY_DOMAIN.as_bytes());
+    hasher.update([0]);
+    hasher.update(scheduling_seed.derivation_digest.bytes());
+    hasher.update([0]);
+    match role {
+        AttemptSlotRole::Warmup { warmup_index } => {
+            hasher.update(b"warmup");
+            hasher.update([0]);
+            hasher.update(specification.to_string().as_bytes());
+            hasher.update([0]);
+            hasher.update(warmup_index.to_be_bytes());
+        }
+        AttemptSlotRole::Measured { observation_slot } => {
+            hasher.update(b"measured");
+            hasher.update([0]);
+            hasher.update(observation_slot.to_string().as_bytes());
+        }
+    }
+    ContentDigest::new(hasher.finalize().into())
+}
+
+/// A deterministic logical-planning failure.
+#[derive(Debug, Error)]
+#[non_exhaustive]
+pub enum LogicalPlanningError {
+    /// Configuration expansion or its pure validation failed.
+    #[error(transparent)]
+    Configuration(Box<ConfigurationExpansionError>),
+
+    /// A selected definition was absent from the identity catalog.
+    #[error("logical planning has no {kind} identity for `{name}`")]
+    MissingDefinitionIdentity {
+        /// Stable typed definition kind.
+        kind: &'static str,
+        /// Manifest-local definition name or the built-in unit label.
+        name: String,
+    },
+
+    /// A component seed could not be derived.
+    #[error(transparent)]
+    Seed(#[from] SeedDerivationError),
+
+    /// An expanded logical record could not be identified.
+    #[error(transparent)]
+    Identity(#[from] IdentityError),
+}
+
+impl From<ConfigurationExpansionError> for LogicalPlanningError {
+    fn from(error: ConfigurationExpansionError) -> Self {
+        Self::Configuration(Box::new(error))
+    }
+}
+
+fn plan_experiment(
+    manifest: &Manifest,
+    catalog: &LogicalPlanningCatalog,
+    experiment: &ExperimentDefinition,
+    expanded: ExpandedExperiment,
+) -> Result<LogicalExperimentPlan, LogicalPlanningError> {
+    debug_assert_eq!(experiment.name, expanded.name);
+
+    let execution_policy_definition = manifest
+        .execution_policies
+        .get(&experiment.execution_policy)
+        .expect("configuration expansion validates execution-policy references");
+    let execution_policy = identify_record(execution_policy_record(
+        experiment.execution_policy.clone(),
+        execution_policy_definition,
+    ))?;
+    let observation_policy_definition = manifest
+        .observation_policies
+        .get(&experiment.observation_policy)
+        .expect("configuration expansion validates observation-policy references");
+    let observation_policy = identify_record(observation_policy_record(
+        experiment.observation_policy.clone(),
+        observation_policy_definition,
+    ))?;
+    let scheduling_seed = derive_scheduling_seed(
+        experiment.seed,
+        &manifest.name,
+        &experiment.name,
+        SCHEDULING_POLICY_VERSION,
+    )?;
+
+    let candidates = expanded
+        .candidates
+        .into_iter()
+        .map(|candidate| {
+            plan_candidate(
+                catalog,
+                experiment,
+                execution_policy.id,
+                observation_policy.id,
+                execution_policy.record.warmup_runs,
+                &scheduling_seed,
+                candidate,
+            )
+        })
+        .collect::<Result<Vec<_>, LogicalPlanningError>>()?;
+
+    Ok(LogicalExperimentPlan {
+        name: expanded.name,
+        scheduling_seed,
+        execution_policy,
+        observation_policy,
+        candidates,
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn plan_candidate(
+    catalog: &LogicalPlanningCatalog,
+    experiment: &ExperimentDefinition,
+    execution_policy: RecordId<ExecutionPolicyRecord>,
+    observation_policy: RecordId<ObservationPolicyRecord>,
+    warmup_runs: u64,
+    scheduling_seed: &DerivedSeedRecord,
+    expanded: ExpandedCandidate,
+) -> Result<LogicalCandidatePlan, LogicalPlanningError> {
+    let dataset_definition = catalog
+        .dataset_definitions
+        .get(&expanded.dataset.definition)
+        .copied()
+        .ok_or_else(|| LogicalPlanningError::MissingDefinitionIdentity {
+            kind: "dataset-definition",
+            name: expanded.dataset.definition.to_string(),
+        })?;
+    let problem_definition = named_definition_id(
+        &catalog.problem_definitions,
+        &expanded.problem.definition,
+        "problem-definition",
+    )?;
+    let implementation_definition = named_definition_id(
+        &catalog.implementation_definitions,
+        &expanded.implementation.definition,
+        "implementation-definition",
+    )?;
+    let environment_definition = named_definition_id(
+        &catalog.environment_definitions,
+        &expanded.implementation.environment,
+        "environment-definition",
+    )?;
+
+    let dataset_seed = derive_dataset_seed(
+        experiment.seed,
+        dataset_definition,
+        &expanded.dataset.parameters,
+    )?;
+    let dataset_configuration = identify_record(DatasetConfigurationRecord {
+        definition: dataset_definition,
+        parameters: expanded.dataset.parameters,
+        seed: dataset_seed,
+    })?;
+    let problem_configuration = identify_record(ProblemConfigurationRecord {
+        definition: problem_definition,
+        parameters: expanded.problem.parameters,
+    })?;
+    let implementation_configuration = identify_record(ImplementationConfigurationRecord {
+        definition: implementation_definition,
+        parameters: expanded.implementation.parameters,
+        environment: environment_definition,
+    })?;
+    let candidate = identify_record(LogicalCandidateRecord {
+        dataset_configuration: dataset_configuration.id,
+        problem_configuration: problem_configuration.id,
+        implementation_configuration: implementation_configuration.id,
+        execution_policy,
+        observation_policy,
+    })?;
+
+    let specifications = (0..experiment.implementation_repetitions)
+        .map(|implementation_repetition| {
+            plan_specification(
+                experiment,
+                candidate.id,
+                dataset_configuration.id,
+                problem_configuration.id,
+                implementation_repetition,
+                warmup_runs,
+                scheduling_seed,
+            )
+        })
+        .collect::<Result<Vec<_>, LogicalPlanningError>>()?;
+
+    Ok(LogicalCandidatePlan {
+        source: expanded.source,
+        dataset_configuration,
+        problem_configuration,
+        implementation_configuration,
+        candidate,
+        specifications,
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn plan_specification(
+    experiment: &ExperimentDefinition,
+    candidate: RecordId<LogicalCandidateRecord>,
+    dataset_configuration: RecordId<DatasetConfigurationRecord>,
+    problem_configuration: RecordId<ProblemConfigurationRecord>,
+    implementation_repetition: u64,
+    warmup_runs: u64,
+    scheduling_seed: &DerivedSeedRecord,
+) -> Result<OneShotSpecificationPlan, LogicalPlanningError> {
+    let implementation_seed = derive_implementation_seed(
+        experiment.seed,
+        dataset_configuration,
+        problem_configuration,
+        implementation_repetition,
+    )?;
+    let specification = identify_record(OneShotLogicalSpecificationRecord {
+        candidate,
+        scientific_budget: ScientificBudget::None,
+        implementation_repetition,
+        implementation_seed,
+    })?;
+
+    let observation_slots = (0..experiment.measurement_repetitions)
+        .map(|measurement_index| {
+            identify_record(LogicalObservationSlotRecord {
+                specification: specification.id,
+                measurement_index,
+            })
+            .map_err(LogicalPlanningError::from)
+        })
+        .collect::<Result<Vec<_>, LogicalPlanningError>>()?;
+
+    let mut attempt_slots = Vec::new();
+    for warmup_index in 0..warmup_runs {
+        let role = AttemptSlotRole::Warmup { warmup_index };
+        attempt_slots.push(identify_record(LogicalAttemptSlotRecord {
+            specification: specification.id,
+            scheduling_priority: derive_attempt_scheduling_priority(
+                scheduling_seed,
+                specification.id,
+                &role,
+            ),
+            role,
+        })?);
+    }
+    for observation in &observation_slots {
+        let role = AttemptSlotRole::Measured {
+            observation_slot: observation.id,
+        };
+        attempt_slots.push(identify_record(LogicalAttemptSlotRecord {
+            specification: specification.id,
+            scheduling_priority: derive_attempt_scheduling_priority(
+                scheduling_seed,
+                specification.id,
+                &role,
+            ),
+            role,
+        })?);
+    }
+
+    Ok(OneShotSpecificationPlan {
+        specification,
+        observation_slots,
+        attempt_slots,
+    })
+}
+
+fn named_definition_id<T>(
+    definitions: &BTreeMap<Name, RecordId<T>>,
+    name: &Name,
+    kind: &'static str,
+) -> Result<RecordId<T>, LogicalPlanningError> {
+    definitions
+        .get(name)
+        .copied()
+        .ok_or_else(|| LogicalPlanningError::MissingDefinitionIdentity {
+            kind,
+            name: name.to_string(),
+        })
+}
+
+fn execution_policy_record(
+    name: Name,
+    definition: &ExecutionPolicyDefinition,
+) -> ExecutionPolicyRecord {
+    ExecutionPolicyRecord {
+        name,
+        cpus: definition.cpus,
+        threads: definition.threads,
+        memory: definition.memory.clone(),
+        network: definition.resolved_network(),
+        worker_reuse: definition.resolved_worker_reuse(),
+        warmup_runs: definition.resolved_warmup_runs(),
+        timeout: definition.timeout.clone(),
+        timing_scope: definition.resolved_timing_scope(),
+        primary_time: definition.resolved_primary_time(),
+        run_order: definition.resolved_run_order(),
+        enforcement: definition.resolved_enforcement(),
+    }
+}
+
+fn observation_policy_record(
+    name: Name,
+    definition: &ObservationPolicyDefinition,
+) -> ObservationPolicyRecord {
+    ObservationPolicyRecord {
+        name,
+        kind: definition.kind,
+    }
 }
 
 /// One pre-identity logical candidate expressed through resolved parameters.
