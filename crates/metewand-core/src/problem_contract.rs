@@ -234,6 +234,14 @@ pub enum ScientificBudget {
     None,
 }
 
+impl fmt::Display for ScientificBudget {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::None => "none",
+        })
+    }
+}
+
 /// The purpose of a schema referenced by a problem contract.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ProblemSchemaRole {

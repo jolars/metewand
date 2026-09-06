@@ -68,7 +68,7 @@ See [User model](DESIGN.md#2-user-model) and
 - [x] Normalize repository-relative paths and implement declared source-bundle
       expansion with bytewise ordering, required matches, tree-boundary checks,
       and symlink-escape rejection.
-- [ ] Validate dataset/problem schema compatibility, implementation/contract
+- [x] Validate dataset/problem schema compatibility, implementation/contract
       declarations, supported timing scopes, budgets, and the built-in unit
       dataset rules for dataset-free problems.
 

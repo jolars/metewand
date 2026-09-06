@@ -795,6 +795,11 @@ discarded worker's warm-ups never satisfy a replacement worker. These rules make
 the timing claim mechanically observable, while the independent evaluator makes
 the result checkable.
 
+When omitted, the version-1 timing fields default to `worker_reuse = false`,
+`warmup_runs = 0`, and `timing_scope = "prepare_and_execute"`. Compatibility
+validation applies these defaults before checking the invariants above and the
+problem contract's allowed timing scopes.
+
 Every experiment also selects an observation policy. A `one_shot` policy
 produces one canonical result per run under an optional problem-defined
 scientific budget. A `profile` policy produces a time-quality curve; each

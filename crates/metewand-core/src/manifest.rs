@@ -297,6 +297,33 @@ pub struct ExecutionPolicyDefinition {
     pub enforcement: Option<Enforcement>,
 }
 
+impl ExecutionPolicyDefinition {
+    /// Version-1 default for process reuse.
+    pub const DEFAULT_WORKER_REUSE: bool = false;
+    /// Version-1 default number of process-local warm-ups.
+    pub const DEFAULT_WARMUP_RUNS: u64 = 0;
+    /// Version-1 default timing boundary.
+    pub const DEFAULT_TIMING_SCOPE: TimingScope = TimingScope::PrepareAndExecute;
+
+    /// Returns process reuse after applying the version-1 default.
+    #[must_use]
+    pub fn resolved_worker_reuse(&self) -> bool {
+        self.worker_reuse.unwrap_or(Self::DEFAULT_WORKER_REUSE)
+    }
+
+    /// Returns the warm-up count after applying the version-1 default.
+    #[must_use]
+    pub fn resolved_warmup_runs(&self) -> u64 {
+        self.warmup_runs.unwrap_or(Self::DEFAULT_WARMUP_RUNS)
+    }
+
+    /// Returns the timing scope after applying the version-1 default.
+    #[must_use]
+    pub fn resolved_timing_scope(&self) -> TimingScope {
+        self.timing_scope.unwrap_or(Self::DEFAULT_TIMING_SCOPE)
+    }
+}
+
 /// Phases included in an execution timing measurement.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd)]
 #[serde(rename_all = "snake_case")]
@@ -307,6 +334,16 @@ pub enum TimingScope {
     PrepareAndExecute,
     /// Only the implementation's execute operation and result serialization.
     ExecuteOnly,
+}
+
+impl fmt::Display for TimingScope {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::ColdEndToEnd => "cold_end_to_end",
+            Self::PrepareAndExecute => "prepare_and_execute",
+            Self::ExecuteOnly => "execute_only",
+        })
+    }
 }
 
 /// An execution policy's primary time measure.
@@ -356,6 +393,14 @@ pub struct ObservationPolicyDefinition {
 pub enum ObservationKind {
     /// Produce one final result without a scientific budget.
     OneShot,
+}
+
+impl fmt::Display for ObservationKind {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::OneShot => "one_shot",
+        })
+    }
 }
 
 /// A worker process definition.

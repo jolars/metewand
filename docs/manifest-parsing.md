@@ -54,8 +54,10 @@ Parsing does not resolve those paths against a repository root, inspect
 referenced schemas or problem contracts, expand source bundles, or follow
 symlinks. The pure
 [parameter-namespace validator](parameter-namespaces.md) performs the first
-structural ownership checks; the remaining operations require repository
-context. `metewand-runtime` performs the filesystem-sensitive
+structural ownership checks. After the caller loads problem contracts, the pure
+[manifest compatibility validator](manifest-compatibility.md) checks their
+relationships with datasets, implementations, and policies. `metewand-runtime`
+performs the filesystem-sensitive
 [source-bundle expansion](source-bundles.md).
 
 The complete version-1 TOML fixture is
