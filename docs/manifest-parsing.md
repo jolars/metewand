@@ -49,8 +49,10 @@ diagnostic envelope without reparsing human-readable error text.
 
 Parsing does not resolve manifest names, inspect referenced schemas or problem
 contracts, normalize paths against a repository root, expand source bundles, or
-follow symlinks. Those operations require repository context and belong to the
-subsequent validation and source-bundle stages.
+follow symlinks. The pure
+[parameter-namespace validator](parameter-namespaces.md) performs the first
+structural ownership checks; the remaining operations require repository
+context and belong to subsequent validation and source-bundle stages.
 
 The complete version-1 TOML fixture is
 [`fixtures/manifest/v1/complete.toml`](../fixtures/manifest/v1/complete.toml).

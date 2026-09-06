@@ -63,7 +63,7 @@ See [User model](DESIGN.md#2-user-model) and
       family-specific `semantics` object, and require schemas, evaluator
       definitions, result-validity and one-shot completion rules, and reference
       cases.
-- [ ] Validate parameter ownership and namespaces structurally while leaving
+- [x] Validate parameter ownership and namespaces structurally while leaving
       their scientific classification visible to the benchmark author.
 - [ ] Normalize repository-relative paths and implement declared source-bundle
       expansion with bytewise ordering, required matches, tree-boundary checks,

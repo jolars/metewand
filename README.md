@@ -44,7 +44,10 @@ manifest, problem contract, one-shot policy, artifact and execution records,
 and strict envelopes for machine output, canonical results, and evaluator
 metrics. `metewand-core` embeds the checked-in documents for offline consumers.
 The [manifest parser](docs/manifest-parsing.md) turns `metewand.toml` into strict
-domain types and reports path-aware source spans for invalid input.
+domain types and reports path-aware source spans for invalid input. Its
+[parameter-namespace validation](docs/parameter-namespaces.md) binds dataset and
+implementation parameter tables to selected, schema-bearing definitions while
+preserving the benchmark author's explicit scientific classification.
 Together, the manifest and [problem-contract parser](docs/problem-contracts.md)
 require each schema, reference case, evaluator definition, and distinct validity
 and one-shot completion rule, then validate family semantics offline.
