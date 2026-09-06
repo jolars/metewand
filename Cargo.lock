@@ -406,6 +406,7 @@ dependencies = [
  "metewand-core",
  "metewand-protocol",
  "serde_json",
+ "sha2",
  "tempfile",
  "thiserror",
 ]

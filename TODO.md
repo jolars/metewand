@@ -83,7 +83,7 @@ and [Main domain types](DESIGN.md#main-domain-types).
       run attempts.
 - [x] Implement `mw1-<kind>-<sha256>` identities over typed, versioned canonical
       representations, with dependencies represented by their typed identities.
-- [ ] Implement normalized local-tree hashing over paths, entry types, bytes,
+- [x] Implement normalized local-tree hashing over paths, entry types, bytes,
       link targets, and relevant executable bits.
 - [ ] Implement the whole-manifest hash after defaults, path normalization, and
       name resolution without making it a dependency of unrelated component

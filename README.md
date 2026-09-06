@@ -56,7 +56,10 @@ implementation declarations, timing scopes, budgets, and dataset-free unit
 bindings across those parsed documents.
 `metewand-runtime` expands each declared [source bundle](docs/source-bundles.md)
 into unique bytewise-ordered repository paths, requiring every pattern to match
-and rejecting selected trees that escape through symlinks.
+and rejecting selected trees that escape through symlinks. Its versioned
+[local-tree hash](docs/local-tree-hashing.md) covers normalized paths, entry
+types, file bytes, link targets, and the portable executable-bit semantic while
+excluding incidental filesystem metadata.
 
 The Gate 1 [domain-record graph](docs/domain-records.md) separates definitions,
 configurations, logical plans, resolved execution dependencies, observations,
