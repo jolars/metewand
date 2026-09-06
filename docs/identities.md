@@ -134,6 +134,20 @@ but provenance-only values do not alter their identities. This also ensures that
 opaque provenance cannot introduce a workspace, staging, cache, or ephemeral
 absolute path into an identity. Wall-clock timestamps are never identity inputs.
 
+## Conformance vectors
+
+[`fixtures/identities/v1.json`](../fixtures/identities/v1.json) pins the
+canonical representation, kind, and identity of every version-1 resource and
+record in one complete dependency graph. The fixture is language-neutral so
+each SDK can verify the same bytes and digests.
+
+The Rust conformance tests rebuild that graph with object members, set-valued
+problem contracts, and environment variables supplied in different orders and
+require every identity to remain unchanged. They also change each graph node in
+turn and require exactly its transitive dependents to change. The manifest and
+local-tree suites separately prove that an unrelated experiment and filesystem
+enumeration order do not perturb existing component identities.
+
 ## Example
 
 The fully defaulted execution policy in the Rust conformance test has these

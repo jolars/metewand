@@ -1,0 +1,170 @@
+{
+  "version": 1,
+  "vectors": {
+    "attempt": {
+      "kind": "attempt",
+      "canonical": "{\"retry_index\":0,\"slot\":\"mw1-resolved-attempt-slot-905e1a633187f217047188ef41529d64841c157e317185baf23af37930495dae\",\"version\":1}",
+      "identity": "mw1-attempt-823bc21442b92e8dd1c7c9c8c474095c0a83b3ed6c80a1da112a7c32c8895806"
+    },
+    "dataset-artifact": {
+      "kind": "artifact",
+      "canonical": "{\"value\":{\"files\":[\"dataset.json\"],\"role\":\"dataset\"},\"version\":1}",
+      "identity": "mw1-artifact-b793051e25a89c684e599c134657a8e2f4c70a97904f83c2deb4355bb4a49098"
+    },
+    "dataset-configuration": {
+      "kind": "dataset-configuration",
+      "canonical": "{\"definition\":\"mw1-dataset-definition-a5f5816d70d20c53cd559b52265a823f115bbd06db3d148f2e5722e43de35ee0\",\"parameters\":{\"distribution\":\"normal\",\"rows\":100},\"seed\":{\"derivation_digest\":\"60fbb935b7846b83e537be9516e9275499c7765e83aadfe037121ef251efca00\",\"value\":3412296331620493},\"version\":1}",
+      "identity": "mw1-dataset-configuration-29fde06afe046114fc89a5b659a176e417d972ef54e4765ba2437eb6c74945c9"
+    },
+    "dataset-definition": {
+      "kind": "dataset-definition",
+      "canonical": "{\"definition\":{\"kind\":\"generated\",\"materializer\":{\"args\":[\"--metewand-worker\"],\"environment\":\"mw1-environment-definition-e00244d203aa511e1a991599d1c3d54acb3e60234e868c42e7ad213f6c406395\",\"launch\":{\"kind\":\"command\",\"program\":\"bin/worker\",\"source_bundle\":\"mw1-source-bundle-404b024e1c1d8393bfd72ffc5edae368a2c480e8b83b8b08bd5a20da9a80e143\"},\"protocol_transport\":\"pipes\"},\"source\":{\"sha256\":\"1111111111111111111111111111111111111111111111111111111111111111\",\"url\":\"https://example.invalid/dataset\"}},\"name\":\"generated\",\"output_schema\":\"mw1-schema-ebc7c9c76774f2aad1c1ef0f7380fafd602b33124ac77e365b40bff99916c118\",\"parameter_defaults\":{\"distribution\":\"normal\",\"rows\":100},\"parameter_schema\":\"mw1-schema-1f896a961824290e04fcd49f276e1e8bb6ae10a16ed5cd4e4535a2060365d5dd\",\"version\":1}",
+      "identity": "mw1-dataset-definition-a5f5816d70d20c53cd559b52265a823f115bbd06db3d148f2e5722e43de35ee0"
+    },
+    "dataset-instance": {
+      "kind": "dataset-instance",
+      "canonical": "{\"artifact\":\"mw1-artifact-b793051e25a89c684e599c134657a8e2f4c70a97904f83c2deb4355bb4a49098\",\"configuration\":\"mw1-dataset-configuration-29fde06afe046114fc89a5b659a176e417d972ef54e4765ba2437eb6c74945c9\",\"output_schema\":\"mw1-schema-ebc7c9c76774f2aad1c1ef0f7380fafd602b33124ac77e365b40bff99916c118\",\"version\":1}",
+      "identity": "mw1-dataset-instance-874ce062e7cffaacc6f91f5c22a1e4c6d79d3d8b5a0c816d7b6fa8eb44c38c06"
+    },
+    "environment-definition": {
+      "kind": "environment-definition",
+      "canonical": "{\"definition\":{\"kind\":\"local\"},\"name\":\"runtime\",\"version\":1}",
+      "identity": "mw1-environment-definition-e00244d203aa511e1a991599d1c3d54acb3e60234e868c42e7ad213f6c406395"
+    },
+    "execution-policy": {
+      "kind": "execution-policy",
+      "canonical": "{\"cpus\":1,\"enforcement\":\"best_effort\",\"memory\":\"8 GiB\",\"name\":\"controlled\",\"network\":false,\"primary_time\":\"timed_wall_time\",\"run_order\":\"randomized\",\"threads\":1,\"timeout\":\"10 min\",\"timing_scope\":\"prepare_and_execute\",\"version\":1,\"warmup_runs\":1,\"worker_reuse\":false}",
+      "identity": "mw1-execution-policy-ccb3a46cae389069b14f4b27eedea2bcc249c73b2bff03ac77502b76630956aa"
+    },
+    "executor-definition": {
+      "kind": "executor-definition",
+      "canonical": "{\"configuration\":{\"capture_output\":true,\"serial\":true},\"kind\":\"local-process\",\"version\":1}",
+      "identity": "mw1-executor-definition-2d9cb72237aa04219512c493ec37c3a579000b68f271849aa03a666b5202befe"
+    },
+    "implementation-configuration": {
+      "kind": "implementation-configuration",
+      "canonical": "{\"definition\":\"mw1-implementation-definition-dbe9cc85014a66a8b456a7f58967b1f7374a8e608da8fab7842fb74636a27846\",\"environment\":\"mw1-environment-definition-e00244d203aa511e1a991599d1c3d54acb3e60234e868c42e7ad213f6c406395\",\"parameters\":{\"method\":\"cd\",\"tolerance\":1e-8},\"version\":1}",
+      "identity": "mw1-implementation-configuration-fdbd23c586bb836ced1b95217a45e4b9fa3d2b575530982a37e85822208eccf5"
+    },
+    "implementation-definition": {
+      "kind": "implementation-definition",
+      "canonical": "{\"capabilities\":[\"one_shot\"],\"name\":\"solver\",\"parameter_defaults\":{\"tolerance\":1e-8},\"parameter_schema\":\"mw1-schema-1f896a961824290e04fcd49f276e1e8bb6ae10a16ed5cd4e4535a2060365d5dd\",\"problem_contracts\":[\"mw1-problem-definition-3232323232323232323232323232323232323232323232323232323232323232\",\"mw1-problem-definition-fb22d5b94ea67ae05c0e7870a04beef8661b653eacbe112b4228f9ef79cfe3ce\"],\"version\":1,\"worker\":{\"args\":[\"--metewand-worker\"],\"environment\":\"mw1-environment-definition-e00244d203aa511e1a991599d1c3d54acb3e60234e868c42e7ad213f6c406395\",\"launch\":{\"kind\":\"command\",\"program\":\"bin/worker\",\"source_bundle\":\"mw1-source-bundle-404b024e1c1d8393bfd72ffc5edae368a2c480e8b83b8b08bd5a20da9a80e143\"},\"protocol_transport\":\"pipes\"}}",
+      "identity": "mw1-implementation-definition-dbe9cc85014a66a8b456a7f58967b1f7374a8e608da8fab7842fb74636a27846"
+    },
+    "logical-attempt-slot": {
+      "kind": "logical-attempt-slot",
+      "canonical": "{\"role\":{\"kind\":\"measured\",\"observation_slot\":\"mw1-logical-observation-slot-e3089eca21f355b4acec8816e84234d71b657f3ecebadfc7421a18b1266ca6c5\"},\"scheduling_priority\":\"4444444444444444444444444444444444444444444444444444444444444444\",\"specification\":\"mw1-logical-specification-fcab30b9931ce7b860db4c983b62dd7809f8fe7cf950749ee45428bc76a61465\",\"version\":1}",
+      "identity": "mw1-logical-attempt-slot-d4471de9082ce64165f31ba9a79436487a938d10cde7ce4d9460a91734b1026c"
+    },
+    "logical-candidate": {
+      "kind": "logical-candidate",
+      "canonical": "{\"dataset_configuration\":\"mw1-dataset-configuration-29fde06afe046114fc89a5b659a176e417d972ef54e4765ba2437eb6c74945c9\",\"execution_policy\":\"mw1-execution-policy-ccb3a46cae389069b14f4b27eedea2bcc249c73b2bff03ac77502b76630956aa\",\"implementation_configuration\":\"mw1-implementation-configuration-fdbd23c586bb836ced1b95217a45e4b9fa3d2b575530982a37e85822208eccf5\",\"observation_policy\":\"mw1-observation-policy-7ab610c92432eb64c53468035b88dd50d822ccf28213e385f51164bff0d2ff19\",\"problem_configuration\":\"mw1-problem-configuration-89c56244a9401ff02849e13f3ebea2d513bd3abbadcd14c73cac58e7cb63b19e\",\"version\":1}",
+      "identity": "mw1-logical-candidate-6e392f315a2d34ebc219600e80d859f166d532e0f94e7cc685acba2e1e0e997b"
+    },
+    "logical-observation-slot": {
+      "kind": "logical-observation-slot",
+      "canonical": "{\"measurement_index\":0,\"specification\":\"mw1-logical-specification-fcab30b9931ce7b860db4c983b62dd7809f8fe7cf950749ee45428bc76a61465\",\"version\":1}",
+      "identity": "mw1-logical-observation-slot-e3089eca21f355b4acec8816e84234d71b657f3ecebadfc7421a18b1266ca6c5"
+    },
+    "logical-specification": {
+      "kind": "logical-specification",
+      "canonical": "{\"candidate\":\"mw1-logical-candidate-6e392f315a2d34ebc219600e80d859f166d532e0f94e7cc685acba2e1e0e997b\",\"implementation_repetition\":0,\"implementation_seed\":{\"derivation_digest\":\"4520aebf55e7fb9c1d565c3c93c07a272ee470740f2b435bd2cbb742458e729a\",\"value\":2432213537438975},\"kind\":\"one_shot\",\"scientific_budget\":\"none\",\"version\":1}",
+      "identity": "mw1-logical-specification-fcab30b9931ce7b860db4c983b62dd7809f8fe7cf950749ee45428bc76a61465"
+    },
+    "metrics-artifact": {
+      "kind": "artifact",
+      "canonical": "{\"value\":{\"files\":[\"metrics.json\"],\"role\":\"metrics\"},\"version\":1}",
+      "identity": "mw1-artifact-0409205535add9b4f6310dc797f4addcab14cee8b2f84d932ebfd648b0d6acc7"
+    },
+    "observation": {
+      "kind": "observation",
+      "canonical": "{\"completion\":\"reached\",\"metrics\":{\"id\":\"mw1-artifact-0409205535add9b4f6310dc797f4addcab14cee8b2f84d932ebfd648b0d6acc7\",\"path\":\"metrics.json\",\"sha256\":\"5252525252525252525252525252525252525252525252525252525252525252\"},\"producing_attempt\":\"mw1-attempt-823bc21442b92e8dd1c7c9c8c474095c0a83b3ed6c80a1da112a7c32c8895806\",\"result\":{\"id\":\"mw1-artifact-f92a17cdf5a37fe7d9ea9abb902d3dd0849afdb683e257180c27ab91a6fbec6d\",\"path\":\"result.json\",\"sha256\":\"5151515151515151515151515151515151515151515151515151515151515151\"},\"slot\":\"mw1-resolved-observation-slot-f49bef7dcee66f7dbcc0521fa2cc3c7ec9a72fed9297cdce3f2e79288953600a\",\"timing\":{\"cpu_time\":{\"nanoseconds\":5,\"seconds\":1},\"evaluation_time\":{\"nanoseconds\":4,\"seconds\":0},\"implementation_time\":{\"nanoseconds\":2,\"seconds\":1},\"peak_rss_bytes\":4096,\"primary_time\":\"timed_wall_time\",\"timed_wall_time\":{\"nanoseconds\":3,\"seconds\":2}},\"version\":1}",
+      "identity": "mw1-observation-56c6b4444942e0c7fe3869ffbfb7fa1db6322c1e23d84ddf502c33070d93601a"
+    },
+    "observation-policy": {
+      "kind": "observation-policy",
+      "canonical": "{\"kind\":\"one_shot\",\"name\":\"final\",\"version\":1}",
+      "identity": "mw1-observation-policy-7ab610c92432eb64c53468035b88dd50d822ccf28213e385f51164bff0d2ff19"
+    },
+    "output-schema": {
+      "kind": "schema",
+      "canonical": "{\"value\":{\"properties\":{\"x\":{\"type\":\"array\"}},\"required\":[\"x\"],\"type\":\"object\"},\"version\":1}",
+      "identity": "mw1-schema-ebc7c9c76774f2aad1c1ef0f7380fafd602b33124ac77e365b40bff99916c118"
+    },
+    "parameter-schema": {
+      "kind": "schema",
+      "canonical": "{\"value\":{\"properties\":{\"rows\":{\"type\":\"integer\"}},\"type\":\"object\"},\"version\":1}",
+      "identity": "mw1-schema-1f896a961824290e04fcd49f276e1e8bb6ae10a16ed5cd4e4535a2060365d5dd"
+    },
+    "problem-configuration": {
+      "kind": "problem-configuration",
+      "canonical": "{\"definition\":\"mw1-problem-definition-fb22d5b94ea67ae05c0e7870a04beef8661b653eacbe112b4228f9ef79cfe3ce\",\"parameters\":{\"fit_intercept\":true,\"lambda\":0.1},\"version\":1}",
+      "identity": "mw1-problem-configuration-89c56244a9401ff02849e13f3ebea2d513bd3abbadcd14c73cac58e7cb63b19e"
+    },
+    "problem-contract": {
+      "kind": "problem-contract",
+      "canonical": "{\"value\":{\"family\":\"regression\",\"version\":1},\"version\":1}",
+      "identity": "mw1-problem-contract-db985b0f875b4c64e64520fbd82167ccead631ff25fe9ef55594ccdcb00252e1"
+    },
+    "problem-definition": {
+      "kind": "problem-definition",
+      "canonical": "{\"contract\":\"mw1-problem-contract-db985b0f875b4c64e64520fbd82167ccead631ff25fe9ef55594ccdcb00252e1\",\"evaluator\":{\"args\":[\"--metewand-worker\"],\"environment\":\"mw1-environment-definition-e00244d203aa511e1a991599d1c3d54acb3e60234e868c42e7ad213f6c406395\",\"launch\":{\"kind\":\"command\",\"program\":\"bin/worker\",\"source_bundle\":\"mw1-source-bundle-404b024e1c1d8393bfd72ffc5edae368a2c480e8b83b8b08bd5a20da9a80e143\"},\"protocol_transport\":\"pipes\"},\"name\":\"regression\",\"parameter_defaults\":{\"fit_intercept\":true,\"lambda\":0.1},\"version\":1}",
+      "identity": "mw1-problem-definition-fb22d5b94ea67ae05c0e7870a04beef8661b653eacbe112b4228f9ef79cfe3ce"
+    },
+    "problem-instance": {
+      "kind": "problem-instance",
+      "canonical": "{\"configuration\":\"mw1-problem-configuration-89c56244a9401ff02849e13f3ebea2d513bd3abbadcd14c73cac58e7cb63b19e\",\"dataset\":\"mw1-dataset-instance-874ce062e7cffaacc6f91f5c22a1e4c6d79d3d8b5a0c816d7b6fa8eb44c38c06\",\"version\":1}",
+      "identity": "mw1-problem-instance-11d2396cac518882abe1cb128c757fd21f39d4cd0d1fa963244e885f540806d5"
+    },
+    "resolved-attempt-slot": {
+      "kind": "resolved-attempt-slot",
+      "canonical": "{\"logical_slot\":\"mw1-logical-attempt-slot-d4471de9082ce64165f31ba9a79436487a938d10cde7ce4d9460a91734b1026c\",\"specification\":\"mw1-resolved-specification-c6be85b156ec9ce6b5d0a5de8af6ee6ecc4d25f3875105c06abb9bf2521db401\",\"version\":1}",
+      "identity": "mw1-resolved-attempt-slot-905e1a633187f217047188ef41529d64841c157e317185baf23af37930495dae"
+    },
+    "resolved-environment": {
+      "kind": "resolved-environment",
+      "canonical": "{\"definition\":\"mw1-environment-definition-e00244d203aa511e1a991599d1c3d54acb3e60234e868c42e7ad213f6c406395\",\"fingerprint\":{\"kind\":\"local\",\"platform\":\"x86_64-linux\"},\"version\":1}",
+      "identity": "mw1-resolved-environment-1ca398f08be55138d9c2d92e5b223e5368dd2373de310cc54931398073a9b2ce"
+    },
+    "resolved-launch": {
+      "kind": "resolved-launch",
+      "canonical": "{\"args\":[\"--metewand-worker\"],\"environment\":\"mw1-resolved-environment-1ca398f08be55138d9c2d92e5b223e5368dd2373de310cc54931398073a9b2ce\",\"environment_variables\":{\"LANG\":\"C.UTF-8\",\"OMP_NUM_THREADS\":\"1\"},\"program\":\"/nix/store/worker/bin/worker\",\"version\":1,\"working_directory\":\"private_run_directory\"}",
+      "identity": "mw1-resolved-launch-cf51c0b905ed8b4b1aa4b387f3d48c58c72be99111fe558a96e8838e7d305384"
+    },
+    "resolved-observation-slot": {
+      "kind": "resolved-observation-slot",
+      "canonical": "{\"logical_slot\":\"mw1-logical-observation-slot-e3089eca21f355b4acec8816e84234d71b657f3ecebadfc7421a18b1266ca6c5\",\"specification\":\"mw1-resolved-specification-c6be85b156ec9ce6b5d0a5de8af6ee6ecc4d25f3875105c06abb9bf2521db401\",\"version\":1}",
+      "identity": "mw1-resolved-observation-slot-f49bef7dcee66f7dbcc0521fa2cc3c7ec9a72fed9297cdce3f2e79288953600a"
+    },
+    "resolved-specification": {
+      "kind": "resolved-specification",
+      "canonical": "{\"evaluator\":{\"environment\":\"mw1-resolved-environment-1ca398f08be55138d9c2d92e5b223e5368dd2373de310cc54931398073a9b2ce\",\"launch\":\"mw1-resolved-launch-cf51c0b905ed8b4b1aa4b387f3d48c58c72be99111fe558a96e8838e7d305384\",\"source_bundle\":\"mw1-artifact-c8107cb595fcc6a2e8d9f2d250e407e6577314331522ac94899bccae05159874\"},\"execution_semantics_version\":1,\"executor\":\"mw1-executor-definition-2d9cb72237aa04219512c493ec37c3a579000b68f271849aa03a666b5202befe\",\"implementation\":{\"environment\":\"mw1-resolved-environment-1ca398f08be55138d9c2d92e5b223e5368dd2373de310cc54931398073a9b2ce\",\"launch\":\"mw1-resolved-launch-cf51c0b905ed8b4b1aa4b387f3d48c58c72be99111fe558a96e8838e7d305384\",\"source_bundle\":\"mw1-artifact-c8107cb595fcc6a2e8d9f2d250e407e6577314331522ac94899bccae05159874\"},\"kind\":\"one_shot\",\"logical_specification\":\"mw1-logical-specification-fcab30b9931ce7b860db4c983b62dd7809f8fe7cf950749ee45428bc76a61465\",\"problem_instance\":\"mw1-problem-instance-11d2396cac518882abe1cb128c757fd21f39d4cd0d1fa963244e885f540806d5\",\"version\":1,\"wire_protocol_version\":1}",
+      "identity": "mw1-resolved-specification-c6be85b156ec9ce6b5d0a5de8af6ee6ecc4d25f3875105c06abb9bf2521db401"
+    },
+    "resolved-worker": {
+      "kind": "resolved-worker",
+      "canonical": "{\"environment\":\"mw1-resolved-environment-1ca398f08be55138d9c2d92e5b223e5368dd2373de310cc54931398073a9b2ce\",\"launch\":\"mw1-resolved-launch-cf51c0b905ed8b4b1aa4b387f3d48c58c72be99111fe558a96e8838e7d305384\",\"source_bundle\":\"mw1-artifact-c8107cb595fcc6a2e8d9f2d250e407e6577314331522ac94899bccae05159874\",\"version\":1}",
+      "identity": "mw1-resolved-worker-70a5fed355b5b44957e32910b42adacfa9eeb63ca2cd3b6e24eadd33478a7c0c"
+    },
+    "result-artifact": {
+      "kind": "artifact",
+      "canonical": "{\"value\":{\"files\":[\"result.json\"],\"role\":\"result\"},\"version\":1}",
+      "identity": "mw1-artifact-f92a17cdf5a37fe7d9ea9abb902d3dd0849afdb683e257180c27ab91a6fbec6d"
+    },
+    "source-artifact": {
+      "kind": "artifact",
+      "canonical": "{\"value\":{\"files\":[\"worker.py\"],\"role\":\"source\"},\"version\":1}",
+      "identity": "mw1-artifact-c8107cb595fcc6a2e8d9f2d250e407e6577314331522ac94899bccae05159874"
+    },
+    "source-bundle": {
+      "kind": "source-bundle",
+      "canonical": "{\"value\":{\"files\":[{\"path\":\"worker.py\",\"sha256\":\"source\"}]},\"version\":1}",
+      "identity": "mw1-source-bundle-404b024e1c1d8393bfd72ffc5edae368a2c480e8b83b8b08bd5a20da9a80e143"
+    },
+    "worker-definition": {
+      "kind": "worker-definition",
+      "canonical": "{\"args\":[\"--metewand-worker\"],\"environment\":\"mw1-environment-definition-e00244d203aa511e1a991599d1c3d54acb3e60234e868c42e7ad213f6c406395\",\"launch\":{\"kind\":\"command\",\"program\":\"bin/worker\",\"source_bundle\":\"mw1-source-bundle-404b024e1c1d8393bfd72ffc5edae368a2c480e8b83b8b08bd5a20da9a80e143\"},\"protocol_transport\":\"pipes\",\"version\":1}",
+      "identity": "mw1-worker-definition-b00e8681336e481da771992c7def6da422725afe67203fddf9d35dcb64517d20"
+    }
+  }
+}

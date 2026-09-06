@@ -90,7 +90,7 @@ and [Main domain types](DESIGN.md#main-domain-types).
       identities.
 - [x] Implement dataset, implementation, and scheduling seed derivation exactly
       as specified, recording both the exposed 53-bit value and full digest.
-- [ ] Add golden and metamorphic tests showing that ordering and irrelevant
+- [x] Add golden and metamorphic tests showing that ordering and irrelevant
       manifest additions preserve identities, while every transitive dependency
       change invalidates the identities that depend on it.
 

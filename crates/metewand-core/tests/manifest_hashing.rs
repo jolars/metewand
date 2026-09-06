@@ -2,9 +2,15 @@ use std::path::Path;
 
 use metewand_core::{
     identity::{identify_record, record_id},
-    manifest::{Enforcement, Manifest, PrimaryTime, RunOrder, TimingScope, parse_manifest},
+    manifest::{
+        Enforcement, EnvironmentDefinition as ManifestEnvironmentDefinition, Manifest, PrimaryTime,
+        RunOrder, TimingScope, parse_manifest,
+    },
     manifest_hash::{ManifestHashError, canonical_manifest_bytes, hash_manifest},
-    records::ExecutionPolicyRecord,
+    records::{
+        EnvironmentDefinitionKind, EnvironmentDefinitionRecord, ExecutionPolicyRecord,
+        ObservationPolicyRecord,
+    },
 };
 
 const IMPLICIT_DEFAULTS: &str = r#"
@@ -101,12 +107,28 @@ fn parse(path: &str, source: &str) -> Manifest {
     parse_manifest(Path::new(path), source).unwrap()
 }
 
-fn execution_policy_id(manifest: &Manifest) -> String {
+fn component_ids(manifest: &Manifest) -> Vec<String> {
+    let (environment_name, environment) = manifest
+        .environments
+        .get_key_value("local")
+        .expect("fixture defines the local environment");
+    assert!(matches!(
+        environment,
+        ManifestEnvironmentDefinition::Local {}
+    ));
+    let environment_id = identify_record(EnvironmentDefinitionRecord {
+        name: environment_name.clone(),
+        kind: EnvironmentDefinitionKind::Local,
+    })
+    .unwrap()
+    .id
+    .to_string();
+
     let (name, policy) = manifest
         .execution_policies
         .get_key_value("default")
         .unwrap();
-    identify_record(ExecutionPolicyRecord {
+    let execution_policy_id = identify_record(ExecutionPolicyRecord {
         name: name.clone(),
         cpus: policy.cpus,
         threads: policy.threads,
@@ -122,7 +144,21 @@ fn execution_policy_id(manifest: &Manifest) -> String {
     })
     .unwrap()
     .id
-    .to_string()
+    .to_string();
+
+    let (name, policy) = manifest
+        .observation_policies
+        .get_key_value("final")
+        .unwrap();
+    let observation_policy_id = identify_record(ObservationPolicyRecord {
+        name: name.clone(),
+        kind: policy.kind,
+    })
+    .unwrap()
+    .id
+    .to_string();
+
+    vec![environment_id, execution_policy_id, observation_policy_id]
 }
 
 #[test]
@@ -313,10 +349,7 @@ seed = 99
         hash_manifest(&original).unwrap(),
         hash_manifest(&extended).unwrap()
     );
-    assert_eq!(
-        execution_policy_id(&original),
-        execution_policy_id(&extended)
-    );
+    assert_eq!(component_ids(&original), component_ids(&extended));
 
     let policy = ExecutionPolicyRecord {
         name: original
@@ -339,6 +372,6 @@ seed = 99
     };
     assert_eq!(
         record_id(&policy).unwrap().to_string(),
-        execution_policy_id(&original)
+        component_ids(&original)[1]
     );
 }
