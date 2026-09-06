@@ -6,6 +6,7 @@ pub mod manifest;
 pub mod parameters;
 pub mod problem_contract;
 pub mod public_schemas;
+pub mod records;
 pub mod schema;
 
 /// Version of the typed Metewand manifest format.

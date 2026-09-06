@@ -58,6 +58,11 @@ bindings across those parsed documents.
 into unique bytewise-ordered repository paths, requiring every pattern to match
 and rejecting selected trees that escape through symlinks.
 
+The Gate 1 [domain-record graph](docs/domain-records.md) separates definitions,
+configurations, logical plans, resolved execution dependencies, observations,
+and attempts. Its typed references prevent identities for different record
+kinds from being interchanged before canonical identity construction is added.
+
 ## Development
 
 The development environment pins Rust 1.98.0 and includes rustfmt, Clippy, and

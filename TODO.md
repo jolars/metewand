@@ -77,7 +77,7 @@ See [User model](DESIGN.md#2-user-model) and
 See [Schemas, canonical values, and identities](DESIGN.md#schemas-canonical-values-and-identities)
 and [Main domain types](DESIGN.md#main-domain-types).
 
-- [ ] Define typed domain records for definitions, configurations, instances,
+- [x] Define typed domain records for definitions, configurations, instances,
       logical candidates, one-shot logical specifications, observation and
       attempt slots, resolved specifications and slots, run observations, and
       run attempts.
