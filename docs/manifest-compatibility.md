@@ -72,3 +72,9 @@ The pass returns the first error in deterministic problem, implementation,
 execution-policy, and experiment order. It does not read contract files, load
 schemas, expand parameter grids, construct unit-dataset records, or launch
 workers. Those operations retain their own explicit boundaries.
+
+The subsequent side-effect-free logical plan pairs every selected
+implementation capability with `declared` evidence. `verified_now` is reserved
+for a capability observed by the current operation, and
+`previously_verified` describes evidence loaded from an earlier resolution.
+Neither stronger state can originate in this compatibility or planning pass.

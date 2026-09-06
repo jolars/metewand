@@ -14,6 +14,14 @@ the built-in dataset for a dataset-free problem uses
 `DatasetConfigurationDefinition::Unit`. Missing entries produce typed,
 deterministically ordered planning errors rather than placeholder identities.
 
+Each logical candidate reports the selected implementation's capabilities as
+`CapabilityReport<ImplementationCapability>`. The evidence on every report is
+`declared`: the planner reads the declaration from the manifest but neither
+launches the worker nor claims to have observed its behavior. The shared
+`CapabilityEvidence` model also represents `verified_now` and
+`previously_verified` for later worker checks and persisted resolution records.
+Capability evidence is operational knowledge, not a logical-identity input.
+
 ## Expansion and cardinality
 
 For an experiment with `C` expanded candidates, `I` implementation

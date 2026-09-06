@@ -30,6 +30,12 @@ contract](identities.md) assigns IDs from explicit versioned canonical
 representations. `IdentifiedRecord<T>` pairs the resulting identity with its
 record without putting a record's own identity into its hash input.
 
+`CapabilityReport<T>` keeps implementation, worker, and executor capability
+namespaces distinct while pairing each capability with `CapabilityEvidence`.
+The evidence is `declared`, `verified_now`, or `previously_verified`.
+Declarations belong to identity-bearing definition records; the evidence state
+describes what the current operation knows and is not itself an identity input.
+
 ## Definitions, configurations, and instances
 
 The identity-ready definition records cover datasets, problems,
@@ -62,7 +68,9 @@ problem.
 
 `LogicalCandidateRecord` contains only configuration and policy identities. It
 can therefore exist before downloads, materialization, environment resolution,
-or worker launch. An applicable candidate produces an
+or worker launch. The corresponding logical-plan wrapper reports each selected
+implementation capability with declaration evidence only. An applicable
+candidate produces an
 `OneShotLogicalSpecificationRecord` for each implementation repetition. That
 record owns the implementation seed and Gate 1 `none` scientific budget.
 

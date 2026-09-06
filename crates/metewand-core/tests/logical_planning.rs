@@ -1,13 +1,13 @@
 use std::{collections::BTreeMap, path::Path};
 
 use metewand_core::{
-    manifest::{Manifest, Name, parse_manifest},
+    manifest::{ImplementationCapability, Manifest, Name, parse_manifest},
     planning::{
         DatasetConfigurationDefinition, LogicalPlanningCatalog, expand_manifest_logical_plan,
     },
     problem_contract::{ProblemContract, ScientificBudget, parse_problem_contract},
     records::{
-        AttemptSlotRole, DatasetDefinitionRecord, EnvironmentDefinitionRecord,
+        AttemptSlotRole, CapabilityEvidence, DatasetDefinitionRecord, EnvironmentDefinitionRecord,
         ImplementationDefinitionRecord, ProblemDefinitionRecord, RecordId,
     },
     schema::SchemaCatalog,
@@ -173,6 +173,15 @@ fn expands_repetitions_into_identified_one_shot_records() {
     assert!(experiment.execution_policy.record.worker_reuse);
 
     for candidate in &experiment.candidates {
+        assert_eq!(candidate.implementation_capabilities.len(), 1);
+        assert_eq!(
+            candidate.implementation_capabilities[0].capability,
+            ImplementationCapability::OneShot
+        );
+        assert_eq!(
+            candidate.implementation_capabilities[0].evidence,
+            CapabilityEvidence::Declared
+        );
         assert_eq!(candidate.specifications.len(), 2);
         assert_eq!(
             candidate.candidate.record.dataset_configuration,
@@ -271,6 +280,20 @@ fn expands_repetitions_into_identified_one_shot_records() {
             "mw1-logical-attempt-slot-d568ee1f86ac3d7a0a5e54789c59e232350c493abeaaaa3ddba71a9a87393340",
             "mw1-logical-attempt-slot-cd99b53afcb7937265885ce5c8361356148690375e5e12694c5c83610b0acb17",
         ]
+    );
+}
+
+#[test]
+fn models_each_capability_evidence_state_with_a_stable_label() {
+    let evidence = [
+        CapabilityEvidence::Declared,
+        CapabilityEvidence::VerifiedNow,
+        CapabilityEvidence::PreviouslyVerified,
+    ];
+
+    assert_eq!(
+        evidence.map(|state| state.to_string()),
+        ["declared", "verified_now", "previously_verified"]
     );
 }
 

@@ -121,6 +121,63 @@ pub struct IdentifiedRecord<T> {
     pub record: T,
 }
 
+/// How Metewand knows that a worker or executor has a capability.
+///
+/// A declaration is suitable for side-effect-free planning, but it is not an
+/// observation of runtime behavior. Runtime checks produce `VerifiedNow`,
+/// while persisted resolution records expose their observations as
+/// `PreviouslyVerified` when read back later.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum CapabilityEvidence {
+    /// The benchmark definition declares the capability.
+    Declared,
+    /// The capability was observed during the current operation.
+    VerifiedNow,
+    /// The capability was observed by an earlier recorded operation.
+    PreviouslyVerified,
+}
+
+impl CapabilityEvidence {
+    /// Returns the stable machine-readable label.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Declared => "declared",
+            Self::VerifiedNow => "verified_now",
+            Self::PreviouslyVerified => "previously_verified",
+        }
+    }
+}
+
+impl fmt::Display for CapabilityEvidence {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
+/// A typed capability paired with the evidence available to an operation.
+///
+/// The generic capability keeps implementation, worker, and executor
+/// namespaces distinct while giving their reports one evidence model.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CapabilityReport<C> {
+    /// Capability being reported.
+    pub capability: C,
+    /// Evidence supporting the report.
+    pub evidence: CapabilityEvidence,
+}
+
+impl<C> CapabilityReport<C> {
+    /// Reports a capability from definition data without claiming it was run.
+    #[must_use]
+    pub const fn declared(capability: C) -> Self {
+        Self {
+            capability,
+            evidence: CapabilityEvidence::Declared,
+        }
+    }
+}
+
 /// A raw SHA-256 content digest.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ContentDigest([u8; 32]);

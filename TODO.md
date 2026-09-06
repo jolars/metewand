@@ -105,10 +105,10 @@ See [Automation and agentic workflows](DESIGN.md#automation-and-agentic-workflow
       specifications, observation slots, and measurement attempt slots,
       including implementation repetitions, measurement repetitions, seeds,
       warm-up roles, and stable IDs.
-- [ ] Reject invalid pairings, missing datasets, unexpected datasets for
+- [x] Reject invalid pairings, missing datasets, unexpected datasets for
       dataset-free problems, unsupported budgets, and incompatible timing and
       worker-reuse policies before execution.
-- [ ] Model capability evidence as `declared`, `verified_now`, or
+- [x] Model capability evidence as `declared`, `verified_now`, or
       `previously_verified`; ensure a side-effect-free plan reports only
       declared capabilities.
 - [ ] Implement `metewand schema`, `metewand check`, and the non-mutating

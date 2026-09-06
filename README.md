@@ -78,6 +78,9 @@ The [one-shot logical planner](docs/logical-planning.md) then assigns stable
 typed identities, derives dataset, implementation, and scheduling values, and
 expands implementation repetitions, measurement repetitions, warm-ups,
 observation slots, and measurement attempt slots without runtime side effects.
+Its capability reports distinguish declarations from current and previously
+recorded runtime verification; this side-effect-free stage reports declarations
+only.
 
 ## Development
 

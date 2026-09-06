@@ -13,8 +13,8 @@ use crate::{
     identity::{IdentityError, identify_record},
     manifest::{
         DatasetDefinition, ExecutionPolicyDefinition, ExperimentCase, ExperimentDefinition,
-        Manifest, Name, ObservationPolicyDefinition, ParameterAxes, ParameterAxis,
-        WorkerDefinition,
+        ImplementationCapability, Manifest, Name, ObservationPolicyDefinition, ParameterAxes,
+        ParameterAxis, WorkerDefinition,
     },
     parameters::{
         ParameterNamespaceError, ParameterResolutionError, resolve_parameters,
@@ -22,12 +22,12 @@ use crate::{
     },
     problem_contract::{ProblemContract, ScientificBudget},
     records::{
-        AttemptSlotRole, ContentDigest, DatasetConfigurationRecord, DatasetDefinitionRecord,
-        DerivedSeedRecord, EnvironmentDefinitionRecord, ExecutionPolicyRecord, IdentifiedRecord,
-        ImplementationConfigurationRecord, ImplementationDefinitionRecord,
-        LogicalAttemptSlotRecord, LogicalCandidateRecord, LogicalObservationSlotRecord,
-        ObservationPolicyRecord, OneShotLogicalSpecificationRecord, ProblemConfigurationRecord,
-        ProblemDefinitionRecord, RecordId,
+        AttemptSlotRole, CapabilityReport, ContentDigest, DatasetConfigurationRecord,
+        DatasetDefinitionRecord, DerivedSeedRecord, EnvironmentDefinitionRecord,
+        ExecutionPolicyRecord, IdentifiedRecord, ImplementationConfigurationRecord,
+        ImplementationDefinitionRecord, LogicalAttemptSlotRecord, LogicalCandidateRecord,
+        LogicalObservationSlotRecord, ObservationPolicyRecord, OneShotLogicalSpecificationRecord,
+        ProblemConfigurationRecord, ProblemDefinitionRecord, RecordId,
     },
     schema::SchemaCatalog,
     seed::{
@@ -143,6 +143,8 @@ pub struct LogicalCandidatePlan {
     pub problem_configuration: IdentifiedRecord<ProblemConfigurationRecord>,
     /// Identified implementation configuration.
     pub implementation_configuration: IdentifiedRecord<ImplementationConfigurationRecord>,
+    /// Implementation capabilities, supported only by manifest declarations.
+    pub implementation_capabilities: Vec<CapabilityReport<ImplementationCapability>>,
     /// Identified comparison candidate.
     pub candidate: IdentifiedRecord<LogicalCandidateRecord>,
     /// One run specification per implementation repetition.
@@ -291,6 +293,7 @@ fn plan_experiment(
         .into_iter()
         .map(|candidate| {
             plan_candidate(
+                manifest,
                 catalog,
                 experiment,
                 execution_policy.id,
@@ -313,6 +316,7 @@ fn plan_experiment(
 
 #[allow(clippy::too_many_arguments)]
 fn plan_candidate(
+    manifest: &Manifest,
     catalog: &LogicalPlanningCatalog,
     experiment: &ExperimentDefinition,
     execution_policy: RecordId<ExecutionPolicyRecord>,
@@ -364,6 +368,12 @@ fn plan_candidate(
         parameters: expanded.implementation.parameters,
         environment: environment_definition,
     })?;
+    let implementation_capabilities = manifest.implementations[&expanded.implementation.definition]
+        .capabilities
+        .iter()
+        .copied()
+        .map(CapabilityReport::declared)
+        .collect();
     let candidate = identify_record(LogicalCandidateRecord {
         dataset_configuration: dataset_configuration.id,
         problem_configuration: problem_configuration.id,
@@ -391,6 +401,7 @@ fn plan_candidate(
         dataset_configuration,
         problem_configuration,
         implementation_configuration,
+        implementation_capabilities,
         candidate,
         specifications,
     })
