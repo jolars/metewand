@@ -26,8 +26,7 @@ use crate::{
 /// A type-safe reference to an identity-bearing record or resource.
 ///
 /// The digest is stored separately from the public `mw1-<kind>-<sha256>`
-/// spelling so the record graph can be defined before the identity-construction
-/// slice. The marker type prevents substituting, for example, a dataset
+/// spelling. The marker type prevents substituting, for example, a dataset
 /// definition identity where a problem definition identity is required.
 ///
 /// ```compile_fail
@@ -48,8 +47,9 @@ pub struct RecordId<T> {
 impl<T> RecordId<T> {
     /// Creates a typed reference from a previously computed identity digest.
     ///
-    /// This constructor does not compute or verify the digest. Identity
-    /// construction and textual parsing belong to the next roadmap slice.
+    /// This constructor does not compute or verify the digest. Prefer
+    /// [`crate::identity::identify_record`] or
+    /// [`crate::identity::identify_canonical`] when constructing a new ID.
     #[must_use]
     pub const fn from_digest(digest: [u8; 32]) -> Self {
         Self {

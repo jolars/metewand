@@ -81,7 +81,7 @@ and [Main domain types](DESIGN.md#main-domain-types).
       logical candidates, one-shot logical specifications, observation and
       attempt slots, resolved specifications and slots, run observations, and
       run attempts.
-- [ ] Implement `mw1-<kind>-<sha256>` identities over typed, versioned canonical
+- [x] Implement `mw1-<kind>-<sha256>` identities over typed, versioned canonical
       representations, with dependencies represented by their typed identities.
 - [ ] Implement normalized local-tree hashing over paths, entry types, bytes,
       link targets, and relevant executable bits.

@@ -6,6 +6,7 @@ use std::{
 
 use metewand_core::{
     canonical::CanonicalValue,
+    identity::record_id,
     manifest::{
         DatasetDefinition, Enforcement, ImplementationCapability, Name, ObservationKind,
         PrimaryTime, ProtocolTransport, RepositoryPath, RunOrder, TimingScope, parse_manifest,
@@ -110,6 +111,10 @@ fn represents_component_definitions_with_typed_dependencies() {
     assert_eq!(dataset.output_schema.digest(), &[4; 32]);
     assert_eq!(problem.contract.digest(), &[6; 32]);
     assert_eq!(implementation.problem_contracts, [problem_id]);
+    record_id(&environment).unwrap();
+    record_id(&dataset).unwrap();
+    record_id(&problem).unwrap();
+    record_id(&implementation).unwrap();
 }
 
 #[test]
@@ -263,6 +268,24 @@ fn separates_logical_records_from_resolved_runtime_dependencies() {
     assert_eq!(resolved_specification.executor.digest(), &[41; 32]);
     assert_eq!(resolved_observation_slot.logical_slot.digest(), &[42; 32]);
     assert_eq!(resolved_attempt_slot.logical_slot.digest(), &[44; 32]);
+    record_id(&dataset_configuration).unwrap();
+    record_id(&problem_configuration).unwrap();
+    record_id(&implementation_configuration).unwrap();
+    record_id(&dataset_instance).unwrap();
+    record_id(&problem_instance).unwrap();
+    record_id(&execution_policy).unwrap();
+    record_id(&observation_policy).unwrap();
+    record_id(&candidate).unwrap();
+    record_id(&specification).unwrap();
+    record_id(&observation_slot).unwrap();
+    record_id(&measured_slot).unwrap();
+    record_id(&warmup_slot).unwrap();
+    record_id(&resolved_environment).unwrap();
+    record_id(&resolved_launch).unwrap();
+    record_id(&executor).unwrap();
+    record_id(&resolved_specification).unwrap();
+    record_id(&resolved_observation_slot).unwrap();
+    record_id(&resolved_attempt_slot).unwrap();
 }
 
 #[test]
@@ -333,7 +356,35 @@ fn records_one_shot_observations_and_terminal_attempts_without_losing_failures()
         finished_at: SystemTime::UNIX_EPOCH + Duration::from_secs(3),
         provenance,
     };
+    let different_provenance = ProvenanceRecord {
+        tool_version: "0.2.0".to_owned(),
+        wire_protocol_version: 1,
+        execution_semantics_version: 1,
+        data: value(r#"{"ephemeral_path":"/tmp/metewand-attempt"}"#),
+    };
+    let reprovenanced_observation = RunObservationRecord {
+        provenance: different_provenance.clone(),
+        ..observation.clone()
+    };
+    let reprovenanced_attempt = RunAttemptRecord {
+        started_at: SystemTime::UNIX_EPOCH + Duration::from_secs(100),
+        finished_at: SystemTime::UNIX_EPOCH + Duration::from_secs(101),
+        provenance: different_provenance,
+        ..accepted.clone()
+    };
 
+    record_id(&observation).unwrap();
+    record_id(&not_reached_observation).unwrap();
+    record_id(&accepted).unwrap();
+    record_id(&failed).unwrap();
+    assert_eq!(
+        record_id(&observation).unwrap(),
+        record_id(&reprovenanced_observation).unwrap()
+    );
+    assert_eq!(
+        record_id(&accepted).unwrap(),
+        record_id(&reprovenanced_attempt).unwrap()
+    );
     assert_eq!(observation.completion, CompletionStatus::Reached);
     assert_eq!(identified_observation.id, observation_id);
     assert_eq!(

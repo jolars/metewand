@@ -2,6 +2,7 @@
 
 pub mod canonical;
 pub mod compatibility;
+pub mod identity;
 pub mod manifest;
 pub mod parameters;
 pub mod problem_contract;

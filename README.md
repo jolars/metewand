@@ -60,8 +60,8 @@ and rejecting selected trees that escape through symlinks.
 
 The Gate 1 [domain-record graph](docs/domain-records.md) separates definitions,
 configurations, logical plans, resolved execution dependencies, observations,
-and attempts. Its typed references prevent identities for different record
-kinds from being interchanged before canonical identity construction is added.
+and attempts. Its [version-1 typed identities](docs/identities.md) hash explicit
+canonical representations and encode dependencies as typed IDs.
 
 ## Development
 

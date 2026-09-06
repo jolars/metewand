@@ -24,9 +24,9 @@ definitions ──> configurations ──> logical candidate ──> one-shot sp
 Each arrow is represented by a `RecordId<T>` whose marker type names the exact
 record or resource at the other end. Rust therefore rejects a dataset-definition
 identity where a problem-definition identity is required. `RecordId<T>` stores
-the 32-byte digest needed by the graph, but this slice deliberately does not
-compute it or expose the public `mw1-<kind>-<sha256>` spelling. The identity
-construction layer supplies those operations from versioned canonical
+the 32-byte digest needed by the graph and renders the public
+`mw1-<kind>-<sha256>` spelling. The [identity construction
+contract](identities.md) assigns IDs from explicit versioned canonical
 representations. `IdentifiedRecord<T>` pairs the resulting identity with its
 record without putting a record's own identity into its hash input.
 
@@ -94,7 +94,7 @@ Every retry is a separate `RunAttemptRecord` with its resolved slot and retry
 index. Wall-clock timestamps and observed provenance remain on attempts and
 observations; they are not inputs to logical or resolved identities.
 
-The module does not parse manifests, expand parameter grids, calculate hashes
-or seeds, resolve runtime resources, perform execution, or serialize the public
-attempt and observation schemas. Those operations consume these records in
-their later roadmap slices.
+The module does not parse manifests, expand parameter grids, derive seeds,
+resolve runtime resources, perform execution, or serialize the public attempt
+and observation schemas. Those operations consume these records in their later
+roadmap slices.
