@@ -38,6 +38,13 @@ similarly validated against `metric_schema`, and a problem contract's
 schemas are repository documents admitted to the same offline catalog; validation
 never retrieves them from the network.
 
+Every version-1 problem `semantics` object contains nonempty `validity` and
+`one_shot_completion` rule groups. The common schema enforces their presence;
+the problem's family-specific semantics schema defines their contents. The
+initial public-schema compatibility version remains 1 because this constraint
+completes the still-unreleased version-1 contract rather than revising a released
+format.
+
 ## Gate 1 boundary
 
 The initial manifest represents the runner and environment kinds declared by the

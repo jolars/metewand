@@ -43,7 +43,18 @@
       "const": ["none"]
     },
     "semantics": {
-      "type": "object"
+      "type": "object",
+      "properties": {
+        "validity": {
+          "type": "object",
+          "minProperties": 1
+        },
+        "one_shot_completion": {
+          "type": "object",
+          "minProperties": 1
+        }
+      },
+      "required": ["validity", "one_shot_completion"]
     },
     "reference_cases": {
       "type": "array",

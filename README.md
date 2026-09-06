@@ -45,6 +45,9 @@ and strict envelopes for machine output, canonical results, and evaluator
 metrics. `metewand-core` embeds the checked-in documents for offline consumers.
 The [manifest parser](docs/manifest-parsing.md) turns `metewand.toml` into strict
 domain types and reports path-aware source spans for invalid input.
+Together, the manifest and [problem-contract parser](docs/problem-contracts.md)
+require each schema, reference case, evaluator definition, and distinct validity
+and one-shot completion rule, then validate family semantics offline.
 
 ## Development
 

@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "objective": {
+      "type": "object",
+      "properties": {
+        "family": { "const": "squared_error" }
+      },
+      "required": ["family"],
+      "additionalProperties": false
+    },
+    "validity": {
+      "type": "object",
+      "properties": {
+        "nonfinite": { "const": "reject" }
+      },
+      "required": ["nonfinite"],
+      "additionalProperties": false
+    },
+    "one_shot_completion": {
+      "type": "object",
+      "properties": {
+        "maximum_error": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      },
+      "required": ["maximum_error"],
+      "additionalProperties": false
+    }
+  },
+  "required": ["objective", "validity", "one_shot_completion"],
+  "additionalProperties": false
+}

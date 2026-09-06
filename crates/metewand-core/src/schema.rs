@@ -139,6 +139,12 @@ impl SchemaCatalog {
             })
         }
     }
+
+    /// Returns whether a schema is registered at `schema_path`.
+    #[must_use]
+    pub fn contains(&self, schema_path: &Path) -> bool {
+        self.validators.contains_key(schema_path)
+    }
 }
 
 /// An error encountered while constructing a schema catalog.

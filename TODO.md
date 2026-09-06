@@ -59,7 +59,7 @@ See [User model](DESIGN.md#2-user-model) and
       implementation, environment, experiment, execution-policy, and
       observation-policy definitions with source-spanned diagnostics and
       unknown-field rejection.
-- [ ] Parse problem contracts, validate their common envelope and
+- [x] Parse problem contracts, validate their common envelope and
       family-specific `semantics` object, and require schemas, evaluator
       definitions, result-validity and one-shot completion rules, and reference
       cases.

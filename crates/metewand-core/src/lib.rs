@@ -3,6 +3,7 @@
 pub mod canonical;
 pub mod manifest;
 pub mod parameters;
+pub mod problem_contract;
 pub mod public_schemas;
 pub mod schema;
 

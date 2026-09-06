@@ -204,6 +204,21 @@ alpha = { value = 1, unexpected = true }
 }
 
 #[test]
+fn requires_an_evaluator_for_every_problem_definition() {
+    let source = r#"
+version = 1
+name = "missing-evaluator"
+
+[problems.example]
+contract = "problems/example.toml"
+"#;
+
+    let error = parse_manifest(Path::new("metewand.toml"), source).unwrap_err();
+    assert!(error.message().contains("missing field `evaluator`"));
+    assert!(error.source_span().is_some());
+}
+
+#[test]
 fn reports_syntax_errors_against_the_supplied_source_path() {
     let error =
         parse_manifest(Path::new("fixtures/broken.toml"), "version = 1\nname = [\n").unwrap_err();

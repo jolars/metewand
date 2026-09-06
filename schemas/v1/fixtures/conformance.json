@@ -186,7 +186,11 @@
         "supported_budgets": ["none"],
         "semantics": {
           "objective": { "family": "least_squares_l1" },
-          "validity": { "nonfinite": "reject" }
+          "validity": { "nonfinite": "reject" },
+          "one_shot_completion": {
+            "objective_relative_tolerance": 1e-8,
+            "maximum_kkt_violation": 1e-6
+          }
         },
         "reference_cases": [
           {
@@ -211,7 +215,11 @@
         "semantics_schema": "schemas/pi-semantics.json",
         "allowed_timing_scopes": ["prepare_and_execute"],
         "supported_budgets": ["none"],
-        "semantics": { "integrand": "unit-circle" },
+        "semantics": {
+          "integrand": "unit-circle",
+          "validity": { "nonfinite": "reject" },
+          "one_shot_completion": { "absolute_error": 1e-12 }
+        },
         "reference_cases": [
           {
             "result": "problems/fixtures/pi/result",
@@ -432,7 +440,10 @@
         "semantics_schema": "schemas/semantics.json",
         "allowed_timing_scopes": ["prepare_and_execute"],
         "supported_budgets": ["none"],
-        "semantics": {},
+        "semantics": {
+          "validity": { "nonfinite": "reject" },
+          "one_shot_completion": { "maximum_error": 1e-8 }
+        },
         "reference_cases": [
           {
             "result": "fixtures/result",
@@ -455,7 +466,35 @@
         "semantics_schema": "schemas/semantics.json",
         "allowed_timing_scopes": ["prepare_and_execute"],
         "supported_budgets": ["iterations"],
-        "semantics": {},
+        "semantics": {
+          "validity": { "nonfinite": "reject" },
+          "one_shot_completion": { "maximum_error": 1e-8 }
+        },
+        "reference_cases": [
+          {
+            "result": "fixtures/result",
+            "expected_metrics": "fixtures/metrics.json"
+          }
+        ]
+      }
+    },
+    {
+      "name": "problem contracts require separate validity and completion rules",
+      "schema": "problem-contract",
+      "instance": {
+        "version": 1,
+        "name": "lasso",
+        "family": "optimization",
+        "parameter_schema": "schemas/parameters.json",
+        "dataset_schemas": [],
+        "result_schema": "schemas/result.json",
+        "metric_schema": "schemas/metrics.json",
+        "semantics_schema": "schemas/semantics.json",
+        "allowed_timing_scopes": ["prepare_and_execute"],
+        "supported_budgets": ["none"],
+        "semantics": {
+          "validity": { "nonfinite": "reject" }
+        },
         "reference_cases": [
           {
             "result": "fixtures/result",

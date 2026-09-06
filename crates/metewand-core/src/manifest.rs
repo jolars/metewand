@@ -298,7 +298,7 @@ pub struct ExecutionPolicyDefinition {
 }
 
 /// Phases included in an execution timing measurement.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd)]
 #[serde(rename_all = "snake_case")]
 pub enum TimingScope {
     /// Worker startup, preparation, execution, and result serialization.
@@ -657,7 +657,11 @@ pub struct SourceSpan {
 }
 
 impl SourceSpan {
-    fn from_byte_range(path: &Path, source: &str, range: std::ops::Range<usize>) -> Self {
+    pub(crate) fn from_byte_range(
+        path: &Path,
+        source: &str,
+        range: std::ops::Range<usize>,
+    ) -> Self {
         let start = source_position(source, range.start);
         let end = source_position(source, range.end);
         Self {
@@ -933,7 +937,7 @@ impl<'de> Deserialize<'de> for ParameterAxis {
     }
 }
 
-fn deserialize_version_one<'de, D>(deserializer: D) -> Result<u32, D::Error>
+pub(crate) fn deserialize_version_one<'de, D>(deserializer: D) -> Result<u32, D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -975,7 +979,9 @@ where
     }
 }
 
-fn deserialize_manifest_value<'de, D>(deserializer: D) -> Result<CanonicalValue, D::Error>
+pub(crate) fn deserialize_manifest_value<'de, D>(
+    deserializer: D,
+) -> Result<CanonicalValue, D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -1128,7 +1134,7 @@ where
     }
 }
 
-fn ensure_nonempty_unique<T>(values: &[T], description: &str) -> Result<(), String>
+pub(crate) fn ensure_nonempty_unique<T>(values: &[T], description: &str) -> Result<(), String>
 where
     T: Ord,
 {
