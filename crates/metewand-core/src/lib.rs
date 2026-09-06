@@ -6,6 +6,7 @@ pub mod identity;
 pub mod manifest;
 pub mod manifest_hash;
 pub mod parameters;
+pub mod planning;
 pub mod problem_contract;
 pub mod public_schemas;
 pub mod records;

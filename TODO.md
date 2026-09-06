@@ -98,7 +98,7 @@ and [Main domain types](DESIGN.md#main-domain-types).
 
 See [Automation and agentic workflows](DESIGN.md#automation-and-agentic-workflows).
 
-- [ ] Expand literal values, Cartesian grids, and named coupled cases across
+- [x] Expand literal values, Cartesian grids, and named coupled cases across
       their explicit namespaces into deterministic dataset, problem, and
       implementation configurations; reject duplicate logical candidates.
 - [ ] Expand configurations into logical candidates, one-shot run

@@ -71,6 +71,9 @@ dependency of unrelated component identities.
 The [seed-derivation contract](docs/seeds.md) produces independently domain-
 separated dataset, implementation, and scheduling seeds while retaining each
 complete derivation digest.
+The deterministic [configuration expander](docs/configuration-expansion.md)
+resolves literal values, Cartesian grids, and coupled named cases within their
+explicit parameter namespaces and rejects duplicate logical candidates.
 
 ## Development
 
