@@ -47,12 +47,16 @@ range as a one-indexed `SourceSpan`. Columns count Unicode scalar values, and
 the end position is exclusive. This representation can feed the shared typed
 diagnostic envelope without reparsing human-readable error text.
 
-Parsing does not resolve manifest names, inspect referenced schemas or problem
-contracts, normalize paths against a repository root, expand source bundles, or
-follow symlinks. The pure
+Repository paths cross the typed boundary only in normalized lexical form. They
+are relative UTF-8 paths with `/` separators and no empty, `.`, or `..`
+components; absolute paths, backslashes, and trailing separators are rejected.
+Parsing does not resolve those paths against a repository root, inspect
+referenced schemas or problem contracts, expand source bundles, or follow
+symlinks. The pure
 [parameter-namespace validator](parameter-namespaces.md) performs the first
 structural ownership checks; the remaining operations require repository
-context and belong to subsequent validation and source-bundle stages.
+context. `metewand-runtime` performs the filesystem-sensitive
+[source-bundle expansion](source-bundles.md).
 
 The complete version-1 TOML fixture is
 [`fixtures/manifest/v1/complete.toml`](../fixtures/manifest/v1/complete.toml).

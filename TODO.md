@@ -65,7 +65,7 @@ See [User model](DESIGN.md#2-user-model) and
       cases.
 - [x] Validate parameter ownership and namespaces structurally while leaving
       their scientific classification visible to the benchmark author.
-- [ ] Normalize repository-relative paths and implement declared source-bundle
+- [x] Normalize repository-relative paths and implement declared source-bundle
       expansion with bytewise ordering, required matches, tree-boundary checks,
       and symlink-escape rejection.
 - [ ] Validate dataset/problem schema compatibility, implementation/contract

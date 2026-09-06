@@ -232,6 +232,46 @@ fn reports_syntax_errors_against_the_supplied_source_path() {
 }
 
 #[test]
+fn retains_only_normalized_repository_relative_paths() {
+    let source = r#"
+version = 1
+name = "normalized-paths"
+
+[datasets.fixed]
+output_schema = "schemas/dataset.json"
+sources = ["datasets/**/*.json"]
+"#;
+    let manifest = parse_manifest(Path::new("metewand.toml"), source).unwrap();
+    let DatasetDefinition::Fixed(dataset) = &manifest.datasets["fixed"] else {
+        panic!("expected a fixed dataset");
+    };
+    assert_eq!(
+        dataset.sources[0].as_path(),
+        Path::new("datasets/**/*.json")
+    );
+
+    for path in [
+        "/datasets/data.json",
+        "datasets//data.json",
+        "datasets/./data.json",
+        "datasets/../data.json",
+        "datasets\\data.json",
+        "datasets/data.json/",
+    ] {
+        let source = format!(
+            "version = 1\nname = \"invalid-path\"\n\n[datasets.fixed]\noutput_schema = \"schemas/dataset.json\"\nsources = [{path:?}]\n"
+        );
+        let error = parse_manifest(Path::new("metewand.toml"), &source).unwrap_err();
+        assert!(
+            error
+                .message()
+                .contains("normalized, relative repository path"),
+            "unexpected error for {path:?}: {error}"
+        );
+    }
+}
+
+#[test]
 fn rejects_unsupported_manifest_and_policy_versions() {
     for source in [
         "version = 2\nname = \"future\"\n",

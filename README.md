@@ -51,6 +51,9 @@ preserving the benchmark author's explicit scientific classification.
 Together, the manifest and [problem-contract parser](docs/problem-contracts.md)
 require each schema, reference case, evaluator definition, and distinct validity
 and one-shot completion rule, then validate family semantics offline.
+`metewand-runtime` expands each declared [source bundle](docs/source-bundles.md)
+into unique bytewise-ordered repository paths, requiring every pattern to match
+and rejecting selected trees that escape through symlinks.
 
 ## Development
 

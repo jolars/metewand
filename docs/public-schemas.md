@@ -56,11 +56,12 @@ checkpoint messages, and portable snapshots receive their own versioned schemas
 in later gates. A later change to an existing strict entry point requires a new
 public schema compatibility version.
 
-JSON Schema enforces the portable record shape. The typed parser and runtime
-remain responsible for constraints that depend on repository or execution
-state, including name resolution, source-bundle expansion, bytewise path order,
-unique file paths, path and symlink containment, schema-content identity,
-dataset/problem compatibility, policy combinations, and timestamp ordering.
+JSON Schema enforces the portable record shape. The typed parser requires
+normalized lexical repository paths, and the runtime performs
+[source-bundle expansion](source-bundles.md), bytewise path ordering, unique-path
+and tree-containment checks, and symlink validation. Name resolution,
+schema-content identity, dataset/problem compatibility, policy combinations,
+and timestamp ordering remain later repository- or execution-aware checks.
 
 ## Rust access
 
