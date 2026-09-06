@@ -55,7 +55,7 @@ See [Schemas, canonical values, and identities](DESIGN.md#schemas-canonical-valu
 See [User model](DESIGN.md#2-user-model) and
 [Problem and fairness contracts](DESIGN.md#problem-and-fairness-contracts).
 
-- [ ] Parse the version-1 manifest into typed dataset, problem,
+- [x] Parse the version-1 manifest into typed dataset, problem,
       implementation, environment, experiment, execution-policy, and
       observation-policy definitions with source-spanned diagnostics and
       unknown-field rejection.

@@ -1,6 +1,7 @@
 //! Core domain types, planning, scheduling, and run records for Metewand.
 
 pub mod canonical;
+pub mod manifest;
 pub mod parameters;
 pub mod public_schemas;
 pub mod schema;

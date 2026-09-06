@@ -43,6 +43,8 @@ The [version-1 public schemas](docs/public-schemas.md) define the initial
 manifest, problem contract, one-shot policy, artifact and execution records,
 and strict envelopes for machine output, canonical results, and evaluator
 metrics. `metewand-core` embeds the checked-in documents for offline consumers.
+The [manifest parser](docs/manifest-parsing.md) turns `metewand.toml` into strict
+domain types and reports path-aware source spans for invalid input.
 
 ## Development
 

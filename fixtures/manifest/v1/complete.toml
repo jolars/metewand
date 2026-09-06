@@ -1,0 +1,126 @@
+version = 1
+name = "complete-benchmark"
+
+[datasets.fixed]
+output_schema = "schemas/dataset.json"
+sources = ["datasets/fixed/**"]
+
+[datasets.generated]
+parameter_schema = "schemas/generator.json"
+parameter_defaults = { rows = 100 }
+output_schema = "schemas/dataset.json"
+runner = "python"
+entrypoint = "datasets/generate.py"
+args = ["--quiet"]
+sources = ["datasets/generate.py"]
+environment = "python"
+protocol_transport = "pipes"
+
+[datasets.command]
+output_schema = "schemas/dataset.json"
+runner = "command"
+program = "bin/generate"
+environment = "native"
+
+[datasets.command.source]
+url = "https://example.org/source.tar.zst"
+sha256 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+[problems.example]
+contract = "problems/example.toml"
+parameter_defaults = { centered = true }
+
+[problems.example.evaluator]
+runner = "julia"
+entrypoint = "problems/evaluate.jl"
+sources = ["problems/evaluate.jl"]
+environment = "julia"
+protocol_transport = "stdio"
+
+[implementations.interpreted]
+runner = "r"
+entrypoint = "implementations/solve.R"
+sources = ["implementations/solve.R"]
+environment = "r"
+problem_contracts = ["example"]
+parameter_schema = "schemas/implementation.json"
+parameter_defaults = { tolerance = 1e-8 }
+capabilities = ["one_shot"]
+
+[implementations.command]
+runner = "command"
+program = "bin/solve"
+args = ["--worker"]
+sources = ["implementations/config.toml"]
+environment = "native"
+problem_contracts = ["example"]
+capabilities = ["one_shot"]
+
+[environments.local]
+kind = "local"
+
+[environments.python]
+kind = "uv"
+project = "environments/python"
+lockfile = "environments/python/uv.lock"
+
+[environments.r]
+kind = "renv"
+project = "environments/r"
+lockfile = "environments/r/renv.lock"
+
+[environments.julia]
+kind = "oci"
+image = "example.org/julia@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+
+[environments.native]
+kind = "nix"
+flake = "."
+installable = ".#native"
+system = "x86_64-linux"
+output_kind = "app"
+output = "native"
+
+[[experiments]]
+name = "main"
+problem = "example"
+datasets = ["fixed", "generated", "command"]
+implementations = ["interpreted", "command"]
+execution_policy = "controlled"
+observation_policy = "final"
+implementation_repetitions = 2
+measurement_repetitions = 3
+seed = 2025
+
+[experiments.dataset_parameters.generated]
+rows = { grid = [100, 200] }
+
+[experiments.problem_parameters]
+centered = { value = true }
+
+[experiments.implementation_parameters.interpreted]
+tolerance = { value = 1e-7 }
+
+[[experiments.cases]]
+name = "small"
+
+[experiments.cases.dataset_parameters.generated]
+rows = { value = 50 }
+
+[execution_policies.controlled]
+version = 1
+cpus = 1
+threads = 1
+memory = "8 GiB"
+network = false
+worker_reuse = false
+warmup_runs = 1
+timeout = "10 min"
+timing_scope = "prepare_and_execute"
+primary_time = "timed_wall_time"
+run_order = "randomized"
+enforcement = "best_effort"
+
+[observation_policies.final]
+version = 1
+kind = "one_shot"
