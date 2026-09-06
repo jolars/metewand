@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use metewand_core::{
     problem_contract::{
         ProblemContractError, ProblemSchemaRole, ScientificBudget, parse_problem_contract,
+        parse_problem_contract_document, validate_problem_contract,
     },
     schema::{DRAFT_2020_12_DIALECT, SchemaCatalog, SchemaValidationError},
 };
@@ -69,6 +70,26 @@ fn parses_and_validates_a_complete_problem_contract() {
         contract.semantics.one_shot_completion()["maximum_error"],
         1e-8
     );
+}
+
+#[test]
+fn repository_loaders_can_parse_before_compiling_the_schema_catalog() {
+    let path = Path::new("problems/regression.toml");
+    let contract = parse_problem_contract_document(path, COMPLETE_CONTRACT).unwrap();
+    assert_eq!(
+        contract.semantics_schema.as_path(),
+        Path::new("schemas/semantics.json")
+    );
+
+    let empty_catalog = SchemaCatalog::try_new([]).unwrap();
+    let error = validate_problem_contract(path, &contract, &empty_catalog).unwrap_err();
+    assert!(matches!(
+        error,
+        ProblemContractError::MissingSchema {
+            role: ProblemSchemaRole::Parameter,
+            ..
+        }
+    ));
 }
 
 #[test]

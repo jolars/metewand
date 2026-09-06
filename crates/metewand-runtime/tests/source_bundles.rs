@@ -1,7 +1,9 @@
 use std::{fs, path::Path};
 
 use metewand_core::manifest::RepositoryPath;
-use metewand_runtime::source_bundle::{SourceBundleError, expand_source_bundle};
+use metewand_runtime::source_bundle::{
+    SourceBundleError, expand_source_bundle, identify_source_bundle,
+};
 use tempfile::TempDir;
 
 fn pattern(value: &str) -> RepositoryPath {
@@ -87,6 +89,33 @@ fn supports_the_documented_glob_forms_and_includes_dotfiles() {
             Path::new("src/c.jl"),
         ]
     );
+}
+
+#[test]
+fn source_bundle_identity_is_order_independent_and_content_sensitive() {
+    let repository = TempDir::new().unwrap();
+    write(repository.path(), "src/main.py");
+    write(repository.path(), "src/helper.py");
+
+    let forward = identify_source_bundle(
+        repository.path(),
+        &[pattern("src/main.py"), pattern("src/helper.py")],
+    )
+    .unwrap();
+    let reverse = identify_source_bundle(
+        repository.path(),
+        &[pattern("src/helper.py"), pattern("src/main.py")],
+    )
+    .unwrap();
+    assert_eq!(forward, reverse);
+
+    fs::write(repository.path().join("src/helper.py"), b"changed").unwrap();
+    let changed = identify_source_bundle(
+        repository.path(),
+        &[pattern("src/main.py"), pattern("src/helper.py")],
+    )
+    .unwrap();
+    assert_ne!(forward, changed);
 }
 
 #[test]

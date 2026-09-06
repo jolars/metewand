@@ -13,6 +13,9 @@ resources resolved before logical planning. Callers supply those typed IDs in a
 the built-in dataset for a dataset-free problem uses
 `DatasetConfigurationDefinition::Unit`. Missing entries produce typed,
 deterministically ordered planning errors rather than placeholder identities.
+`identify_builtin_unit_dataset_definition` constructs that definition and its
+versioned empty-object schema without repository access, so every benchmark
+uses one content identity for the built-in resource.
 
 Each logical candidate reports the selected implementation's capabilities as
 `CapabilityReport<ImplementationCapability>`. The evidence on every report is

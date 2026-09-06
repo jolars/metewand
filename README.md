@@ -81,6 +81,11 @@ observation slots, and measurement attempt slots without runtime side effects.
 Its capability reports distinguish declarations from current and previously
 recorded runtime verification; this side-effect-free stage reports declarations
 only.
+The [read-only command-line workflow](docs/read-only-cli.md) composes these
+layers into `metewand schema`, `metewand check`, and `metewand plan`. Repository
+checks load contracts and transitive schema references offline, source contents
+feed definition identities, and plans expose every unresolved logical identity
+without downloads, builds, worker launches, or filesystem writes.
 
 ## Development
 

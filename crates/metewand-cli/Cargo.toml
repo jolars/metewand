@@ -18,3 +18,6 @@ path = "src/main.rs"
 metewand-core.workspace = true
 metewand-protocol.workspace = true
 metewand-runtime.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

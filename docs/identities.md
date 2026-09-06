@@ -34,6 +34,17 @@ Programmatically constructed records are checked again at the identity
 boundary. An integer outside the safe JSON range, for example, is rejected
 instead of receiving an implementation-specific hash.
 
+The read-only repository loader constructs canonical resources before calling
+this generic identity API. A repository schema resource contains its logical
+path, canonical document, and the path and canonical document of every
+repository-local schema reachable through `$ref`; cycles are deduplicated.
+A validated problem-contract resource replaces schema paths with those resolved
+schema identities and binds each reference-case path to a content identity.
+Source-bundle resources use the deterministic filesystem inventory documented
+in [Source bundles](source-bundles.md). These resolved resource representations
+ensure that a transitive schema, fixture, or worker-source change invalidates
+the definition and logical identities that depend on it.
+
 ## Kind registry
 
 Each Rust marker or record type has one stable kind. Artifact roles remain

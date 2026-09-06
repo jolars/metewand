@@ -4,6 +4,7 @@ use metewand_core::{
     manifest::{ImplementationCapability, Manifest, Name, parse_manifest},
     planning::{
         DatasetConfigurationDefinition, LogicalPlanningCatalog, expand_manifest_logical_plan,
+        identify_builtin_unit_dataset_definition,
     },
     problem_contract::{ProblemContract, ScientificBudget, parse_problem_contract},
     records::{
@@ -155,6 +156,19 @@ fn catalog() -> LogicalPlanningCatalog {
             id::<EnvironmentDefinitionRecord>(5),
         )]),
     }
+}
+
+#[test]
+fn builtin_unit_dataset_has_one_repository_independent_identity() {
+    let first = identify_builtin_unit_dataset_definition().unwrap();
+    let second = identify_builtin_unit_dataset_definition().unwrap();
+
+    assert_eq!(first, second);
+    assert!(matches!(
+        first.record.kind,
+        metewand_core::records::DatasetDefinitionKind::Unit
+    ));
+    assert_eq!(first.record.name.as_str(), "unit");
 }
 
 #[test]

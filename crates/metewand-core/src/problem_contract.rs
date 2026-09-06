@@ -36,6 +36,26 @@ pub fn parse_problem_contract(
     source: &str,
     schemas: &SchemaCatalog,
 ) -> Result<ProblemContract, ProblemContractError> {
+    let contract = parse_problem_contract_document(source_path, source)?;
+
+    validate_problem_contract(source_path, &contract, schemas)?;
+
+    Ok(contract)
+}
+
+/// Parses one version-1 problem contract without resolving its schema references.
+///
+/// Repository loaders use this first phase to discover the complete set of
+/// schemas before compiling an offline catalog. Callers must subsequently use
+/// [`validate_problem_contract`] before treating the document as valid.
+///
+/// # Errors
+///
+/// Returns a source-spanned error for invalid TOML or an invalid typed envelope.
+pub fn parse_problem_contract_document(
+    source_path: &Path,
+    source: &str,
+) -> Result<ProblemContract, ProblemContractError> {
     let parsed: ParsedProblemContract =
         toml::from_str(source).map_err(|error: toml::de::Error| {
             let byte_span = error.span().unwrap_or(source.len()..source.len());
@@ -44,9 +64,21 @@ pub fn parse_problem_contract(
                 source_span: SourceSpan::from_byte_range(source_path, source, byte_span),
             }
         })?;
-    let contract = parsed.0;
+    Ok(parsed.0)
+}
 
-    validate_schema_references(source_path, &contract, schemas)?;
+/// Validates a parsed problem contract against a complete offline schema catalog.
+///
+/// # Errors
+///
+/// Returns an error when a referenced schema is absent or the family-owned
+/// semantics do not satisfy their schema.
+pub fn validate_problem_contract(
+    source_path: &Path,
+    contract: &ProblemContract,
+    schemas: &SchemaCatalog,
+) -> Result<(), ProblemContractError> {
+    validate_schema_references(source_path, contract, schemas)?;
     schemas
         .validate(
             contract.semantics_schema.as_path(),
@@ -57,7 +89,7 @@ pub fn parse_problem_contract(
             source,
         })?;
 
-    Ok(contract)
+    Ok(())
 }
 
 /// A validated, language-neutral problem and fairness contract.

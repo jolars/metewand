@@ -378,6 +378,7 @@ dependencies = [
  "metewand-core",
  "metewand-protocol",
  "metewand-runtime",
+ "tempfile",
 ]
 
 [[package]]

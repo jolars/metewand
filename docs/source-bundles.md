@@ -28,6 +28,16 @@ fn expand_fixed_dataset(
 This work belongs in runtime rather than core because it reads filesystem state.
 The manifest parser remains pure.
 
+`identify_source_bundle` applies the same expansion and containment checks, then
+derives a typed `source-bundle` identity from the expanded logical paths and
+their contents. Regular files contribute their SHA-256 content hash and
+portable executable bit, directories contribute the versioned local-tree hash,
+and symbolic links contribute their exact UTF-8 target spelling. Host paths,
+timestamps, ownership, and non-executable permission bits do not contribute.
+The expanded path order makes declaration order irrelevant, while any selected
+content change invalidates the source bundle and its transitive definition and
+plan identities.
+
 ## Path and glob contract
 
 Manifest paths must be in normalized form before expansion: they are nonempty,

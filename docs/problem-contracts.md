@@ -59,3 +59,11 @@ bundle. The manifest parser rejects problem definitions without an evaluator.
 Typed-envelope failures retain the decoder's source span. Missing schemas name
 their role and repository path, while family-schema failures retain every JSON
 Schema violation in deterministic order.
+
+Repository loaders may use the same validation in two explicit phases.
+`parse_problem_contract_document` parses the strict typed envelope so the
+loader can discover its schema paths; `validate_problem_contract` checks that
+parsed document after the complete offline catalog has been compiled.
+`parse_problem_contract` remains the convenient combined operation. A document
+returned by the parsing-only phase is not valid for planning until the second
+phase succeeds.

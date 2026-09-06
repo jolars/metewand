@@ -10,7 +10,7 @@ use crate::{
     SCHEDULING_POLICY_VERSION,
     canonical::{CanonicalJsonError, CanonicalValue},
     compatibility::{ManifestCompatibilityError, validate_manifest_compatibility},
-    identity::{IdentityError, identify_record},
+    identity::{IdentityError, identify_canonical, identify_record},
     manifest::{
         DatasetDefinition, ExecutionPolicyDefinition, ExperimentCase, ExperimentDefinition,
         ImplementationCapability, Manifest, Name, ObservationPolicyDefinition, ParameterAxes,
@@ -23,11 +23,12 @@ use crate::{
     problem_contract::{ProblemContract, ScientificBudget},
     records::{
         AttemptSlotRole, CapabilityReport, ContentDigest, DatasetConfigurationRecord,
-        DatasetDefinitionRecord, DerivedSeedRecord, EnvironmentDefinitionRecord,
-        ExecutionPolicyRecord, IdentifiedRecord, ImplementationConfigurationRecord,
-        ImplementationDefinitionRecord, LogicalAttemptSlotRecord, LogicalCandidateRecord,
-        LogicalObservationSlotRecord, ObservationPolicyRecord, OneShotLogicalSpecificationRecord,
-        ProblemConfigurationRecord, ProblemDefinitionRecord, RecordId,
+        DatasetDefinitionKind, DatasetDefinitionRecord, DerivedSeedRecord,
+        EnvironmentDefinitionRecord, ExecutionPolicyRecord, IdentifiedRecord,
+        ImplementationConfigurationRecord, ImplementationDefinitionRecord,
+        LogicalAttemptSlotRecord, LogicalCandidateRecord, LogicalObservationSlotRecord,
+        ObservationPolicyRecord, OneShotLogicalSpecificationRecord, ProblemConfigurationRecord,
+        ProblemDefinitionRecord, RecordId,
     },
     schema::SchemaCatalog,
     seed::{
@@ -35,6 +36,14 @@ use crate::{
         derive_scheduling_seed,
     },
 };
+
+const BUILTIN_UNIT_DATASET_SCHEMA: &str = r#"{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "maxProperties": 0,
+  "x-metewand-builtin": "unit-dataset",
+  "x-metewand-compatibility-version": 1
+}"#;
 
 /// Domain separator for version-1 attempt-slot scheduling priorities.
 pub const SCHEDULING_PRIORITY_DOMAIN: &str = "metewand-scheduling-priority-v1";
@@ -108,6 +117,30 @@ pub struct LogicalPlanningCatalog {
     pub implementation_definitions: BTreeMap<Name, RecordId<ImplementationDefinitionRecord>>,
     /// Environment-definition identities keyed by manifest-local name.
     pub environment_definitions: BTreeMap<Name, RecordId<EnvironmentDefinitionRecord>>,
+}
+
+/// Identifies Metewand's versioned built-in dataset for dataset-free problems.
+///
+/// The definition and its empty-object schema are pure built-in resources, so
+/// every repository uses the same identity without reading or materializing an
+/// artifact.
+///
+/// # Errors
+///
+/// Returns an error only if a built-in canonical representation cannot be
+/// serialized by the identity implementation.
+pub fn identify_builtin_unit_dataset_definition()
+-> Result<IdentifiedRecord<DatasetDefinitionRecord>, IdentityError> {
+    let schema = CanonicalValue::from_slice(BUILTIN_UNIT_DATASET_SCHEMA.as_bytes())
+        .expect("the built-in unit-dataset schema must be canonical-domain JSON");
+    let output_schema = identify_canonical(&schema)?;
+    identify_record(DatasetDefinitionRecord {
+        name: Name::builtin_unit(),
+        parameter_schema: None,
+        parameter_defaults: None,
+        output_schema,
+        kind: DatasetDefinitionKind::Unit,
+    })
 }
 
 /// A complete unresolved logical plan for all manifest experiments.

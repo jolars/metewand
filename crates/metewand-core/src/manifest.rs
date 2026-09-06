@@ -561,6 +561,10 @@ impl Name {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+
+    pub(crate) fn builtin_unit() -> Self {
+        Self("unit".to_owned())
+    }
 }
 
 impl Borrow<str> for Name {

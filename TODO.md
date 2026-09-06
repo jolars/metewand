@@ -111,7 +111,7 @@ See [Automation and agentic workflows](DESIGN.md#automation-and-agentic-workflow
 - [x] Model capability evidence as `declared`, `verified_now`, or
       `previously_verified`; ensure a side-effect-free plan reports only
       declared capabilities.
-- [ ] Implement `metewand schema`, `metewand check`, and the non-mutating
+- [x] Implement `metewand schema`, `metewand check`, and the non-mutating
       `metewand plan` without downloads, builds, worker launches, or filesystem
       writes.
 - [ ] Add versioned JSON/JSONL output, stable exit and diagnostic codes, source
