@@ -7,6 +7,7 @@ use std::{
         fd::{AsRawFd, BorrowedFd, OwnedFd, RawFd},
         unix::process::CommandExt,
     },
+    path::Path,
     process::{Child, Command, ExitStatus, Stdio},
     thread::{self, JoinHandle},
 };
@@ -35,6 +36,7 @@ use rustix::pipe::pipe;
     target_os = "nto"
 )))]
 use rustix::pipe::{PipeFlags, pipe_with};
+use tempfile::TempDir;
 use thiserror::Error;
 
 /// Name of the environment variable containing the worker's protocol read descriptor.
@@ -115,6 +117,7 @@ pub struct WorkerProcessOutput {
 #[derive(Debug)]
 pub struct PosixWorkerProcess {
     child: Child,
+    private_working_directory: Option<TempDir>,
     protocol_reader: Option<FrameReader<File>>,
     protocol_writer: Option<File>,
     stdout_drain: JoinHandle<io::Result<CapturedWorkerLog>>,
@@ -205,6 +208,7 @@ impl PosixWorkerProcess {
 
         Ok(Self {
             child,
+            private_working_directory: None,
             protocol_reader: Some(FrameReader::new(File::from(parent_response_reader))),
             protocol_writer: Some(File::from(parent_request_writer)),
             stdout_drain,
@@ -236,6 +240,19 @@ impl PosixWorkerProcess {
             .take()
             .expect("protocol I/O must be transferred exactly once");
         (reader, writer)
+    }
+
+    pub(crate) fn retain_private_working_directory(&mut self, directory: TempDir) {
+        self.private_working_directory = Some(directory);
+    }
+
+    /// Returns the private current directory retained for a local worker.
+    ///
+    /// Direct transport launches return `None`; the trusted local launch path
+    /// returns its allocated directory until the process handle is consumed.
+    #[must_use]
+    pub fn private_working_directory(&self) -> Option<&Path> {
+        self.private_working_directory.as_ref().map(TempDir::path)
     }
 
     /// Returns the operating-system process identifier.
@@ -274,6 +291,7 @@ impl PosixWorkerProcess {
     pub fn wait(self) -> Result<WorkerProcessOutput, WorkerProcessError> {
         let Self {
             mut child,
+            private_working_directory: _private_working_directory,
             protocol_reader,
             protocol_writer,
             stdout_drain,

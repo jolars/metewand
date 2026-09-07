@@ -145,7 +145,7 @@ See [Worker protocol](DESIGN.md#4-worker-protocol).
 See [Problem and fairness contracts](DESIGN.md#problem-and-fairness-contracts)
 and [Gate 1](DESIGN.md#gate-1-conformance-kernel).
 
-- [ ] Add the minimal local launch path needed to run trusted raw fixture
+- [x] Add the minimal local launch path needed to run trusted raw fixture
       workers with a private working directory and allowlisted environment.
 - [ ] Run one fixed dataset through one raw implementation and its independent
       problem evaluator using `prepare_and_execute` timing.

@@ -56,5 +56,33 @@ that protocol output never depends on standard output, both streams reach EOF,
 only the configured prefixes are retained, and truncation preserves the total
 drained-byte counts.
 
+## Minimal trusted-local launch
+
+`local_worker::launch_trusted_local_worker` consumes an already resolved
+`ResolvedLaunchRecord`. It constructs the exact program and ordered arguments,
+clears the parent environment, and adds only the record's allowlisted variables.
+The process transport subsequently adds the two version-1 protocol descriptor
+variables; they are transport state rather than inherited user configuration.
+
+The launcher creates a unique working directory beneath a caller-owned private
+root with owner-only `0700` permissions. The process handle retains that
+directory until it is consumed, so it remains available throughout the worker
+session and is removed afterward. The private root must exist and remain
+available for the session.
+
+No variable is implicitly copied from the orchestrator. In particular, an
+entrypoint using `/usr/bin/env` needs an explicitly allowlisted `PATH`. This
+minimal Gate-1 path expects its resolved environment map to contain every value
+the trusted fixture needs. Fixed locale, timezone, umask, private home and cache
+templates, process-tree containment, and resource-control preflight belong to
+the later reusable executor and do not become accidental implicit behavior
+here.
+
+The local-launch integration tests inspect the worker's actual current
+directory and environment after `exec`, and establish a typed session with the
+checked-in raw dataset-materializer fixture. This launch path protects
+reproducibility from ambient configuration; as specified by the design, it is
+not a sandbox for hostile workers.
+
 This transport implements the POSIX mechanism already specified by wire
 protocol version 1. It does not change the wire-protocol compatibility version.

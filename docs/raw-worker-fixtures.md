@@ -44,7 +44,9 @@ response after it reads the orchestrator's hello request:
 | `mismatched_request_id` | Answers hello with a different request ID. |
 
 The runtime integration tests launch the entrypoints through the dedicated
-POSIX protocol descriptors. They validate the successful three-role artifact
-chain and assert the exact framing or correlation error produced by every
-adversarial mode. Standard output and standard error remain available only for
-worker logs.
+POSIX protocol descriptors. The trusted-local launch test also starts the raw
+dataset materializer in an owner-only working directory with a cleared,
+allowlisted environment, then completes its typed handshake and shutdown. The
+suite validates the successful three-role artifact chain and asserts the exact
+framing or correlation error produced by every adversarial mode. Standard
+output and standard error remain available only for worker logs.
