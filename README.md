@@ -89,6 +89,10 @@ without downloads, builds, worker launches, or filesystem writes. Every command
 also has [versioned JSON and JSON Lines output](docs/machine-output.md), stable
 exit and diagnostic codes, structured source spans and causal chains, and
 strict machine-output stream separation.
+The initial [worker protocol framing layer](docs/worker-protocol-framing.md)
+reads bounded JSON Lines independently of transport fragmentation and reports
+typed failures for invalid bytes, malformed or ambiguous frames, and incorrect
+response correlation.
 
 ## Development
 

@@ -122,7 +122,7 @@ See [Automation and agentic workflows](DESIGN.md#automation-and-agentic-workflow
 
 See [Worker protocol](DESIGN.md#4-worker-protocol).
 
-- [ ] Write adversarial framing tests for fragmented reads, duplicate keys,
+- [x] Write adversarial framing tests for fragmented reads, duplicate keys,
       invalid UTF-8, byte-order marks, oversized lines, malformed JSON, early
       EOF, extra responses, and mismatched request IDs.
 - [ ] Implement the version-1 JSON-Lines messages, schemas, request IDs,

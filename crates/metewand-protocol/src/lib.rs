@@ -1,5 +1,7 @@
 //! Versioned worker protocol types for Metewand.
 
+pub mod framing;
+
 /// Version of the JSON-Lines worker protocol.
 pub const WIRE_PROTOCOL_VERSION: u32 = 1;
 
