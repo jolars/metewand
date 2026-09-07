@@ -41,8 +41,9 @@ schemas from the filesystem or network.
 
 The [version-1 public schemas](docs/public-schemas.md) define the initial
 manifest, problem contract, one-shot policy, artifact and execution records,
-and strict envelopes for machine output, canonical results, and evaluator
-metrics. `metewand-core` embeds the checked-in documents for offline consumers.
+the worker handshake, and strict envelopes for machine output, canonical
+results, and evaluator metrics. `metewand-core` embeds the checked-in documents
+for offline consumers.
 The [manifest parser](docs/manifest-parsing.md) turns `metewand.toml` into strict
 domain types and reports path-aware source spans for invalid input. Its
 [parameter-namespace validation](docs/parameter-namespaces.md) binds dataset and
@@ -91,8 +92,10 @@ exit and diagnostic codes, structured source spans and causal chains, and
 strict machine-output stream separation.
 The initial [worker protocol framing layer](docs/worker-protocol-framing.md)
 reads bounded JSON Lines independently of transport fragmentation and reports
-typed failures for invalid bytes, malformed or ambiguous frames, and incorrect
-response correlation.
+typed failures for invalid bytes or malformed and ambiguous frames. Its typed
+[version-1 handshake](docs/worker-protocol.md) negotiates the protocol, fixes a
+worker role and resolved identity, records SDK and capability metadata, and
+enforces one pending request per session.
 
 ## Development
 

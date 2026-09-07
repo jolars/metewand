@@ -125,7 +125,7 @@ See [Worker protocol](DESIGN.md#4-worker-protocol).
 - [x] Write adversarial framing tests for fragmented reads, duplicate keys,
       invalid UTF-8, byte-order marks, oversized lines, malformed JSON, early
       EOF, extra responses, and mismatched request IDs.
-- [ ] Implement the version-1 JSON-Lines messages, schemas, request IDs,
+- [x] Implement the version-1 JSON-Lines messages, schemas, request IDs,
       negotiation, roles, SDK metadata, worker identity checks, and one-request
       concurrency limit.
 - [ ] Implement dedicated POSIX protocol pipes and concurrent bounded draining

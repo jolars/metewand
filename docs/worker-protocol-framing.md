@@ -25,7 +25,8 @@ I/O failures likewise have separate `FrameError` variants.
 
 Framing accepts a general JSON value. Versioned message schemas and typed
 request and response models impose the object shape, allowed fields, and
-method-specific semantics at the next protocol layer.
+method-specific semantics at the next protocol layer. The version-1
+[`hello` handshake](worker-protocol.md) is the first such typed layer.
 
 ## Response correlation
 
@@ -39,8 +40,8 @@ the same bounded reader.
 The adversarial integration suite covers arbitrary fragmented reads, nested
 duplicate keys, invalid UTF-8, byte-order marks, the inclusive size boundary,
 oversized lines, malformed JSON, early EOF, extra responses, and mismatched
-request IDs. These cases complete the framing foundation only—they do not claim
-that version-1 message negotiation or worker execution is implemented.
+request IDs. These cases establish the byte-stream foundation independently of
+the typed handshake and later worker execution exchanges.
 
 The wire-protocol compatibility version remains 1. This work defines the
 framing behavior of the initial, unreleased version rather than changing a

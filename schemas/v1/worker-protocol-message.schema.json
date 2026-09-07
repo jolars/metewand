@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "metewand://schemas/v1/worker-protocol-message.schema.json",
+  "x-metewand-compatibility-version": 1,
+  "title": "Metewand version 1 worker handshake message",
+  "$defs": {
+    "request_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "worker_id": {
+      "type": "string",
+      "pattern": "^mw1-resolved-worker-[0-9a-f]{64}$"
+    },
+    "role": {
+      "type": "string",
+      "enum": ["dataset_materializer", "implementation", "problem_evaluator"]
+    },
+    "capability": {
+      "type": "string",
+      "enum": ["one_shot", "applicability", "fresh_sequence", "streaming_profile"]
+    },
+    "sdk": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "minLength": 1 }
+      },
+      "required": ["name", "version"],
+      "additionalProperties": false
+    },
+    "hello_request": {
+      "type": "object",
+      "properties": {
+        "id": { "$ref": "#/$defs/request_id" },
+        "method": { "const": "hello" },
+        "protocols": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 4294967295
+          }
+        },
+        "role": { "$ref": "#/$defs/role" },
+        "worker_id": { "$ref": "#/$defs/worker_id" }
+      },
+      "required": ["id", "method", "protocols", "role", "worker_id"],
+      "additionalProperties": false
+    },
+    "hello_response": {
+      "type": "object",
+      "properties": {
+        "id": { "$ref": "#/$defs/request_id" },
+        "ok": { "const": true },
+        "protocol": { "type": "integer", "const": 1 },
+        "worker_id": { "$ref": "#/$defs/worker_id" },
+        "sdk": {
+          "oneOf": [
+            { "$ref": "#/$defs/sdk" },
+            { "type": "null" }
+          ]
+        },
+        "capabilities": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/capability" }
+        }
+      },
+      "required": ["id", "ok", "protocol", "worker_id", "sdk", "capabilities"],
+      "additionalProperties": false
+    }
+  },
+  "oneOf": [
+    { "$ref": "#/$defs/hello_request" },
+    { "$ref": "#/$defs/hello_response" }
+  ]
+}

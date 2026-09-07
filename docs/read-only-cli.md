@@ -35,7 +35,7 @@ exact checked-in JSON Schema document embedded in the executable. For example,
 
 The stable names are `machine-output`, `manifest`, `problem-contract`,
 `one-shot-observation-policy`, `artifact-manifest`, `result-manifest`,
-`observation`, `attempt`, and `metrics`.
+`observation`, `attempt`, `metrics`, and `worker-protocol-message`.
 
 ## Repository checks
 

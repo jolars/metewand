@@ -24,6 +24,7 @@ than infer it from the Metewand release that produced the record.
 | `observation` | Independently finalized result, metrics, timing, validity, and provenance. |
 | `attempt` | Terminal accepted or failed execution with its observations and provenance. |
 | `metrics` | Metewand metadata around evaluator-owned metric data. |
+| `worker-protocol-message` | Strict version-1 worker hello request and response. |
 
 The CLI's [`json` and `jsonl` modes](machine-output.md) emit the
 `machine-output` envelope and document their stream, exit-code, and diagnostic
@@ -57,8 +58,10 @@ observation policies and implementation capabilities are intentionally narrower:
 version 1 of this public schema set admits only `one_shot` and the `none`
 scientific budget. Applicability, profiles, observation-control schedules,
 checkpoint messages, and portable snapshots receive their own versioned schemas
-in later gates. A later change to an existing strict entry point requires a new
-public schema compatibility version.
+in later gates. The worker protocol entry point initially covers session
+negotiation; work-method messages are added with their execution slices. A later
+change to an existing strict entry point requires a new public schema
+compatibility version.
 
 JSON Schema enforces the portable record shape. The typed parser requires
 normalized lexical repository paths, and the runtime performs

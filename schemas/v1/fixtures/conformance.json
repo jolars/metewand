@@ -381,6 +381,29 @@
           "data": {}
         }
       }
+    },
+    {
+      "name": "worker hello request for a problem evaluator",
+      "schema": "worker-protocol-message",
+      "instance": {
+        "id": "0",
+        "method": "hello",
+        "protocols": [1],
+        "role": "problem_evaluator",
+        "worker_id": "mw1-resolved-worker-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+      }
+    },
+    {
+      "name": "worker hello response with direct protocol metadata",
+      "schema": "worker-protocol-message",
+      "instance": {
+        "id": "0",
+        "ok": true,
+        "protocol": 1,
+        "worker_id": "mw1-resolved-worker-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        "sdk": null,
+        "capabilities": ["one_shot"]
+      }
     }
   ],
   "invalid": [
@@ -604,6 +627,63 @@
           "execution_semantics_version": 1,
           "data": {}
         }
+      }
+    },
+    {
+      "name": "worker hello rejects an unknown role",
+      "schema": "worker-protocol-message",
+      "instance": {
+        "id": "0",
+        "method": "hello",
+        "protocols": [1],
+        "role": "dataset",
+        "worker_id": "mw1-resolved-worker-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+      }
+    },
+    {
+      "name": "worker hello rejects duplicate protocol offers",
+      "schema": "worker-protocol-message",
+      "instance": {
+        "id": "0",
+        "method": "hello",
+        "protocols": [1, 1],
+        "role": "implementation",
+        "worker_id": "mw1-resolved-worker-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+      }
+    },
+    {
+      "name": "worker hello rejects a missing SDK value",
+      "schema": "worker-protocol-message",
+      "instance": {
+        "id": "0",
+        "ok": true,
+        "protocol": 1,
+        "worker_id": "mw1-resolved-worker-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        "capabilities": ["one_shot"]
+      }
+    },
+    {
+      "name": "worker hello rejects duplicate capabilities",
+      "schema": "worker-protocol-message",
+      "instance": {
+        "id": "0",
+        "ok": true,
+        "protocol": 1,
+        "worker_id": "mw1-resolved-worker-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        "sdk": null,
+        "capabilities": ["one_shot", "one_shot"]
+      }
+    },
+    {
+      "name": "worker hello rejects a definition identity",
+      "schema": "worker-protocol-message",
+      "instance": {
+        "id": "0",
+        "ok": true,
+        "protocol": 1,
+        "worker_id": "mw1-worker-definition-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        "sdk": null,
+        "capabilities": []
       }
     }
   ]

@@ -37,10 +37,12 @@ pub enum PublicSchema {
     Attempt,
     /// Evaluator-owned metrics envelope.
     Metrics,
+    /// Worker session handshake request or response.
+    WorkerProtocolMessage,
 }
 
 /// Every public schema entry point in stable presentation order.
-pub const PUBLIC_SCHEMAS: [PublicSchema; 9] = [
+pub const PUBLIC_SCHEMAS: [PublicSchema; 10] = [
     PublicSchema::MachineOutput,
     PublicSchema::Manifest,
     PublicSchema::ProblemContract,
@@ -50,6 +52,7 @@ pub const PUBLIC_SCHEMAS: [PublicSchema; 9] = [
     PublicSchema::Observation,
     PublicSchema::Attempt,
     PublicSchema::Metrics,
+    PublicSchema::WorkerProtocolMessage,
 ];
 
 impl PublicSchema {
@@ -66,6 +69,7 @@ impl PublicSchema {
             Self::Observation => "observation",
             Self::Attempt => "attempt",
             Self::Metrics => "metrics",
+            Self::WorkerProtocolMessage => "worker-protocol-message",
         }
     }
 
@@ -90,6 +94,7 @@ impl PublicSchema {
             Self::Observation => "schemas/v1/observation.schema.json",
             Self::Attempt => "schemas/v1/attempt.schema.json",
             Self::Metrics => "schemas/v1/metrics.schema.json",
+            Self::WorkerProtocolMessage => "schemas/v1/worker-protocol-message.schema.json",
         })
     }
 
@@ -108,6 +113,9 @@ impl PublicSchema {
             Self::Observation => "metewand://schemas/v1/observation.schema.json",
             Self::Attempt => "metewand://schemas/v1/attempt.schema.json",
             Self::Metrics => "metewand://schemas/v1/metrics.schema.json",
+            Self::WorkerProtocolMessage => {
+                "metewand://schemas/v1/worker-protocol-message.schema.json"
+            }
         }
     }
 
@@ -134,6 +142,9 @@ impl PublicSchema {
             Self::Observation => include_str!("../../../schemas/v1/observation.schema.json"),
             Self::Attempt => include_str!("../../../schemas/v1/attempt.schema.json"),
             Self::Metrics => include_str!("../../../schemas/v1/metrics.schema.json"),
+            Self::WorkerProtocolMessage => {
+                include_str!("../../../schemas/v1/worker-protocol-message.schema.json")
+            }
         }
     }
 }
