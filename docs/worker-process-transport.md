@@ -23,8 +23,9 @@ reused after those descriptors have closed.
 
 `protocol_reader()` exposes the response endpoint through the version-1
 bounded `FrameReader`. `protocol_writer()` exposes the request endpoint as a
-byte writer. Typed message encoding and execution exchanges remain separate
-protocol layers.
+byte writer. The higher-level `WorkerSession` takes ownership of both endpoints
+when it begins typed exchanges; raw accessors are for transport-level use before
+that transfer.
 
 ## Concurrent bounded logs
 
@@ -42,9 +43,12 @@ UTF-8.
 `wait()` closes both protocol endpoints before waiting for the process and then
 joins both drains. It returns the exit status and the complete capture metadata.
 Callers that need a final protocol exchange must complete it before calling
-`wait()`. The runtime also exposes nonblocking status observation and immediate
-single-process termination; executor-defined process-tree containment and the
-interrupt, grace, and forced-termination sequence are later execution layers.
+`wait()`. `WorkerSession::shutdown` performs that exchange, closes the protocol
+endpoints, requires clean process exit within the shutdown deadline, and then
+returns the same output record. The runtime also exposes nonblocking status
+observation and immediate single-process termination; executor-defined
+process-tree containment and the interrupt, grace, and forced-termination
+sequence are later execution layers.
 
 The integration tests run an actual inherited-descriptor exchange and flood
 both standard streams beyond the operating-system pipe capacity. They verify

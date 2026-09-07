@@ -115,8 +115,8 @@ pub struct WorkerProcessOutput {
 #[derive(Debug)]
 pub struct PosixWorkerProcess {
     child: Child,
-    protocol_reader: FrameReader<File>,
-    protocol_writer: File,
+    protocol_reader: Option<FrameReader<File>>,
+    protocol_writer: Option<File>,
     stdout_drain: JoinHandle<io::Result<CapturedWorkerLog>>,
     stderr_drain: JoinHandle<io::Result<CapturedWorkerLog>>,
 }
@@ -205,21 +205,37 @@ impl PosixWorkerProcess {
 
         Ok(Self {
             child,
-            protocol_reader: FrameReader::new(File::from(parent_response_reader)),
-            protocol_writer: File::from(parent_request_writer),
+            protocol_reader: Some(FrameReader::new(File::from(parent_response_reader))),
+            protocol_writer: Some(File::from(parent_request_writer)),
             stdout_drain,
             stderr_drain,
         })
     }
 
     /// Returns the bounded protocol response reader.
-    pub const fn protocol_reader(&mut self) -> &mut FrameReader<File> {
-        &mut self.protocol_reader
+    pub fn protocol_reader(&mut self) -> &mut FrameReader<File> {
+        self.protocol_reader
+            .as_mut()
+            .expect("protocol I/O can be transferred only by the runtime session")
     }
 
     /// Returns the protocol request writer.
-    pub const fn protocol_writer(&mut self) -> &mut File {
-        &mut self.protocol_writer
+    pub fn protocol_writer(&mut self) -> &mut File {
+        self.protocol_writer
+            .as_mut()
+            .expect("protocol I/O can be transferred only by the runtime session")
+    }
+
+    pub(crate) fn take_protocol_io(&mut self) -> (FrameReader<File>, File) {
+        let reader = self
+            .protocol_reader
+            .take()
+            .expect("protocol I/O must be transferred exactly once");
+        let writer = self
+            .protocol_writer
+            .take()
+            .expect("protocol I/O must be transferred exactly once");
+        (reader, writer)
     }
 
     /// Returns the operating-system process identifier.

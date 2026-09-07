@@ -404,6 +404,43 @@
         "sdk": null,
         "capabilities": ["one_shot"]
       }
+    },
+    {
+      "name": "one-shot worker preparation request",
+      "schema": "worker-protocol-message",
+      "instance": {
+        "id": "1",
+        "method": "prepare",
+        "dataset_dir": "/private/dataset",
+        "problem_contract_id": "mw1-problem-contract-abc",
+        "problem_parameters": { "lambda": 0.1 },
+        "implementation_parameters": { "solver": "fast" },
+        "implementation_seed": 23
+      }
+    },
+    {
+      "name": "one-shot worker execution response",
+      "schema": "worker-protocol-message",
+      "instance": {
+        "id": "2",
+        "ok": true,
+        "implementation_time_ns": 18342011,
+        "result": { "manifest": "result.json" },
+        "statistics": { "iterations": 37 }
+      }
+    },
+    {
+      "name": "structured worker operation failure",
+      "schema": "worker-protocol-message",
+      "instance": {
+        "id": "2",
+        "ok": false,
+        "error": {
+          "code": "operation_failed",
+          "message": "The implementation did not converge.",
+          "details": { "iterations": 100 }
+        }
+      }
     }
   ],
   "invalid": [
@@ -684,6 +721,28 @@
         "worker_id": "mw1-worker-definition-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
         "sdk": null,
         "capabilities": []
+      }
+    },
+    {
+      "name": "worker execution rejects an omitted diagnostic time",
+      "schema": "worker-protocol-message",
+      "instance": {
+        "id": "2",
+        "ok": true,
+        "result": { "manifest": "result.json" },
+        "statistics": {}
+      }
+    },
+    {
+      "name": "worker failure rejects an unknown code",
+      "schema": "worker-protocol-message",
+      "instance": {
+        "id": "2",
+        "ok": false,
+        "error": {
+          "code": "solver_exploded",
+          "message": "The implementation failed."
+        }
       }
     }
   ]

@@ -997,7 +997,12 @@ declared file, rejects undeclared entries, and runs any problem-contract dataset
 validator before publication. JSON Schema alone is not treated as validation of
 opaque binary data. A dataset definition without a materializer treats its
 verified source tree as the dataset instance and therefore cannot accept
-materialization parameters.
+materialization parameters. After all files are closed, the materializer returns
+the manifest path beneath its assigned output:
+
+```json
+{"dataset":{"manifest":"dataset-manifest.json"},"id":"1","ok":true}
+```
 
 Implementation workers support:
 
@@ -1029,6 +1034,14 @@ for `streaming_profile`.
   "statistics": {"iterations": 37}
 }
 ```
+
+The Gate-1 one-shot request omits the optional scientific budget and observation
+control, and its response omits `observation_control`. The `fresh_sequence`
+subprotocol adds its selected control in the later profile slice; until then,
+selecting that capability is rejected. `implementation_time_ns` is explicitly
+nullable, and `statistics` is an object. Successful `prepare`, `reset`,
+`evaluate`, and `shutdown` calls return the common acknowledgment
+`{"id":"…","ok":true}`.
 
 The canonical result schema belongs to the problem contract. For a lasso problem
 it might require `coefficients` and `intercept`, regardless of how individual
@@ -1114,6 +1127,15 @@ satisfy a required process-control policy. Incomplete checkpoint outputs are
 retained only as diagnostic artifacts and never selected as observations.
 Previously finalized valid observations remain visible when a later checkpoint
 or the enclosing streaming attempt fails.
+
+At the worker boundary, any method may replace its success response with
+`{"id":"…","ok":false,"error":{"code":"operation_failed","message":"…","details":{}}}`.
+Version 1 admits `invalid_request`, `unsupported_operation`, `operation_failed`,
+and `internal_error`; the orchestrator combines that worker-owned category with
+the active phase when it constructs an attempt outcome. Phase deadlines cover
+the complete request and response exchange, while the shutdown deadline also
+covers clean process exit. A timeout or protocol violation discards the worker,
+as does any failed `reset`.
 
 The conformance kernel initially implements `one_shot` without a scientific
 budget. The first general release additionally implements applicability,

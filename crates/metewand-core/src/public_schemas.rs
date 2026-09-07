@@ -37,7 +37,7 @@ pub enum PublicSchema {
     Attempt,
     /// Evaluator-owned metrics envelope.
     Metrics,
-    /// Worker session handshake request or response.
+    /// Worker session handshake or one-shot exchange message.
     WorkerProtocolMessage,
 }
 

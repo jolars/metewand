@@ -93,9 +93,10 @@ strict machine-output stream separation.
 The initial [worker protocol framing layer](docs/worker-protocol-framing.md)
 reads bounded JSON Lines independently of transport fragmentation and reports
 typed failures for invalid bytes or malformed and ambiguous frames. Its typed
-[version-1 handshake](docs/worker-protocol.md) negotiates the protocol, fixes a
-worker role and resolved identity, records SDK and capability metadata, and
-enforces one pending request per session. The
+[version-1 worker session](docs/worker-protocol.md) negotiates the protocol,
+fixes a worker role and resolved identity, records SDK and capability metadata,
+and runs the materialize, prepare, one-shot execute, reset, evaluate, and
+shutdown exchanges under phase-specific deadlines. The
 [POSIX worker transport](docs/worker-process-transport.md) carries those frames
 over dedicated inherited descriptors while concurrently draining bounded
 standard-output and standard-error logs through EOF, even after truncation.

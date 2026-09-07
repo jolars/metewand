@@ -1,8 +1,11 @@
 use std::str::FromStr;
 
 use metewand_protocol::{
-    Capability, HandshakeError, HelloRequest, HelloResponse, MessageEncodeError, RequestId,
-    RequestTracker, RequestTrackerError, SdkMetadata, WorkerIdentity, WorkerRole, decode_message,
+    Acknowledgement, Capability, EvaluateRequest, ExecuteRequest, ExecuteResponse, HandshakeError,
+    HelloRequest, HelloResponse, MaterializeRequest, MaterializeResponse, MessageEncodeError,
+    OperationResponse, PrepareRequest, RequestId, RequestTracker, RequestTrackerError,
+    ResetRequest, SdkMetadata, ShutdownRequest, WorkerFailure, WorkerFailureCode,
+    WorkerFailureResponse, WorkerIdentity, WorkerRole, decode_message, decode_operation_response,
     encode_message, framing::FrameReader, framing::MAX_LINE_BYTES, negotiate_protocol,
     validate_hello_response,
 };
@@ -45,6 +48,182 @@ fn hello_messages_have_the_exact_version_one_wire_shape() {
             "sdk": {"name": "metewand-python", "version": "0.1.0"},
             "capabilities": ["one_shot", "applicability"],
         })
+    );
+}
+
+#[test]
+fn one_shot_requests_have_exact_version_one_wire_shapes() {
+    let id = RequestId::from_str("1").expect("request ID must be valid");
+    let cases = [
+        serde_json::to_value(MaterializeRequest::new(
+            id.clone(),
+            "/bundle",
+            json!({"rows": 100}),
+            17,
+            "/output",
+        ))
+        .expect("materialize request must serialize"),
+        serde_json::to_value(PrepareRequest::new(
+            id.clone(),
+            "/dataset",
+            "mw1-problem-contract-abc",
+            json!({"lambda": 0.1}),
+            json!({"solver": "fast"}),
+            23,
+        ))
+        .expect("prepare request must serialize"),
+        serde_json::to_value(ExecuteRequest::new(id.clone(), "/result"))
+            .expect("execute request must serialize"),
+        serde_json::to_value(ResetRequest::new(id.clone())).expect("reset request must serialize"),
+        serde_json::to_value(EvaluateRequest::new(
+            id.clone(),
+            "/dataset",
+            "mw1-problem-contract-abc",
+            json!({"lambda": 0.1}),
+            "/result",
+            "/metrics.json",
+        ))
+        .expect("evaluate request must serialize"),
+        serde_json::to_value(ShutdownRequest::new(id)).expect("shutdown request must serialize"),
+    ];
+
+    assert_eq!(
+        cases,
+        [
+            json!({
+                "id": "1", "method": "materialize", "source_dir": "/bundle",
+                "dataset_parameters": {"rows": 100}, "dataset_seed": 17,
+                "output_dir": "/output",
+            }),
+            json!({
+                "id": "1", "method": "prepare", "dataset_dir": "/dataset",
+                "problem_contract_id": "mw1-problem-contract-abc",
+                "problem_parameters": {"lambda": 0.1},
+                "implementation_parameters": {"solver": "fast"},
+                "implementation_seed": 23,
+            }),
+            json!({"id": "1", "method": "execute", "result_dir": "/result"}),
+            json!({"id": "1", "method": "reset"}),
+            json!({
+                "id": "1", "method": "evaluate", "dataset_dir": "/dataset",
+                "problem_contract_id": "mw1-problem-contract-abc",
+                "problem_parameters": {"lambda": 0.1}, "result_dir": "/result",
+                "metrics_path": "/metrics.json",
+            }),
+            json!({"id": "1", "method": "shutdown"}),
+        ]
+    );
+}
+
+#[test]
+fn one_shot_responses_and_worker_failures_have_exact_wire_shapes() {
+    let id = RequestId::from_str("2").expect("request ID must be valid");
+    let materialized = MaterializeResponse::new(id.clone(), "dataset-manifest.json");
+    let executed = ExecuteResponse::new(
+        id.clone(),
+        Some(18_342_011),
+        "result.json",
+        serde_json::from_value(json!({"iterations": 37})).expect("statistics must be an object"),
+    );
+    let acknowledged = Acknowledgement::new(id.clone());
+    let failure = WorkerFailureResponse::new(
+        id,
+        WorkerFailure::new(
+            WorkerFailureCode::OperationFailed,
+            "the solver did not converge",
+            Some(
+                serde_json::from_value(json!({"iterations": 100}))
+                    .expect("details must be an object"),
+            ),
+        )
+        .expect("worker failure must be valid"),
+    );
+
+    assert_eq!(
+        serde_json::to_value(materialized).expect("response must serialize"),
+        json!({"id": "2", "ok": true, "dataset": {"manifest": "dataset-manifest.json"}})
+    );
+    assert_eq!(
+        serde_json::to_value(executed).expect("response must serialize"),
+        json!({
+            "id": "2", "ok": true, "implementation_time_ns": 18342011,
+            "result": {"manifest": "result.json"}, "statistics": {"iterations": 37},
+        })
+    );
+    assert_eq!(
+        serde_json::to_value(acknowledged).expect("response must serialize"),
+        json!({"id": "2", "ok": true})
+    );
+    assert_eq!(
+        serde_json::to_value(failure).expect("response must serialize"),
+        json!({
+            "id": "2", "ok": false,
+            "error": {
+                "code": "operation_failed", "message": "the solver did not converge",
+                "details": {"iterations": 100},
+            },
+        })
+    );
+}
+
+#[test]
+fn operation_response_decoding_correlates_and_distinguishes_failures() {
+    let mut requests = RequestTracker::new();
+    let id = requests.begin_request().expect("request must begin");
+    let response = decode_operation_response::<Acknowledgement>(
+        json!({"id": id.as_str(), "ok": true}),
+        &mut requests,
+    )
+    .expect("response must decode");
+    assert!(matches!(response, OperationResponse::Success(_)));
+
+    let id = requests.begin_request().expect("request must begin");
+    let response = decode_operation_response::<Acknowledgement>(
+        json!({
+            "id": id.as_str(), "ok": false,
+            "error": {"code": "internal_error", "message": "fixture failed"},
+        }),
+        &mut requests,
+    )
+    .expect("response must decode");
+    assert!(matches!(
+        response,
+        OperationResponse::Failure(ref failure)
+            if failure.code() == WorkerFailureCode::InternalError
+                && failure.message() == "fixture failed"
+                && failure.details().is_none()
+    ));
+}
+
+#[test]
+fn operation_messages_reject_wrong_methods_shapes_and_discriminators() {
+    assert!(
+        serde_json::from_value::<ExecuteRequest>(
+            json!({"id": "1", "method": "execute", "result_dir": "/result", "extra": true})
+        )
+        .is_err()
+    );
+    assert!(
+        serde_json::from_value::<PrepareRequest>(json!({
+            "id": "1", "method": "execute", "dataset_dir": "/dataset",
+            "problem_contract_id": "contract", "problem_parameters": {},
+            "implementation_parameters": {}, "implementation_seed": 1,
+        }))
+        .is_err()
+    );
+    assert!(
+        serde_json::from_value::<ExecuteResponse>(json!({
+            "id": "1", "ok": false, "implementation_time_ns": null,
+            "result": {"manifest": "result.json"}, "statistics": {},
+        }))
+        .is_err()
+    );
+    assert!(
+        serde_json::from_value::<WorkerFailureResponse>(json!({
+            "id": "1", "ok": false,
+            "error": {"code": "not valid", "message": "failed"},
+        }))
+        .is_err()
     );
 }
 
@@ -306,6 +485,63 @@ fn handshake_validation_checks_request_worker_and_selected_capabilities() {
         validate_hello_response(&request, &missing_capability, &[Capability::OneShot]),
         Err(HandshakeError::MissingCapability {
             capability: Capability::OneShot
+        })
+    ));
+}
+
+#[test]
+fn later_subprotocol_capabilities_can_be_reported_but_not_selected() {
+    let request = HelloRequest::new(
+        RequestId::from_str("0").expect("request ID must be valid"),
+        WorkerRole::Implementation,
+        WorkerIdentity::from_str(WORKER_ID).expect("worker identity must be valid"),
+    );
+    let response = HelloResponse::new(
+        request.id().clone(),
+        request.worker_id().clone(),
+        None,
+        [
+            Capability::OneShot,
+            Capability::Applicability,
+            Capability::FreshSequence,
+            Capability::StreamingProfile,
+        ],
+    );
+
+    let negotiated = validate_hello_response(&request, &response, &[Capability::OneShot])
+        .expect("reported future capabilities must remain inert");
+    assert_eq!(negotiated.selected_capabilities(), &[Capability::OneShot]);
+    for reserved in [
+        Capability::Applicability,
+        Capability::FreshSequence,
+        Capability::StreamingProfile,
+    ] {
+        assert!(matches!(
+            validate_hello_response(&request, &response, &[reserved]),
+            Err(HandshakeError::ReservedCapability { capability }) if capability == reserved
+        ));
+    }
+}
+
+#[test]
+fn capabilities_can_be_selected_only_for_implementation_workers() {
+    let request = HelloRequest::new(
+        RequestId::from_str("0").expect("request ID must be valid"),
+        WorkerRole::ProblemEvaluator,
+        WorkerIdentity::from_str(WORKER_ID).expect("worker identity must be valid"),
+    );
+    let response = HelloResponse::new(
+        request.id().clone(),
+        request.worker_id().clone(),
+        None,
+        [Capability::OneShot],
+    );
+
+    assert!(matches!(
+        validate_hello_response(&request, &response, &[Capability::OneShot]),
+        Err(HandshakeError::CapabilityRoleMismatch {
+            role: WorkerRole::ProblemEvaluator,
+            capability: Capability::OneShot,
         })
     ));
 }

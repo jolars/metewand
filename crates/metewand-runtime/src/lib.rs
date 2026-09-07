@@ -8,3 +8,5 @@ pub mod repository;
 pub mod source_bundle;
 #[cfg(unix)]
 pub mod worker_process;
+#[cfg(unix)]
+pub mod worker_session;

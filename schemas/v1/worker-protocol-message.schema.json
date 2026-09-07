@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "metewand://schemas/v1/worker-protocol-message.schema.json",
   "x-metewand-compatibility-version": 1,
-  "title": "Metewand version 1 worker handshake message",
+  "title": "Metewand version 1 worker protocol message",
   "$defs": {
     "request_id": {
       "type": "string",
@@ -20,6 +20,18 @@
       "type": "string",
       "enum": ["one_shot", "applicability", "fresh_sequence", "streaming_profile"]
     },
+    "path": {
+      "type": "string",
+      "minLength": 1
+    },
+    "parameters": {
+      "type": "object"
+    },
+    "safe_nonnegative_integer": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
     "sdk": {
       "type": "object",
       "properties": {
@@ -27,6 +39,27 @@
         "version": { "type": "string", "minLength": 1 }
       },
       "required": ["name", "version"],
+      "additionalProperties": false
+    },
+    "manifest_reference": {
+      "type": "object",
+      "properties": {
+        "manifest": { "$ref": "#/$defs/path" }
+      },
+      "required": ["manifest"],
+      "additionalProperties": false
+    },
+    "worker_failure": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "enum": ["invalid_request", "unsupported_operation", "operation_failed", "internal_error"]
+        },
+        "message": { "type": "string", "minLength": 1 },
+        "details": { "type": "object" }
+      },
+      "required": ["code", "message"],
       "additionalProperties": false
     },
     "hello_request": {
@@ -71,10 +104,158 @@
       },
       "required": ["id", "ok", "protocol", "worker_id", "sdk", "capabilities"],
       "additionalProperties": false
+    },
+    "materialize_request": {
+      "type": "object",
+      "properties": {
+        "id": { "$ref": "#/$defs/request_id" },
+        "method": { "const": "materialize" },
+        "source_dir": { "$ref": "#/$defs/path" },
+        "dataset_parameters": { "$ref": "#/$defs/parameters" },
+        "dataset_seed": { "$ref": "#/$defs/safe_nonnegative_integer" },
+        "output_dir": { "$ref": "#/$defs/path" }
+      },
+      "required": [
+        "id",
+        "method",
+        "source_dir",
+        "dataset_parameters",
+        "dataset_seed",
+        "output_dir"
+      ],
+      "additionalProperties": false
+    },
+    "prepare_request": {
+      "type": "object",
+      "properties": {
+        "id": { "$ref": "#/$defs/request_id" },
+        "method": { "const": "prepare" },
+        "dataset_dir": { "$ref": "#/$defs/path" },
+        "problem_contract_id": { "type": "string", "minLength": 1 },
+        "problem_parameters": { "$ref": "#/$defs/parameters" },
+        "implementation_parameters": { "$ref": "#/$defs/parameters" },
+        "implementation_seed": { "$ref": "#/$defs/safe_nonnegative_integer" }
+      },
+      "required": [
+        "id",
+        "method",
+        "dataset_dir",
+        "problem_contract_id",
+        "problem_parameters",
+        "implementation_parameters",
+        "implementation_seed"
+      ],
+      "additionalProperties": false
+    },
+    "execute_request": {
+      "type": "object",
+      "properties": {
+        "id": { "$ref": "#/$defs/request_id" },
+        "method": { "const": "execute" },
+        "result_dir": { "$ref": "#/$defs/path" }
+      },
+      "required": ["id", "method", "result_dir"],
+      "additionalProperties": false
+    },
+    "reset_request": {
+      "type": "object",
+      "properties": {
+        "id": { "$ref": "#/$defs/request_id" },
+        "method": { "const": "reset" }
+      },
+      "required": ["id", "method"],
+      "additionalProperties": false
+    },
+    "evaluate_request": {
+      "type": "object",
+      "properties": {
+        "id": { "$ref": "#/$defs/request_id" },
+        "method": { "const": "evaluate" },
+        "dataset_dir": { "$ref": "#/$defs/path" },
+        "problem_contract_id": { "type": "string", "minLength": 1 },
+        "problem_parameters": { "$ref": "#/$defs/parameters" },
+        "result_dir": { "$ref": "#/$defs/path" },
+        "metrics_path": { "$ref": "#/$defs/path" }
+      },
+      "required": [
+        "id",
+        "method",
+        "dataset_dir",
+        "problem_contract_id",
+        "problem_parameters",
+        "result_dir",
+        "metrics_path"
+      ],
+      "additionalProperties": false
+    },
+    "shutdown_request": {
+      "type": "object",
+      "properties": {
+        "id": { "$ref": "#/$defs/request_id" },
+        "method": { "const": "shutdown" }
+      },
+      "required": ["id", "method"],
+      "additionalProperties": false
+    },
+    "acknowledgement": {
+      "type": "object",
+      "properties": {
+        "id": { "$ref": "#/$defs/request_id" },
+        "ok": { "const": true }
+      },
+      "required": ["id", "ok"],
+      "additionalProperties": false
+    },
+    "materialize_response": {
+      "type": "object",
+      "properties": {
+        "id": { "$ref": "#/$defs/request_id" },
+        "ok": { "const": true },
+        "dataset": { "$ref": "#/$defs/manifest_reference" }
+      },
+      "required": ["id", "ok", "dataset"],
+      "additionalProperties": false
+    },
+    "execute_response": {
+      "type": "object",
+      "properties": {
+        "id": { "$ref": "#/$defs/request_id" },
+        "ok": { "const": true },
+        "implementation_time_ns": {
+          "oneOf": [
+            { "$ref": "#/$defs/safe_nonnegative_integer" },
+            { "type": "null" }
+          ]
+        },
+        "result": { "$ref": "#/$defs/manifest_reference" },
+        "statistics": { "type": "object" }
+      },
+      "required": ["id", "ok", "implementation_time_ns", "result", "statistics"],
+      "additionalProperties": false
+    },
+    "failure_response": {
+      "type": "object",
+      "properties": {
+        "id": { "$ref": "#/$defs/request_id" },
+        "ok": { "const": false },
+        "error": { "$ref": "#/$defs/worker_failure" }
+      },
+      "required": ["id", "ok", "error"],
+      "additionalProperties": false
     }
   },
   "oneOf": [
     { "$ref": "#/$defs/hello_request" },
-    { "$ref": "#/$defs/hello_response" }
+    { "$ref": "#/$defs/hello_response" },
+    { "$ref": "#/$defs/materialize_request" },
+    { "$ref": "#/$defs/prepare_request" },
+    { "$ref": "#/$defs/execute_request" },
+    { "$ref": "#/$defs/reset_request" },
+    { "$ref": "#/$defs/evaluate_request" },
+    { "$ref": "#/$defs/shutdown_request" },
+    { "$ref": "#/$defs/acknowledgement" },
+    { "$ref": "#/$defs/materialize_response" },
+    { "$ref": "#/$defs/execute_response" },
+    { "$ref": "#/$defs/failure_response" }
   ]
 }
