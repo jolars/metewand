@@ -134,7 +134,7 @@ See [Worker protocol](DESIGN.md#4-worker-protocol).
       `evaluate`, and `shutdown` exchanges, including phase-specific timeouts
       and typed failures; reserve negotiated capabilities for the later
       applicability and profile subprotocols.
-- [ ] Validate worker-returned manifests and paths; reject absolute or escaping
+- [x] Validate worker-returned manifests and paths; reject absolute or escaping
       paths, special files, undeclared entries, incomplete files, and invalid
       canonical results or metrics.
 - [ ] Build raw fixture workers for dataset materializer, implementation, and

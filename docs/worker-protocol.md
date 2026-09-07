@@ -123,9 +123,11 @@ Evaluation also receives the common acknowledgment. `shutdown` is the final
 request for every role; the shutdown phase includes both its acknowledgment
 and clean process exit.
 
-The manifest paths in successful responses are still worker-supplied data.
-The artifact-validation layer resolves and verifies them before publication;
-an exchange success alone never validates an artifact.
+The manifest paths in successful responses are worker-supplied data. The
+[worker-output validation layer](worker-output-validation.md) resolves them
+beneath the executor-assigned directory, validates their schemas and complete
+file inventories, and checks every declared file before publication; an
+exchange success alone never validates an artifact.
 
 ## Failures and deadlines
 
