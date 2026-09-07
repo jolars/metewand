@@ -6,3 +6,5 @@ pub const LOCAL_TREE_HASH_VERSION: u32 = 1;
 pub mod local_tree;
 pub mod repository;
 pub mod source_bundle;
+#[cfg(unix)]
+pub mod worker_process;

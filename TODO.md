@@ -128,7 +128,7 @@ See [Worker protocol](DESIGN.md#4-worker-protocol).
 - [x] Implement the version-1 JSON-Lines messages, schemas, request IDs,
       negotiation, roles, SDK metadata, worker identity checks, and one-request
       concurrency limit.
-- [ ] Implement dedicated POSIX protocol pipes and concurrent bounded draining
+- [x] Implement dedicated POSIX protocol pipes and concurrent bounded draining
       of stdout and stderr, continuing to drain after log truncation.
 - [ ] Implement the one-shot `materialize`, `prepare`, `execute`, `reset`,
       `evaluate`, and `shutdown` exchanges, including phase-specific timeouts

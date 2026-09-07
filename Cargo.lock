@@ -414,6 +414,7 @@ dependencies = [
  "globset",
  "metewand-core",
  "metewand-protocol",
+ "rustix",
  "serde_json",
  "sha2",
  "tempfile",
