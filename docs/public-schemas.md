@@ -25,6 +25,10 @@ than infer it from the Metewand release that produced the record.
 | `attempt` | Terminal accepted or failed execution with its observations and provenance. |
 | `metrics` | Metewand metadata around evaluator-owned metric data. |
 
+The CLI's [`json` and `jsonl` modes](machine-output.md) emit the
+`machine-output` envelope and document their stream, exit-code, and diagnostic
+compatibility contracts separately.
+
 All Metewand-owned objects reject unknown properties. Open values appear only
 where another contract owns their meaning. In particular, command-specific
 machine data, family-specific problem semantics, parameter values, provenance

@@ -6,7 +6,9 @@ use std::{
     process::{Command, Output},
 };
 
+use metewand_core::public_schemas::public_schema_catalog;
 use metewand_core::public_schemas::{PUBLIC_SCHEMAS, PublicSchema};
+use serde_json::Value;
 use tempfile::TempDir;
 
 const OBJECT_SCHEMA: &str = r#"{
@@ -203,6 +205,15 @@ fn candidate_id(output: &str) -> &str {
         .expect("plan must contain a logical candidate identity")
 }
 
+fn machine_output(output: &Output) -> Value {
+    let value = serde_json::from_slice(&output.stdout).expect("stdout must contain one JSON value");
+    public_schema_catalog()
+        .unwrap()
+        .validate(PublicSchema::MachineOutput.repository_path(), &value)
+        .expect("machine output must satisfy the published schema");
+    value
+}
+
 #[test]
 fn schema_lists_stable_entry_points_and_prints_exact_documents() {
     let working_directory = TempDir::new().unwrap();
@@ -394,4 +405,92 @@ fn check_and_plan_accept_an_explicit_manifest_path() {
         let output = metewand(parent, [command, "--manifest", manifest.to_str().unwrap()]);
         assert!(output.status.success(), "{}", stderr(&output));
     }
+}
+
+#[test]
+fn every_command_has_versioned_json_output() {
+    let repository = repository();
+
+    for arguments in [
+        vec!["--help", "--output", "json"],
+        vec!["--version", "--output", "json"],
+        vec!["schema", "--output", "json"],
+        vec!["schema", "manifest", "--output", "json"],
+        vec!["check", "--output", "json"],
+        vec!["plan", "--output", "json"],
+    ] {
+        let output = metewand(repository.path(), arguments);
+        assert!(output.status.success(), "{}", stderr(&output));
+        assert!(output.stderr.is_empty());
+        let envelope = machine_output(&output);
+        assert_eq!(envelope["schema_version"], 1);
+        assert_eq!(envelope["kind"], "result");
+        assert!(envelope["data"]["command"].is_string());
+    }
+}
+
+#[test]
+fn jsonl_output_is_one_schema_conforming_record_per_line() {
+    let repository = repository();
+
+    let output = metewand(repository.path(), ["--output", "jsonl", "plan"]);
+
+    assert!(output.status.success(), "{}", stderr(&output));
+    assert!(output.stderr.is_empty());
+    let stdout = stdout(&output);
+    let lines = stdout.lines().collect::<Vec<_>>();
+    assert_eq!(lines.len(), 1);
+    let envelope: Value = serde_json::from_str(lines[0]).unwrap();
+    public_schema_catalog()
+        .unwrap()
+        .validate(PublicSchema::MachineOutput.repository_path(), &envelope)
+        .unwrap();
+    assert_eq!(envelope["data"]["command"], "plan");
+    assert_eq!(envelope["data"]["summary"]["logical_candidates"], 1);
+    assert_eq!(envelope["data"]["summary"]["attempt_slots"], 2);
+}
+
+#[test]
+fn machine_failures_have_stable_codes_spans_causes_and_stream_separation() {
+    let repository = repository();
+    write(
+        repository.path(),
+        "metewand.toml",
+        "version = 1\nname = []\n",
+    );
+
+    let output = metewand(repository.path(), ["check", "--output", "json"]);
+
+    assert_eq!(output.status.code(), Some(3));
+    let envelope = machine_output(&output);
+    assert_eq!(envelope["kind"], "diagnostic");
+    assert_eq!(envelope["data"]["code"], "repository_check_failed");
+    assert_eq!(envelope["data"]["causes"][0]["code"], "invalid_manifest");
+    assert_eq!(
+        envelope["data"]["causes"][0]["source_span"]["path"],
+        "metewand.toml"
+    );
+    assert_eq!(envelope["data"]["causes"][0]["source_span"]["line"], 2);
+    assert!(envelope["data"]["causes"][0]["remediation"].is_string());
+    assert!(stderr(&output).contains("error[repository_check_failed]"));
+    assert!(stderr(&output).contains("metewand.toml:2:"));
+}
+
+#[test]
+fn usage_and_input_failures_have_distinct_stable_exit_codes() {
+    let repository = repository();
+
+    let usage = metewand(repository.path(), ["unknown", "--output", "json"]);
+    assert_eq!(usage.status.code(), Some(2));
+    let usage = machine_output(&usage);
+    assert_eq!(usage["data"]["code"], "unknown_command");
+
+    let input = metewand(
+        repository.path(),
+        ["check", "--manifest", "missing.toml", "--output", "json"],
+    );
+    assert_eq!(input.status.code(), Some(4));
+    let input = machine_output(&input);
+    assert_eq!(input["data"]["code"], "repository_check_failed");
+    assert_eq!(input["data"]["causes"][0]["code"], "manifest_access_failed");
 }

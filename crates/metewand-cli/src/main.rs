@@ -1,22 +1,21 @@
-use std::{env, ffi::OsString, fmt, io, io::Write as _, path::PathBuf, process::ExitCode};
+mod output;
 
-use metewand_core::{
-    manifest::{
-        DatasetDefinition, Enforcement, EnvironmentDefinition, ImplementationCapability,
-        InterpretedRunner, PrimaryTime, RunOrder, WorkerDefinition,
-    },
-    planning::{DatasetConfigurationDefinition, LogicalPlan},
-    public_schemas::{PUBLIC_SCHEMAS, PublicSchema},
+use std::{env, ffi::OsString, io, io::Write as _, path::PathBuf, process::ExitCode};
+
+use metewand_core::public_schemas::{PUBLIC_SCHEMAS, PublicSchema};
+use metewand_runtime::repository::check_repository;
+
+use crate::output::{
+    CommandError, CommandResult, EXIT_SUCCESS, OutputFormat, render_diagnostic, render_result,
 };
-use metewand_runtime::repository::{CheckedRepository, check_repository};
 
 const HELP: &str = "\
 Metewand reproducible benchmark runner
 
 Usage:
-  metewand schema [SCHEMA]
-  metewand check [--manifest PATH]
-  metewand plan [--manifest PATH]
+  metewand [--output FORMAT] schema [SCHEMA]
+  metewand [--output FORMAT] check [--manifest PATH]
+  metewand [--output FORMAT] plan [--manifest PATH]
 
 Commands:
   schema  List public schemas, or print one exact versioned document.
@@ -24,444 +23,247 @@ Commands:
   plan    Print the expanded logical plan without side effects.
 
 Options:
+  --output FORMAT  Write human, json, or jsonl output (default: human).
   --manifest PATH  Use PATH instead of ./metewand.toml.
   -h, --help       Print help.
   -V, --version    Print the package version.
 ";
 
+const CHECK_HELP: &str = "Usage: metewand [--output FORMAT] check [--manifest PATH]\n\nValidate the manifest, contracts, schemas, source bundles, and logical compatibility without launching workers or modifying the repository.\n";
+const PLAN_HELP: &str = "Usage: metewand [--output FORMAT] plan [--manifest PATH]\n\nPrint the deterministic unresolved logical plan without downloads, builds, worker launches, or filesystem writes.\n";
+const SCHEMA_HELP: &str = "Usage: metewand [--output FORMAT] schema [SCHEMA]\n\nWithout SCHEMA, list the stable public schema names and identifiers.\n";
+
 fn main() -> ExitCode {
-    match run(env::args_os().skip(1).collect()) {
-        Ok(output) => match io::stdout().write_all(output.as_bytes()) {
-            Ok(()) => ExitCode::SUCCESS,
-            Err(error) if error.kind() == io::ErrorKind::BrokenPipe => ExitCode::SUCCESS,
-            Err(error) => {
-                eprintln!("error: failed to write command output: {error}");
-                ExitCode::FAILURE
-            }
+    let raw_arguments = env::args_os().skip(1).collect::<Vec<_>>();
+    let output_format = output_format_hint(&raw_arguments);
+    let result = extract_output_format(raw_arguments).and_then(|arguments| run(&arguments));
+
+    match result {
+        Ok(result) => match render_result(&result, output_format) {
+            Ok(output) => write_success(&output),
+            Err(error) => write_failure(
+                &CommandError::internal(format!("failed to serialize command output: {error}")),
+                output_format,
+            ),
         },
+        Err(error) => write_failure(&error, output_format),
+    }
+}
+
+fn write_success(output: &str) -> ExitCode {
+    match io::stdout().write_all(output.as_bytes()) {
+        Ok(()) => ExitCode::from(EXIT_SUCCESS),
+        Err(error) if error.kind() == io::ErrorKind::BrokenPipe => ExitCode::from(EXIT_SUCCESS),
         Err(error) => {
-            eprintln!("error: {error}");
-            ExitCode::FAILURE
+            let diagnostic =
+                CommandError::output_write(format!("failed to write command output: {error}"));
+            let _ = io::stderr().write_all(diagnostic.diagnostic.render_human().as_bytes());
+            ExitCode::from(diagnostic.exit_code)
         }
     }
 }
 
-fn run(arguments: Vec<OsString>) -> Result<String, CliError> {
+fn write_failure(error: &CommandError, output_format: OutputFormat) -> ExitCode {
+    if output_format.is_machine() {
+        match render_diagnostic(&error.diagnostic, output_format) {
+            Ok(output) => {
+                if let Err(write_error) = io::stdout().write_all(output.as_bytes())
+                    && write_error.kind() != io::ErrorKind::BrokenPipe
+                {
+                    let diagnostic = CommandError::output_write(format!(
+                        "failed to write structured diagnostic: {write_error}"
+                    ));
+                    let _ = io::stderr().write_all(diagnostic.diagnostic.render_human().as_bytes());
+                    return ExitCode::from(diagnostic.exit_code);
+                }
+            }
+            Err(serialization_error) => {
+                let diagnostic = CommandError::internal(format!(
+                    "failed to serialize structured diagnostic: {serialization_error}"
+                ));
+                let _ = io::stderr().write_all(diagnostic.diagnostic.render_human().as_bytes());
+                return ExitCode::from(diagnostic.exit_code);
+            }
+        }
+    }
+    let _ = io::stderr().write_all(error.diagnostic.render_human().as_bytes());
+    ExitCode::from(error.exit_code)
+}
+
+fn output_format_hint(arguments: &[OsString]) -> OutputFormat {
+    arguments
+        .windows(2)
+        .filter(|pair| pair[0] == "--output")
+        .filter_map(|pair| pair[1].to_str().and_then(OutputFormat::parse))
+        .next_back()
+        .unwrap_or(OutputFormat::Human)
+}
+
+fn extract_output_format(arguments: Vec<OsString>) -> Result<Vec<OsString>, CommandError> {
+    let mut command_arguments = Vec::with_capacity(arguments.len());
+    let mut selected = None;
+    let mut arguments = arguments.into_iter();
+    while let Some(argument) = arguments.next() {
+        if argument != "--output" {
+            command_arguments.push(argument);
+            continue;
+        }
+        let value = arguments.next().ok_or_else(|| {
+            CommandError::usage(
+                "missing_output_format",
+                "`--output` requires one of `human`, `json`, or `jsonl`.",
+            )
+        })?;
+        let value = value.to_str().ok_or_else(|| {
+            CommandError::usage(
+                "invalid_output_format",
+                "the `--output` value is not valid UTF-8",
+            )
+        })?;
+        let format = OutputFormat::parse(value).ok_or_else(|| {
+            CommandError::usage(
+                "invalid_output_format",
+                format!("unknown output format `{value}`; expected `human`, `json`, or `jsonl`"),
+            )
+        })?;
+        if selected.replace(format).is_some() {
+            return Err(CommandError::usage(
+                "duplicate_output_format",
+                "`--output` may be supplied at most once",
+            ));
+        }
+    }
+    Ok(command_arguments)
+}
+
+fn run(arguments: &[OsString]) -> Result<CommandResult, CommandError> {
     let Some(command) = arguments.first().and_then(|argument| argument.to_str()) else {
         if arguments.is_empty() {
-            return Ok(HELP.to_owned());
+            return Ok(CommandResult::help(HELP));
         }
-        return Err(CliError::new("command name is not valid UTF-8"));
+        return Err(CommandError::usage(
+            "invalid_command_name",
+            "command name is not valid UTF-8",
+        ));
     };
 
     match command {
-        "-h" | "--help" | "help" => no_arguments(&arguments[1..]).map(|()| HELP.to_owned()),
-        "-V" | "--version" => no_arguments(&arguments[1..])
-            .map(|()| format!("metewand {}\n", env!("CARGO_PKG_VERSION"))),
+        "-h" | "--help" | "help" => {
+            no_arguments(&arguments[1..])?;
+            Ok(CommandResult::help(HELP))
+        }
+        "-V" | "--version" => {
+            no_arguments(&arguments[1..])?;
+            Ok(CommandResult::version(env!("CARGO_PKG_VERSION")))
+        }
         "schema" => schema_command(&arguments[1..]),
-        "check" => {
-            if arguments[1..] == ["-h"] || arguments[1..] == ["--help"] {
-                return Ok(String::from(
-                    "Usage: metewand check [--manifest PATH]\n\nValidate the manifest, contracts, schemas, source bundles, and logical compatibility without launching workers or modifying the repository.\n",
-                ));
-            }
-            if arguments[1..] == ["--workers"] {
-                return Err(CliError::new(
-                    "`check --workers` is not available until the worker protocol is implemented; no workers were launched",
-                ));
-            }
-            let manifest = manifest_argument(&arguments[1..])?;
-            let repository = check_repository(&manifest).map_err(CliError::source)?;
-            Ok(render_check(&repository))
-        }
-        "plan" => {
-            if arguments[1..] == ["-h"] || arguments[1..] == ["--help"] {
-                return Ok(String::from(
-                    "Usage: metewand plan [--manifest PATH]\n\nPrint the deterministic unresolved logical plan without downloads, builds, worker launches, or filesystem writes.\n",
-                ));
-            }
-            let manifest = manifest_argument(&arguments[1..])?;
-            let repository = check_repository(&manifest).map_err(CliError::source)?;
-            let plan = repository.logical_plan().map_err(CliError::source)?;
-            Ok(render_plan(&repository, &plan))
-        }
-        _ => Err(CliError::new(format!(
-            "unknown command `{command}`; run `metewand --help` for usage"
-        ))),
+        "check" => check_command(&arguments[1..]),
+        "plan" => plan_command(&arguments[1..]),
+        _ => Err(CommandError::usage(
+            "unknown_command",
+            format!("unknown command `{command}`"),
+        )),
     }
 }
 
-fn schema_command(arguments: &[OsString]) -> Result<String, CliError> {
+fn schema_command(arguments: &[OsString]) -> Result<CommandResult, CommandError> {
     match arguments {
-        [] => {
-            let mut output = String::from("Public schemas (compatibility version 1):\n");
-            for schema in PUBLIC_SCHEMAS {
-                use fmt::Write as _;
-                writeln!(output, "  {:<29} {}", schema.slug(), schema.id())
-                    .expect("writing to a string cannot fail");
-            }
-            Ok(output)
+        [] => Ok(CommandResult::schema_list()),
+        [argument] if argument == "-h" || argument == "--help" => {
+            Ok(CommandResult::help(SCHEMA_HELP))
         }
-        [argument] if argument == "-h" || argument == "--help" => Ok(String::from(
-            "Usage: metewand schema [SCHEMA]\n\nWithout SCHEMA, list the stable public schema names and identifiers.\n",
-        )),
         [argument] => {
-            let slug = argument
-                .to_str()
-                .ok_or_else(|| CliError::new("schema name is not valid UTF-8"))?;
+            let slug = argument.to_str().ok_or_else(|| {
+                CommandError::usage("invalid_schema_name", "schema name is not valid UTF-8")
+            })?;
             PublicSchema::from_slug(slug)
-                .map(|schema| schema.source().to_owned())
+                .map(CommandResult::schema_document)
                 .ok_or_else(|| {
                     let names = PUBLIC_SCHEMAS
                         .iter()
                         .map(|schema| schema.slug())
                         .collect::<Vec<_>>()
                         .join(", ");
-                    CliError::new(format!(
-                        "unknown public schema `{slug}`; expected one of {names}"
-                    ))
+                    CommandError::usage(
+                        "unknown_schema",
+                        format!("unknown public schema `{slug}`; expected one of {names}"),
+                    )
                 })
         }
-        _ => Err(CliError::new(
+        _ => Err(CommandError::usage(
+            "unexpected_argument",
             "`metewand schema` accepts at most one schema name",
         )),
     }
 }
 
-fn manifest_argument(arguments: &[OsString]) -> Result<PathBuf, CliError> {
+fn check_command(arguments: &[OsString]) -> Result<CommandResult, CommandError> {
+    if arguments == ["-h"] || arguments == ["--help"] {
+        return Ok(CommandResult::help(CHECK_HELP));
+    }
+    if arguments == ["--workers"] {
+        return Err(CommandError::unsupported(
+            "`check --workers` is not available until the worker protocol is implemented; no workers were launched",
+            "Omit `--workers` to run the side-effect-free repository check.",
+        ));
+    }
+    let manifest = manifest_argument(arguments)?;
+    let repository =
+        check_repository(&manifest).map_err(|error| CommandError::repository("check", &error))?;
+    Ok(CommandResult::check(&repository))
+}
+
+fn plan_command(arguments: &[OsString]) -> Result<CommandResult, CommandError> {
+    if arguments == ["-h"] || arguments == ["--help"] {
+        return Ok(CommandResult::help(PLAN_HELP));
+    }
+    let manifest = manifest_argument(arguments)?;
+    let repository =
+        check_repository(&manifest).map_err(|error| CommandError::repository("plan", &error))?;
+    let plan = repository
+        .logical_plan()
+        .map_err(|error| CommandError::planning(&error))?;
+    Ok(CommandResult::plan(&repository, &plan))
+}
+
+fn manifest_argument(arguments: &[OsString]) -> Result<PathBuf, CommandError> {
     match arguments {
         [] => Ok(PathBuf::from("metewand.toml")),
         [flag, path] if flag == "--manifest" => {
             if path.is_empty() {
-                Err(CliError::new("`--manifest` requires a nonempty path"))
+                Err(CommandError::usage(
+                    "empty_manifest_path",
+                    "`--manifest` requires a nonempty path",
+                ))
             } else {
                 Ok(PathBuf::from(path))
             }
         }
-        [flag] if flag == "--manifest" => {
-            Err(CliError::new("`--manifest` requires a path argument"))
-        }
-        [argument] => Err(CliError::new(format!(
-            "unexpected argument `{}`; use `--manifest PATH` to select a manifest",
-            argument.to_string_lossy()
-        ))),
-        _ => Err(CliError::new(
+        [flag] if flag == "--manifest" => Err(CommandError::usage(
+            "missing_manifest_path",
+            "`--manifest` requires a path argument",
+        )),
+        [argument] => Err(CommandError::usage(
+            "unexpected_argument",
+            format!(
+                "unexpected argument `{}`; use `--manifest PATH` to select a manifest",
+                argument.to_string_lossy()
+            ),
+        )),
+        _ => Err(CommandError::usage(
+            "unexpected_argument",
             "expected no arguments or exactly `--manifest PATH`",
         )),
     }
 }
 
-fn no_arguments(arguments: &[OsString]) -> Result<(), CliError> {
+fn no_arguments(arguments: &[OsString]) -> Result<(), CommandError> {
     if arguments.is_empty() {
         Ok(())
     } else {
-        Err(CliError::new("this option accepts no arguments"))
-    }
-}
-
-fn render_check(repository: &CheckedRepository) -> String {
-    format!(
-        "Benchmark `{}` is valid.\n  manifest hash: {}\n  problem contracts: {}\n  repository schemas: {}\n  source bundles: {}\n  worker launches: 0\n",
-        repository.manifest.name,
-        repository.manifest_hash,
-        repository.problem_contracts.len(),
-        repository.schema_count,
-        repository.source_bundle_count,
-    )
-}
-
-fn render_plan(repository: &CheckedRepository, plan: &LogicalPlan) -> String {
-    use fmt::Write as _;
-
-    let mut output = format!(
-        "Plan for benchmark `{}`\nManifest hash: {}\n\nDefinition identities:\n",
-        repository.manifest.name, repository.manifest_hash
-    );
-    for (name, id) in &repository.planning_catalog.environment_definitions {
-        writeln!(output, "  environment `{name}`: {id}").expect("writing to a string cannot fail");
-    }
-    for (definition, id) in &repository.planning_catalog.dataset_definitions {
-        match definition {
-            DatasetConfigurationDefinition::Unit => {
-                writeln!(output, "  dataset `<unit>`: {id}")
-                    .expect("writing to a string cannot fail");
-            }
-            DatasetConfigurationDefinition::Named(name) => {
-                writeln!(output, "  dataset `{name}`: {id}")
-                    .expect("writing to a string cannot fail");
-            }
-        }
-    }
-    for (name, id) in &repository.planning_catalog.problem_definitions {
-        writeln!(output, "  problem `{name}`: {id}").expect("writing to a string cannot fail");
-    }
-    for (name, id) in &repository.planning_catalog.implementation_definitions {
-        writeln!(output, "  implementation `{name}`: {id}")
-            .expect("writing to a string cannot fail");
-    }
-    writeln!(output, "\nRequired resource identities:").expect("writing to a string cannot fail");
-    for (path, id) in &repository.resources.schemas {
-        writeln!(output, "  schema `{}`: {id}", path.display())
-            .expect("writing to a string cannot fail");
-    }
-    for (name, id) in &repository.resources.problem_contracts {
-        writeln!(output, "  problem contract `{name}`: {id}")
-            .expect("writing to a string cannot fail");
-    }
-    for (paths, id) in &repository.resources.source_bundles {
-        let paths = paths
-            .iter()
-            .map(|path| path.display().to_string())
-            .collect::<Vec<_>>()
-            .join(", ");
-        writeln!(output, "  source bundle [{paths}]: {id}")
-            .expect("writing to a string cannot fail");
-    }
-    render_requirements(&mut output, repository);
-
-    let mut candidate_count = 0_usize;
-    let mut specification_count = 0_usize;
-    let mut observation_count = 0_usize;
-    let mut attempt_count = 0_usize;
-    for experiment in &plan.experiments {
-        writeln!(
-            output,
-            "\nExperiment `{}`\n  scheduling seed: {}\n  execution policy: {}\n  observation policy: {}",
-            experiment.name,
-            experiment.scheduling_seed.value,
-            experiment.execution_policy.id,
-            experiment.observation_policy.id,
-        )
-        .expect("writing to a string cannot fail");
-        for candidate in &experiment.candidates {
-            candidate_count += 1;
-            writeln!(
-                output,
-                "  logical candidate {} ({})\n    dataset configuration: {}\n    problem configuration: {}\n    implementation configuration: {}",
-                candidate.candidate.id,
-                candidate.source,
-                candidate.dataset_configuration.id,
-                candidate.problem_configuration.id,
-                candidate.implementation_configuration.id,
-            )
-            .expect("writing to a string cannot fail");
-            for capability in &candidate.implementation_capabilities {
-                writeln!(
-                    output,
-                    "    capability: {} ({})",
-                    implementation_capability(capability.capability),
-                    capability.evidence,
-                )
-                .expect("writing to a string cannot fail");
-            }
-            for specification in &candidate.specifications {
-                specification_count += 1;
-                writeln!(
-                    output,
-                    "    logical specification {}",
-                    specification.specification.id
-                )
-                .expect("writing to a string cannot fail");
-                for observation in &specification.observation_slots {
-                    observation_count += 1;
-                    writeln!(output, "      observation slot {}", observation.id)
-                        .expect("writing to a string cannot fail");
-                }
-                for attempt in &specification.attempt_slots {
-                    attempt_count += 1;
-                    writeln!(output, "      attempt slot {}", attempt.id)
-                        .expect("writing to a string cannot fail");
-                }
-            }
-        }
-    }
-    writeln!(
-        output,
-        "\nSummary: {}, {}, {}, {}.\nApplicable runs: {}; execution slots: {}.\nApplicability: {} candidates and {} attempt slots known applicable, 0 unchecked, and no known exclusions.\nCapabilities are declarations only; no workers were launched.\nThis command performed no downloads, builds, or filesystem writes.",
-        count(candidate_count, "logical candidate"),
-        count(specification_count, "logical specification"),
-        count(observation_count, "observation slot"),
-        count(attempt_count, "attempt slot"),
-        specification_count,
-        attempt_count,
-        candidate_count,
-        attempt_count,
-    )
-    .expect("writing to a string cannot fail");
-    output
-}
-
-fn render_requirements(output: &mut String, repository: &CheckedRepository) {
-    use fmt::Write as _;
-
-    writeln!(
-        output,
-        "\nDeclared execution requirements:\n  artifacts: {} contracts, {} schemas, {} source bundles\n  executor: local process (unresolved)",
-        repository.problem_contracts.len(),
-        repository.schema_count,
-        repository.source_bundle_count,
-    )
-    .expect("writing to a string cannot fail");
-    for (name, environment) in &repository.manifest.environments {
-        writeln!(
-            output,
-            "  environment `{name}`: {}",
-            environment_requirement(environment)
-        )
-        .expect("writing to a string cannot fail");
-    }
-    for (name, dataset) in &repository.manifest.datasets {
-        match dataset {
-            DatasetDefinition::Fixed(_) => {
-                writeln!(output, "  dataset `{name}`: read declared local artifact")
-                    .expect("writing to a string cannot fail");
-            }
-            DatasetDefinition::Generated(dataset) => {
-                writeln!(
-                    output,
-                    "  dataset `{name}` materializer: {}{}",
-                    worker_description(&dataset.worker),
-                    if dataset.source.is_some() {
-                        "; pinned download required"
-                    } else {
-                        ""
-                    }
-                )
-                .expect("writing to a string cannot fail");
-            }
-        }
-    }
-    for (name, problem) in &repository.manifest.problems {
-        writeln!(
-            output,
-            "  problem `{name}` evaluator: {}",
-            worker_description(&problem.evaluator)
-        )
-        .expect("writing to a string cannot fail");
-    }
-    for (name, implementation) in &repository.manifest.implementations {
-        writeln!(
-            output,
-            "  implementation `{name}` worker: {}",
-            worker_description(&implementation.worker)
-        )
-        .expect("writing to a string cannot fail");
-    }
-    for experiment in &repository.manifest.experiments {
-        let policy = &repository.manifest.execution_policies[&experiment.execution_policy];
-        writeln!(
-            output,
-            "  controls for experiment `{}`: cpus={}, threads={}, memory={}, network={}, worker_reuse={}, warmups={}, timeout={}, timing_scope={}, primary_time={}, run_order={}, enforcement={}",
-            experiment.name,
-            optional_value(policy.cpus),
-            optional_value(policy.threads),
-            policy.memory.as_deref().unwrap_or("unspecified"),
-            policy.resolved_network(),
-            policy.resolved_worker_reuse(),
-            policy.resolved_warmup_runs(),
-            policy.timeout.as_deref().unwrap_or("unspecified"),
-            policy.resolved_timing_scope(),
-            primary_time(policy.resolved_primary_time()),
-            run_order(policy.resolved_run_order()),
-            enforcement(policy.resolved_enforcement()),
-        )
-        .expect("writing to a string cannot fail");
-    }
-    writeln!(
-        output,
-        "  writable paths for this plan command: none\n  downloads, builds, and worker launches for this plan command: none"
-    )
-    .expect("writing to a string cannot fail");
-}
-
-fn environment_requirement(environment: &EnvironmentDefinition) -> &'static str {
-    match environment {
-        EnvironmentDefinition::Local {} => "use the existing host context; no build",
-        EnvironmentDefinition::Uv { .. } => "resolve and provision the declared uv project",
-        EnvironmentDefinition::Renv { .. } => "resolve and provision the declared renv project",
-        EnvironmentDefinition::Nix { .. } => "resolve and realize the declared Nix output",
-        EnvironmentDefinition::Oci { .. } => "retrieve the pinned OCI image",
-    }
-}
-
-fn worker_description(worker: &WorkerDefinition) -> String {
-    match worker {
-        WorkerDefinition::Interpreted(worker) => format!(
-            "{} entrypoint `{}` in environment `{}` with args {:?}",
-            interpreted_runner(worker.runner),
-            worker.entrypoint.as_path().display(),
-            worker.environment,
-            worker.args,
-        ),
-        WorkerDefinition::Command(worker) => format!(
-            "command `{}` in environment `{}` with args {:?}",
-            worker.program, worker.environment, worker.args,
-        ),
-    }
-}
-
-fn interpreted_runner(runner: InterpretedRunner) -> &'static str {
-    match runner {
-        InterpretedRunner::Python => "python",
-        InterpretedRunner::R => "r",
-        InterpretedRunner::Julia => "julia",
-    }
-}
-
-fn optional_value(value: Option<u64>) -> String {
-    value.map_or_else(|| "unspecified".to_owned(), |value| value.to_string())
-}
-
-fn primary_time(value: PrimaryTime) -> &'static str {
-    match value {
-        PrimaryTime::TimedWallTime => "timed_wall_time",
-        PrimaryTime::CpuTime => "cpu_time",
-    }
-}
-
-fn run_order(value: RunOrder) -> &'static str {
-    match value {
-        RunOrder::Sequential => "sequential",
-        RunOrder::Randomized => "randomized",
-    }
-}
-
-fn enforcement(value: Enforcement) -> &'static str {
-    match value {
-        Enforcement::BestEffort => "best_effort",
-        Enforcement::Required => "required",
-    }
-}
-
-fn implementation_capability(capability: ImplementationCapability) -> &'static str {
-    match capability {
-        ImplementationCapability::OneShot => "one_shot",
-    }
-}
-
-fn count(value: usize, noun: &str) -> String {
-    if value == 1 {
-        format!("{value} {noun}")
-    } else {
-        format!("{value} {noun}s")
-    }
-}
-
-#[derive(Debug)]
-struct CliError(String);
-
-impl CliError {
-    fn new(message: impl Into<String>) -> Self {
-        Self(message.into())
-    }
-
-    fn source(error: impl std::error::Error) -> Self {
-        Self(error.to_string())
-    }
-}
-
-impl fmt::Display for CliError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(&self.0)
+        Err(CommandError::usage(
+            "unexpected_argument",
+            "this option accepts no arguments",
+        ))
     }
 }

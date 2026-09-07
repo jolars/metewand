@@ -114,7 +114,7 @@ See [Automation and agentic workflows](DESIGN.md#automation-and-agentic-workflow
 - [x] Implement `metewand schema`, `metewand check`, and the non-mutating
       `metewand plan` without downloads, builds, worker launches, or filesystem
       writes.
-- [ ] Add versioned JSON/JSONL output, stable exit and diagnostic codes, source
+- [x] Add versioned JSON/JSONL output, stable exit and diagnostic codes, source
       spans, causal chains, affected identities, and strict stdout/stderr
       separation for machine mode.
 

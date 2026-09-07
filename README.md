@@ -85,7 +85,10 @@ The [read-only command-line workflow](docs/read-only-cli.md) composes these
 layers into `metewand schema`, `metewand check`, and `metewand plan`. Repository
 checks load contracts and transitive schema references offline, source contents
 feed definition identities, and plans expose every unresolved logical identity
-without downloads, builds, worker launches, or filesystem writes.
+without downloads, builds, worker launches, or filesystem writes. Every command
+also has [versioned JSON and JSON Lines output](docs/machine-output.md), stable
+exit and diagnostic codes, structured source spans and causal chains, and
+strict machine-output stream separation.
 
 ## Development
 

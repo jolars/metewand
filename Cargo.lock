@@ -378,6 +378,8 @@ dependencies = [
  "metewand-core",
  "metewand-protocol",
  "metewand-runtime",
+ "serde",
+ "serde_json",
  "tempfile",
 ]
 

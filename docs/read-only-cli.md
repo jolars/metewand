@@ -10,6 +10,8 @@ metewand schema
 metewand schema manifest
 metewand check
 metewand plan
+metewand --output json check
+metewand plan --output jsonl
 ```
 
 `check` and `plan` use `metewand.toml` in the current directory by default. An
@@ -76,6 +78,8 @@ planner. Changing a worker source therefore changes its definition and every
 transitive logical identity without affecting unrelated definitions.
 
 Successful human output is written to standard output, and failures are
-written to standard error. The versioned JSON/JSONL envelopes, stable
-diagnostic codes, and structured diagnostic chains are a separate compatibility
-slice.
+written to standard error. Every command also supports the versioned
+[`json` and `jsonl` machine-output modes](machine-output.md). Machine standard
+output contains only published envelopes; the same typed diagnostics render
+source spans, causal chains, affected identities, and remediation on standard
+error. Exit and diagnostic codes are stable and documented with that contract.
