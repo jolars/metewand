@@ -1,5 +1,7 @@
-{ ... }:
+{ pkgs, ... }:
 {
+  packages = [ pkgs.python3 ];
+
   languages.rust = {
     enable = true;
     toolchainFile = ./rust-toolchain.toml;

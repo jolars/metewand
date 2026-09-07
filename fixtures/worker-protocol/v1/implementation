@@ -1,0 +1,10 @@
+#!/usr/bin/env python3
+
+import sys
+
+sys.dont_write_bytecode = True
+
+from fixture_worker import run_role
+
+
+raise SystemExit(run_role("implementation"))

@@ -137,7 +137,7 @@ See [Worker protocol](DESIGN.md#4-worker-protocol).
 - [x] Validate worker-returned manifests and paths; reject absolute or escaping
       paths, special files, undeclared entries, incomplete files, and invalid
       canonical results or metrics.
-- [ ] Build raw fixture workers for dataset materializer, implementation, and
+- [x] Build raw fixture workers for dataset materializer, implementation, and
       evaluator roles, including fixtures for every protocol failure class.
 
 ### 1.6 First end-to-end execution

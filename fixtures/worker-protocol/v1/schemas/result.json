@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Raw fixture canonical result",
+  "type": "object",
+  "properties": {
+    "answer": { "type": "integer" }
+  },
+  "required": ["answer"],
+  "additionalProperties": false
+}

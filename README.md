@@ -105,6 +105,10 @@ confines returned manifests to their assigned directories, rejects special or
 undeclared entries, verifies every declared size and SHA-256 digest, and checks
 dataset manifests, canonical results, and evaluator metrics against their
 public and problem-owned schemas.
+The checked-in [raw worker fixtures](docs/raw-worker-fixtures.md) exercise all
+three Gate-1 worker roles without an SDK, produce a deterministic validated
+dataset-to-result-to-metrics chain, and expose every version-1 framing and
+request-correlation abuse case as a selectable fixture mode.
 
 ## Development
 
