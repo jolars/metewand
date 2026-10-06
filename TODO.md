@@ -147,7 +147,7 @@ and [Gate 1](DESIGN.md#gate-1-conformance-kernel).
 
 - [x] Add the minimal local launch path needed to run trusted raw fixture
       workers with a private working directory and allowlisted environment.
-- [ ] Run one fixed dataset through one raw implementation and its independent
+- [x] Run one fixed dataset through one raw implementation and its independent
       problem evaluator using `prepare_and_execute` timing.
 - [ ] Validate the canonical result and evaluator metrics before accepting the
       attempt; retain typed records for crashes, timeouts, invalid results, and

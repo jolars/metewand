@@ -257,6 +257,8 @@ def _evaluate(request: dict[str, object]) -> dict[str, object]:
             "metrics_path",
         },
     )
+    delay_ms = int(os.environ.get("METEWAND_TEST_EVALUATE_DELAY_MS", "0"))
+    time.sleep(delay_ms / 1000)
     dataset = _object(
         _read_json_file(Path(_string(request["dataset_dir"], "dataset_dir")) / "data.json"),
         "dataset",
