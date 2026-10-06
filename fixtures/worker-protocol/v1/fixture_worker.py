@@ -47,6 +47,14 @@ def run_role(role: str) -> int:
                     state = _prepare(request)
                     response = {"id": request_id, "ok": True}
                 elif role == "implementation" and method == "execute":
+                    mode = os.environ.get("METEWAND_TEST_EXECUTE_MODE")
+                    if mode == "crash":
+                        os._exit(17)
+                    if mode == "malformed_protocol":
+                        _write_raw(writer, b'{"id":}\n')
+                        return 0
+                    if mode == "timeout":
+                        time.sleep(0.25)
                     response = _execute(request, state)
                 elif role == "implementation" and method == "reset":
                     _require_shape(request, "reset", set())
@@ -206,6 +214,8 @@ def _prepare(request: dict[str, object]) -> dict[str, object]:
     )
     if implementation_parameters.get("algorithm") != "sum":
         raise RequestError("fixture implementation requires algorithm 'sum'")
+    timing_delay_ms = int(os.environ.get("METEWAND_TEST_TIMING_DELAY_MS", "0"))
+    time.sleep(timing_delay_ms / 1000)
     return {
         "problem_parameters": problem_parameters,
         "values": values,
@@ -226,15 +236,21 @@ def _execute(
     if not isinstance(values, list):
         raise RequestError("prepared fixture state is invalid")
     answer = sum(values) + offset
+    answer += int(os.environ.get("METEWAND_TEST_ANSWER_OFFSET", "0"))
 
     result_dir = Path(_string(request["result_dir"], "result_dir"))
     result_dir.mkdir(parents=True, exist_ok=True)
+    answer_value: int | str = answer
+    if os.environ.get("METEWAND_TEST_EXECUTE_MODE") == "invalid_result":
+        answer_value = "invalid"
     manifest = {
-        "data": {"answer": answer},
+        "data": {"answer": answer_value},
         "files": [],
         "schema": "schemas/result.json",
         "schema_version": 1,
     }
+    timing_delay_ms = int(os.environ.get("METEWAND_TEST_TIMING_DELAY_MS", "0"))
+    time.sleep(timing_delay_ms / 1000)
     _write_file(result_dir / "result.json", _json_bytes(manifest))
     return {
         "id": request["id"],
@@ -246,6 +262,8 @@ def _execute(
 
 
 def _evaluate(request: dict[str, object]) -> dict[str, object]:
+    if os.environ.get("METEWAND_TEST_EVALUATE_MODE") == "failure":
+        raise RequestError("fixture evaluator failed")
     _require_shape(
         request,
         "evaluate",
@@ -278,9 +296,16 @@ def _evaluate(request: dict[str, object]) -> dict[str, object]:
     answer = data.get("answer")
     if type(answer) is not int:
         raise RequestError("result.data.answer must be an integer")
+    if os.environ.get("METEWAND_TEST_EVALUATE_MODE") == "mutate_result":
+        result["data"] = {"answer": answer + 1}
+        result_path = Path(_string(request["result_dir"], "result_dir")) / "result.json"
+        _write_file(result_path, _json_bytes(result))
 
+    error_value: int | str = abs(answer - (sum(values) + offset))
+    if os.environ.get("METEWAND_TEST_EVALUATE_MODE") == "invalid_metrics":
+        error_value = "invalid"
     metrics = {
-        "data": {"absolute_error": abs(answer - (sum(values) + offset))},
+        "data": {"absolute_error": error_value},
         "schema": "schemas/metrics.json",
         "schema_version": 1,
     }

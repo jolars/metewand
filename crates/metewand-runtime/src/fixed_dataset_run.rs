@@ -8,8 +8,10 @@ use std::{
 };
 
 use metewand_core::{
-    canonical::CanonicalValue, public_schemas::PublicSchemaCatalogError,
-    records::ResolvedLaunchRecord, schema::SchemaCatalog,
+    canonical::CanonicalValue,
+    public_schemas::PublicSchemaCatalogError,
+    records::{AttemptDiagnostic, ContentDigest, ResolvedLaunchRecord},
+    schema::SchemaCatalog,
 };
 use metewand_protocol::{Capability, WorkerIdentity, WorkerRole};
 use serde_json::Value;
@@ -17,8 +19,9 @@ use tempfile::Builder;
 use thiserror::Error;
 
 use crate::{
+    local_tree::{LocalTreeHashError, hash_local_tree},
     local_worker::{LocalWorkerLaunchError, launch_trusted_local_worker},
-    worker_output::{WorkerOutputError, WorkerOutputValidator},
+    worker_output::{ValidatedMetrics, ValidatedResult, WorkerOutputError, WorkerOutputValidator},
     worker_process::WorkerLogLimits,
     worker_session::{PhaseTimeouts, WorkerSession, WorkerSessionError},
 };
@@ -75,6 +78,112 @@ pub struct FixedDatasetResult {
     pub implementation_time_ns: Option<u64>,
     /// Implementation-owned diagnostic statistics.
     pub statistics: Value,
+    validated_result: ValidatedResult,
+    validated_metrics: ValidatedMetrics,
+    result_output: tempfile::TempDir,
+    metrics_output: tempfile::TempDir,
+}
+
+impl FixedDatasetResult {
+    /// Returns the private directory holding the complete validated result.
+    #[must_use]
+    pub fn result_directory(&self) -> &Path {
+        self.result_output.path()
+    }
+
+    /// Returns the private evaluator metrics document.
+    #[must_use]
+    pub fn metrics_document(&self) -> PathBuf {
+        self.metrics_output
+            .path()
+            .join(self.validated_metrics.metrics_path())
+    }
+
+    /// Returns the result's validated manifest path and file inventory.
+    #[must_use]
+    pub const fn validated_result(&self) -> &ValidatedResult {
+        &self.validated_result
+    }
+
+    /// Returns the validated evaluator metrics data and relative path.
+    #[must_use]
+    pub const fn validated_metrics(&self) -> &ValidatedMetrics {
+        &self.validated_metrics
+    }
+}
+
+/// The private result of one one-shot execution before a scientific verdict or
+/// durable attempt publication exists.
+#[derive(Debug)]
+pub enum FixedDatasetRunOutcome {
+    /// Both documents passed structural validation. The problem-owned evaluator
+    /// has not supplied a scientific validity or completion verdict.
+    PendingScientificVerdict(Box<FixedDatasetResult>),
+    /// Execution ended without a result eligible for scientific review.
+    Failed {
+        /// Stable technical failure class.
+        kind: FixedDatasetFailureKind,
+        /// Diagnostic material for a later failed attempt record.
+        diagnostic: AttemptDiagnostic,
+    },
+}
+
+/// Technical failure classes retained before an attempt can be published.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum FixedDatasetFailureKind {
+    /// Inputs or local setup prevented execution.
+    SetupFailure,
+    /// The implementation reported an operation failure.
+    ImplementationFailure,
+    /// The implementation exited before completing its protocol exchange.
+    ImplementationCrash,
+    /// A worker exceeded its phase deadline.
+    PhaseTimeout,
+    /// The canonical result failed manifest or schema validation.
+    InvalidResult,
+    /// The evaluator failed or produced invalid metrics.
+    EvaluatorFailure,
+    /// A worker violated protocol framing, correlation, or message shape.
+    ProtocolError,
+}
+
+impl FixedDatasetFailureKind {
+    /// Returns the stable code suitable for an [`AttemptDiagnostic`].
+    #[must_use]
+    pub const fn code(self) -> &'static str {
+        match self {
+            Self::SetupFailure => "setup_failure",
+            Self::ImplementationFailure => "implementation_failure",
+            Self::ImplementationCrash => "implementation_crash",
+            Self::PhaseTimeout => "phase_timeout",
+            Self::InvalidResult => "invalid_result",
+            Self::EvaluatorFailure => "evaluator_failure",
+            Self::ProtocolError => "protocol_error",
+        }
+    }
+}
+
+/// Runs a private one-shot attempt and retains its technical outcome.
+///
+/// Schema validation alone cannot establish scientific validity or completion.
+/// The pending variant must not be converted to `RunAttemptOutcome::Accepted`
+/// until a problem-owned verdict and durable publication are implemented.
+#[must_use]
+pub fn run_fixed_dataset_outcome(request: FixedDatasetRun<'_>) -> FixedDatasetRunOutcome {
+    match run_fixed_dataset(request) {
+        Ok(result) => FixedDatasetRunOutcome::PendingScientificVerdict(Box::new(result)),
+        Err(error) => {
+            let kind = error.failure_kind();
+            FixedDatasetRunOutcome::Failed {
+                kind,
+                diagnostic: AttemptDiagnostic {
+                    code: kind.code().to_owned(),
+                    message: error.to_string(),
+                    details: None,
+                },
+            }
+        }
+    }
 }
 
 /// Launches the implementation and independent evaluator, then measures one run.
@@ -83,7 +192,9 @@ pub struct FixedDatasetResult {
 /// before `prepare` and stops after the complete `execute` response, which the
 /// protocol sends only after result writing. Metewand validates the result and
 /// runs and validates the evaluator outside the measured interval. All output
-/// stays in private temporary directories and is removed on return or failure.
+/// stays in private temporary directories. Failed runs remove them immediately;
+/// successful results own them until dropped so a later publication step can
+/// copy the complete validated artifact.
 /// This function does not publish an observation or accept an attempt.
 ///
 /// # Errors
@@ -152,6 +263,8 @@ pub fn run_fixed_dataset(
     let result = validator
         .validate_execution_result(result_dir.path(), &executed, request.result_schema)
         .map_err(|source| FixedDatasetRunError::InvalidResult { source })?;
+    let result_tree_hash = hash_local_tree(result_dir.path())
+        .map_err(|source| FixedDatasetRunError::ResultTreeHash { source })?;
     evaluator
         .evaluate(
             dataset_dir,
@@ -161,6 +274,7 @@ pub fn run_fixed_dataset(
             metrics_path_string,
         )
         .map_err(|source| FixedDatasetRunError::Evaluator { source })?;
+    verify_result_tree(result_dir.path(), result_tree_hash)?;
     let metrics = validator
         .validate_metrics(
             metrics_dir.path(),
@@ -175,6 +289,7 @@ pub fn run_fixed_dataset(
     evaluator
         .shutdown()
         .map_err(|source| FixedDatasetRunError::Evaluator { source })?;
+    verify_result_tree(result_dir.path(), result_tree_hash)?;
 
     Ok(FixedDatasetResult {
         result: result.data().clone(),
@@ -182,7 +297,20 @@ pub fn run_fixed_dataset(
         timed_wall_time,
         implementation_time_ns: executed.implementation_time_ns(),
         statistics: executed.statistics().clone(),
+        validated_result: result,
+        validated_metrics: metrics,
+        result_output: result_dir,
+        metrics_output: metrics_dir,
     })
+}
+
+fn verify_result_tree(root: &Path, expected: ContentDigest) -> Result<(), FixedDatasetRunError> {
+    let observed =
+        hash_local_tree(root).map_err(|source| FixedDatasetRunError::ResultTreeHash { source })?;
+    if observed != expected {
+        return Err(FixedDatasetRunError::ResultTreeChanged);
+    }
+    Ok(())
 }
 
 fn private_directory(root: &Path, prefix: &str) -> Result<tempfile::TempDir, FixedDatasetRunError> {
@@ -253,6 +381,16 @@ pub enum FixedDatasetRunError {
         #[source]
         source: WorkerOutputError,
     },
+    /// The complete canonical result tree could not be rechecked.
+    #[error("failed to hash canonical result tree: {source}")]
+    ResultTreeHash {
+        /// Result-tree hashing failure.
+        #[source]
+        source: LocalTreeHashError,
+    },
+    /// The evaluator or worker changed the validated canonical result tree.
+    #[error("canonical result tree changed after validation")]
+    ResultTreeChanged,
     /// The independent evaluator metrics failed output or schema validation.
     #[error("invalid evaluator metrics: {source}")]
     InvalidMetrics {
@@ -260,4 +398,52 @@ pub enum FixedDatasetRunError {
         #[source]
         source: WorkerOutputError,
     },
+}
+
+impl FixedDatasetRunError {
+    /// Classifies a failed private run without treating malformed worker output
+    /// or a schema-valid metric document as a scientific verdict.
+    #[must_use]
+    pub fn failure_kind(&self) -> FixedDatasetFailureKind {
+        match self {
+            Self::NonAbsolutePath
+            | Self::NonUtf8Path(_)
+            | Self::PrivateDirectory(_)
+            | Self::PublicSchemas(_)
+            | Self::ImplementationLaunch { .. }
+            | Self::EvaluatorLaunch { .. } => FixedDatasetFailureKind::SetupFailure,
+            Self::InvalidResult { .. } | Self::ResultTreeHash { .. } | Self::ResultTreeChanged => {
+                FixedDatasetFailureKind::InvalidResult
+            }
+            Self::InvalidMetrics { .. } => FixedDatasetFailureKind::EvaluatorFailure,
+            Self::Implementation { source } => classify_session(source, true),
+            Self::Evaluator { source } => classify_session(source, false),
+        }
+    }
+}
+
+fn classify_session(source: &WorkerSessionError, implementation: bool) -> FixedDatasetFailureKind {
+    match source {
+        WorkerSessionError::Timeout { .. } => FixedDatasetFailureKind::PhaseTimeout,
+        WorkerSessionError::ProtocolRead { .. }
+        | WorkerSessionError::Response { .. }
+        | WorkerSessionError::Handshake { .. }
+        | WorkerSessionError::Encode { .. }
+        | WorkerSessionError::Request { .. }
+        | WorkerSessionError::InvalidRole { .. }
+        | WorkerSessionError::CapabilityNotSelected { .. } => {
+            FixedDatasetFailureKind::ProtocolError
+        }
+        WorkerSessionError::ProtocolClosed { .. }
+        | WorkerSessionError::ProtocolThreadStopped { .. }
+        | WorkerSessionError::ProtocolWrite { .. }
+        | WorkerSessionError::Process { .. }
+        | WorkerSessionError::UnsuccessfulExit { .. }
+            if implementation =>
+        {
+            FixedDatasetFailureKind::ImplementationCrash
+        }
+        _ if implementation => FixedDatasetFailureKind::ImplementationFailure,
+        _ => FixedDatasetFailureKind::EvaluatorFailure,
+    }
 }

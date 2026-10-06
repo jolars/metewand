@@ -15,7 +15,10 @@ use metewand_core::{
 };
 use metewand_protocol::WorkerIdentity;
 use metewand_runtime::{
-    fixed_dataset_run::{FixedDatasetRun, FixedDatasetRunError, run_fixed_dataset},
+    fixed_dataset_run::{
+        FixedDatasetFailureKind, FixedDatasetRun, FixedDatasetRunError, FixedDatasetRunOutcome,
+        run_fixed_dataset, run_fixed_dataset_outcome,
+    },
     worker_process::WorkerLogLimits,
     worker_session::{PhaseTimeouts, WorkerPhase, WorkerSessionError},
 };
@@ -66,6 +69,14 @@ fn fixed_dataset_runs_through_implementation_and_independent_evaluator() {
     assert!(result.timed_wall_time > Duration::ZERO);
     assert!(whole_call_elapsed >= result.timed_wall_time + Duration::from_millis(200));
     assert_eq!(result.implementation_time_ns, None);
+    assert!(result.result_directory().join("result.json").is_file());
+    assert!(result.metrics_document().is_file());
+    assert_eq!(
+        result.validated_result().manifest_path(),
+        Path::new("result.json")
+    );
+    assert_eq!(fs::read_dir(private_root.path()).unwrap().count(), 2);
+    drop(result);
     assert_eq!(fs::read_dir(private_root.path()).unwrap().count(), 0);
 }
 
@@ -108,6 +119,137 @@ fn rejected_prepare_does_not_leave_private_output() {
         }
     ));
     assert_eq!(fs::read_dir(private_root.path()).unwrap().count(), 0);
+}
+
+#[test]
+fn schema_valid_metrics_leave_scientific_acceptance_pending() {
+    let (_private_root, outcome) =
+        run_case(Some(("METEWAND_TEST_ANSWER_OFFSET", "1")), None, timeouts());
+    let FixedDatasetRunOutcome::PendingScientificVerdict(result) = outcome else {
+        panic!("a schema-valid result should remain pending scientific review");
+    };
+    assert_eq!(result.result.as_json(), &json!({"answer": 9}));
+    assert_eq!(result.metrics.as_json(), &json!({"absolute_error": 1}));
+}
+
+#[test]
+fn timing_includes_prepare_and_result_writing() {
+    let (_private_root, outcome) = run_case(
+        Some(("METEWAND_TEST_TIMING_DELAY_MS", "110")),
+        None,
+        timeouts(),
+    );
+    let FixedDatasetRunOutcome::PendingScientificVerdict(result) = outcome else {
+        panic!("the delayed implementation should complete");
+    };
+    assert!(result.timed_wall_time >= Duration::from_millis(200));
+}
+
+#[test]
+fn one_shot_failures_keep_distinct_typed_diagnostics() {
+    let cases = [
+        (
+            Some(("METEWAND_TEST_EXECUTE_MODE", "crash")),
+            None,
+            timeouts(),
+            FixedDatasetFailureKind::ImplementationCrash,
+        ),
+        (
+            Some(("METEWAND_TEST_EXECUTE_MODE", "invalid_result")),
+            None,
+            timeouts(),
+            FixedDatasetFailureKind::InvalidResult,
+        ),
+        (
+            Some(("METEWAND_TEST_EXECUTE_MODE", "malformed_protocol")),
+            None,
+            timeouts(),
+            FixedDatasetFailureKind::ProtocolError,
+        ),
+        (
+            None,
+            Some(("METEWAND_TEST_EVALUATE_MODE", "failure")),
+            timeouts(),
+            FixedDatasetFailureKind::EvaluatorFailure,
+        ),
+        (
+            None,
+            Some(("METEWAND_TEST_EVALUATE_MODE", "invalid_metrics")),
+            timeouts(),
+            FixedDatasetFailureKind::EvaluatorFailure,
+        ),
+        (
+            None,
+            Some(("METEWAND_TEST_EVALUATE_MODE", "mutate_result")),
+            timeouts(),
+            FixedDatasetFailureKind::InvalidResult,
+        ),
+        (
+            Some(("METEWAND_TEST_EXECUTE_MODE", "timeout")),
+            None,
+            PhaseTimeouts {
+                execute: Duration::from_millis(20),
+                ..timeouts()
+            },
+            FixedDatasetFailureKind::PhaseTimeout,
+        ),
+    ];
+
+    for (implementation_mode, evaluator_mode, deadlines, expected) in cases {
+        let (_private_root, outcome) = run_case(implementation_mode, evaluator_mode, deadlines);
+        let FixedDatasetRunOutcome::Failed { kind, diagnostic } = outcome else {
+            panic!("expected a failed one-shot outcome");
+        };
+        assert_eq!(kind, expected);
+        assert_eq!(diagnostic.code, kind.code());
+        assert!(!diagnostic.message.is_empty());
+    }
+}
+
+fn run_case(
+    implementation_mode: Option<(&str, &str)>,
+    evaluator_mode: Option<(&str, &str)>,
+    deadlines: PhaseTimeouts,
+) -> (TempDir, FixedDatasetRunOutcome) {
+    let private_root = TempDir::new().unwrap();
+    let schemas = fixture_schema_catalog();
+    let problem_parameters = json!({"offset": 2});
+    let implementation_parameters = json!({"algorithm": "sum"});
+    let mut implementation = launch("implementation");
+    let mut evaluator = launch("problem-evaluator");
+    if let Some((name, value)) = implementation_mode {
+        implementation
+            .environment_variables
+            .insert(name.into(), value.into());
+    }
+    if let Some((name, value)) = evaluator_mode {
+        evaluator
+            .environment_variables
+            .insert(name.into(), value.into());
+    }
+    let worker_id = WorkerIdentity::from_str(WORKER_ID).unwrap();
+
+    let outcome = run_fixed_dataset_outcome(FixedDatasetRun {
+        dataset_dir: &fixture_path("fixed-dataset"),
+        problem_contract_id: "mw1-problem-contract-fixture",
+        problem_parameters: &problem_parameters,
+        implementation_parameters: &implementation_parameters,
+        implementation_seed: 23,
+        implementation_launch: &implementation,
+        implementation_identity: &worker_id,
+        evaluator_launch: &evaluator,
+        evaluator_identity: &worker_id,
+        result_schema: Path::new("schemas/result.json"),
+        metric_schema: Path::new("schemas/metrics.json"),
+        schemas: &schemas,
+        private_root: private_root.path(),
+        timeouts: deadlines,
+        log_limits: WorkerLogLimits::new(4096, 4096),
+    });
+    if matches!(outcome, FixedDatasetRunOutcome::Failed { .. }) {
+        assert_eq!(fs::read_dir(private_root.path()).unwrap().count(), 0);
+    }
+    (private_root, outcome)
 }
 
 fn launch(name: &str) -> ResolvedLaunchRecord {
