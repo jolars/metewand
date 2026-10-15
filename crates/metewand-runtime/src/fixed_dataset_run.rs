@@ -4,7 +4,7 @@ use std::{
     fs::{self, Permissions},
     os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime},
 };
 
 use metewand_core::{
@@ -22,7 +22,7 @@ use crate::{
     local_tree::{LocalTreeHashError, hash_local_tree},
     local_worker::{LocalWorkerLaunchError, launch_trusted_local_worker},
     worker_output::{ValidatedMetrics, ValidatedResult, WorkerOutputError, WorkerOutputValidator},
-    worker_process::WorkerLogLimits,
+    worker_process::{WorkerLogLimits, WorkerProcessOutput},
     worker_session::{PhaseTimeouts, WorkerSession, WorkerSessionError},
 };
 
@@ -80,6 +80,19 @@ pub struct FixedDatasetResult {
     pub implementation_time_ns: Option<u64>,
     /// Implementation-owned diagnostic statistics.
     pub statistics: Value,
+    /// Complete independent evaluator exchange, excluding metrics validation.
+    pub evaluation_time: Duration,
+    /// Wall-clock boundaries retained only as provenance.
+    pub started_at: SystemTime,
+    /// Wall-clock time when the private validated run finished.
+    pub finished_at: SystemTime,
+    /// Drained implementation logs, scoped to this execution.
+    pub implementation_output: WorkerProcessOutput,
+    /// Drained evaluator logs, scoped to this execution.
+    pub evaluator_output: WorkerProcessOutput,
+    pub(crate) result_tree_hash: ContentDigest,
+    pub(crate) metrics_bytes: Vec<u8>,
+    pub(crate) execution_provenance: Value,
     validated_result: ValidatedResult,
     validated_metrics: ValidatedMetrics,
     result_output: tempfile::TempDir,
@@ -205,6 +218,7 @@ pub fn run_fixed_dataset(
     if !request.dataset_dir.is_absolute() || !request.private_root.is_absolute() {
         return Err(FixedDatasetRunError::NonAbsolutePath);
     }
+    let started_at = SystemTime::now();
     let dataset_dir = path_string(request.dataset_dir)?;
     let validator = WorkerOutputValidator::new(request.schemas)?;
 
@@ -244,6 +258,26 @@ pub fn run_fixed_dataset(
     )
     .map_err(|source| FixedDatasetRunError::Evaluator { source })?;
 
+    let execution_provenance = serde_json::json!({
+        "environment_class": "development",
+        "executor": "trusted_local",
+        "architecture": std::env::consts::ARCH,
+        "os": std::env::consts::OS,
+        "implementation": worker_provenance(request.implementation_launch, &implementation),
+        "evaluator": worker_provenance(request.evaluator_launch, &evaluator),
+        "problem_contract_id": request.problem_contract_id,
+        "problem_parameters": request.problem_parameters,
+        "implementation_parameters": request.implementation_parameters,
+        "implementation_seed": request.implementation_seed,
+        "timing_scope": "prepare_and_execute",
+        "dataset_directory": request.dataset_dir,
+        "dataset_tree_sha256": hex_digest(hash_local_tree(request.dataset_dir)
+            .map_err(|source| FixedDatasetRunError::DatasetTreeHash { source })?),
+        "result_schema": request.result_schema,
+        "metric_schema": request.metric_schema,
+        "controls": {"network": "unsupported", "filesystem_isolation": "unsupported", "process_tree_accounting": "unsupported"},
+    });
+
     let started = Instant::now();
     implementation
         .prepare(
@@ -264,6 +298,7 @@ pub fn run_fixed_dataset(
         .map_err(|source| FixedDatasetRunError::InvalidResult { source })?;
     let result_tree_hash = hash_local_tree(result_dir.path())
         .map_err(|source| FixedDatasetRunError::ResultTreeHash { source })?;
+    let evaluation_started = Instant::now();
     let evaluated = evaluator
         .evaluate(
             dataset_dir,
@@ -273,6 +308,7 @@ pub fn run_fixed_dataset(
             metrics_path_string,
         )
         .map_err(|source| FixedDatasetRunError::Evaluator { source })?;
+    let evaluation_time = evaluation_started.elapsed();
     verify_result_tree(result_dir.path(), result_tree_hash)?;
     let metrics = validator
         .validate_metrics(
@@ -282,13 +318,17 @@ pub fn run_fixed_dataset(
         )
         .map_err(|source| FixedDatasetRunError::InvalidMetrics { source })?;
 
-    implementation
+    let metrics_bytes = fs::read(&metrics_path).map_err(FixedDatasetRunError::PrivateDirectory)?;
+    let implementation_output = implementation
         .shutdown()
         .map_err(|source| FixedDatasetRunError::Implementation { source })?;
-    evaluator
+    let evaluator_output = evaluator
         .shutdown()
         .map_err(|source| FixedDatasetRunError::Evaluator { source })?;
     verify_result_tree(result_dir.path(), result_tree_hash)?;
+    if fs::read(&metrics_path).map_err(FixedDatasetRunError::PrivateDirectory)? != metrics_bytes {
+        return Err(FixedDatasetRunError::MetricsChanged);
+    }
 
     let completion = match evaluated.verdict() {
         EvaluationVerdict::Invalid => return Err(FixedDatasetRunError::ScientificInvalidResult),
@@ -304,11 +344,39 @@ pub fn run_fixed_dataset(
         timed_wall_time,
         implementation_time_ns: executed.implementation_time_ns(),
         statistics: executed.statistics().clone(),
+        evaluation_time,
+        started_at,
+        finished_at: SystemTime::now(),
+        implementation_output,
+        evaluator_output,
+        result_tree_hash,
+        metrics_bytes,
+        execution_provenance,
         validated_result: result,
         validated_metrics: metrics,
         result_output: result_dir,
         metrics_output: metrics_dir,
     })
+}
+
+fn worker_provenance(launch: &ResolvedLaunchRecord, session: &WorkerSession) -> Value {
+    serde_json::json!({
+        "program": launch.program,
+        "args": launch.args,
+        "environment_variables": launch.environment_variables,
+        "environment_id": launch.environment,
+        "worker_id": session.negotiated().worker_id(),
+        "sdk": session.negotiated().sdk(),
+        "capabilities": session.negotiated().reported_capabilities(),
+    })
+}
+
+pub(crate) fn hex_digest(digest: ContentDigest) -> String {
+    digest
+        .bytes()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 
 fn verify_result_tree(root: &Path, expected: ContentDigest) -> Result<(), FixedDatasetRunError> {
@@ -398,9 +466,19 @@ pub enum FixedDatasetRunError {
         #[source]
         source: LocalTreeHashError,
     },
+    /// The fixed dataset could not be fingerprinted for provenance.
+    #[error("failed to hash fixed dataset: {source}")]
+    DatasetTreeHash {
+        /// Dataset-tree hashing failure.
+        #[source]
+        source: LocalTreeHashError,
+    },
     /// The evaluator or worker changed the validated canonical result tree.
     #[error("canonical result tree changed after validation")]
     ResultTreeChanged,
+    /// The evaluator changed its metrics after validation.
+    #[error("evaluator metrics changed after validation")]
+    MetricsChanged,
     /// The independent evaluator metrics failed output or schema validation.
     #[error("invalid evaluator metrics: {source}")]
     InvalidMetrics {
@@ -419,13 +497,16 @@ impl FixedDatasetRunError {
             | Self::NonUtf8Path(_)
             | Self::PrivateDirectory(_)
             | Self::PublicSchemas(_)
+            | Self::DatasetTreeHash { .. }
             | Self::ImplementationLaunch { .. }
             | Self::EvaluatorLaunch { .. } => FixedDatasetFailureKind::SetupFailure,
             Self::ScientificInvalidResult
             | Self::InvalidResult { .. }
             | Self::ResultTreeHash { .. }
             | Self::ResultTreeChanged => FixedDatasetFailureKind::InvalidResult,
-            Self::InvalidMetrics { .. } => FixedDatasetFailureKind::EvaluatorFailure,
+            Self::InvalidMetrics { .. } | Self::MetricsChanged => {
+                FixedDatasetFailureKind::EvaluatorFailure
+            }
             Self::Implementation { source } => classify_session(source, true),
             Self::Evaluator { source } => classify_session(source, false),
         }

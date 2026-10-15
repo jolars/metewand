@@ -114,7 +114,10 @@ dataset-to-result-to-metrics chain, and expose every version-1 framing and
 request-correlation abuse case as a selectable fixture mode.
 The [fixed-dataset runtime path](docs/fixed-dataset-run.md) launches a resolved
 implementation and independent evaluator, measures `prepare_and_execute`, and
-returns validated result and metric values from private temporary output.
+returns validated result and metric values from private temporary output. Its
+[durable publication path](docs/durable-publication.md) finalizes a
+self-describing observation before the enclosing attempt, retaining provenance,
+scoped logs, and hash-complete completion manifests in separate directories.
 
 ## Development
 

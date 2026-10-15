@@ -321,3 +321,346 @@ fn valid_results_keep_the_evaluator_completion_decision() {
         }
     ));
 }
+
+#[test]
+fn finalized_one_shot_has_independent_hash_complete_directories() {
+    use metewand_core::{
+        canonical::CanonicalValue,
+        public_schemas::{PublicSchema, public_schema_catalog},
+        records::RunAttemptOutcome,
+    };
+    use metewand_runtime::publication::{
+        PublicationRequest, finalize_fixed_dataset, verify_finalized_directory,
+    };
+
+    let (_private, outcome) = run_case(
+        Some(("METEWAND_TEST_RESULT_PAYLOAD", "1")),
+        None,
+        timeouts(),
+    );
+    let FixedDatasetRunOutcome::Validated(result) = outcome else {
+        panic!("expected valid result")
+    };
+    let store = TempDir::new().unwrap();
+    let published = finalize_fixed_dataset(
+        &result,
+        PublicationRequest {
+            root: store.path(),
+            attempt_slot: record_id(2),
+            observation_slot: record_id(3),
+            retry_index: 0,
+            provenance_data: CanonicalValue::try_from(json!({"repository_commit": null})).unwrap(),
+        },
+    )
+    .unwrap();
+    assert!(
+        matches!(published.attempt.record.outcome, RunAttemptOutcome::Accepted { observation } if observation == published.observation.id)
+    );
+    let schemas = public_schema_catalog().unwrap();
+    for (directory, document, schema) in [
+        (
+            &published.observation_directory,
+            "observation.json",
+            PublicSchema::Observation,
+        ),
+        (
+            &published.attempt_directory,
+            "attempt.json",
+            PublicSchema::Attempt,
+        ),
+    ] {
+        verify_finalized_directory(directory).unwrap();
+        let record: Value =
+            serde_json::from_slice(&fs::read(directory.join(document)).unwrap()).unwrap();
+        schemas.validate(schema.repository_path(), &record).unwrap();
+        let bytes = fs::read(directory.join("manifest.json")).unwrap();
+        assert_eq!(
+            bytes,
+            CanonicalValue::from_slice(&bytes)
+                .unwrap()
+                .to_canonical_bytes()
+                .unwrap()
+        );
+        let marker: Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(marker["complete"], true);
+        let expected = if document == "observation.json" {
+            vec![
+                "metrics.json",
+                "observation.json",
+                "result/arrays/values.bin",
+                "result/result.json",
+            ]
+        } else {
+            vec![
+                "attempt.json",
+                "logs/implementation/stderr.log",
+                "logs/implementation/stdout.log",
+                "logs/problem-evaluator/stderr.log",
+                "logs/problem-evaluator/stdout.log",
+            ]
+        };
+        let files = marker["files"].as_array().unwrap();
+        assert_eq!(
+            files
+                .iter()
+                .map(|entry| entry["path"].as_str().unwrap())
+                .collect::<Vec<_>>(),
+            expected
+        );
+        for entry in files {
+            use sha2::{Digest, Sha256};
+            let content = fs::read(directory.join(entry["path"].as_str().unwrap())).unwrap();
+            assert_eq!(entry["size_bytes"], content.len());
+            assert_eq!(entry["sha256"], format!("{:x}", Sha256::digest(&content)));
+        }
+        assert!(
+            marker["files"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|entry| entry["path"] == document)
+        );
+    }
+    assert_eq!(
+        fs::read(published.observation_directory.join("metrics.json")).unwrap(),
+        fs::read(result.metrics_document()).unwrap()
+    );
+    assert_eq!(
+        fs::read(published.observation_directory.join("result/result.json")).unwrap(),
+        fs::read(result.result_directory().join("result.json")).unwrap()
+    );
+    for role in ["implementation", "problem-evaluator"] {
+        for stream in ["stdout", "stderr"] {
+            assert!(
+                published
+                    .attempt_directory
+                    .join(format!("logs/{role}/{stream}.log"))
+                    .is_file()
+            );
+        }
+    }
+    drop(result);
+    assert_eq!(
+        fs::read(
+            published
+                .observation_directory
+                .join("result/arrays/values.bin")
+        )
+        .unwrap(),
+        (0..=255).collect::<Vec<u8>>()
+    );
+    verify_finalized_directory(&published.observation_directory).unwrap();
+    fs::write(published.observation_directory.join("metrics.json"), b"{}").unwrap();
+    assert!(verify_finalized_directory(&published.observation_directory).is_err());
+}
+
+#[test]
+fn a_missed_completion_target_keeps_an_observation_in_a_failed_attempt() {
+    use metewand_core::{canonical::CanonicalValue, records::RunAttemptOutcome};
+    use metewand_runtime::publication::{PublicationRequest, finalize_fixed_dataset};
+    let (_private, outcome) = run_case(
+        None,
+        Some(("METEWAND_TEST_VERDICT", "not_reached")),
+        timeouts(),
+    );
+    let FixedDatasetRunOutcome::Validated(result) = outcome else {
+        panic!("expected valid result")
+    };
+    let store = TempDir::new().unwrap();
+    let published = finalize_fixed_dataset(
+        &result,
+        PublicationRequest {
+            root: store.path(),
+            attempt_slot: record_id(2),
+            observation_slot: record_id(3),
+            retry_index: 0,
+            provenance_data: CanonicalValue::try_from(json!({})).unwrap(),
+        },
+    )
+    .unwrap();
+    assert!(
+        matches!(published.attempt.record.outcome, RunAttemptOutcome::Failed { observation: Some(id), .. } if id == published.observation.id)
+    );
+}
+
+#[test]
+fn changed_private_outputs_cannot_be_published() {
+    use metewand_core::canonical::CanonicalValue;
+    use metewand_runtime::publication::{
+        PublicationError, PublicationRequest, finalize_fixed_dataset,
+    };
+    for changed in ["result", "metrics"] {
+        let (_private, outcome) = run_case(None, None, timeouts());
+        let FixedDatasetRunOutcome::Validated(result) = outcome else {
+            panic!("expected valid result")
+        };
+        let path = if changed == "result" {
+            result.result_directory().join("result.json")
+        } else {
+            result.metrics_document()
+        };
+        fs::write(path, b"{}").unwrap();
+        let store = TempDir::new().unwrap();
+        assert!(matches!(
+            finalize_fixed_dataset(
+                &result,
+                PublicationRequest {
+                    root: store.path(),
+                    attempt_slot: record_id(2),
+                    observation_slot: record_id(3),
+                    retry_index: 0,
+                    provenance_data: CanonicalValue::try_from(json!({})).unwrap(),
+                }
+            ),
+            Err(PublicationError::ModifiedOutput)
+        ));
+        assert_eq!(
+            fs::read_dir(store.path().join("observations"))
+                .unwrap()
+                .count(),
+            0
+        );
+        assert!(!store.path().join("attempts").exists());
+    }
+}
+
+#[test]
+fn a_metrics_symlink_cannot_be_published_even_if_its_bytes_match() {
+    use metewand_core::canonical::CanonicalValue;
+    use metewand_runtime::publication::{
+        PublicationError, PublicationRequest, finalize_fixed_dataset,
+    };
+    let (_private, outcome) = run_case(None, None, timeouts());
+    let FixedDatasetRunOutcome::Validated(result) = outcome else {
+        panic!("expected valid result")
+    };
+    let store = TempDir::new().unwrap();
+    let target = store.path().join("metrics-copy.json");
+    fs::copy(result.metrics_document(), &target).unwrap();
+    fs::remove_file(result.metrics_document()).unwrap();
+    std::os::unix::fs::symlink(target, result.metrics_document()).unwrap();
+    assert!(matches!(
+        finalize_fixed_dataset(
+            &result,
+            PublicationRequest {
+                root: store.path(),
+                attempt_slot: record_id(2),
+                observation_slot: record_id(3),
+                retry_index: 0,
+                provenance_data: CanonicalValue::try_from(json!({})).unwrap(),
+            }
+        ),
+        Err(PublicationError::UnsafeEntry(_))
+    ));
+    assert_eq!(
+        fs::read_dir(store.path().join("observations"))
+            .unwrap()
+            .count(),
+        0
+    );
+}
+
+#[test]
+fn an_attempt_publication_failure_leaves_only_a_complete_observation() {
+    use metewand_core::canonical::CanonicalValue;
+    use metewand_runtime::publication::{
+        PublicationRequest, finalize_fixed_dataset, verify_finalized_directory,
+    };
+    let (_private, outcome) = run_case(None, None, timeouts());
+    let FixedDatasetRunOutcome::Validated(result) = outcome else {
+        panic!("expected valid result")
+    };
+    let store = TempDir::new().unwrap();
+    fs::write(store.path().join("attempts"), b"occupied").unwrap();
+    assert!(
+        finalize_fixed_dataset(
+            &result,
+            PublicationRequest {
+                root: store.path(),
+                attempt_slot: record_id(2),
+                observation_slot: record_id(3),
+                retry_index: 0,
+                provenance_data: CanonicalValue::try_from(json!({})).unwrap(),
+            }
+        )
+        .is_err()
+    );
+    let observations = fs::read_dir(store.path().join("observations"))
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(observations.len(), 1);
+    assert!(
+        observations[0]
+            .file_name()
+            .to_str()
+            .unwrap()
+            .starts_with("mw1-observation-")
+    );
+    verify_finalized_directory(&observations[0].path()).unwrap();
+    assert_eq!(
+        fs::read(store.path().join("attempts")).unwrap(),
+        b"occupied"
+    );
+}
+
+#[test]
+fn publication_retains_role_scoped_log_prefixes_and_truncation_provenance() {
+    use metewand_core::canonical::CanonicalValue;
+    use metewand_runtime::publication::{PublicationRequest, finalize_fixed_dataset};
+    let (_private, outcome) = run_case(
+        Some(("METEWAND_TEST_LOGS", "1")),
+        Some(("METEWAND_TEST_LOGS", "1")),
+        timeouts(),
+    );
+    let FixedDatasetRunOutcome::Validated(result) = outcome else {
+        panic!("expected valid result")
+    };
+    let store = TempDir::new().unwrap();
+    let published = finalize_fixed_dataset(
+        &result,
+        PublicationRequest {
+            root: store.path(),
+            attempt_slot: record_id(2),
+            observation_slot: record_id(3),
+            retry_index: 0,
+            provenance_data: CanonicalValue::try_from(json!({"repository_commit": null})).unwrap(),
+        },
+    )
+    .unwrap();
+    let document: Value = serde_json::from_slice(
+        &fs::read(published.attempt_directory.join("attempt.json")).unwrap(),
+    )
+    .unwrap();
+    for (role, message_role) in [
+        ("implementation", "implementation"),
+        ("problem-evaluator", "problem_evaluator"),
+    ] {
+        for stream in ["stdout", "stderr"] {
+            let complete = format!("{message_role} {stream}\n")
+                .repeat(1000)
+                .into_bytes();
+            assert_eq!(
+                fs::read(
+                    published
+                        .attempt_directory
+                        .join(format!("logs/{role}/{stream}.log"))
+                )
+                .unwrap(),
+                complete[..4096]
+            );
+            let metadata = &document["provenance"]["data"]["logs"][role][stream];
+            assert_eq!(metadata["retained_bytes"], 4096);
+            assert_eq!(metadata["total_bytes"], complete.len());
+            assert_eq!(metadata["truncated"], true);
+        }
+    }
+    assert_eq!(
+        document["provenance"]["data"]["context"]["repository_commit"],
+        Value::Null
+    );
+    assert_eq!(
+        document["provenance"]["data"]["execution"]["implementation"]["worker_id"],
+        WORKER_ID
+    );
+}

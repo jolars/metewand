@@ -25,6 +25,9 @@ def run_role(role: str) -> int:
 
     reader, writer = _protocol_streams()
     try:
+        if os.environ.get("METEWAND_TEST_LOGS") == "1":
+            os.write(1, f"{role} stdout\n".encode() * 1000)
+            os.write(2, f"{role} stderr\n".encode() * 1000)
         _accept_hello(reader, writer, role)
         state: dict[str, object] | None = None
 
@@ -249,6 +252,17 @@ def _execute(
         "schema": "schemas/result.json",
         "schema_version": 1,
     }
+    if os.environ.get("METEWAND_TEST_RESULT_PAYLOAD") == "1":
+        payload = bytes(range(256))
+        payload_path = result_dir / "arrays" / "values.bin"
+        payload_path.parent.mkdir()
+        _write_file(payload_path, payload)
+        manifest["files"] = [{
+            "path": "arrays/values.bin",
+            "sha256": hashlib.sha256(payload).hexdigest(),
+            "size_bytes": len(payload),
+            "media_type": "application/octet-stream",
+        }]
     timing_delay_ms = int(os.environ.get("METEWAND_TEST_TIMING_DELAY_MS", "0"))
     time.sleep(timing_delay_ms / 1000)
     _write_file(result_dir / "result.json", _json_bytes(manifest))

@@ -8,6 +8,8 @@ pub mod fixed_dataset_run;
 pub mod local_tree;
 #[cfg(unix)]
 pub mod local_worker;
+#[cfg(unix)]
+pub mod publication;
 pub mod repository;
 pub mod source_bundle;
 pub mod worker_output;

@@ -53,8 +53,11 @@ Protocol conformance tests cover the required verdict and reject malformed
 responses. No identity or execution-semantics constants change: problem-owned
 validity and completion rules already belong to those contracts.
 
-A validated result is not an accepted attempt. Acceptance still requires durable
-publication of its observation and enclosing attempt. This path does not publish
-artifacts, materialize a dataset, or provide a private dataset view. The dataset
-must be a trusted local input resolved before the call. Durable publication and
-`metewand run` follow in later Gate 1.6 slices.
+A validated result is not an accepted attempt. The result also retains drained
+implementation and evaluator logs, independent evaluation duration, wall-clock
+boundaries, validation snapshots, and launch provenance for
+[durable publication](durable-publication.md). Publication finalizes its
+observation and enclosing attempt before acceptance. This execution function
+does not materialize a dataset or provide a private dataset view. The dataset
+must be a trusted local input resolved before the call. `metewand run` follows
+in the next Gate 1.6 slice.

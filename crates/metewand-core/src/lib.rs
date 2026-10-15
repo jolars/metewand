@@ -10,6 +10,7 @@ pub mod planning;
 pub mod problem_contract;
 pub mod public_schemas;
 pub mod records;
+pub mod run_documents;
 pub mod schema;
 pub mod seed;
 

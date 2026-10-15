@@ -152,7 +152,7 @@ and [Gate 1](DESIGN.md#gate-1-conformance-kernel).
 - [x] Validate the canonical result and evaluator metrics before accepting the
       attempt; retain typed records for crashes, timeouts, invalid results, and
       evaluator failures.
-- [ ] Finalize one self-describing observation directory containing its result,
+- [x] Finalize one self-describing observation directory containing its result,
       metrics, provenance, and completion marker, then one attempt directory
       that references it and contains scoped logs and its own hash-complete
       completion marker.

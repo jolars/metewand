@@ -26,6 +26,12 @@ The adjacent schemas validate the materialized dataset manifest, canonical
 result, and evaluator metrics. All artifacts and protocol responses are
 deterministic for the same requests.
 
+For publication tests, `METEWAND_TEST_RESULT_PAYLOAD=1` makes the implementation
+include a nested binary payload with a declared digest and size.
+`METEWAND_TEST_LOGS=1` writes deterministic role-specific messages to both
+standard streams so bounded capture and truncation provenance can be checked
+after finalization.
+
 ## Protocol abuse
 
 Invoke `protocol-failure` with one mode to produce a specific adversarial
