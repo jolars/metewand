@@ -171,25 +171,51 @@ making only development-environment and observed-control claims. It is the
 substrate for the comparative local MVP, not the general MVP itself. See [Gate
 2](DESIGN.md#gate-2-reliable-local-foundation).
 
-### 2.1 Sources, datasets, and artifact cache
+### 2.1 Source acquisition, materialization, and artifact cache
 
 See [Environments, execution, and
-artifacts](DESIGN.md#6-environments-execution-and-artifacts).
+artifacts](DESIGN.md#6-environments-execution-and-artifacts) and [Problem and
+fairness contracts](DESIGN.md#problem-and-fairness-contracts).
 
+Metewand owns reproducible construction, validation, storage, and protection of
+benchmark inputs. Benchmark authors supply the scientific recipes for data
+generation, fold selection, preprocessing, and format conversion. Datamonger
+provides an optional source of recorded datasets and verified decoding.
+
+- [ ] Define and document a source-resolution boundary for repository files,
+  pinned URLs, and optional external providers that returns verified local
+  artifacts and provenance. Keep `check` and `plan` free of downloads and
+  materialization, and document the contract in `DESIGN.md` and user-facing
+  documentation.
 - [ ] Add pinned downloads with digest verification before use and safe archive
   extraction with traversal, link, entry-type, entry-count, and
   expanded-size limits.
-- [ ] Implement generated and transformed dataset materialization, including
-  canonical dataset manifests, dataset seeds, schema checks, and optional
-  contract-owned binary validation.
+- [ ] Execute benchmark-owned generators and transformations through the
+  materializer protocol, including canonical dataset manifests, dataset seeds,
+  schema checks, and optional contract-owned binary validation.
+- [ ] Record external source selectors, resolved dataset versions, artifact
+  digests, decoding recipes, and verification status. Bind verified sources,
+  materializer code and environment, canonical parameters, and dataset seeds
+  into derivation identities, with separately recorded output hashes.
 - [ ] Implement the content-addressed artifact store, derivation-to-output
   mappings, completion markers, leases, and private per-attempt dataset
-  views.
+  views. Import provider exports through verified copies or snapshots while
+  preserving ownership of provider caches.
 - [ ] Prefer copy-on-write snapshots or copies for local views; otherwise verify
   dataset hashes around every worker operation and report enforcement as
   best-effort.
 - [ ] Detect mutations, invalidate the attempt, and transactionally quarantine a
   changed canonical cache object before it can be reused.
+- [ ] Add conformance tests and documentation for the boundary between shared
+  dataset materialization and implementation preparation, including
+  implementation-specific conversions and the problem contract's rules for
+  work outside the timed scope.
+- [ ] Add an optional Datamonger adapter and runnable example using a pinned
+  registry selector and dataset version through a process boundary. Distinguish
+  artifact-only verification from decoded-value verification, produce a
+  standard Metewand dataset artifact, and demonstrate that all implementations
+  consume private views of the same instance. Test pin and verification
+  failures and offline execution after source resolution.
 
 ### 2.2 Durable attempt state and recovery
 
