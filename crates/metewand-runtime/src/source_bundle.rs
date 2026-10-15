@@ -240,7 +240,7 @@ fn hex(bytes: &[u8]) -> String {
     output
 }
 
-fn literal_prefix(pattern: &str) -> (PathBuf, bool) {
+pub(crate) fn literal_prefix(pattern: &str) -> (PathBuf, bool) {
     let mut prefix = PathBuf::new();
     for component in pattern.split('/') {
         if component.bytes().any(is_glob_metacharacter) {

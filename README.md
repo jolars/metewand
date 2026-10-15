@@ -62,6 +62,12 @@ and rejecting selected trees that escape through symlinks. Its versioned
 types, file bytes, link targets, and the portable executable-bit semantic while
 excluding incidental filesystem metadata.
 
+The runtime's [source-resolution boundary](docs/source-resolution.md) returns
+privately staged source files, verified content digests, and provenance. It
+resolves repository bundles directly and provides explicit acquisition hooks
+for pinned URLs and optional external providers, keeping acquisition separate
+from read-only checking and planning.
+
 The Gate 1 [domain-record graph](docs/domain-records.md) separates definitions,
 configurations, logical plans, resolved execution dependencies, observations,
 and attempts. Its [version-1 typed identities](docs/identities.md) hash explicit

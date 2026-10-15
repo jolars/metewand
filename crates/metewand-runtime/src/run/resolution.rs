@@ -38,7 +38,8 @@ use crate::{
     LOCAL_TREE_HASH_VERSION,
     local_tree::hash_local_tree,
     repository::CheckedRepository,
-    source_bundle::{expand_source_bundle, identify_source_bundle},
+    source_bundle::identify_source_bundle,
+    source_resolution::{SourceRequest, SourceResolutionError, resolve_source},
     worker_output::WorkerOutputValidator,
     worker_session::PhaseTimeouts,
 };
@@ -638,42 +639,30 @@ fn snapshot(
     key.sort();
     key.dedup();
     let expected = repository.resources.source_bundles[&key];
-    if identify_source_bundle(&repository.root, patterns)? != expected {
-        return Err(RunError::ChangedInput);
-    }
-    let expanded = expand_source_bundle(&repository.root, patterns)?;
-    let directory = Builder::new().prefix("input-").tempdir_in(private_root)?;
-    for path in expanded.paths() {
-        copy_entry(&repository.root.join(path), &directory.path().join(path))?;
-    }
-    if identify_source_bundle(&repository.root, patterns)? != expected {
-        return Err(RunError::ChangedInput);
-    }
-    let digest = hash_local_tree(directory.path())?;
+    let source = resolve_source(
+        &SourceRequest::Repository {
+            root: &repository.root,
+            sources: patterns,
+            expected,
+        },
+        None,
+        private_root,
+    )
+    .map_err(|error| match error {
+        SourceResolutionError::ChangedSource => RunError::ChangedInput,
+        SourceResolutionError::UnsupportedEntry { .. } => unsupported(
+            "Gate 1 input snapshots require regular files and directories; symbolic links and special files are not supported",
+        ),
+        SourceResolutionError::Io(error) => RunError::Io(error),
+        error => RunError::SourceResolution(error),
+    })?;
+    let digest = source.tree_digest();
+    let directory = source.into_directory();
     Ok(Snapshot {
         directory,
         digest,
         original: Some((repository.root.clone(), patterns.to_vec(), expected)),
     })
-}
-
-fn copy_entry(source: &Path, destination: &Path) -> Result<(), RunError> {
-    let metadata = fs::symlink_metadata(source)?;
-    if metadata.is_dir() {
-        fs::create_dir_all(destination)?;
-        for entry in fs::read_dir(source)? {
-            let entry = entry?;
-            copy_entry(&entry.path(), &destination.join(entry.file_name()))?;
-        }
-    } else if metadata.is_file() {
-        fs::create_dir_all(destination.parent().expect("copied file has a parent"))?;
-        fs::copy(source, destination)?;
-    } else {
-        return Err(unsupported(
-            "Gate 1 input snapshots require regular files and directories; symbolic links and special files are not supported",
-        ));
-    }
-    Ok(())
 }
 
 fn file_inventory(root: &Path) -> Result<Vec<Value>, RunError> {

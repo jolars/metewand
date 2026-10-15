@@ -1409,6 +1409,68 @@ available when explicitly requested. Concurrent execution is opt-in and becomes
 part of the run identity and provenance because contention changes the
 comparison conditions.
 
+### Source acquisition and dataset materialization
+
+Metewand owns reproducible construction, validation, storage, and protection of
+benchmark inputs. Benchmark authors supply the scientific recipes for data
+generation, fold selection, preprocessing, and format conversion through dataset
+materializers. Optional providers such as Datamonger identify recorded datasets
+and may supply verified decoding. Metewand coordinates these operations through
+processes and explicit runtime interfaces.
+
+The source-resolution boundary accepts three kinds of request:
+
+- repository files selected by existing source-bundle declarations and pinned
+  to the bundle identity established by repository checking;
+- a URL and expected raw SHA-256 from the manifest; and
+- an explicitly selected external provider with a canonical, immutable
+  provider-specific selector.
+
+`metewand-runtime::source_resolution` defines this boundary with
+`SOURCE_RESOLUTION_VERSION = 1`. A successful resolution owns a private local
+directory and returns its complete regular-file inventory, verified sizes and
+SHA-256 digests, versioned local-tree digest, and a versioned provenance receipt.
+The receipt retains the original selection and any acquisition evidence
+separately from the content address. Workspace paths, retrieval locations, and
+provider receipts do not enter that content address. The directory is temporary;
+durable publication and cache leases remain separate operations.
+
+Repository resolution copies declared inputs and checks both the original and
+copied bundle against the expected identity. Repository staging stays outside
+selected source directories and glob prefixes, and this initial boundary admits
+regular files and directories only. URL and external requests require an
+explicitly supplied acquisition backend. The backend honors the request,
+validates provider-specific selector pins, exports independent files into the
+assigned directory, and returns its
+expected inventory. Metewand independently checks that inventory against the
+output, rejecting duplicate, missing, extra, unsafe, or mismatched files. A URL
+request produces exactly one file named `source`, preserving the downloaded
+bytes and compression and matching the manifest's digest. Extraction follows
+source verification.
+
+Acquisition backends own their supported transports, operational deadlines, and
+provider-specific verification. They use supported provider exports and preserve
+provider ownership of caches. Decoded-value verification remains a distinct
+provider claim; raw byte verification alone does not establish it. For example,
+Datamonger's artifact-only CLI requires an additional explicit decoding step to
+obtain that guarantee. External selectors and their resolution must never fall
+back to floating dataset versions or ambient project configuration.
+
+Acquisition occurs only during explicitly requested runtime resolution. `check`
+and `plan` may inspect declarations and hash repository files, but never download
+sources, invoke acquisition backends, or run materializers. Materialization then
+consumes resolved sources and produces the canonical dataset instance. All
+selected implementations consume private views of that instance under the
+problem contract's preparation and timing rules.
+
+The runtime boundary introduces no new manifest syntax, serialized public
+schema, identity transcript, wire message, or execution timing rule. Existing
+compatibility constants remain unchanged. Manifest support for external
+providers and serialized source receipts require their own compatibility review
+and conformance vectors. Download transports, a Datamonger adapter, and general
+materialization are separate implementation slices. The current local `run`
+path uses the repository branch of this boundary.
+
 Artifacts live in a content-addressed cache. Downloaded files are verified
 before extraction. Local trees are hashed from sorted normalized paths, entry
 types, file bytes, symlink targets, and semantically relevant executable bits;

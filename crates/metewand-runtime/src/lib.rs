@@ -3,6 +3,9 @@
 /// Compatibility version of the deterministic local-tree hash transcript.
 pub const LOCAL_TREE_HASH_VERSION: u32 = 1;
 
+/// Compatibility version of the source-resolution boundary and its receipts.
+pub const SOURCE_RESOLUTION_VERSION: u32 = 1;
+
 #[cfg(unix)]
 pub mod fixed_dataset_run;
 pub mod local_tree;
@@ -14,6 +17,7 @@ pub mod repository;
 #[cfg(unix)]
 pub mod run;
 pub mod source_bundle;
+pub mod source_resolution;
 pub mod worker_output;
 #[cfg(unix)]
 pub mod worker_process;

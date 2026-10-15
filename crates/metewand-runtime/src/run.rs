@@ -32,6 +32,7 @@ use crate::{
     },
     repository::CheckedRepository,
     source_bundle::{SourceBundleError, SourceBundleIdentityError},
+    source_resolution::SourceResolutionError,
     worker_output::WorkerOutputError,
     worker_process::WorkerLogLimits,
 };
@@ -354,6 +355,9 @@ pub enum RunError {
     /// Declared input hashing failed.
     #[error(transparent)]
     SourceIdentity(#[from] SourceBundleIdentityError),
+    /// Source acquisition or independent artifact verification failed.
+    #[error(transparent)]
+    SourceResolution(#[from] SourceResolutionError),
     /// A private input tree could not be hashed.
     #[error(transparent)]
     Tree(#[from] LocalTreeHashError),

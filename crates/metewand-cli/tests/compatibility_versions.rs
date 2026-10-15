@@ -9,7 +9,7 @@ use metewand_protocol::{
     Capability, HelloRequest, HelloResponse, RequestId, SdkMetadata, WIRE_PROTOCOL_VERSION,
     WORKER_MESSAGE_SCHEMA, WORKER_MESSAGE_SCHEMA_ID, WorkerIdentity, WorkerRole,
 };
-use metewand_runtime::LOCAL_TREE_HASH_VERSION;
+use metewand_runtime::{LOCAL_TREE_HASH_VERSION, SOURCE_RESOLUTION_VERSION};
 
 #[test]
 fn workspace_exposes_initial_compatibility_versions() {
@@ -21,6 +21,7 @@ fn workspace_exposes_initial_compatibility_versions() {
     assert_eq!(SCHEDULING_POLICY_VERSION, 1);
     assert_eq!(EXECUTION_SEMANTICS_VERSION, 1);
     assert_eq!(LOCAL_TREE_HASH_VERSION, 1);
+    assert_eq!(SOURCE_RESOLUTION_VERSION, 1);
 }
 
 #[test]

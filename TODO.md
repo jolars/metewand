@@ -182,7 +182,7 @@ benchmark inputs. Benchmark authors supply the scientific recipes for data
 generation, fold selection, preprocessing, and format conversion. Datamonger
 provides an optional source of recorded datasets and verified decoding.
 
-- [ ] Define and document a source-resolution boundary for repository files,
+- [x] Define and document a source-resolution boundary for repository files,
   pinned URLs, and optional external providers that returns verified local
   artifacts and provenance. Keep `check` and `plan` free of downloads and
   materialization, and document the contract in `DESIGN.md` and user-facing

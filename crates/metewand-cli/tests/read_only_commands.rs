@@ -396,6 +396,84 @@ fn plan_reports_identified_slots_with_declared_capabilities_and_no_side_effects(
 }
 
 #[test]
+fn check_and_plan_do_not_acquire_selected_remote_sources_or_launch_materializers() {
+    use std::{
+        io::Write,
+        sync::atomic::{AtomicBool, AtomicUsize, Ordering},
+        thread,
+        time::Duration,
+    };
+
+    let repository = repository();
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let manifest = MANIFEST.replace(
+        "problem = \"sum\"\n",
+        "problem = \"sum\"\ndatasets = [\"remote\"]\n",
+    );
+    write(
+        repository.path(),
+        "metewand.toml",
+        &format!(
+            "{manifest}\n[datasets.remote]\noutput_schema = \"schemas/dataset.json\"\nrunner = \"command\"\nprogram = \"sh\"\nargs = [\"worker.sh\"]\nsources = [\"worker.sh\"]\nenvironment = \"local\"\n[datasets.remote.source]\nurl = \"http://{}/data\"\nsha256 = \"{}\"\n",
+            listener.local_addr().unwrap(),
+            "0".repeat(64),
+        ),
+    );
+    write(repository.path(), "schemas/dataset.json", OBJECT_SCHEMA);
+    write(repository.path(), "fixtures/dataset/input", "reference\n");
+    write(
+        repository.path(),
+        "problem.toml",
+        &CONTRACT
+            .replace(
+                "dataset_schemas = []",
+                "dataset_schemas = [\"schemas/dataset.json\"]",
+            )
+            .replace(
+                "[[reference_cases]]",
+                "[[reference_cases]]\ndataset = \"fixtures/dataset\"",
+            ),
+    );
+    let before = files(repository.path());
+
+    let stop = AtomicBool::new(false);
+    let requests = AtomicUsize::new(0);
+    let outputs = thread::scope(|scope| {
+        scope.spawn(|| {
+            while !stop.load(Ordering::Relaxed) {
+                match listener.accept() {
+                    Ok((mut stream, _)) => {
+                        requests.fetch_add(1, Ordering::Relaxed);
+                        let _ = stream.write_all(
+                            b"HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                        );
+                    }
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        thread::sleep(Duration::from_millis(5));
+                    }
+                    Err(error) => panic!("source request probe failed: {error}"),
+                }
+            }
+        });
+        let outputs = ["check", "plan"]
+            .map(|command| metewand(repository.path(), [command, "--output", "json"]));
+        stop.store(true, Ordering::Relaxed);
+        outputs
+    });
+    for output in outputs {
+        assert!(output.status.success(), "{}", stderr(&output));
+        assert_eq!(files(repository.path()), before);
+        assert!(!repository.path().join("worker-launched").exists());
+    }
+    assert_eq!(requests.load(Ordering::Relaxed), 0);
+    assert_eq!(
+        listener.accept().unwrap_err().kind(),
+        std::io::ErrorKind::WouldBlock
+    );
+}
+
+#[test]
 fn check_and_plan_accept_an_explicit_manifest_path() {
     let repository = repository();
     let parent = repository.path().parent().unwrap();
