@@ -148,6 +148,26 @@ fn timing_includes_prepare_and_result_writing() {
 }
 
 #[test]
+fn timing_excludes_implementation_startup_evaluator_startup_and_evaluation() {
+    for (implementation_mode, evaluator_mode) in [
+        (Some(("METEWAND_TEST_STARTUP_DELAY_MS", "300")), None),
+        (None, Some(("METEWAND_TEST_STARTUP_DELAY_MS", "300"))),
+        (None, Some(("METEWAND_TEST_EVALUATE_DELAY_MS", "300"))),
+    ] {
+        let started = Instant::now();
+        let (_private_root, outcome) = run_case(implementation_mode, evaluator_mode, timeouts());
+        let elapsed = started.elapsed();
+        let FixedDatasetRunOutcome::Validated(result) = outcome else {
+            panic!("the delayed worker should complete");
+        };
+        assert!(
+            elapsed >= result.timed_wall_time + Duration::from_millis(280),
+            "delay must remain outside the timed interval: {implementation_mode:?}, {evaluator_mode:?}"
+        );
+    }
+}
+
+#[test]
 fn one_shot_failures_keep_distinct_typed_diagnostics() {
     let cases = [
         (

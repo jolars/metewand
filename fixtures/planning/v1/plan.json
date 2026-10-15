@@ -1,0 +1,168 @@
+{
+  "schema_version": 1,
+  "kind": "result",
+  "data": {
+    "command": "plan",
+    "benchmark": "read-only-fixture",
+    "manifest_hash": "83d0ea0875cc1deba4d41e9e232fe14a9ea44eff77d4e98aac2e3a6cb2ddec6d",
+    "definitions": {
+      "environments": [
+        {
+          "name": "local",
+          "id": "mw1-environment-definition-e0341254b6e403d9c09e6125afac4ab116372a7ef49ab8f61e4cecc04d3c011a"
+        }
+      ],
+      "datasets": [
+        {
+          "name": "<unit>",
+          "built_in": true,
+          "id": "mw1-dataset-definition-307f8026363e2aec7c6e4c9d43417c2f14e77fe0ac191ec9e8dbae4cb9996dc5"
+        }
+      ],
+      "problems": [
+        {
+          "name": "sum",
+          "id": "mw1-problem-definition-4576c29e2be1ca4a6b5680f92628cdef77150422ea045583107291e762e96139"
+        }
+      ],
+      "implementations": [
+        {
+          "name": "reference",
+          "id": "mw1-implementation-definition-1f3cd875e2006fa148d800652bcae31a4afe98e451a84e9b075acf38eb675fb8"
+        }
+      ]
+    },
+    "resources": {
+      "schemas": [
+        {
+          "path": "schemas/metrics.json",
+          "id": "mw1-schema-be4e24938cef650d91fa6889b5cbfb84e39f3162d1865cbe9a9fb90f8bc02733"
+        },
+        {
+          "path": "schemas/parameters.json",
+          "id": "mw1-schema-214e8b628617f743e6e51d6078e1a24fbe25128ee029804ae837574d064d022d"
+        },
+        {
+          "path": "schemas/result.json",
+          "id": "mw1-schema-cf8f4dc0d7f63178c5639351043de2ba785904ed7d14fa683e70e829f8934b35"
+        },
+        {
+          "path": "schemas/semantics.json",
+          "id": "mw1-schema-9936ebc2893d0a4da4e0d367bfcdc21b0fecd8c486c340920253fe758d8bbbb6"
+        }
+      ],
+      "problem_contracts": [
+        {
+          "name": "sum",
+          "id": "mw1-problem-contract-6962bc6101ad4eab537b838a520b746f951cf6d837757302c819ef387849a440"
+        }
+      ],
+      "source_bundles": [
+        {
+          "paths": [
+            "worker.sh"
+          ],
+          "id": "mw1-source-bundle-119b9b603b1a8692ebf8c449c7e40c225950550a17a271a0dea0045acde1b7a1"
+        }
+      ]
+    },
+    "requirements": {
+      "artifacts": {
+        "problem_contracts": 1,
+        "schemas": 4,
+        "source_bundles": 1
+      },
+      "executor": "local_process_unresolved",
+      "environments": [
+        {
+          "name": "local",
+          "requirement": "use the existing host context; no build"
+        }
+      ],
+      "components": [
+        {
+          "role": "problem_evaluator",
+          "name": "sum",
+          "requirement": "command `sh` in environment `local` with args [\"worker.sh\"]"
+        },
+        {
+          "role": "implementation_worker",
+          "name": "reference",
+          "requirement": "command `sh` in environment `local` with args [\"worker.sh\"]"
+        }
+      ],
+      "controls": [
+        {
+          "experiment": "main",
+          "cpus": null,
+          "threads": null,
+          "memory": null,
+          "network": false,
+          "worker_reuse": false,
+          "warmup_runs": 0,
+          "timeout": null,
+          "timing_scope": "prepare_and_execute",
+          "primary_time": "timed_wall_time",
+          "run_order": "sequential",
+          "enforcement": "best_effort"
+        }
+      ]
+    },
+    "experiments": [
+      {
+        "name": "main",
+        "scheduling_seed": 2389870828410754,
+        "execution_policy": "mw1-execution-policy-5ddc57a3e9666207a0d822f44528c6f123958c99e98f09859413942bc2e8dba9",
+        "observation_policy": "mw1-observation-policy-7ab610c92432eb64c53468035b88dd50d822ccf28213e385f51164bff0d2ff19",
+        "candidates": [
+          {
+            "id": "mw1-logical-candidate-05db78ed07f6129102696823b9cd78e1e75ce73fcf114a2bb87ec01c093e6308",
+            "source": {
+              "kind": "experiment"
+            },
+            "dataset_configuration": "mw1-dataset-configuration-1f20ab1fc35f4da45fb2e9b169813fa3d55c1d374a0a617f9a243aad8019fc36",
+            "problem_configuration": "mw1-problem-configuration-a1e5d81f2dc951c03c923f47ae66e77ff6531ae36262156f33f70321f9623809",
+            "implementation_configuration": "mw1-implementation-configuration-d2a7c540001e990e21b71f863f8e1d499bd6b68940743b7af45bcd8ac53f43df",
+            "capabilities": [
+              {
+                "capability": "one_shot",
+                "evidence": "declared"
+              }
+            ],
+            "specifications": [
+              {
+                "id": "mw1-logical-specification-6529724b326b06c3735679f100fbbc6ab9836e9060d2a245f088f4f629649f1a",
+                "observation_slots": [
+                  "mw1-logical-observation-slot-39423e8c526811e8f4250dba012dca0695892735b879d6d7a938abbbd23c3506",
+                  "mw1-logical-observation-slot-224b8af45496f96277fc0d2b718051ae1f009d4e56713bb61422bf413e7a8bbc"
+                ],
+                "attempt_slots": [
+                  "mw1-logical-attempt-slot-ee9565bed7568914ce0ec3daf90e66cff1f16cb036662efd419534b4fbb1da43",
+                  "mw1-logical-attempt-slot-b14bc39507511f3171a89eb7bb49f617f366dd4f53455e95401085e798e6221b"
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "summary": {
+      "logical_candidates": 1,
+      "logical_specifications": 1,
+      "observation_slots": 2,
+      "attempt_slots": 2,
+      "applicable_runs": 1,
+      "execution_slots": 2,
+      "known_applicable_candidates": 1,
+      "known_applicable_attempt_slots": 2,
+      "unchecked_candidates": 0,
+      "known_exclusions": 0
+    },
+    "side_effects": {
+      "filesystem_writes": 0,
+      "downloads": 0,
+      "builds": 0,
+      "worker_launches": 0
+    }
+  }
+}

@@ -24,6 +24,7 @@ def run_role(role: str) -> int:
     """Run one successful raw fixture role until shutdown."""
 
     reader, writer = _protocol_streams()
+    time.sleep(int(os.environ.get("METEWAND_TEST_STARTUP_DELAY_MS", "0")) / 1000)
     try:
         if os.environ.get("METEWAND_TEST_LOGS") == "1":
             os.write(1, f"{role} stdout\n".encode() * 1000)

@@ -120,3 +120,8 @@ for experiment in plan.experiments {
 # Ok(())
 # }
 ```
+
+The CLI conformance test compares the complete `plan --output json` bytes
+against `fixtures/planning/v1/plan.json`. It repeats the comparison from two
+independent repository roots to pin identities, ordering, slot expansion,
+capability evidence, and the versioned output envelope without path normalization.

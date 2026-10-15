@@ -7,8 +7,8 @@ paths, exact resolved launches and worker identities, the problem contract ID,
 parameters and seed, selected result and metric schema paths, an offline schema
 catalog, phase deadlines, and log limits. The checked-in integration test uses
 the fixed dataset in `fixtures/worker-protocol/v1/fixed-dataset` with the raw
-implementation and evaluator workers. A delayed evaluator fixture verifies that
-evaluation is excluded from the returned timed duration. Delayed preparation
+implementation and evaluator workers. Separate delayed implementation startup, evaluator startup, and evaluation
+fixtures verify that each remains outside the returned timed duration. Delayed preparation
 and result writing fixtures verify that both remain inside it.
 
 The function creates owner-only result and metrics directories beneath the

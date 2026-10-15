@@ -494,3 +494,16 @@ fn usage_and_input_failures_have_distinct_stable_exit_codes() {
     assert_eq!(input["data"]["code"], "repository_check_failed");
     assert_eq!(input["data"]["causes"][0]["code"], "manifest_access_failed");
 }
+
+#[test]
+fn complete_plan_json_matches_the_version_one_snapshot() {
+    for _ in 0..2 {
+        let repository = repository();
+        let output = metewand(repository.path(), ["plan", "--output", "json"]);
+        assert!(output.status.success(), "{}", stderr(&output));
+        assert_eq!(
+            stdout(&output),
+            include_str!("../../../fixtures/planning/v1/plan.json")
+        );
+    }
+}
