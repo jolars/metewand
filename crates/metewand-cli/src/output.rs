@@ -10,6 +10,7 @@ use metewand_core::{
         ConfigurationSource, DatasetConfigurationDefinition, LogicalPlan, LogicalPlanningError,
     },
     public_schemas::{PUBLIC_SCHEMAS, PublicSchema},
+    run_output::{RunAttemptStatus, RunEvent, RunEventKind, RunReport},
 };
 use metewand_runtime::repository::{CheckedRepository, RepositoryCheckError};
 use serde::{Serialize, Serializer};
@@ -19,6 +20,7 @@ pub const EXIT_SUCCESS: u8 = 0;
 pub const EXIT_USAGE: u8 = 2;
 pub const EXIT_INVALID_REPOSITORY: u8 = 3;
 pub const EXIT_INPUT_UNAVAILABLE: u8 = 4;
+pub const EXIT_RUN_FAILED: u8 = 5;
 pub const EXIT_INTERNAL: u8 = 70;
 pub const EXIT_IO: u8 = 74;
 
@@ -52,6 +54,7 @@ pub enum CommandResult {
     SchemaDocument(SchemaDocumentResult),
     Check(CheckResult),
     Plan(Box<PlanResult>),
+    Run(Box<RunReport>),
 }
 
 impl CommandResult {
@@ -119,7 +122,39 @@ impl CommandResult {
             Self::SchemaDocument(result) => result.source.to_owned(),
             Self::Check(result) => result.render_human(),
             Self::Plan(result) => result.render_human(),
+            Self::Run(result) => render_run_report(result),
         }
+    }
+
+    pub fn exit_code(&self) -> u8 {
+        if let Self::Run(report) = self
+            && report.summary.failed_attempts > 0
+        {
+            EXIT_RUN_FAILED
+        } else {
+            EXIT_SUCCESS
+        }
+    }
+
+    pub fn diagnostics(&self) -> String {
+        let Self::Run(report) = self else {
+            return String::new();
+        };
+        report
+            .attempts
+            .iter()
+            .filter_map(|attempt| {
+                attempt.diagnostic.as_ref().map(|diagnostic| {
+                    Diagnostic::new(diagnostic.code.clone(), diagnostic.message.clone())
+                        .with_affected_ids([
+                            attempt.logical_slot_id.to_string(),
+                            attempt.resolved_slot_id.to_string(),
+                            attempt.attempt_id.to_string(),
+                        ])
+                        .render_human()
+                })
+            })
+            .collect()
     }
 }
 
@@ -135,6 +170,7 @@ impl Serialize for CommandResult {
             Self::SchemaDocument(result) => result.serialize(serializer),
             Self::Check(result) => result.serialize(serializer),
             Self::Plan(result) => result.serialize(serializer),
+            Self::Run(result) => result.serialize(serializer),
         }
     }
 }
@@ -824,7 +860,7 @@ struct SideEffectSummary {
 
 #[derive(Clone, Debug, Serialize)]
 pub struct Diagnostic {
-    code: &'static str,
+    code: String,
     message: String,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     details: BTreeMap<String, Value>,
@@ -839,9 +875,9 @@ pub struct Diagnostic {
 }
 
 impl Diagnostic {
-    pub fn new(code: &'static str, message: impl Into<String>) -> Self {
+    pub fn new(code: impl Into<String>, message: impl Into<String>) -> Self {
         Self {
-            code,
+            code: code.into(),
             message: message.into(),
             details: BTreeMap::new(),
             source_span: None,
@@ -861,13 +897,6 @@ impl Diagnostic {
         self
     }
 
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "read-only Gate 1 failures occur before affected identities exist"
-        )
-    )]
     pub fn with_affected_ids(mut self, identities: impl IntoIterator<Item = String>) -> Self {
         self.affected_ids.extend(identities);
         self.affected_ids.sort();
@@ -958,6 +987,51 @@ pub struct CommandError {
 }
 
 impl CommandError {
+    #[cfg(unix)]
+    pub fn execution(error: &metewand_runtime::run::RunError) -> Self {
+        use metewand_runtime::run::RunError;
+        if let RunError::Unsupported(message) = error {
+            return Self::unsupported(
+                message,
+                "Use the supported Gate-1 local settings described by `metewand run --help`.",
+            );
+        }
+        if let RunError::Event(source) = error {
+            if source.kind() == std::io::ErrorKind::BrokenPipe {
+                return Self {
+                    exit_code: EXIT_SUCCESS,
+                    diagnostic: Box::new(Diagnostic::new(
+                        "output_closed",
+                        "The event consumer closed its pipe.",
+                    )),
+                };
+            }
+            return Self::output_write(error.to_string());
+        }
+        let (exit_code, code, cause) = match error {
+            RunError::Publication(_) => (EXIT_IO, "run_publication_failed", "publication_failed"),
+            RunError::Io(_) => (EXIT_IO, "run_setup_failed", "execution_input_unavailable"),
+            RunError::Identity(_) | RunError::Canonical(_) | RunError::PublicSchemas(_) => (
+                EXIT_INTERNAL,
+                "run_setup_failed",
+                "execution_resolution_failed",
+            ),
+            _ => (
+                EXIT_INVALID_REPOSITORY,
+                "run_setup_failed",
+                "invalid_execution_input",
+            ),
+        };
+        Self {
+            exit_code,
+            diagnostic: Box::new(
+                Diagnostic::new(code, "The benchmark run could not complete.")
+                    .with_detail("command", "run")
+                    .caused_by(Diagnostic::new(cause, error.to_string())),
+            ),
+        }
+    }
+
     pub fn usage(code: &'static str, message: impl Into<String>) -> Self {
         Self {
             exit_code: EXIT_USAGE,
@@ -997,7 +1071,7 @@ impl CommandError {
         }
     }
 
-    pub fn planning(error: &LogicalPlanningError) -> Self {
+    pub fn planning(command: &'static str, error: &LogicalPlanningError) -> Self {
         let cause = match error {
             LogicalPlanningError::Configuration(_) => {
                 Diagnostic::new("invalid_configuration", error.to_string()).with_remediation(
@@ -1019,7 +1093,7 @@ impl CommandError {
             exit_code: EXIT_INVALID_REPOSITORY,
             diagnostic: Box::new(
                 Diagnostic::new("logical_planning_failed", "Logical planning failed.")
-                    .with_detail("command", "plan")
+                    .with_detail("command", command)
                     .caused_by(cause),
             ),
         }
@@ -1062,6 +1136,60 @@ pub fn render_diagnostic(
     format: OutputFormat,
 ) -> Result<String, serde_json::Error> {
     render_machine("diagnostic", diagnostic, format)
+}
+
+pub fn render_event(event: &RunEvent, format: OutputFormat) -> Result<String, serde_json::Error> {
+    match format {
+        OutputFormat::Json => Ok(String::new()),
+        OutputFormat::JsonLines => render_machine("event", event, format),
+        OutputFormat::Human => Ok(match &event.kind {
+            RunEventKind::RunStarted { attempt_slots } => {
+                format!("Running {}.\n", count(*attempt_slots, "attempt slot"))
+            }
+            RunEventKind::AttemptStarted {
+                resolved_slot_id, ..
+            } => format!("Starting {resolved_slot_id}.\n"),
+            RunEventKind::AttemptFinished { attempt } => format!(
+                "Finalized {} ({}).\n",
+                attempt.attempt_id,
+                match attempt.status {
+                    RunAttemptStatus::Accepted => "accepted",
+                    RunAttemptStatus::Failed => "failed",
+                }
+            ),
+            RunEventKind::RunFinished {
+                accepted_attempts,
+                failed_attempts,
+            } => format!("Finished: {accepted_attempts} accepted, {failed_attempts} failed.\n"),
+        }),
+    }
+}
+
+fn render_run_report(report: &RunReport) -> String {
+    let mut output = format!(
+        "Benchmark `{}`: {} accepted, {} failed.\n  output directory: {}\n",
+        report.benchmark,
+        report.summary.accepted_attempts,
+        report.summary.failed_attempts,
+        report.output_directory
+    );
+    for attempt in &report.attempts {
+        writeln!(
+            output,
+            "  attempt {}: {}",
+            attempt.attempt_id,
+            match attempt.status {
+                RunAttemptStatus::Accepted => "accepted",
+                RunAttemptStatus::Failed => "failed",
+            }
+        )
+        .expect("writing to a string cannot fail");
+        if let Some(observation) = &attempt.observation_id {
+            writeln!(output, "    observation: {observation}")
+                .expect("writing to a string cannot fail");
+        }
+    }
+    output
 }
 
 fn render_machine<T: Serialize>(
@@ -1255,8 +1383,22 @@ fn count(value: usize, noun: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{Diagnostic, OutputFormat, render_diagnostic};
+    use super::{Diagnostic, OutputFormat, render_diagnostic, render_event};
+    use metewand_core::run_output::{RunEvent, RunEventKind};
     use serde_json::Value;
+
+    #[test]
+    fn run_event_json_lines_bytes_are_stable() {
+        let event = RunEvent {
+            command: "run",
+            sequence: 0,
+            kind: RunEventKind::RunStarted { attempt_slots: 1 },
+        };
+        assert_eq!(
+            render_event(&event, OutputFormat::JsonLines).unwrap(),
+            "{\"schema_version\":1,\"kind\":\"event\",\"data\":{\"command\":\"run\",\"sequence\":0,\"event\":\"run_started\",\"attempt_slots\":1}}\n"
+        );
+    }
 
     #[test]
     fn diagnostics_canonicalize_affected_identity_sets() {

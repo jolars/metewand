@@ -2,6 +2,15 @@
   "version": 1,
   "valid": [
     {
+      "name": "run lifecycle begins with a sequenced slot count",
+      "schema": "run-output",
+      "instance": {
+        "schema_version": 1,
+        "kind": "event",
+        "data": { "command": "run", "sequence": 0, "event": "run_started", "attempt_slots": 1 }
+      }
+    },
+    {
       "name": "evaluator scientific verdict",
       "schema": "worker-protocol-message",
       "instance": { "id": "1", "ok": true, "verdict": "reached" }
@@ -449,6 +458,33 @@
     }
   ],
   "invalid": [
+    {
+      "name": "run events reject unknown transitions",
+      "schema": "run-output",
+      "instance": {
+        "schema_version": 1,
+        "kind": "event",
+        "data": { "command": "run", "sequence": 0, "event": "accepted" }
+      }
+    },
+    {
+      "name": "run events require sequence numbers",
+      "schema": "run-output",
+      "instance": {
+        "schema_version": 1,
+        "kind": "event",
+        "data": { "command": "run", "event": "run_started", "attempt_slots": 1 }
+      }
+    },
+    {
+      "name": "run events reject undeclared fields",
+      "schema": "run-output",
+      "instance": {
+        "schema_version": 1,
+        "kind": "event",
+        "data": { "command": "run", "sequence": 0, "event": "run_started", "attempt_slots": 1, "extra": true }
+      }
+    },
     {
       "name": "unknown evaluator verdict",
       "schema": "worker-protocol-message",

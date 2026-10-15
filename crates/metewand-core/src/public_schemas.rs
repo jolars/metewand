@@ -21,6 +21,8 @@ const COMMON_SOURCE: &str = include_str!("../../../schemas/v1/common.schema.json
 pub enum PublicSchema {
     /// Envelope used for command events, results, and diagnostics.
     MachineOutput,
+    /// Lifecycle events and terminal reports for the run command.
+    RunOutput,
     /// Typed benchmark manifest.
     Manifest,
     /// Problem and fairness contract.
@@ -42,8 +44,9 @@ pub enum PublicSchema {
 }
 
 /// Every public schema entry point in stable presentation order.
-pub const PUBLIC_SCHEMAS: [PublicSchema; 10] = [
+pub const PUBLIC_SCHEMAS: [PublicSchema; 11] = [
     PublicSchema::MachineOutput,
+    PublicSchema::RunOutput,
     PublicSchema::Manifest,
     PublicSchema::ProblemContract,
     PublicSchema::OneShotObservationPolicy,
@@ -61,6 +64,7 @@ impl PublicSchema {
     pub const fn slug(self) -> &'static str {
         match self {
             Self::MachineOutput => "machine-output",
+            Self::RunOutput => "run-output",
             Self::Manifest => "manifest",
             Self::ProblemContract => "problem-contract",
             Self::OneShotObservationPolicy => "one-shot-observation-policy",
@@ -86,6 +90,7 @@ impl PublicSchema {
     pub fn repository_path(self) -> &'static Path {
         Path::new(match self {
             Self::MachineOutput => "schemas/v1/machine-output.schema.json",
+            Self::RunOutput => "schemas/v1/run-output.schema.json",
             Self::Manifest => "schemas/v1/manifest.schema.json",
             Self::ProblemContract => "schemas/v1/problem-contract.schema.json",
             Self::OneShotObservationPolicy => "schemas/v1/one-shot-observation-policy.schema.json",
@@ -103,6 +108,7 @@ impl PublicSchema {
     pub const fn id(self) -> &'static str {
         match self {
             Self::MachineOutput => "metewand://schemas/v1/machine-output.schema.json",
+            Self::RunOutput => "metewand://schemas/v1/run-output.schema.json",
             Self::Manifest => "metewand://schemas/v1/manifest.schema.json",
             Self::ProblemContract => "metewand://schemas/v1/problem-contract.schema.json",
             Self::OneShotObservationPolicy => {
@@ -126,6 +132,7 @@ impl PublicSchema {
             Self::MachineOutput => {
                 include_str!("../../../schemas/v1/machine-output.schema.json")
             }
+            Self::RunOutput => include_str!("../../../schemas/v1/run-output.schema.json"),
             Self::Manifest => include_str!("../../../schemas/v1/manifest.schema.json"),
             Self::ProblemContract => {
                 include_str!("../../../schemas/v1/problem-contract.schema.json")

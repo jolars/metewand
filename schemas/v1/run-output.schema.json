@@ -1,0 +1,142 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "metewand://schemas/v1/run-output.schema.json",
+  "x-metewand-compatibility-version": 1,
+  "title": "Metewand run command output",
+  "description": "Versioned lifecycle events, final reports, and diagnostics for trusted local execution.",
+  "allOf": [
+    { "$ref": "machine-output.schema.json" },
+    {
+      "oneOf": [
+        {
+          "properties": {
+            "kind": { "const": "event" },
+            "data": { "$ref": "#/$defs/event" }
+          }
+        },
+        {
+          "properties": {
+            "kind": { "const": "result" },
+            "data": { "$ref": "#/$defs/report" }
+          }
+        },
+        { "properties": { "kind": { "const": "diagnostic" } } }
+      ]
+    }
+  ],
+  "$defs": {
+    "logical_slot_id": {
+      "type": "string",
+      "pattern": "^mw1-logical-attempt-slot-[0-9a-f]{64}$"
+    },
+    "resolved_slot_id": {
+      "type": "string",
+      "pattern": "^mw1-resolved-attempt-slot-[0-9a-f]{64}$"
+    },
+    "diagnostic": {
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "minLength": 1 },
+        "message": { "type": "string", "minLength": 1 }
+      },
+      "required": ["code", "message"],
+      "additionalProperties": false
+    },
+    "attempt": {
+      "type": "object",
+      "properties": {
+        "logical_slot_id": { "$ref": "#/$defs/logical_slot_id" },
+        "resolved_slot_id": { "$ref": "#/$defs/resolved_slot_id" },
+        "attempt_id": { "type": "string", "pattern": "^mw1-attempt-[0-9a-f]{64}$" },
+        "status": { "enum": ["accepted", "failed"] },
+        "observation_id": { "type": ["string", "null"], "pattern": "^mw1-observation-[0-9a-f]{64}$" },
+        "attempt_directory": { "$ref": "common.schema.json#/$defs/repository_path" },
+        "observation_directory": { "anyOf": [{ "type": "null" }, { "$ref": "common.schema.json#/$defs/repository_path" }] },
+        "result": {},
+        "metrics": {},
+        "diagnostic": { "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/diagnostic" }] }
+      },
+      "required": ["logical_slot_id", "resolved_slot_id", "attempt_id", "status", "observation_id", "attempt_directory", "observation_directory", "result", "metrics", "diagnostic"],
+      "allOf": [
+        {
+          "if": { "properties": { "status": { "const": "accepted" } } },
+          "then": {
+            "properties": {
+              "observation_id": { "type": "string" },
+              "observation_directory": { "type": "string" },
+              "diagnostic": { "type": "null" }
+            }
+          },
+          "else": { "properties": { "diagnostic": { "$ref": "#/$defs/diagnostic" } } }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "event": {
+      "type": "object",
+      "properties": {
+        "command": { "const": "run" },
+        "sequence": { "$ref": "common.schema.json#/$defs/safe_nonnegative_integer" },
+        "event": { "enum": ["run_started", "attempt_started", "attempt_finished", "run_finished"] }
+      },
+      "required": ["command", "sequence", "event"],
+      "oneOf": [
+        {
+          "properties": {
+            "event": { "const": "run_started" },
+            "attempt_slots": { "$ref": "common.schema.json#/$defs/safe_positive_integer" }
+          },
+          "required": ["attempt_slots"]
+        },
+        {
+          "properties": {
+            "event": { "const": "attempt_started" },
+            "logical_slot_id": { "$ref": "#/$defs/logical_slot_id" },
+            "resolved_slot_id": { "$ref": "#/$defs/resolved_slot_id" }
+          },
+          "required": ["logical_slot_id", "resolved_slot_id"]
+        },
+        {
+          "properties": {
+            "event": { "const": "attempt_finished" },
+            "attempt": { "$ref": "#/$defs/attempt" }
+          },
+          "required": ["attempt"]
+        },
+        {
+          "properties": {
+            "event": { "const": "run_finished" },
+            "accepted_attempts": { "$ref": "common.schema.json#/$defs/safe_nonnegative_integer" },
+            "failed_attempts": { "$ref": "common.schema.json#/$defs/safe_nonnegative_integer" }
+          },
+          "required": ["accepted_attempts", "failed_attempts"]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "summary": {
+      "type": "object",
+      "properties": {
+        "attempt_slots": { "$ref": "common.schema.json#/$defs/safe_positive_integer" },
+        "accepted_attempts": { "$ref": "common.schema.json#/$defs/safe_nonnegative_integer" },
+        "failed_attempts": { "$ref": "common.schema.json#/$defs/safe_nonnegative_integer" }
+      },
+      "required": ["attempt_slots", "accepted_attempts", "failed_attempts"],
+      "additionalProperties": false
+    },
+    "report": {
+      "type": "object",
+      "properties": {
+        "command": { "const": "run" },
+        "benchmark": { "$ref": "common.schema.json#/$defs/name" },
+        "manifest_hash": { "$ref": "common.schema.json#/$defs/sha256" },
+        "output_directory": { "type": "string", "minLength": 1 },
+        "attempts": { "type": "array", "items": { "$ref": "#/$defs/attempt" }, "minItems": 1 },
+        "events": { "type": "array", "items": { "$ref": "#/$defs/event" }, "minItems": 4 },
+        "summary": { "$ref": "#/$defs/summary" }
+      },
+      "required": ["command", "benchmark", "manifest_hash", "output_directory", "attempts", "events", "summary"],
+      "additionalProperties": false
+    }
+  }
+}

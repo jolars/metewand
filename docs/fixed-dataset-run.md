@@ -59,5 +59,6 @@ boundaries, validation snapshots, and launch provenance for
 [durable publication](durable-publication.md). Publication finalizes its
 observation and enclosing attempt before acceptance. This execution function
 does not materialize a dataset or provide a private dataset view. The dataset
-must be a trusted local input resolved before the call. `metewand run` follows
-in the next Gate 1.6 slice.
+must be a trusted local input resolved before the call. The
+[`metewand run` command](run-cli.md) now resolves those inputs from a checked
+manifest and publishes the resulting observations and attempts.

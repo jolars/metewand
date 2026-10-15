@@ -1,3 +1,4 @@
+mod execution;
 mod output;
 
 use std::{env, ffi::OsString, io, io::Write as _, path::PathBuf, process::ExitCode};
@@ -16,15 +17,18 @@ Usage:
   metewand [--output FORMAT] schema [SCHEMA]
   metewand [--output FORMAT] check [--manifest PATH]
   metewand [--output FORMAT] plan [--manifest PATH]
+  metewand [--output FORMAT] run [--manifest PATH] --output-dir PATH
 
 Commands:
   schema  List public schemas, or print one exact versioned document.
   check   Validate a benchmark repository without launching workers.
   plan    Print the expanded logical plan without side effects.
+  run     Execute trusted local workers and publish validated outcomes.
 
 Options:
   --output FORMAT  Write human, json, or jsonl output (default: human).
   --manifest PATH  Use PATH instead of ./metewand.toml.
+  --output-dir PATH  Publish a run in a new directory (parent must exist).
   -h, --help       Print help.
   -V, --version    Print the package version.
 ";
@@ -36,23 +40,28 @@ const SCHEMA_HELP: &str = "Usage: metewand [--output FORMAT] schema [SCHEMA]\n\n
 fn main() -> ExitCode {
     let raw_arguments = env::args_os().skip(1).collect::<Vec<_>>();
     let output_format = output_format_hint(&raw_arguments);
-    let result = extract_output_format(raw_arguments).and_then(|arguments| run(&arguments));
+    let result =
+        extract_output_format(raw_arguments).and_then(|arguments| run(&arguments, output_format));
 
     match result {
         Ok(result) => match render_result(&result, output_format) {
-            Ok(output) => write_success(&output),
+            Ok(output) => {
+                let _ = io::stderr().write_all(result.diagnostics().as_bytes());
+                write_success(&output, result.exit_code())
+            }
             Err(error) => write_failure(
                 &CommandError::internal(format!("failed to serialize command output: {error}")),
                 output_format,
             ),
         },
+        Err(error) if error.exit_code == EXIT_SUCCESS => ExitCode::SUCCESS,
         Err(error) => write_failure(&error, output_format),
     }
 }
 
-fn write_success(output: &str) -> ExitCode {
+fn write_success(output: &str, exit_code: u8) -> ExitCode {
     match io::stdout().write_all(output.as_bytes()) {
-        Ok(()) => ExitCode::from(EXIT_SUCCESS),
+        Ok(()) => ExitCode::from(exit_code),
         Err(error) if error.kind() == io::ErrorKind::BrokenPipe => ExitCode::from(EXIT_SUCCESS),
         Err(error) => {
             let diagnostic =
@@ -136,7 +145,7 @@ fn extract_output_format(arguments: Vec<OsString>) -> Result<Vec<OsString>, Comm
     Ok(command_arguments)
 }
 
-fn run(arguments: &[OsString]) -> Result<CommandResult, CommandError> {
+fn run(arguments: &[OsString], output_format: OutputFormat) -> Result<CommandResult, CommandError> {
     let Some(command) = arguments.first().and_then(|argument| argument.to_str()) else {
         if arguments.is_empty() {
             return Ok(CommandResult::help(HELP));
@@ -159,6 +168,7 @@ fn run(arguments: &[OsString]) -> Result<CommandResult, CommandError> {
         "schema" => schema_command(&arguments[1..]),
         "check" => check_command(&arguments[1..]),
         "plan" => plan_command(&arguments[1..]),
+        "run" => execution::command(&arguments[1..], output_format),
         _ => Err(CommandError::usage(
             "unknown_command",
             format!("unknown command `{command}`"),
@@ -222,7 +232,7 @@ fn plan_command(arguments: &[OsString]) -> Result<CommandResult, CommandError> {
         check_repository(&manifest).map_err(|error| CommandError::repository("plan", &error))?;
     let plan = repository
         .logical_plan()
-        .map_err(|error| CommandError::planning(&error))?;
+        .map_err(|error| CommandError::planning("plan", &error))?;
     Ok(CommandResult::plan(&repository, &plan))
 }
 

@@ -136,9 +136,11 @@ returned as complete objects.
 `verify_finalized_directory` checks the completion marker and exact file
 inventory, rejecting missing, changed, undeclared, duplicated, or unsafe entries.
 It verifies directory integrity; scientific validation occurs before publication.
-This slice does not add a metadata database, recovery/import transactions, or
-quarantine. It also does not expose `metewand run`; that is the next roadmap
-slice. A completed orphan alone does not establish attempt acceptance.
+This publisher does not add a metadata database, recovery/import transactions,
+or quarantine. The [`metewand run` command](run-cli.md) composes it with manifest
+resolution and execution. A completed orphan alone does not establish attempt
+acceptance. `finalize_failed_attempt` uses the same durable boundary to publish
+technical failures without creating an observation.
 
 The manifest, public-schema, identity, local-tree-hash, execution-semantics, and
 wire-protocol compatibility constants remain at version 1. This implementation

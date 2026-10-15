@@ -29,10 +29,11 @@ record has `schema_version`, `kind`, and `data` fields:
 ```
 
 `json` writes one indented envelope. `jsonl` writes one compact envelope per
-line. The current read-only commands produce one terminal `result` or
-`diagnostic` record; later commands may precede the terminal record with
-`event` records. Consumers must select behavior from `schema_version`, not from
-the package version.
+line. Read-only commands produce one terminal `result` or `diagnostic` record.
+[`run`](run-cli.md) streams ordered `event` records before its terminal record
+in JSON Lines mode; its JSON result includes the same history in `data.events`.
+The `run-output` schema defines those events and final reports. Consumers must
+select behavior from `schema_version`, not from the package version.
 
 The command-owned `data` object retains deterministic ordering. A plan result
 contains the same definitions, resource identities, requirements, experiments,
@@ -52,6 +53,12 @@ output and renders that same typed diagnostic for people on standard error.
 Progress and other human-oriented messages also belong on standard error. A
 consumer can therefore parse standard output without filtering prose.
 
+Execution failures represented by finalized attempts produce a terminal run
+result with failure counts and exit code `5`. Their typed diagnostics appear
+inside the attempt summaries and are rendered on standard error. A failure
+outside an attempt, such as preflight or publication, produces a diagnostic
+envelope.
+
 ## Exit codes
 
 Exit codes are part of the command-line compatibility contract:
@@ -62,8 +69,9 @@ Exit codes are part of the command-line compatibility contract:
 | `2` | The command line is invalid, or the requested operation is not supported. |
 | `3` | The repository or logical plan is invalid. |
 | `4` | A required manifest or repository input is unavailable. |
+| `5` | Execution completed with at least one durably failed attempt. |
 | `70` | An internal invariant or serialization operation failed. |
-| `74` | Command output could not be written. |
+| `74` | Command output, run-directory setup, or durable publication failed. |
 
 The exit code classifies the command outcome; `data.code` identifies the
 specific diagnostic.
@@ -88,7 +96,7 @@ particular, validation failures that occur before identity construction have no
 
 ### Diagnostic codes
 
-The read-only CLI emits these stable codes:
+The CLI emits these stable codes:
 
 | Code | Meaning |
 | --- | --- |
@@ -102,6 +110,10 @@ The read-only CLI emits these stable codes:
 | `unexpected_argument` | A command or option received an extra argument. |
 | `empty_manifest_path` | The selected manifest path is empty. |
 | `missing_manifest_path` | `--manifest` has no path argument. |
+| `duplicate_manifest_path` | `run --manifest` was supplied more than once. |
+| `missing_output_directory` | `run` lacks a required `--output-dir PATH`. |
+| `empty_output_directory` | The run destination is empty. |
+| `duplicate_output_directory` | `--output-dir` was supplied more than once. |
 | `unsupported_operation` | The requested operation is deliberately unavailable. |
 | `repository_check_failed` | The repository-validation operation failed; `causes` identifies why. |
 | `manifest_access_failed` | The manifest could not be accessed. |
@@ -126,6 +138,18 @@ The read-only CLI emits these stable codes:
 | `seed_derivation_failed` | A deterministic seed cannot be derived. |
 | `internal_error` | An internal invariant or output serialization failed. |
 | `output_write_failed` | Standard output could not be written. |
+| `run_setup_failed` | Execution resolution or destination setup failed. |
+| `execution_input_unavailable` | A required executable or run path is unavailable. |
+| `execution_resolution_failed` | An internal resolution invariant failed. |
+| `invalid_execution_input` | Fixed data or other resolved inputs are invalid or changed. |
+| `run_publication_failed` | An execution artifact could not be finalized. |
+| `publication_failed` | The nested publisher diagnostic explains why publication failed. |
+
+The run result also retains attempt diagnostic codes: `setup_failure`,
+`implementation_failure`, `implementation_crash`, `phase_timeout`,
+`invalid_result`, `evaluator_failure`, `protocol_error`, `input_changed`, and
+`completion_target_not_reached`. See [execution output](run-cli.md) for their
+publication and exit behavior.
 
 Adding a new failure mode may add a diagnostic code. Changing the meaning of an
 existing code or exit code requires an explicit compatibility review.

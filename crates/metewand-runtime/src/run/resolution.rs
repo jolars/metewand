@@ -1,0 +1,807 @@
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    env, fs, io,
+    os::unix::fs::PermissionsExt,
+    path::{Path, PathBuf},
+    time::Duration,
+};
+
+use metewand_core::{
+    EXECUTION_SEMANTICS_VERSION,
+    canonical::CanonicalValue,
+    identity::{
+        CanonicalResource, IdentityRecord, canonical_identity_bytes, identify_canonical,
+        identify_record,
+    },
+    manifest::{
+        DatasetDefinition, Enforcement, EnvironmentDefinition, InterpretedRunner, PrimaryTime,
+        ProtocolTransport, RepositoryPath, RunOrder, TimingScope, WorkerDefinition,
+    },
+    planning::{
+        DatasetConfigurationDefinition, LogicalCandidatePlan, LogicalPlan,
+        identify_builtin_unit_dataset_definition,
+    },
+    records::{
+        AttemptSlotRole, ContentDigest, DatasetArtifact, DatasetInstanceRecord,
+        ExecutorDefinitionRecord, IdentifiedRecord, LogicalAttemptSlotRecord,
+        ProblemInstanceRecord, RecordId, ResolvedAttemptSlotRecord, ResolvedEnvironmentRecord,
+        ResolvedLaunchRecord, ResolvedObservationSlotRecord, ResolvedOneShotSpecificationRecord,
+        ResolvedWorkerRecord, SourceBundleArtifact, SourceBundleResource, WorkerWorkingDirectory,
+    },
+};
+use metewand_protocol::{MaterializeResponse, WorkerIdentity};
+use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
+use tempfile::{Builder, TempDir};
+
+use crate::{
+    LOCAL_TREE_HASH_VERSION,
+    local_tree::hash_local_tree,
+    repository::CheckedRepository,
+    source_bundle::{expand_source_bundle, identify_source_bundle},
+    worker_output::WorkerOutputValidator,
+    worker_session::PhaseTimeouts,
+};
+
+use super::RunError;
+
+pub(super) struct ResolvedRun {
+    pub candidates: Vec<ResolvedCandidate>,
+    pub private_root: TempDir,
+}
+
+pub(super) struct ResolvedCandidate {
+    pub dataset: Snapshot,
+    pub implementation: ResolvedWorker,
+    pub evaluator: ResolvedWorker,
+    pub measurements: Vec<ResolvedMeasurement>,
+    pub contract_id: String,
+    pub problem_parameters: Value,
+    pub implementation_parameters: Value,
+    pub result_schema: PathBuf,
+    pub metric_schema: PathBuf,
+    pub timeouts: PhaseTimeouts,
+}
+
+pub(super) struct ResolvedMeasurement {
+    pub logical_slot: RecordId<LogicalAttemptSlotRecord>,
+    pub attempt_slot: IdentifiedRecord<ResolvedAttemptSlotRecord>,
+    pub observation_slot: IdentifiedRecord<ResolvedObservationSlotRecord>,
+    pub seed: u64,
+    pub provenance: CanonicalValue,
+}
+
+pub(super) struct ResolvedWorker {
+    pub launch: ResolvedLaunchRecord,
+    pub identity: WorkerIdentity,
+    record: ResolvedWorkerRecord,
+    sources: Option<Snapshot>,
+    executable: PathBuf,
+    executable_digest: String,
+    provenance: Value,
+}
+
+pub(super) struct Snapshot {
+    pub directory: TempDir,
+    digest: ContentDigest,
+    original: Option<(PathBuf, Vec<RepositoryPath>, RecordId<SourceBundleResource>)>,
+}
+
+enum LaunchArgument {
+    Literal(String),
+    Source(PathBuf),
+}
+
+fn launch_argument(argument: &str) -> Result<LaunchArgument, RunError> {
+    if let Some(relative) = argument.strip_prefix("{sources}/") {
+        let path: RepositoryPath = serde_json::from_value(json!(relative)).map_err(|_| {
+            unsupported("`{sources}/` arguments require a normalized repository-relative path")
+        })?;
+        Ok(LaunchArgument::Source(path.as_path().to_path_buf()))
+    } else if argument.contains("{sources}") {
+        Err(unsupported(
+            "pass a source reference as a separate `{sources}/PATH` argument",
+        ))
+    } else {
+        Ok(LaunchArgument::Literal(argument.to_owned()))
+    }
+}
+
+impl Snapshot {
+    pub fn verify(&self) -> Result<(), RunError> {
+        if hash_local_tree(self.directory.path())? != self.digest {
+            return Err(RunError::ChangedInput);
+        }
+        if let Some((root, patterns, expected)) = &self.original
+            && identify_source_bundle(root, patterns)? != *expected
+        {
+            return Err(RunError::ChangedInput);
+        }
+        Ok(())
+    }
+
+    fn artifact<T: CanonicalResource>(&self) -> Result<RecordId<T>, RunError> {
+        Ok(identify_canonical(&canonical(json!({
+            "tree_hash_version": LOCAL_TREE_HASH_VERSION,
+            "tree_sha256": hex(self.digest.bytes()),
+        }))?)?)
+    }
+}
+
+impl ResolvedWorker {
+    pub fn verify(&self) -> Result<(), RunError> {
+        if let Some(sources) = &self.sources {
+            sources.verify()?;
+        }
+        if file_digest(&self.executable)? != self.executable_digest {
+            return Err(RunError::ChangedInput);
+        }
+        Ok(())
+    }
+}
+
+impl ResolvedCandidate {
+    pub fn verify(&self) -> Result<(), RunError> {
+        self.dataset.verify()?;
+        self.implementation.verify()?;
+        self.evaluator.verify()
+    }
+
+    pub fn validate_destination(&self, output: &Path) -> Result<(), RunError> {
+        for snapshot in std::iter::once(&self.dataset)
+            .chain(self.implementation.sources.iter())
+            .chain(self.evaluator.sources.iter())
+        {
+            if let Some((root, patterns, _)) = &snapshot.original {
+                for pattern in patterns {
+                    let mut prefix = PathBuf::new();
+                    let mut has_glob = false;
+                    for component in pattern.as_path().components() {
+                        if component
+                            .as_os_str()
+                            .to_string_lossy()
+                            .contains(['*', '?', '[', '{'])
+                        {
+                            has_glob = true;
+                            break;
+                        }
+                        prefix.push(component);
+                    }
+                    let prefix = root.join(prefix);
+                    if (has_glob || prefix.is_dir()) && output.starts_with(prefix) {
+                        return Err(unsupported(
+                            "choose an output directory outside declared source directories and glob prefixes",
+                        ));
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+pub(super) fn resolve(
+    repository: &CheckedRepository,
+    plan: &LogicalPlan,
+) -> Result<ResolvedRun, RunError> {
+    for experiment in &plan.experiments {
+        let policy = &experiment.execution_policy.record;
+        if policy.timing_scope != TimingScope::PrepareAndExecute
+            || policy.primary_time != PrimaryTime::TimedWallTime
+            || policy.worker_reuse
+            || policy.warmup_runs != 0
+            || policy.run_order != RunOrder::Sequential
+            || policy.enforcement != Enforcement::BestEffort
+            || policy.cpus.is_some()
+            || policy.threads.is_some()
+            || policy.memory.is_some()
+        {
+            return Err(unsupported(format!(
+                "execution policy `{}` requires controls outside the Gate-1 trusted local path; use prepare_and_execute wall timing, sequential fresh workers, and best_effort enforcement without resource limits",
+                policy.name,
+            )));
+        }
+        phase_timeouts(policy.timeout.as_deref())?;
+    }
+    if plan
+        .experiments
+        .iter()
+        .all(|experiment| experiment.candidates.is_empty())
+    {
+        return Err(unsupported(
+            "`run` requires at least one measured attempt slot",
+        ));
+    }
+
+    let private_root = Builder::new().prefix("metewand-run-").tempdir()?;
+    let executor = identify_record(ExecutorDefinitionRecord {
+        kind: serde_json::from_value(json!("trusted_local")).expect("static valid name"),
+        configuration: canonical(
+            json!({"environment_class": "development", "isolation": "unsupported"}),
+        )?,
+    })?;
+    let mut candidates = Vec::new();
+    for experiment in &plan.experiments {
+        for candidate in &experiment.candidates {
+            candidates.push(resolve_candidate(
+                repository,
+                candidate,
+                private_root.path(),
+                executor.id,
+                phase_timeouts(experiment.execution_policy.record.timeout.as_deref())?,
+            )?);
+        }
+    }
+    let mut slots = BTreeSet::new();
+    for candidate in &candidates {
+        for measurement in &candidate.measurements {
+            if !slots.insert(measurement.attempt_slot.id) {
+                return Err(unsupported(
+                    "the plan selects a resolved attempt slot more than once; use distinct experiment seeds for independent executions",
+                ));
+            }
+        }
+    }
+    Ok(ResolvedRun {
+        candidates,
+        private_root,
+    })
+}
+
+fn resolve_candidate(
+    repository: &CheckedRepository,
+    candidate: &LogicalCandidatePlan,
+    private_root: &Path,
+    executor: RecordId<ExecutorDefinitionRecord>,
+    timeouts: PhaseTimeouts,
+) -> Result<ResolvedCandidate, RunError> {
+    let catalog = &repository.planning_catalog;
+    let dataset_definition = catalog
+        .dataset_definitions
+        .iter()
+        .find(|(_, id)| **id == candidate.dataset_configuration.record.definition)
+        .expect("checked plan dataset definition")
+        .0;
+    let (dataset, output_schema) = match dataset_definition {
+        DatasetConfigurationDefinition::Unit => {
+            let directory = Builder::new().prefix("unit-").tempdir_in(private_root)?;
+            let digest = hash_local_tree(directory.path())?;
+            (
+                Snapshot {
+                    directory,
+                    digest,
+                    original: None,
+                },
+                identify_builtin_unit_dataset_definition()?
+                    .record
+                    .output_schema,
+            )
+        }
+        DatasetConfigurationDefinition::Named(name) => {
+            let DatasetDefinition::Fixed(definition) = &repository.manifest.datasets[name] else {
+                return Err(unsupported(format!(
+                    "dataset `{name}` requires materialization; Gate 1 supports fixed local datasets and the built-in unit dataset"
+                )));
+            };
+            let mut snapshot = snapshot(repository, &definition.sources, private_root)?;
+            let manifest_path = snapshot.directory.path().join("dataset-manifest.json");
+            if manifest_path.exists() {
+                return Err(unsupported(
+                    "fixed data reserves `dataset-manifest.json` for its generated inventory",
+                ));
+            }
+            let files = file_inventory(snapshot.directory.path())?;
+            fs::write(
+                &manifest_path,
+                canonical(json!({"schema_version": 1, "complete": true, "files": files}))?
+                    .to_canonical_bytes()?,
+            )?;
+            WorkerOutputValidator::new(&repository.schemas)?.validate_materialized_dataset(
+                snapshot.directory.path(),
+                &MaterializeResponse::new(
+                    "fixed".parse().expect("static request ID"),
+                    "dataset-manifest.json",
+                ),
+                definition.output_schema.as_path(),
+            )?;
+            snapshot.digest = hash_local_tree(snapshot.directory.path())?;
+            (
+                snapshot,
+                repository.resources.schemas[definition.output_schema.as_path()],
+            )
+        }
+    };
+    let dataset_instance = identify_record(DatasetInstanceRecord {
+        configuration: candidate.dataset_configuration.id,
+        artifact: dataset.artifact::<DatasetArtifact>()?,
+        output_schema,
+    })?;
+    let problem_instance = identify_record(ProblemInstanceRecord {
+        dataset: dataset_instance.id,
+        configuration: candidate.problem_configuration.id,
+    })?;
+    let problem_name = catalog
+        .problem_definitions
+        .iter()
+        .find(|(_, id)| **id == candidate.problem_configuration.record.definition)
+        .expect("checked plan problem definition")
+        .0;
+    let implementation_name = catalog
+        .implementation_definitions
+        .iter()
+        .find(|(_, id)| **id == candidate.implementation_configuration.record.definition)
+        .expect("checked plan implementation definition")
+        .0;
+    let implementation = resolve_worker(
+        repository,
+        &repository.manifest.implementations[implementation_name].worker,
+        private_root,
+    )?;
+    let evaluator = resolve_worker(
+        repository,
+        &repository.manifest.problems[problem_name].evaluator,
+        private_root,
+    )?;
+    let contract = &repository.problem_contracts[problem_name];
+    let mut measurements = Vec::new();
+    for specification in &candidate.specifications {
+        let resolved = identify_record(ResolvedOneShotSpecificationRecord {
+            logical_specification: specification.specification.id,
+            problem_instance: problem_instance.id,
+            implementation: implementation.record.clone(),
+            evaluator: evaluator.record.clone(),
+            executor,
+            wire_protocol_version: metewand_protocol::WIRE_PROTOCOL_VERSION,
+            execution_semantics_version: EXECUTION_SEMANTICS_VERSION,
+        })?;
+        for slot in &specification.attempt_slots {
+            let AttemptSlotRole::Measured { observation_slot } = slot.record.role else {
+                return Err(unsupported(
+                    "warm-up execution is not implemented in Gate 1",
+                ));
+            };
+            let attempt_slot = identify_record(ResolvedAttemptSlotRecord {
+                logical_slot: slot.id,
+                specification: resolved.id,
+            })?;
+            let observation_slot = identify_record(ResolvedObservationSlotRecord {
+                logical_slot: observation_slot,
+                specification: resolved.id,
+            })?;
+            let provenance = canonical(json!({
+                "manifest_hash": repository.manifest_hash.to_string(),
+                "logical_candidate_id": candidate.candidate.id,
+                "logical_slot_id": slot.id,
+                "dataset_instance": record_document(&dataset_instance.record)?,
+                "problem_instance": record_document(&problem_instance.record)?,
+                "resolved_specification": record_document(&resolved.record)?,
+                "resolved_attempt_slot": record_document(&attempt_slot.record)?,
+                "resolved_observation_slot": record_document(&observation_slot.record)?,
+                "implementation": implementation.provenance,
+                "evaluator": evaluator.provenance,
+                "repository_commit": null, "dirty_tree_hash": null, "build_fingerprint": null,
+                "cpu_model": null, "selected_cores": null, "memory": null, "kernel": null,
+                "language_runtime": null, "blas": null, "thread_settings": null,
+            }))?;
+            measurements.push(ResolvedMeasurement {
+                logical_slot: slot.id,
+                attempt_slot,
+                observation_slot,
+                seed: specification.specification.record.implementation_seed.value,
+                provenance,
+            });
+        }
+    }
+    Ok(ResolvedCandidate {
+        dataset,
+        implementation,
+        evaluator,
+        measurements,
+        contract_id: repository.resources.problem_contracts[problem_name].to_string(),
+        problem_parameters: candidate
+            .problem_configuration
+            .record
+            .parameters
+            .as_json()
+            .clone(),
+        implementation_parameters: candidate
+            .implementation_configuration
+            .record
+            .parameters
+            .as_json()
+            .clone(),
+        result_schema: contract.result_schema.as_path().to_path_buf(),
+        metric_schema: contract.metric_schema.as_path().to_path_buf(),
+        timeouts,
+    })
+}
+
+fn resolve_worker(
+    repository: &CheckedRepository,
+    worker: &WorkerDefinition,
+    private_root: &Path,
+) -> Result<ResolvedWorker, RunError> {
+    let (program, arguments, patterns, environment, transport) = match worker {
+        WorkerDefinition::Command(worker) => (
+            worker.program.clone(),
+            worker
+                .args
+                .iter()
+                .map(|argument| launch_argument(argument))
+                .collect::<Result<Vec<_>, _>>()?,
+            worker.sources.as_deref(),
+            &worker.environment,
+            worker.protocol_transport,
+        ),
+        WorkerDefinition::Interpreted(worker) => {
+            let program = match worker.runner {
+                InterpretedRunner::Python => "python3",
+                InterpretedRunner::R => "Rscript",
+                InterpretedRunner::Julia => "julia",
+            };
+            let mut args = vec![LaunchArgument::Source(
+                worker.entrypoint.as_path().to_path_buf(),
+            )];
+            args.extend(
+                worker
+                    .args
+                    .iter()
+                    .map(|argument| launch_argument(argument))
+                    .collect::<Result<Vec<_>, _>>()?,
+            );
+            (
+                program.to_owned(),
+                args,
+                Some(worker.sources.as_slice()),
+                &worker.environment,
+                worker.protocol_transport,
+            )
+        }
+    };
+    if !matches!(
+        repository.manifest.environments[environment],
+        EnvironmentDefinition::Local {}
+    ) {
+        return Err(unsupported(format!(
+            "environment `{environment}` requires provisioning; Gate 1 supports `kind = \"local\"`"
+        )));
+    }
+    if transport == Some(ProtocolTransport::Stdio) {
+        return Err(unsupported(
+            "Gate 1 workers require dedicated POSIX protocol pipes",
+        ));
+    }
+    let sources = patterns
+        .map(|patterns| snapshot(repository, patterns, private_root))
+        .transpose()?;
+    let original_executable = find_program(&repository.root, &program)?;
+    let mut arguments = arguments;
+    let mut executable = original_executable.clone();
+    if let Ok(relative) = original_executable.strip_prefix(&repository.root) {
+        let sources = sources.as_ref().ok_or_else(|| {
+            unsupported("repository command programs must be included in `sources`")
+        })?;
+        executable = sources.directory.path().join(relative);
+        if !executable.is_file() {
+            return Err(unsupported(
+                "the repository command program is absent from its declared `sources`",
+            ));
+        }
+        let bytes = fs::read(&executable)?;
+        if bytes.starts_with(b"#!") {
+            let line = std::str::from_utf8(
+                bytes
+                    .split(|byte| *byte == b'\n')
+                    .next()
+                    .expect("nonempty shebang"),
+            )
+            .map_err(|_| unsupported("worker shebang must be UTF-8"))?;
+            let parts = line[2..].split_whitespace().collect::<Vec<_>>();
+            let interpreter = match parts.as_slice() {
+                ["/usr/bin/env", name] => *name,
+                [name] => *name,
+                _ => {
+                    return Err(unsupported(
+                        "use a single interpreter in a command worker's shebang, or declare an explicit interpreter program and arguments",
+                    ));
+                }
+            };
+            executable = find_program(&repository.root, interpreter)?;
+            if executable.starts_with(&repository.root) {
+                return Err(unsupported(
+                    "a shebang interpreter must come from the local environment",
+                ));
+            }
+            arguments.insert(0, LaunchArgument::Source(relative.to_path_buf()));
+        }
+    }
+    let executable_digest = file_digest(&executable)?;
+    let environment_record = identify_record(ResolvedEnvironmentRecord {
+        definition: repository.planning_catalog.environment_definitions[environment],
+        fingerprint: canonical(
+            json!({"class": "development", "os": env::consts::OS, "architecture": env::consts::ARCH, "program_sha256": executable_digest, "dependency_closure": null}),
+        )?,
+    })?;
+    let mut normalized_arguments = Vec::new();
+    let mut actual_arguments = Vec::new();
+    for argument in arguments {
+        if let LaunchArgument::Source(relative) = argument {
+            let staged = sources
+                .as_ref()
+                .map(|sources| sources.directory.path().join(&relative))
+                .filter(|path| path.exists())
+                .ok_or_else(|| {
+                    unsupported(format!(
+                        "worker source argument `{}` is absent from its declared `sources`",
+                        relative.display()
+                    ))
+                })?;
+            normalized_arguments.push(format!("{{sources}}/{}", text_path(&relative)?));
+            actual_arguments.push(text_path(&staged)?);
+        } else if let LaunchArgument::Literal(argument) = argument {
+            if argument.contains(&text_path(&repository.root)?)
+                || argument.contains(&text_path(private_root)?)
+            {
+                return Err(unsupported(
+                    "worker arguments may not embed workspace or temporary paths; pass declared source paths as separate arguments",
+                ));
+            }
+            normalized_arguments.push(argument.clone());
+            actual_arguments.push(argument);
+        }
+    }
+    let source_executable = sources
+        .as_ref()
+        .is_some_and(|sources| executable.starts_with(sources.directory.path()));
+    let mut variables = BTreeMap::from([
+        ("LC_ALL".to_owned(), "C".to_owned()),
+        ("TZ".to_owned(), "UTC".to_owned()),
+        ("PYTHONDONTWRITEBYTECODE".to_owned(), "1".to_owned()),
+        (
+            "PATH".to_owned(),
+            if source_executable {
+                "/usr/bin:/bin"
+            } else {
+                "{program_directory}:/usr/bin:/bin"
+            }
+            .to_owned(),
+        ),
+    ]);
+    let normalized_program = if let Some(sources) = &sources
+        && let Ok(relative) = executable.strip_prefix(sources.directory.path())
+    {
+        format!("{{sources}}/{}", text_path(relative)?)
+    } else {
+        format!("sha256:{executable_digest}")
+    };
+    let normalized_launch = identify_record(ResolvedLaunchRecord {
+        environment: environment_record.id,
+        program: normalized_program,
+        args: normalized_arguments,
+        environment_variables: variables.clone(),
+        working_directory: WorkerWorkingDirectory::PrivateRunDirectory,
+    })?;
+    let record = ResolvedWorkerRecord {
+        source_bundle: sources
+            .as_ref()
+            .map(Snapshot::artifact::<SourceBundleArtifact>)
+            .transpose()?,
+        environment: environment_record.id,
+        launch: normalized_launch.id,
+    };
+    let identity = identify_record(record.clone())?
+        .id
+        .to_string()
+        .parse()
+        .expect("typed resolved worker ID");
+    let program_directory = if source_executable {
+        "/usr/bin:/bin".to_owned()
+    } else {
+        format!(
+            "{}:/usr/bin:/bin",
+            text_path(
+                executable
+                    .parent()
+                    .expect("absolute executable has a parent")
+            )?
+        )
+    };
+    variables.insert("PATH".to_owned(), program_directory);
+    let launch = ResolvedLaunchRecord {
+        environment: environment_record.id,
+        program: text_path(&executable)?,
+        args: actual_arguments,
+        environment_variables: variables,
+        working_directory: WorkerWorkingDirectory::PrivateRunDirectory,
+    };
+    let provenance = json!({"environment": record_document(&environment_record.record)?, "launch": record_document(&normalized_launch.record)?, "worker": record_document(&record)?, "undeclared_file_access": "unsupported"});
+    Ok(ResolvedWorker {
+        launch,
+        identity,
+        record,
+        sources,
+        executable,
+        executable_digest,
+        provenance,
+    })
+}
+
+fn snapshot(
+    repository: &CheckedRepository,
+    patterns: &[RepositoryPath],
+    private_root: &Path,
+) -> Result<Snapshot, RunError> {
+    let mut key = patterns
+        .iter()
+        .map(|path| path.as_path().to_path_buf())
+        .collect::<Vec<_>>();
+    key.sort();
+    key.dedup();
+    let expected = repository.resources.source_bundles[&key];
+    if identify_source_bundle(&repository.root, patterns)? != expected {
+        return Err(RunError::ChangedInput);
+    }
+    let expanded = expand_source_bundle(&repository.root, patterns)?;
+    let directory = Builder::new().prefix("input-").tempdir_in(private_root)?;
+    for path in expanded.paths() {
+        copy_entry(&repository.root.join(path), &directory.path().join(path))?;
+    }
+    if identify_source_bundle(&repository.root, patterns)? != expected {
+        return Err(RunError::ChangedInput);
+    }
+    let digest = hash_local_tree(directory.path())?;
+    Ok(Snapshot {
+        directory,
+        digest,
+        original: Some((repository.root.clone(), patterns.to_vec(), expected)),
+    })
+}
+
+fn copy_entry(source: &Path, destination: &Path) -> Result<(), RunError> {
+    let metadata = fs::symlink_metadata(source)?;
+    if metadata.is_dir() {
+        fs::create_dir_all(destination)?;
+        for entry in fs::read_dir(source)? {
+            let entry = entry?;
+            copy_entry(&entry.path(), &destination.join(entry.file_name()))?;
+        }
+    } else if metadata.is_file() {
+        fs::create_dir_all(destination.parent().expect("copied file has a parent"))?;
+        fs::copy(source, destination)?;
+    } else {
+        return Err(unsupported(
+            "Gate 1 input snapshots require regular files and directories; symbolic links and special files are not supported",
+        ));
+    }
+    Ok(())
+}
+
+fn file_inventory(root: &Path) -> Result<Vec<Value>, RunError> {
+    fn visit(
+        root: &Path,
+        path: &Path,
+        files: &mut BTreeMap<PathBuf, Value>,
+    ) -> Result<(), RunError> {
+        for entry in fs::read_dir(path)? {
+            let entry = entry?;
+            let path = entry.path();
+            if entry.file_type()?.is_dir() {
+                visit(root, &path, files)?;
+            } else {
+                let relative = path
+                    .strip_prefix(root)
+                    .expect("inventory stays beneath root")
+                    .to_path_buf();
+                files.insert(relative.clone(), json!({"path": relative, "sha256": file_digest(&path)?, "size_bytes": entry.metadata()?.len(), "media_type": if path.extension().is_some_and(|extension| extension == "json") { "application/json" } else { "application/octet-stream" }}));
+            }
+        }
+        Ok(())
+    }
+    let mut files = BTreeMap::new();
+    visit(root, root, &mut files)?;
+    Ok(files.into_values().collect())
+}
+
+fn find_program(root: &Path, program: &str) -> Result<PathBuf, RunError> {
+    let path = if Path::new(program).is_absolute() {
+        PathBuf::from(program)
+    } else if Path::new(program).components().count() > 1 {
+        root.join(program)
+    } else if Path::new(program).components().count() == 1 {
+        env::var_os("PATH")
+            .and_then(|paths| {
+                env::split_paths(&paths)
+                    .map(|path| path.join(program))
+                    .find(|path| {
+                        path.is_file()
+                            && fs::metadata(path)
+                                .is_ok_and(|metadata| metadata.permissions().mode() & 0o111 != 0)
+                    })
+            })
+            .ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::NotFound,
+                    format!("cannot resolve local executable `{program}`"),
+                )
+            })?
+    } else {
+        return Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            format!("cannot resolve repository executable `{program}`"),
+        )
+        .into());
+    };
+    let path = fs::canonicalize(path)?;
+    if !Path::new(program).is_absolute()
+        && Path::new(program).components().count() > 1
+        && !path.starts_with(root)
+    {
+        return Err(unsupported(
+            "repository command programs must remain inside the repository; use an absolute path for an external executable",
+        ));
+    }
+    let metadata = fs::metadata(&path)?;
+    if !metadata.is_file() || metadata.permissions().mode() & 0o111 == 0 {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            format!("program `{program}` is not an executable regular file"),
+        )
+        .into());
+    }
+    Ok(path)
+}
+
+pub(super) fn canonical(value: Value) -> Result<CanonicalValue, RunError> {
+    Ok(CanonicalValue::try_from(value)?)
+}
+
+fn record_document<T: IdentityRecord>(record: &T) -> Result<Value, RunError> {
+    Ok(
+        serde_json::from_slice(&canonical_identity_bytes(record)?)
+            .expect("identity bytes are JSON"),
+    )
+}
+
+fn file_digest(path: &Path) -> Result<String, io::Error> {
+    Ok(hex(&Sha256::digest(fs::read(path)?)))
+}
+
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+fn text_path(path: &Path) -> Result<String, RunError> {
+    path.to_str()
+        .map(str::to_owned)
+        .ok_or_else(|| unsupported("Gate 1 launch paths must be UTF-8"))
+}
+
+fn phase_timeouts(expression: Option<&str>) -> Result<PhaseTimeouts, RunError> {
+    let duration = if let Some(expression) = expression {
+        let (number, multiplier) = [ ("ms", 1), ("s", 1000), ("min", 60_000), ("h", 3_600_000) ]
+            .into_iter().find_map(|(suffix, multiplier)| expression.trim().strip_suffix(suffix).map(|number| (number.trim(), multiplier)))
+            .ok_or_else(|| unsupported("Gate 1 timeouts require a positive integer followed by `ms`, `s`, `min`, or `h`"))?;
+        let milliseconds = number
+            .parse::<u64>()
+            .ok()
+            .and_then(|number| number.checked_mul(multiplier))
+            .filter(|number| *number > 0)
+            .ok_or_else(|| unsupported("Gate 1 phase timeout is zero, invalid, or too large"))?;
+        Duration::from_millis(milliseconds)
+    } else {
+        Duration::from_secs(10)
+    };
+    Ok(PhaseTimeouts {
+        hello: duration,
+        materialize: duration,
+        prepare: duration,
+        execute: duration,
+        reset: duration,
+        evaluate: duration,
+        shutdown: duration,
+    })
+}
+
+fn unsupported(message: impl Into<String>) -> RunError {
+    RunError::Unsupported(message.into())
+}

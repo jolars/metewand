@@ -11,6 +11,8 @@ pub mod local_worker;
 #[cfg(unix)]
 pub mod publication;
 pub mod repository;
+#[cfg(unix)]
+pub mod run;
 pub mod source_bundle;
 pub mod worker_output;
 #[cfg(unix)]

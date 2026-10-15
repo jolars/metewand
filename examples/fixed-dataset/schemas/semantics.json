@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "validity": { "$ref": "#/$defs/exact" },
+    "one_shot_completion": { "$ref": "#/$defs/exact" }
+  },
+  "required": ["validity", "one_shot_completion"],
+  "additionalProperties": false,
+  "$defs": {
+    "exact": {
+      "type": "object",
+      "properties": { "exact_sum": { "const": true } },
+      "required": ["exact_sum"],
+      "additionalProperties": false
+    }
+  }
+}

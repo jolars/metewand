@@ -1,0 +1,162 @@
+# Trusted local execution
+
+`metewand run` connects the checked manifest and logical plan to the Gate-1
+[fixed-dataset runtime](fixed-dataset-run.md) and
+[durable publisher](durable-publication.md):
+
+```sh
+cargo run --locked -p metewand-cli -- run \
+  --manifest examples/fixed-dataset/metewand.toml \
+  --output-dir /tmp/metewand-example \
+  --output jsonl
+```
+
+The destination must be new, and its parent must exist. The command refuses an
+existing file, directory, or symlink without changing it. `run` authorizes
+worker launches, private temporary input copies, and publication beneath this
+explicit destination. It never rewrites the manifest or original source files.
+Manifest paths resolve from the invoking directory; declared inputs resolve
+from the manifest's parent. The output directory resolves from the invoking
+directory and must lie outside declared source directories and glob prefixes.
+
+The [runnable example](../examples/fixed-dataset) uses Python's standard library
+to implement the raw protocol without an SDK. It sums three fixed integers,
+adds the problem-owned offset, and independently evaluates the answer. The
+expected result is `{"answer":8}` and the metrics are `{"absolute_error":0}`.
+
+## Supported selection
+
+The command executes every selected candidate, implementation repetition, and
+measurement repetition in deterministic logical-plan order. It supports fixed
+local datasets, the built-in empty unit dataset for dataset-free problems,
+one-shot workers, local environments, dedicated POSIX protocol pipes, fresh
+processes, `prepare_and_execute` wall timing, sequential order, and
+`best_effort` enforcement. Complete preflight precedes every worker launch and
+creation of the output directory. Overlapping resolved attempt slots across
+experiments are rejected; distinct experiment seeds select independent runs.
+
+Policies requiring CPU, thread, or memory limits, other timing scopes,
+randomized scheduling, reuse, warm-ups, or required enforcement are rejected.
+Generated datasets, provisioning backends, standard-I/O protocol transport,
+symbolic links in copied inputs, locked execution, and resume are also rejected.
+These features belong to later roadmap slices. A rejected selection emits a
+structured diagnostic without launching any worker or creating the destination.
+
+The optional execution-policy `timeout` supplies a separate operational deadline
+for each protocol phase, including hello and shutdown. Gate 1 accepts a positive
+integer followed by `ms`, `s`, `min`, or `h`, with optional intervening whitespace.
+The default is ten seconds per phase. These deadlines do not add a scientific
+budget or change the primary timing boundary.
+
+## Inputs and launches
+
+Fixed datasets are copied with their repository-relative paths intact. For
+example, `sources = ["data.json"]` exposes `data.json` directly under
+`dataset_dir`; `sources = ["data/train.json"]` exposes `data/train.json`.
+Metewand adds a canonical `dataset-manifest.json` containing the complete file
+inventory and validates it against the dataset's output schema. That filename
+is reserved for the generated inventory. Dataset-free workers receive an empty
+directory for the versioned unit artifact.
+
+Workers likewise receive private copies of their declared source bundles.
+Interpreted runners resolve their entrypoints within those copies. A command
+program containing a relative path, such as `bin/worker` or `./worker`, resolves
+within its declared sources. A bare program name resolves through the invoking
+process's `PATH`; absolute external programs are also supported. Repository
+scripts may use a single-interpreter shebang, including `/usr/bin/env python3`.
+More complex shebangs require an explicit interpreter launch.
+
+Command arguments remain literal unless a separate argument starts with
+`{sources}/`, which explicitly refers to a normalized declared source path:
+
+```toml
+runner = "command"
+program = "python3"
+args = ["{sources}/worker.py", "implementation"]
+sources = ["worker.py"]
+environment = "local"
+```
+
+The same source-reference syntax is available in interpreted workers' additional
+arguments. Metewand does not infer file references from arbitrary argument text.
+References must exist in the selected bundle and cannot escape it. Embedded
+workspace and temporary paths are rejected rather than included in identities.
+
+Workers inherit only the resolved allowlist: `LC_ALL=C`, `TZ=UTC`,
+`PYTHONDONTWRITEBYTECODE=1`, a minimal `PATH`, and the transport's descriptor
+variables. Their working directories are private. This remains a trusted local
+development path with observed provenance. Network isolation, undeclared-file
+access prevention, process-tree containment, and comprehensive accounting are
+unsupported and are reported as such.
+
+Input artifact IDs use the version-1 local-tree transcript and canonical
+`{"tree_hash_version":1,"tree_sha256":"<digest>"}` representation. Resolved
+launch identities retain `{sources}/PATH` references, content-addressed external
+program selectors (`sha256:<digest>`), and environment path templates. The local
+environment fingerprint binds the program's SHA-256, platform, and explicit
+absence of a complete dependency closure. The resolver substitutes actual paths
+only for execution and provenance. Moving a repository, choosing another output
+directory, or allocating another temporary directory therefore preserves logical
+and resolved identities. Execution input changes invalidate their dependencies.
+
+The runtime checks original declared bundles, copied trees, and executable
+contents before and after each attempt. Detected changes produce `input_changed`
+and prevent observation publication. Later selected slots continue to receive
+terminal outcomes, including failure if their inputs remain changed.
+
+## Events and final output
+
+The published `run-output` schema refines the common `machine-output` envelope.
+`jsonl` flushes each event before execution advances. `json` emits one terminal
+envelope containing the same ordered events. Both final reports contain the
+benchmark name, manifest hash, output directory, attempt summaries, and counts.
+Human progress goes to standard error, and its final report uses those same
+typed records. Worker logs never enter command output.
+
+Every event has `command: "run"`, a zero-based `sequence`, and one transition:
+
+| Event | Additional data |
+| --- | --- |
+| `run_started` | Total measured `attempt_slots`. |
+| `attempt_started` | `logical_slot_id` and `resolved_slot_id`. |
+| `attempt_finished` | The finalized `attempt` summary. |
+| `run_finished` | `accepted_attempts` and `failed_attempts`. |
+
+An attempt summary contains its logical and resolved slot IDs, attempt ID,
+status, relative attempt directory, optional observation ID and directory,
+validated result and metrics, and an optional diagnostic. Inapplicable values
+are explicit nulls. The final report repeats the emitted events in `events` so
+JSON and JSON Lines consumers can inspect the same lifecycle.
+
+`attempt_finished` follows durable publication. A technical failure publishes
+an attempt with no observation. A valid result that misses its scientific target
+still publishes its observation and records `completion_target_not_reached` on
+the failed attempt. Failed attempts do not cancel the remaining selection.
+Their diagnostics distinguish implementation failure or crash, phase timeout,
+invalid result, evaluator failure, protocol error, setup failure, and input
+mutation. The final report uses exit code `5` if any attempt failed; the same
+diagnostics and affected IDs appear as human text on standard error.
+
+Successful or scientifically incomplete runs retain the existing publisher's
+scoped implementation and evaluator logs. Technical failures currently retain
+the typed diagnostic and resolution provenance, with `logs_available: false`.
+The lower-level runtime discards those failed workers' private log buffers.
+
+Preflight or publication errors produce a terminal diagnostic envelope, following
+any events already streamed in JSON Lines mode. Publication failure never emits
+an accepted terminal event. A previously finalized observation may remain as an
+orphan, as described by the publisher. Closing the event pipe stops further
+execution and returns successful cancellation; already published artifacts remain.
+
+Gate 1 uses an independent fresh destination per invocation, with retry index
+zero. It does not coordinate stores, persist an event database, reserve retry
+indices across invocations, provide recovery, or claim resume semantics.
+
+## Compatibility
+
+The new `run-output` entry point begins at public-schema version 1. Existing
+machine envelopes, manifest syntax, identity transcripts, seeds, wire messages,
+and timing semantics remain version 1. Source and program bindings complete the
+unreleased Gate-1 resolver without changing existing record representations.
+Schema conformance cases, exact event bytes, relocated-input tests, and
+end-to-end publication and failure tests cover these interfaces.

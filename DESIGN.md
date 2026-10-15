@@ -1292,6 +1292,14 @@ fingerprints and launch fingerprints are distinct: two workers may share one
 resolved environment while using different interpreters or programs, and a
 launch change does not pretend that the underlying environment changed.
 
+Local source bindings remain path-independent in launch identities. An explicit
+`{sources}/PATH` argument refers to a normalized path within the worker's
+declared source artifact; interpreted entrypoints use the same binding.
+Content-addressed external program selectors and environment path templates
+are resolved to host paths only at launch. The exact host launch belongs to
+provenance, while the stable launch representation binds program contents,
+source artifacts, arguments, and behavior-affecting environment values.
+
 For `uv` and `renv`, the native lockfile is necessary but not sufficient:
 environment resolution also records the package-manager version, platform tags,
 repository identities, hashes of every downloaded wheel, archive, or source

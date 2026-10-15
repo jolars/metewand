@@ -67,6 +67,46 @@ pub struct PublishedOneShot {
     pub attempt_directory: PathBuf,
 }
 
+/// Publishes a technical failure that produced no valid observation.
+///
+/// The caller supplies the resolved slot, retry identity, diagnostic, and
+/// observed provenance. This uses the same hash-complete, no-replace publication
+/// boundary as successful attempts, without manufacturing an observation.
+///
+/// # Errors
+///
+/// Rejects a non-failure record, an observation reference, an invalid root,
+/// conflicting existing contents, or a publication failure.
+pub fn finalize_failed_attempt(
+    root: &Path,
+    record: RunAttemptRecord,
+) -> Result<(IdentifiedRecord<RunAttemptRecord>, PathBuf), PublicationError> {
+    if !root.is_absolute() || !fs::symlink_metadata(root)?.is_dir() {
+        return Err(PublicationError::InvalidRoot);
+    }
+    if !matches!(
+        record.outcome,
+        RunAttemptOutcome::Failed {
+            observation: None,
+            ..
+        }
+    ) {
+        return Err(PublicationError::InvalidFailedAttempt);
+    }
+    let attempt = identify_record(record)?;
+    let attempts = durable_child(root, "attempts")?;
+    let stage = staging(&attempts)?;
+    let document = attempt_document(&attempt.record)?;
+    write_document(
+        stage.path(),
+        "attempt.json",
+        PublicSchema::Attempt,
+        &document,
+    )?;
+    let directory = publish(stage, &attempts.join(attempt.id.to_string()))?;
+    Ok((attempt, directory))
+}
+
 /// Publishes a validated one-shot observation before its terminal attempt.
 ///
 /// Publication uses private staging directories on the destination filesystem,
@@ -537,6 +577,9 @@ pub enum PublicationError {
     /// Contextual provenance must be a JSON object.
     #[error("publication provenance must be an object")]
     InvalidProvenance,
+    /// The failure publisher requires a failed attempt without an observation.
+    #[error("failed-attempt publication requires a failure without an observation")]
+    InvalidFailedAttempt,
     /// Private output no longer matches its validation snapshot.
     #[error("validated worker output changed before publication")]
     ModifiedOutput,

@@ -156,7 +156,7 @@ and [Gate 1](DESIGN.md#gate-1-conformance-kernel).
       metrics, provenance, and completion marker, then one attempt directory
       that references it and contains scoped logs and its own hash-complete
       completion marker.
-- [ ] Expose this vertical path through `metewand run` and emit versioned
+- [x] Expose this vertical path through `metewand run` and emit versioned
       machine-readable events and final output.
 - [ ] Pass Gate 1 acceptance tests, including dataset-free expansion, reference
       evaluation, timing-boundary fixtures, protocol abuse, identity vectors,

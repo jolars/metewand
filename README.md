@@ -118,6 +118,11 @@ returns validated result and metric values from private temporary output. Its
 [durable publication path](docs/durable-publication.md) finalizes a
 self-describing observation before the enclosing attempt, retaining provenance,
 scoped logs, and hash-complete completion manifests in separate directories.
+The [`metewand run` command](docs/run-cli.md) connects checked manifests and
+logical plans to this trusted local path, streams versioned lifecycle events,
+and reports durable accepted and failed attempts. The
+[fixed-dataset example](examples/fixed-dataset) demonstrates the complete path
+with raw workers and an independent evaluator.
 
 ## Development
 
