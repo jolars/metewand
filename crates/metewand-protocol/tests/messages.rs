@@ -572,3 +572,26 @@ fn one_session_permits_only_one_pending_orchestrator_request() {
         .expect("the next serial request must start");
     assert_eq!(next.as_str(), "1");
 }
+
+#[test]
+fn evaluation_requires_an_explicit_scientific_verdict() {
+    use metewand_protocol::{EvaluateResponse, EvaluationVerdict};
+    let response = EvaluateResponse::new(
+        RequestId::from_str("1").unwrap(),
+        EvaluationVerdict::Reached,
+    );
+    assert_eq!(
+        encode_message(&response).unwrap(),
+        b"{\"id\":\"1\",\"ok\":true,\"verdict\":\"reached\"}\n"
+    );
+    for verdict in ["invalid", "reached", "not_reached", "not_required"] {
+        let value = json!({"id": "1", "ok": true, "verdict": verdict});
+        assert!(serde_json::from_value::<EvaluateResponse>(value).is_ok());
+    }
+    for value in [
+        json!({"id":"1", "ok":true}),
+        json!({"id":"1", "ok":true, "verdict":"unknown"}),
+    ] {
+        assert!(serde_json::from_value::<EvaluateResponse>(value).is_err());
+    }
+}

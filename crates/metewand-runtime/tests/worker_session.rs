@@ -352,7 +352,10 @@ fn run_evaluator_fixture() {
             "metrics_path": "/metrics.json",
         })
     );
-    write_message(&mut writer, &json!({"id": "1", "ok": true}));
+    write_message(
+        &mut writer,
+        &json!({"id": "1", "ok": true, "verdict": "reached"}),
+    );
     accept_shutdown(&mut reader, &mut writer, "2");
 }
 

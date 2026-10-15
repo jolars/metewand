@@ -9,11 +9,12 @@ use std::{
 };
 
 use metewand_protocol::{
-    Acknowledgement, Capability, EvaluateRequest, ExecuteRequest, ExecuteResponse, HandshakeError,
-    HelloRequest, HelloResponse, MaterializeRequest, MaterializeResponse, MessageEncodeError,
-    NegotiatedSession, OperationResponse, OperationResponseDecodeError, PrepareRequest, RequestId,
-    RequestTracker, RequestTrackerError, ResetRequest, ShutdownRequest, WireMessage, WireResponse,
-    WorkerFailure, WorkerIdentity, WorkerRole, decode_operation_response, encode_message,
+    Acknowledgement, Capability, EvaluateRequest, EvaluateResponse, ExecuteRequest,
+    ExecuteResponse, HandshakeError, HelloRequest, HelloResponse, MaterializeRequest,
+    MaterializeResponse, MessageEncodeError, NegotiatedSession, OperationResponse,
+    OperationResponseDecodeError, PrepareRequest, RequestId, RequestTracker, RequestTrackerError,
+    ResetRequest, ShutdownRequest, WireMessage, WireResponse, WorkerFailure, WorkerIdentity,
+    WorkerRole, decode_operation_response, encode_message,
     framing::{FrameError, FrameReader},
     validate_hello_response,
 };
@@ -257,7 +258,7 @@ impl WorkerSession {
         problem_parameters: Value,
         result_dir: impl Into<String>,
         metrics_path: impl Into<String>,
-    ) -> Result<Acknowledgement, WorkerSessionError> {
+    ) -> Result<EvaluateResponse, WorkerSessionError> {
         self.require_role(WorkerPhase::Evaluate, WorkerRole::ProblemEvaluator)?;
         let id = self.begin_request(WorkerPhase::Evaluate)?;
         let request = EvaluateRequest::new(

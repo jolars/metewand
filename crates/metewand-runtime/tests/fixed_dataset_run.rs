@@ -122,14 +122,16 @@ fn rejected_prepare_does_not_leave_private_output() {
 }
 
 #[test]
-fn schema_valid_metrics_leave_scientific_acceptance_pending() {
+fn evaluator_rejects_a_schema_valid_but_incorrect_result() {
     let (_private_root, outcome) =
         run_case(Some(("METEWAND_TEST_ANSWER_OFFSET", "1")), None, timeouts());
-    let FixedDatasetRunOutcome::PendingScientificVerdict(result) = outcome else {
-        panic!("a schema-valid result should remain pending scientific review");
-    };
-    assert_eq!(result.result.as_json(), &json!({"answer": 9}));
-    assert_eq!(result.metrics.as_json(), &json!({"absolute_error": 1}));
+    assert!(matches!(
+        outcome,
+        FixedDatasetRunOutcome::Failed {
+            kind: FixedDatasetFailureKind::InvalidResult,
+            ..
+        }
+    ));
 }
 
 #[test]
@@ -139,7 +141,7 @@ fn timing_includes_prepare_and_result_writing() {
         None,
         timeouts(),
     );
-    let FixedDatasetRunOutcome::PendingScientificVerdict(result) = outcome else {
+    let FixedDatasetRunOutcome::Validated(result) = outcome else {
         panic!("the delayed implementation should complete");
     };
     assert!(result.timed_wall_time >= Duration::from_millis(200));
@@ -294,4 +296,28 @@ fn timeouts() -> PhaseTimeouts {
         evaluate: Duration::from_secs(2),
         shutdown: Duration::from_secs(2),
     }
+}
+
+#[test]
+fn valid_results_keep_the_evaluator_completion_decision() {
+    use metewand_core::records::CompletionStatus;
+    for (verdict, expected) in [
+        ("reached", CompletionStatus::Reached),
+        ("not_reached", CompletionStatus::NotReached),
+        ("not_required", CompletionStatus::NotRequired),
+    ] {
+        let (_root, outcome) = run_case(None, Some(("METEWAND_TEST_VERDICT", verdict)), timeouts());
+        let FixedDatasetRunOutcome::Validated(result) = outcome else {
+            panic!("valid evaluation should retain a result");
+        };
+        assert_eq!(result.completion, expected);
+    }
+    let (_root, outcome) = run_case(None, Some(("METEWAND_TEST_VERDICT", "unknown")), timeouts());
+    assert!(matches!(
+        outcome,
+        FixedDatasetRunOutcome::Failed {
+            kind: FixedDatasetFailureKind::ProtocolError,
+            ..
+        }
+    ));
 }

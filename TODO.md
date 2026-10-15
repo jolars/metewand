@@ -149,7 +149,7 @@ and [Gate 1](DESIGN.md#gate-1-conformance-kernel).
       workers with a private working directory and allowlisted environment.
 - [x] Run one fixed dataset through one raw implementation and its independent
       problem evaluator using `prepare_and_execute` timing.
-- [ ] Validate the canonical result and evaluator metrics before accepting the
+- [x] Validate the canonical result and evaluator metrics before accepting the
       attempt; retain typed records for crashes, timeouts, invalid results, and
       evaluator failures.
 - [ ] Finalize one self-describing observation directory containing its result,

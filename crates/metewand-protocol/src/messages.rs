@@ -874,6 +874,54 @@ impl Acknowledgement {
     }
 }
 
+/// Problem-owned scientific decision, separate from transport success.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EvaluationVerdict {
+    /// The canonical result violates the problem's validity rules.
+    Invalid,
+    /// The valid result reached the one-shot completion target.
+    Reached,
+    /// The valid result did not reach the one-shot completion target.
+    NotReached,
+    /// The valid result has no additional completion target.
+    NotRequired,
+}
+
+/// Successful evaluation with a required scientific decision.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct EvaluateResponse {
+    id: RequestId,
+    ok: Success,
+    verdict: EvaluationVerdict,
+}
+
+impl private::Sealed for EvaluateResponse {}
+impl WireMessage for EvaluateResponse {}
+impl WireResponse for EvaluateResponse {
+    fn id(&self) -> &RequestId {
+        &self.id
+    }
+}
+impl EvaluateResponse {
+    /// Creates a response after metrics have been written.
+    #[must_use]
+    pub const fn new(id: RequestId, verdict: EvaluationVerdict) -> Self {
+        Self {
+            id,
+            ok: Success,
+            verdict,
+        }
+    }
+
+    /// Returns the problem-owned scientific decision.
+    #[must_use]
+    pub const fn verdict(&self) -> EvaluationVerdict {
+        self.verdict
+    }
+}
+
 /// A successful one-shot implementation response.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]

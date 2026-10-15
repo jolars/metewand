@@ -4,13 +4,14 @@ pub mod framing;
 mod messages;
 
 pub use messages::{
-    Acknowledgement, Capability, EvaluateRequest, ExecuteRequest, ExecuteResponse, HandshakeError,
-    HelloRequest, HelloResponse, MaterializeRequest, MaterializeResponse, MessageDecodeError,
-    MessageEncodeError, MetadataError, NegotiatedSession, OperationResponse,
-    OperationResponseDecodeError, PrepareRequest, RequestId, RequestTracker, RequestTrackerError,
-    ResetRequest, SdkMetadata, ShutdownRequest, WireMessage, WireResponse, WorkerFailure,
-    WorkerFailureCode, WorkerFailureResponse, WorkerIdentity, WorkerRole, decode_message,
-    decode_operation_response, encode_message, negotiate_protocol, validate_hello_response,
+    Acknowledgement, Capability, EvaluateRequest, EvaluateResponse, EvaluationVerdict,
+    ExecuteRequest, ExecuteResponse, HandshakeError, HelloRequest, HelloResponse,
+    MaterializeRequest, MaterializeResponse, MessageDecodeError, MessageEncodeError, MetadataError,
+    NegotiatedSession, OperationResponse, OperationResponseDecodeError, PrepareRequest, RequestId,
+    RequestTracker, RequestTrackerError, ResetRequest, SdkMetadata, ShutdownRequest, WireMessage,
+    WireResponse, WorkerFailure, WorkerFailureCode, WorkerFailureResponse, WorkerIdentity,
+    WorkerRole, decode_message, decode_operation_response, encode_message, negotiate_protocol,
+    validate_hello_response,
 };
 
 /// Version of the JSON-Lines worker protocol.

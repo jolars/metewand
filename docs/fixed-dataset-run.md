@@ -33,26 +33,28 @@ owns its private result and metric directories, including the validated result
 manifest and declared files, until the caller drops it. The caller must keep
 the private root available while it uses the result for later publication.
 
-`run_fixed_dataset_outcome` retains a private one-shot result as
-`PendingScientificVerdict` or a failed outcome with an `AttemptDiagnostic` and
-stable technical failure class. It distinguishes an implementation that exits
-before replying, a phase timeout, an invalid canonical result, an evaluator
-failure (including invalid metrics), and a malformed protocol exchange. These
-diagnostics can later populate a failed `RunAttemptRecord`; the pending result
-retains validated canonical result and metric values for publication.
+`run_fixed_dataset_outcome` retains a private one-shot result as `Validated`
+or a failed outcome with an `AttemptDiagnostic` and stable technical failure
+class. It distinguishes implementation crashes, phase timeouts, invalid results,
+evaluator failures (including invalid metrics), and protocol violations.
 
-The current version-1 evaluator responds to `evaluate` with only a common
-acknowledgment (DESIGN.md, worker protocol). Its metric document contains data
-but no contract-owned verdict. `ProblemSemantics.validity` and
-`one_shot_completion` are family-owned rules that Metewand hashes without
-interpreting. Consequently, schema-valid metrics—even a zero error value—do
-not establish scientific validity or completion. A later versioned evaluator
-interface must return those decisions before a result can become a valid
-observation. `RunAttemptOutcome::Accepted` additionally requires durable
-publication of the observation and enclosing attempt (DESIGN.md, validity and
-completion). This path makes neither claim.
+The evaluator must return an explicit scientific verdict after writing its
+metrics. `invalid` rejects even a schema-valid result. `reached`, `not_reached`,
+and `not_required` retain a valid result with the corresponding typed
+`CompletionStatus`. A valid result that misses a completion target remains
+available for observation publication; validity and completion are separate.
+Missing or unknown verdicts fail protocol validation. The raw fixture evaluator
+requires an exact answer and reports `reached` only for zero absolute error.
 
-This path does not publish an observation, materialize a dataset, or provide a
-private dataset view. The dataset must be a trusted local input that was
-resolved before the call. Scientific verdicts, durable observation and attempt
-publication, and the `metewand run` command follow in later Gate 1.6 slices.
+The version-1 wire contract now requires this verdict on evaluation responses.
+The compatibility constant remains 1 because this completes the unreleased
+Gate-1 contract; acknowledgment-only evaluator fixtures must be updated.
+Protocol conformance tests cover the required verdict and reject malformed
+responses. No identity or execution-semantics constants change: problem-owned
+validity and completion rules already belong to those contracts.
+
+A validated result is not an accepted attempt. Acceptance still requires durable
+publication of its observation and enclosing attempt. This path does not publish
+artifacts, materialize a dataset, or provide a private dataset view. The dataset
+must be a trusted local input resolved before the call. Durable publication and
+`metewand run` follow in later Gate 1.6 slices.

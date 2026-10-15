@@ -197,6 +197,16 @@
       "required": ["id", "method"],
       "additionalProperties": false
     },
+    "evaluate_response": {
+      "type": "object",
+      "properties": {
+        "id": { "$ref": "#/$defs/request_id" },
+        "ok": { "const": true },
+        "verdict": { "enum": ["invalid", "reached", "not_reached", "not_required"] }
+      },
+      "required": ["id", "ok", "verdict"],
+      "additionalProperties": false
+    },
     "acknowledgement": {
       "type": "object",
       "properties": {
@@ -254,6 +264,7 @@
     { "$ref": "#/$defs/evaluate_request" },
     { "$ref": "#/$defs/shutdown_request" },
     { "$ref": "#/$defs/acknowledgement" },
+    { "$ref": "#/$defs/evaluate_response" },
     { "$ref": "#/$defs/materialize_response" },
     { "$ref": "#/$defs/execute_response" },
     { "$ref": "#/$defs/failure_response" }

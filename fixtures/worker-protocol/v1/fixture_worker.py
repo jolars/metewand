@@ -312,7 +312,9 @@ def _evaluate(request: dict[str, object]) -> dict[str, object]:
     metrics_path = Path(_string(request["metrics_path"], "metrics_path"))
     metrics_path.parent.mkdir(parents=True, exist_ok=True)
     _write_file(metrics_path, _json_bytes(metrics))
-    return {"id": request["id"], "ok": True}
+    return {"id": request["id"], "ok": True,
+            "verdict": os.environ.get("METEWAND_TEST_VERDICT",
+                                      "reached" if error_value == 0 else "invalid")}
 
 
 def _require_shape(

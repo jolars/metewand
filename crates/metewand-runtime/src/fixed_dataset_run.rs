@@ -10,10 +10,10 @@ use std::{
 use metewand_core::{
     canonical::CanonicalValue,
     public_schemas::PublicSchemaCatalogError,
-    records::{AttemptDiagnostic, ContentDigest, ResolvedLaunchRecord},
+    records::{AttemptDiagnostic, CompletionStatus, ContentDigest, ResolvedLaunchRecord},
     schema::SchemaCatalog,
 };
-use metewand_protocol::{Capability, WorkerIdentity, WorkerRole};
+use metewand_protocol::{Capability, EvaluationVerdict, WorkerIdentity, WorkerRole};
 use serde_json::Value;
 use tempfile::Builder;
 use thiserror::Error;
@@ -72,6 +72,8 @@ pub struct FixedDatasetResult {
     pub result: CanonicalValue,
     /// Independent evaluator metrics validated against the metric schema.
     pub metrics: CanonicalValue,
+    /// Problem-owned completion decision for this scientifically valid result.
+    pub completion: CompletionStatus,
     /// Orchestrator time from immediately before `prepare` through `execute`.
     pub timed_wall_time: Duration,
     /// Optional worker-reported time, retained only as a diagnostic.
@@ -112,13 +114,11 @@ impl FixedDatasetResult {
     }
 }
 
-/// The private result of one one-shot execution before a scientific verdict or
-/// durable attempt publication exists.
+/// The private result of one one-shot execution before durable publication.
 #[derive(Debug)]
 pub enum FixedDatasetRunOutcome {
-    /// Both documents passed structural validation. The problem-owned evaluator
-    /// has not supplied a scientific validity or completion verdict.
-    PendingScientificVerdict(Box<FixedDatasetResult>),
+    /// Both documents passed validation and the evaluator declared the result valid.
+    Validated(Box<FixedDatasetResult>),
     /// Execution ended without a result eligible for scientific review.
     Failed {
         /// Stable technical failure class.
@@ -165,13 +165,12 @@ impl FixedDatasetFailureKind {
 
 /// Runs a private one-shot attempt and retains its technical outcome.
 ///
-/// Schema validation alone cannot establish scientific validity or completion.
-/// The pending variant must not be converted to `RunAttemptOutcome::Accepted`
-/// until a problem-owned verdict and durable publication are implemented.
+/// The validated variant carries a problem-owned scientific verdict but must
+/// not become `RunAttemptOutcome::Accepted` until durable publication succeeds.
 #[must_use]
 pub fn run_fixed_dataset_outcome(request: FixedDatasetRun<'_>) -> FixedDatasetRunOutcome {
     match run_fixed_dataset(request) {
-        Ok(result) => FixedDatasetRunOutcome::PendingScientificVerdict(Box::new(result)),
+        Ok(result) => FixedDatasetRunOutcome::Validated(Box::new(result)),
         Err(error) => {
             let kind = error.failure_kind();
             FixedDatasetRunOutcome::Failed {
@@ -265,7 +264,7 @@ pub fn run_fixed_dataset(
         .map_err(|source| FixedDatasetRunError::InvalidResult { source })?;
     let result_tree_hash = hash_local_tree(result_dir.path())
         .map_err(|source| FixedDatasetRunError::ResultTreeHash { source })?;
-    evaluator
+    let evaluated = evaluator
         .evaluate(
             dataset_dir,
             request.problem_contract_id,
@@ -291,9 +290,17 @@ pub fn run_fixed_dataset(
         .map_err(|source| FixedDatasetRunError::Evaluator { source })?;
     verify_result_tree(result_dir.path(), result_tree_hash)?;
 
+    let completion = match evaluated.verdict() {
+        EvaluationVerdict::Invalid => return Err(FixedDatasetRunError::ScientificInvalidResult),
+        EvaluationVerdict::Reached => CompletionStatus::Reached,
+        EvaluationVerdict::NotReached => CompletionStatus::NotReached,
+        EvaluationVerdict::NotRequired => CompletionStatus::NotRequired,
+    };
+
     Ok(FixedDatasetResult {
         result: result.data().clone(),
         metrics: metrics.data().clone(),
+        completion,
         timed_wall_time,
         implementation_time_ns: executed.implementation_time_ns(),
         statistics: executed.statistics().clone(),
@@ -334,6 +341,9 @@ fn path_string(path: &Path) -> Result<String, FixedDatasetRunError> {
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum FixedDatasetRunError {
+    /// The evaluator rejected the result under problem-owned validity rules.
+    #[error("problem evaluator rejected canonical result")]
+    ScientificInvalidResult,
     /// An input directory is not an absolute path.
     #[error("dataset and private-root paths must be absolute")]
     NonAbsolutePath,
@@ -401,8 +411,7 @@ pub enum FixedDatasetRunError {
 }
 
 impl FixedDatasetRunError {
-    /// Classifies a failed private run without treating malformed worker output
-    /// or a schema-valid metric document as a scientific verdict.
+    /// Classifies a failed private run for a later attempt diagnostic.
     #[must_use]
     pub fn failure_kind(&self) -> FixedDatasetFailureKind {
         match self {
@@ -412,9 +421,10 @@ impl FixedDatasetRunError {
             | Self::PublicSchemas(_)
             | Self::ImplementationLaunch { .. }
             | Self::EvaluatorLaunch { .. } => FixedDatasetFailureKind::SetupFailure,
-            Self::InvalidResult { .. } | Self::ResultTreeHash { .. } | Self::ResultTreeChanged => {
-                FixedDatasetFailureKind::InvalidResult
-            }
+            Self::ScientificInvalidResult
+            | Self::InvalidResult { .. }
+            | Self::ResultTreeHash { .. }
+            | Self::ResultTreeChanged => FixedDatasetFailureKind::InvalidResult,
             Self::InvalidMetrics { .. } => FixedDatasetFailureKind::EvaluatorFailure,
             Self::Implementation { source } => classify_session(source, true),
             Self::Evaluator { source } => classify_session(source, false),

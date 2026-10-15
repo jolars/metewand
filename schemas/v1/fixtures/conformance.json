@@ -2,6 +2,11 @@
   "version": 1,
   "valid": [
     {
+      "name": "evaluator scientific verdict",
+      "schema": "worker-protocol-message",
+      "instance": { "id": "1", "ok": true, "verdict": "reached" }
+    },
+    {
       "name": "machine result with command-owned data",
       "schema": "machine-output",
       "instance": {
@@ -444,6 +449,16 @@
     }
   ],
   "invalid": [
+    {
+      "name": "unknown evaluator verdict",
+      "schema": "worker-protocol-message",
+      "instance": { "id": "1", "ok": true, "verdict": "unknown" }
+    },
+    {
+      "name": "null evaluator verdict",
+      "schema": "worker-protocol-message",
+      "instance": { "id": "1", "ok": true, "verdict": null }
+    },
     {
       "name": "machine output rejects unknown envelope fields",
       "schema": "machine-output",

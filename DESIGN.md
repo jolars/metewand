@@ -1040,8 +1040,12 @@ control, and its response omits `observation_control`. The `fresh_sequence`
 subprotocol adds its selected control in the later profile slice; until then,
 selecting that capability is rejected. `implementation_time_ns` is explicitly
 nullable, and `statistics` is an object. Successful `prepare`, `reset`,
-`evaluate`, and `shutdown` calls return the common acknowledgment
-`{"id":"…","ok":true}`.
+and `shutdown` calls return the common acknowledgment
+`{"id":"…","ok":true}`. Successful `evaluate` calls instead return
+`{"id":"…","ok":true,"verdict":"reached"}` after writing metrics. The required
+`verdict` is `invalid`, `reached`, `not_reached`, or `not_required`: it applies the
+problem-owned validity and one-shot completion rules. Transport success alone
+does not imply scientific validity.
 
 The canonical result schema belongs to the problem contract. For a lasso problem
 it might require `coefficients` and `intercept`, regardless of how individual
