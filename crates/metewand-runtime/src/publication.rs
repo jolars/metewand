@@ -491,7 +491,18 @@ fn inventory(root: &Path) -> Result<BTreeMap<String, FileEntry>, PublicationErro
             } else if kind.is_file() {
                 let mut file = File::open(entry.path())?;
                 let mut hasher = Sha256::new();
-                let size_bytes = io::copy(&mut file, &mut hasher)?;
+                let mut size_bytes = 0;
+                let mut buffer = [0_u8; 64 * 1024];
+                loop {
+                    let count = match file.read(&mut buffer) {
+                        Ok(0) => break,
+                        Ok(count) => count,
+                        Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+                        Err(error) => return Err(error.into()),
+                    };
+                    hasher.update(&buffer[..count]);
+                    size_bytes += count as u64;
+                }
                 files.insert(
                     text.to_owned(),
                     FileEntry {
@@ -648,12 +659,28 @@ mod tests {
 
     #[test]
     fn completion_manifest_has_exact_canonical_bytes() {
-        let root = tempfile::tempdir().unwrap();
-        let stage = object(root.path(), b"abc");
-        assert!(!stage.path().join("manifest.json").exists());
-        let directory = publish(stage, &root.path().join("object")).unwrap();
-        assert_eq!(fs::read(directory.join("manifest.json")).unwrap(),
-            br#"{"complete":true,"files":[{"media_type":"application/octet-stream","path":"payload.bin","sha256":"ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad","size_bytes":3}],"schema_version":1}"#);
+        for (bytes, sha256) in [
+            (
+                Vec::new(),
+                "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            ),
+            (
+                b"abc".to_vec(),
+                "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+            ),
+            (
+                (0_u8..=255).cycle().take(131079).collect(),
+                "1933f7f279fb4232259d5af94a6f792a308a78e4c18b8ed5caafd99e943f9a78",
+            ),
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            let stage = object(root.path(), &bytes);
+            assert!(!stage.path().join("manifest.json").exists());
+            let directory = publish(stage, &root.path().join("object")).unwrap();
+            let size_bytes = bytes.len();
+            assert_eq!(fs::read(directory.join("manifest.json")).unwrap(),
+                format!(r#"{{"complete":true,"files":[{{"media_type":"application/octet-stream","path":"payload.bin","sha256":"{sha256}","size_bytes":{size_bytes}}}],"schema_version":1}}"#).as_bytes());
+        }
     }
 
     #[test]

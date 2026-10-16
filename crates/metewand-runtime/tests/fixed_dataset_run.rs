@@ -10,7 +10,11 @@ use std::{
 
 use metewand_core::{
     identity::IdentityKind,
-    records::{RecordId, ResolvedEnvironmentRecord, ResolvedLaunchRecord, WorkerWorkingDirectory},
+    materialization::hex,
+    records::{
+        ContentDigest, RecordId, ResolvedEnvironmentRecord, ResolvedLaunchRecord,
+        WorkerWorkingDirectory,
+    },
     schema::SchemaCatalog,
 };
 use metewand_protocol::WorkerIdentity;
@@ -570,7 +574,10 @@ fn finalized_one_shot_has_independent_hash_complete_directories() {
             use sha2::{Digest, Sha256};
             let content = fs::read(directory.join(entry["path"].as_str().unwrap())).unwrap();
             assert_eq!(entry["size_bytes"], content.len());
-            assert_eq!(entry["sha256"], format!("{:x}", Sha256::digest(&content)));
+            assert_eq!(
+                entry["sha256"],
+                hex(ContentDigest::new(Sha256::digest(&content).into()))
+            );
         }
         assert!(
             marker["files"]

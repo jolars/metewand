@@ -4,7 +4,7 @@ use crate::source_resolution::{
     AcquiredSource, ResolvedSource, SourceAcquirer, SourceFile, SourceRequest,
     SourceResolutionError,
 };
-use metewand_core::{canonical::CanonicalValue, records::ContentDigest};
+use metewand_core::{canonical::CanonicalValue, materialization::hex, records::ContentDigest};
 use sha2::{Digest, Sha256};
 use std::{
     fs::{self, File},
@@ -91,8 +91,8 @@ impl SourceAcquirer for HttpAcquirer {
             hash.update(&buffer[..count]);
             io::Write::write_all(&mut file, &buffer[..count])?;
         }
-        let digest = hash.finalize();
-        if format!("{digest:x}") != source.sha256.as_str() {
+        let digest = ContentDigest::new(hash.finalize().into());
+        if hex(digest) != source.sha256.as_str() {
             return Err(SourceResolutionError::DigestMismatch {
                 path: "source".into(),
             });
@@ -105,7 +105,7 @@ impl SourceAcquirer for HttpAcquirer {
             files: vec![SourceFile {
                 path: serde_json::from_value(serde_json::json!("source")).expect("constant path"),
                 size_bytes: size,
-                sha256: ContentDigest::new(digest.into()),
+                sha256: digest,
             }],
             provenance: CanonicalValue::from_slice(br#"{"transport":"http","redirects":false}"#)
                 .expect("canonical receipt"),

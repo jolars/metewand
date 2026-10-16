@@ -5,7 +5,7 @@ use std::{
     sync::OnceLock,
 };
 
-use metewand_core::schema::SchemaCatalog;
+use metewand_core::{materialization::hex, records::ContentDigest, schema::SchemaCatalog};
 use metewand_protocol::{ExecuteResponse, MaterializeResponse, RequestId};
 use metewand_runtime::worker_output::{WorkerOutputError, WorkerOutputValidator};
 use serde_json::{Value, json};
@@ -514,7 +514,7 @@ fn file_entry(path: &str, contents: &[u8]) -> Value {
 }
 
 fn sha256(contents: &[u8]) -> String {
-    format!("{:x}", Sha256::digest(contents))
+    hex(ContentDigest::new(Sha256::digest(contents).into()))
 }
 
 fn write(root: &Path, path: &str, contents: &[u8]) {

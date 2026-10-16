@@ -529,7 +529,18 @@ fn inventory(root: &Path) -> Result<Vec<Entry>, ArtifactStoreError> {
             } else if metadata.is_file() {
                 let mut file = regular_file(&absolute)?;
                 let mut hasher = Sha256::new();
-                let size_bytes = io::copy(&mut file, &mut hasher)?;
+                let mut size_bytes = 0;
+                let mut buffer = [0_u8; 64 * 1024];
+                loop {
+                    let count = match file.read(&mut buffer) {
+                        Ok(0) => break,
+                        Ok(count) => count,
+                        Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+                        Err(error) => return Err(error.into()),
+                    };
+                    hasher.update(&buffer[..count]);
+                    size_bytes += count as u64;
+                }
                 entries.push(Entry::File {
                     path,
                     size_bytes,

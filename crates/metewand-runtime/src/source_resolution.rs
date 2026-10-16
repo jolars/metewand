@@ -10,6 +10,7 @@ use std::{
 use metewand_core::{
     canonical::CanonicalValue,
     manifest::{Name, RemoteSource, RepositoryPath, Sha256Digest},
+    materialization::hex,
     records::{ContentDigest, RecordId, SourceBundleResource},
 };
 use sha2::{Digest, Sha256};
@@ -298,11 +299,7 @@ pub fn resolve_source(
         if files.len() != 1 || files[0].path.as_path() != Path::new("source") {
             return Err(SourceResolutionError::InvalidInventory);
         }
-        if format!(
-            "{:x}",
-            sha2::digest::Output::<Sha256>::from(*files[0].sha256.bytes())
-        ) != source.sha256.as_str()
-        {
+        if hex(files[0].sha256) != source.sha256.as_str() {
             return Err(SourceResolutionError::DigestMismatch {
                 path: PathBuf::from("source"),
             });

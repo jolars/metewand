@@ -134,15 +134,31 @@ fn empty_unit_trees_are_valid_cache_objects() {
 #[test]
 fn completion_marker_has_exact_versioned_bytes() {
     assert_eq!(metewand_runtime::artifact_store::ARTIFACT_STORE_VERSION, 1);
-    let cache = tempfile::tempdir().unwrap();
-    let source = tempfile::tempdir().unwrap();
-    fs::write(source.path().join("payload"), b"abc").unwrap();
-    let digest = hash_local_tree(source.path()).unwrap();
-    let store = ArtifactStore::open(cache.path()).unwrap();
-    let object = store.import_tree(source.path(), digest).unwrap();
-    let marker = fs::read(object.directory().parent().unwrap().join("manifest.json")).unwrap();
-    let digest_text = metewand_core::materialization::hex(digest);
-    assert_eq!(marker, format!(r#"{{"complete":true,"entries":[{{"executable":false,"kind":"file","path":"payload","sha256":"ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad","size_bytes":3}}],"schema_version":1,"tree_hash_version":1,"tree_sha256":"{digest_text}"}}"#).as_bytes());
+    for (bytes, sha256) in [
+        (
+            Vec::new(),
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        ),
+        (
+            b"abc".to_vec(),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+        ),
+        (
+            (0_u8..=255).cycle().take(131079).collect(),
+            "1933f7f279fb4232259d5af94a6f792a308a78e4c18b8ed5caafd99e943f9a78",
+        ),
+    ] {
+        let cache = tempfile::tempdir().unwrap();
+        let source = tempfile::tempdir().unwrap();
+        fs::write(source.path().join("payload"), &bytes).unwrap();
+        let digest = hash_local_tree(source.path()).unwrap();
+        let store = ArtifactStore::open(cache.path()).unwrap();
+        let object = store.import_tree(source.path(), digest).unwrap();
+        let marker = fs::read(object.directory().parent().unwrap().join("manifest.json")).unwrap();
+        let digest_text = metewand_core::materialization::hex(digest);
+        let size_bytes = bytes.len();
+        assert_eq!(marker, format!(r#"{{"complete":true,"entries":[{{"executable":false,"kind":"file","path":"payload","sha256":"{sha256}","size_bytes":{size_bytes}}}],"schema_version":1,"tree_hash_version":1,"tree_sha256":"{digest_text}"}}"#).as_bytes());
+    }
 }
 
 #[test]

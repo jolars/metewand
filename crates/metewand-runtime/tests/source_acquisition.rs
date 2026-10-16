@@ -1,4 +1,4 @@
-use metewand_core::manifest::RemoteSource;
+use metewand_core::{manifest::RemoteSource, materialization::hex, records::ContentDigest};
 use metewand_runtime::{
     source_acquisition::{ArchiveFormat, ArchiveLimits, HttpAcquirer, extract_archive},
     source_resolution::{SourceRequest, resolve_source},
@@ -13,7 +13,11 @@ use std::{
 
 fn serve(bytes: Vec<u8>, status: &str) -> (RemoteSource, thread::JoinHandle<()>) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let source = serde_json::from_value(serde_json::json!({"url": format!("http://{}/input", listener.local_addr().unwrap()), "sha256": format!("{:x}", Sha256::digest(&bytes))})).unwrap();
+    let source = serde_json::from_value(serde_json::json!({
+        "url": format!("http://{}/input", listener.local_addr().unwrap()),
+        "sha256": hex(ContentDigest::new(Sha256::digest(&bytes).into())),
+    }))
+    .unwrap();
     let status = status.to_owned();
     let handle = thread::spawn(move || {
         let (mut stream, _) = listener.accept().unwrap();
