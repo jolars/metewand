@@ -17,6 +17,10 @@ process path before starting the timer. The orchestrator starts its wall clock
 immediately before `prepare` and stops it when `execute` returns. The protocol
 requires that response to follow complete result writing, so the measured
 interval includes preparation, execution, and canonical result serialization.
+Integrity checks between prepare and execute also contribute to this continuous
+duration. Provenance records this as
+`timing_dataset_integrity: "included_between_prepare_and_execute"`. Checks before
+prepare and after execute remain outside the timer.
 Result validation, independent evaluation, metrics validation, and worker
 shutdown happen outside that interval.
 
@@ -35,8 +39,9 @@ the private root available while it uses the result for later publication.
 
 `run_fixed_dataset_outcome` retains a private one-shot result as `Validated`
 or a failed outcome with an `AttemptDiagnostic` and stable technical failure
-class. It distinguishes implementation crashes, phase timeouts, invalid results,
-evaluator failures (including invalid metrics), and protocol violations.
+class. It distinguishes dataset mutation, implementation crashes, phase
+timeouts, invalid results, evaluator failures (including invalid metrics), and
+protocol violations.
 
 The evaluator must return an explicit scientific verdict after writing its
 metrics. `invalid` rejects even a schema-valid result. `reached`, `not_reached`,
@@ -59,6 +64,18 @@ boundaries, validation snapshots, and launch provenance for
 [durable publication](durable-publication.md). Publication finalizes its
 observation and enclosing attempt before acceptance. This execution function
 does not materialize a dataset or provide a private dataset view. The dataset
-must be a trusted local input resolved before the call. The
-[`metewand run` command](run-cli.md) now resolves those inputs from a checked
-manifest and publishes the resulting observations and attempts.
+must be a trusted local input resolved before the call, containing only regular
+files and directories. Links and special files fail verification because their
+external contents cannot be protected by the dataset's tree hash. It hashes the dataset
+before launching either worker and rechecks after each hello, and immediately
+before and after prepare, execute, evaluate, and both shutdowns, including failed
+exchanges and termination. A detected change produces `dataset_mutation` and takes
+precedence over other worker failures. Provenance records a `caller_provided`
+view with `best_effort` enforcement and `each_worker_operation` verification.
+The caller retains ownership of that directory, including cleanup after failure.
+The [`metewand run` command](run-cli.md) now resolves those inputs from a checked
+manifest, supplies [private copies backed by the artifact store](artifact-store.md),
+quarantines changed canonical objects, and publishes the resulting observations
+and attempts. These checks complete the unreleased version-1 dataset immutability
+contract without changing the timing boundary, wire messages, or compatibility
+constants.

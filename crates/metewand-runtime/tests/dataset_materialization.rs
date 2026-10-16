@@ -204,6 +204,36 @@ fn construction_mappings_reopen_verify_and_reject_different_outputs() {
         first.output_digest
     );
 
+    fs::write(cached.artifact.directory().join("data.json"), b"corrupted").unwrap();
+    assert!(matches!(
+        store.lookup_dataset(&first.derivation),
+        Err(ArtifactStoreError::Quarantined { .. })
+    ));
+    assert!(store.lookup_dataset(&first.derivation).unwrap().is_none());
+    assert!(
+        store
+            .lookup_dataset(&equivalent_output.derivation)
+            .unwrap()
+            .is_none()
+    );
+    // Quarantine cannot release a recipe's original output-hash constraint.
+    assert!(matches!(
+        store.publish_dataset(&drifted),
+        Err(ArtifactStoreError::DerivationConflict)
+    ));
+    store.publish_dataset(&build(&config)).unwrap();
+    for derivation in [&first.derivation, &equivalent_output.derivation] {
+        let restored = store.lookup_dataset(derivation).unwrap().unwrap();
+        assert_eq!(restored.artifact.digest(), first.output_digest);
+        restored.artifact.verify().unwrap();
+    }
+    assert_eq!(
+        fs::read_dir(cache.path().join("quarantine"))
+            .unwrap()
+            .count(),
+        1
+    );
+
     let mapping = cache
         .path()
         .join("derivations")

@@ -201,10 +201,10 @@ provides an optional source of recorded datasets and verified decoding.
   mappings, completion markers, leases, and private per-attempt dataset
   views. Import provider exports through verified copies or snapshots while
   preserving ownership of provider caches.
-- [ ] Prefer copy-on-write snapshots or copies for local views; otherwise verify
+- [x] Prefer copy-on-write snapshots or copies for local views; otherwise verify
   dataset hashes around every worker operation and report enforcement as
   best-effort.
-- [ ] Detect mutations, invalidate the attempt, and transactionally quarantine a
+- [x] Detect mutations, invalidate the attempt, and transactionally quarantine a
   changed canonical cache object before it can be reused.
 - [ ] Add conformance tests and documentation for the boundary between shared
   dataset materialization and implementation preparation, including

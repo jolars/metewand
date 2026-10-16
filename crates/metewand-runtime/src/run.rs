@@ -25,7 +25,7 @@ use serde_json::json;
 use thiserror::Error;
 
 use crate::{
-    fixed_dataset_run::{FixedDatasetRun, run_fixed_dataset},
+    fixed_dataset_run::{FixedDatasetRun, FixedDatasetRunError, run_fixed_dataset_in_view},
     local_tree::LocalTreeHashError,
     publication::{
         PublicationError, PublicationRequest, finalize_failed_attempt, finalize_fixed_dataset,
@@ -198,7 +198,7 @@ fn execute(
             measurement,
             output_root,
             started_at,
-            "input_changed",
+            input_change_code(&error),
             error.to_string(),
         );
     }
@@ -209,43 +209,40 @@ fn execute(
                 measurement,
                 output_root,
                 started_at,
-                "input_changed",
+                "dataset_mutation",
                 error.to_string(),
             );
         }
     };
-    let result = run_fixed_dataset(FixedDatasetRun {
-        dataset_dir: dataset_view.directory(),
-        problem_contract_id: &candidate.contract_id,
-        problem_parameters: &candidate.problem_parameters,
-        implementation_parameters: &candidate.implementation_parameters,
-        implementation_seed: measurement.seed,
-        implementation_launch: &candidate.implementation.launch,
-        implementation_identity: &candidate.implementation.identity,
-        evaluator_launch: &candidate.evaluator.launch,
-        evaluator_identity: &candidate.evaluator.identity,
-        result_schema: &candidate.result_schema,
-        metric_schema: &candidate.metric_schema,
-        schemas: &repository.schemas,
-        private_root,
-        timeouts: candidate.timeouts,
-        log_limits: WorkerLogLimits::new(64 * 1024, 64 * 1024),
-    });
-    if let Err(error) = dataset_view.verify() {
+    let result = run_fixed_dataset_in_view(
+        FixedDatasetRun {
+            dataset_dir: dataset_view.directory(),
+            problem_contract_id: &candidate.contract_id,
+            problem_parameters: &candidate.problem_parameters,
+            implementation_parameters: &candidate.implementation_parameters,
+            implementation_seed: measurement.seed,
+            implementation_launch: &candidate.implementation.launch,
+            implementation_identity: &candidate.implementation.identity,
+            evaluator_launch: &candidate.evaluator.launch,
+            evaluator_identity: &candidate.evaluator.identity,
+            result_schema: &candidate.result_schema,
+            metric_schema: &candidate.metric_schema,
+            schemas: &repository.schemas,
+            private_root,
+            timeouts: candidate.timeouts,
+            log_limits: WorkerLogLimits::new(64 * 1024, 64 * 1024),
+        },
+        &dataset_view,
+    );
+    let inputs_verified = candidate.verify();
+    if let Err(error) = inputs_verified
+        && !matches!(&result, Err(FixedDatasetRunError::DatasetMutation { .. }))
+    {
         return failed_attempt(
             measurement,
             output_root,
             started_at,
-            "input_changed",
-            error.to_string(),
-        );
-    }
-    if let Err(error) = candidate.verify() {
-        return failed_attempt(
-            measurement,
-            output_root,
-            started_at,
-            "input_changed",
+            input_change_code(&error),
             error.to_string(),
         );
     }
@@ -293,6 +290,13 @@ fn execute(
         metrics: Some(result.metrics.as_json().clone()),
         diagnostic,
     })
+}
+
+fn input_change_code(error: &RunError) -> &'static str {
+    match error {
+        RunError::ArtifactStore(_) => "dataset_mutation",
+        _ => "input_changed",
+    }
 }
 
 fn failed_attempt(

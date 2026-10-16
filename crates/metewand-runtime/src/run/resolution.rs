@@ -610,6 +610,10 @@ fn resolve_candidate(
                 "logical_candidate_id": candidate.candidate.id,
                 "logical_slot_id": slot.id,
                 "dataset_materialization": dataset_provenance.map(CanonicalValue::as_json),
+                "dataset_immutability": {
+                    "view": "copy", "enforcement": "best_effort",
+                    "verification": "each_worker_operation",
+                },
                 "dataset_instance": record_document(&dataset_instance.record)?,
                 "problem_instance": record_document(&problem_instance.record)?,
                 "resolved_specification": record_document(&resolved.record)?,

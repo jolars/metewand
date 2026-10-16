@@ -122,6 +122,139 @@ fn rejected_prepare_does_not_leave_private_output() {
 }
 
 #[test]
+fn caller_owned_datasets_are_checked_around_every_worker_operation() {
+    for (evaluator, phase) in [
+        (false, "hello"),
+        (false, "prepare"),
+        (false, "execute"),
+        (true, "hello"),
+        (true, "evaluate"),
+        (false, "shutdown"),
+        (true, "shutdown"),
+    ] {
+        let (_root, outcome) = run_mutation_case(evaluator, phase, "bytes", None);
+        let FixedDatasetRunOutcome::Failed { kind, diagnostic } = outcome else {
+            panic!("mutation during {phase} must invalidate the attempt");
+        };
+        assert_eq!(kind, FixedDatasetFailureKind::DatasetMutation);
+        assert_eq!(diagnostic.code, "dataset_mutation");
+        assert!(diagnostic.message.contains(phase), "{diagnostic:?}");
+    }
+}
+
+#[test]
+fn dataset_mutations_override_worker_failure_crash_timeout_and_invalid_output() {
+    for (phase, mutation, worker_mode) in [
+        ("prepare", "missing", None),
+        ("prepare", "symlink", None),
+        ("execute", "directory", None),
+        ("execute", "mode", None),
+        ("execute", "bytes", Some("crash")),
+        ("execute", "bytes", Some("timeout")),
+        ("execute", "bytes", Some("malformed_protocol")),
+        ("execute", "bytes", Some("invalid_result")),
+    ] {
+        let (_root, outcome) = run_mutation_case(false, phase, mutation, worker_mode);
+        assert!(
+            matches!(
+                outcome,
+                FixedDatasetRunOutcome::Failed {
+                    kind: FixedDatasetFailureKind::DatasetMutation,
+                    ..
+                }
+            ),
+            "{phase}/{mutation}/{worker_mode:?}: {outcome:?}"
+        );
+    }
+}
+
+#[test]
+fn caller_owned_dataset_links_are_rejected_before_launch() {
+    let (_root, outcome) = run_mutation_case(false, "hello", "initial_symlink", None);
+    let FixedDatasetRunOutcome::Failed { kind, diagnostic } = outcome else {
+        panic!("a linked dataset must not reach a worker");
+    };
+    assert_eq!(kind, FixedDatasetFailureKind::DatasetMutation);
+    assert!(
+        diagnostic.message.contains("attempt start"),
+        "{diagnostic:?}"
+    );
+    assert!(diagnostic.message.contains("unsafe"), "{diagnostic:?}");
+}
+
+fn run_mutation_case(
+    mutate_evaluator: bool,
+    phase: &str,
+    mutation: &str,
+    worker_mode: Option<&str>,
+) -> (TempDir, FixedDatasetRunOutcome) {
+    let private_root = TempDir::new().unwrap();
+    let dataset = TempDir::new().unwrap();
+    fs::copy(
+        fixture_path("fixed-dataset/data.json"),
+        dataset.path().join("data.json"),
+    )
+    .unwrap();
+    if mutation == "initial_symlink" {
+        fs::remove_file(dataset.path().join("data.json")).unwrap();
+        std::os::unix::fs::symlink(
+            fixture_path("fixed-dataset/data.json"),
+            dataset.path().join("data.json"),
+        )
+        .unwrap();
+    }
+    let schemas = fixture_schema_catalog();
+    let mut implementation = launch("implementation");
+    let mut evaluator = launch("problem-evaluator");
+    let launch = if mutate_evaluator {
+        &mut evaluator
+    } else {
+        &mut implementation
+    };
+    for (key, value) in [
+        ("METEWAND_TEST_MUTATION_PHASE", phase),
+        (
+            "METEWAND_TEST_MUTATION_PATH",
+            dataset.path().join("data.json").to_str().unwrap(),
+        ),
+        ("METEWAND_TEST_MUTATION_KIND", mutation),
+    ] {
+        launch
+            .environment_variables
+            .insert(key.to_owned(), value.to_owned());
+    }
+    let mut deadlines = timeouts();
+    if let Some(mode) = worker_mode {
+        launch
+            .environment_variables
+            .insert("METEWAND_TEST_EXECUTE_MODE".to_owned(), mode.to_owned());
+        if mode == "timeout" {
+            deadlines.execute = Duration::from_millis(50);
+        }
+    }
+    let worker_id = WorkerIdentity::from_str(WORKER_ID).unwrap();
+    let outcome = run_fixed_dataset_outcome(FixedDatasetRun {
+        dataset_dir: dataset.path(),
+        problem_contract_id: "mw1-problem-contract-fixture",
+        problem_parameters: &json!({"offset": 2}),
+        implementation_parameters: &json!({"algorithm": "sum"}),
+        implementation_seed: 23,
+        implementation_launch: &implementation,
+        implementation_identity: &worker_id,
+        evaluator_launch: &evaluator,
+        evaluator_identity: &worker_id,
+        result_schema: Path::new("schemas/result.json"),
+        metric_schema: Path::new("schemas/metrics.json"),
+        schemas: &schemas,
+        private_root: private_root.path(),
+        timeouts: deadlines,
+        log_limits: WorkerLogLimits::new(4096, 4096),
+    });
+    assert_eq!(fs::read_dir(private_root.path()).unwrap().count(), 0);
+    (private_root, outcome)
+}
+
+#[test]
 fn evaluator_rejects_a_schema_valid_but_incorrect_result() {
     let (_private_root, outcome) =
         run_case(Some(("METEWAND_TEST_ANSWER_OFFSET", "1")), None, timeouts());
@@ -377,6 +510,12 @@ fn finalized_one_shot_has_independent_hash_complete_directories() {
         matches!(published.attempt.record.outcome, RunAttemptOutcome::Accepted { observation } if observation == published.observation.id)
     );
     let schemas = public_schema_catalog().unwrap();
+    assert_eq!(
+        published.attempt.record.provenance.data.as_json()["execution"]["dataset_immutability"],
+        json!({
+            "view": "caller_provided", "enforcement": "best_effort", "verification": "each_worker_operation",
+        })
+    );
     for (directory, document, schema) in [
         (
             &published.observation_directory,

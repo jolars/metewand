@@ -825,9 +825,14 @@ worker phase can hang indefinitely. Executor-observed CPU time may be another
 primary measure only when it covers the same process tree and scope. In-worker
 `implementation_time` is always secondary diagnostic provenance; it cannot be
 the sole authoritative comparison measure. Metewand-owned validation and
-evaluation occur after the timed scope. Compilation, preprocessing, conversion,
-and result serialization are included whenever they occur inside the selected
-scope, and the run record identifies excluded phases explicitly.
+evaluation occur after the timed scope. Dataset integrity checks surround worker
+operations. For `prepare_and_execute`, the timer remains continuous from
+immediately before `prepare` through receipt of the complete `execute` response.
+Integrity checks between those operations therefore contribute to the measured
+duration, and execution provenance records their inclusion. Compilation,
+preprocessing, conversion, and result serialization are included whenever they
+occur inside the selected scope, and the run record identifies excluded phases
+explicitly.
 
 Exports label `execute_only` observations as operation-scope benchmarks rather
 than end-to-end software measurements, and compatibility readers never pool
@@ -1110,11 +1115,15 @@ absolute paths, path traversal, special files, escaping links, and undeclared
 files, and never trusts a worker-supplied path outside its assigned directories.
 Each attempt receives a private dataset view and output directory. Strong
 executors expose immutable datasets with read-only mounts. The local executor
-prefers copy-on-write snapshots or copies; if it can provide only
+prefers copy-on-write snapshots or copies. The trusted local executor uses
+independently verified copies and checks their canonical objects as well as
+their private views around every operation. If an executor can provide only
 permission-based read-only views, Metewand verifies all dataset artifacts
 immediately before and after each worker operation or checkpoint subexchange
-and records immutability enforcement as best-effort. Any mutation invalidates
-the attempt and discards its private view; if the canonical cache object itself
+and records immutability enforcement as best-effort. The trusted local executor
+also reports best-effort enforcement because it cannot prevent undeclared
+filesystem access. Any mutation invalidates the attempt with `dataset_mutation`
+and discards its private view; if the canonical cache object itself
 changed, Metewand quarantines it before another run can consume it.
 
 Errors have stable machine-readable codes, a human-readable message, and
@@ -1533,8 +1542,14 @@ leases for their owners' lifetimes; explicit recovery quarantines abandoned
 lease staging only after acquiring its released lock. The CLI uses a temporary
 store unless `--cache-dir` selects persistent construction reuse. The new object,
 mapping, and lease schemas join the initial version-1 public catalog without
-changing identity or tree-hash transcripts. Transactional database references,
-canonical-object quarantine, and garbage collection remain later slices. See
+changing identity or tree-hash transcripts. Readers, view transfers, and
+publishers serialize verification and canonical-object quarantine with a kernel
+lock. Quarantine atomically moves the exact changed object out of the live
+address space and synchronizes both parents before releasing the lock. Retained
+derivation mappings constrain any reconstruction to the original output hash.
+These controls complete the unreleased version-1 immutability contract without
+changing its compatibility constants. Transactional database references and
+garbage collection remain later slices. See
 [Artifact storage and private dataset views](docs/artifact-store.md).
 
 Later reads verify hashes whenever data crosses from the cache into a worker

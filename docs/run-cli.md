@@ -113,10 +113,23 @@ only for execution and provenance. Moving a repository, choosing another output
 directory, or allocating another temporary directory therefore preserves logical
 and resolved identities. Execution input changes invalidate their dependencies.
 
-The runtime checks original declared bundles, copied trees, and executable
-contents before and after each attempt. Detected changes produce `input_changed`
-and prevent observation publication. Later selected slots continue to receive
-terminal outcomes, including failure if their inputs remain changed.
+The runtime checks original declared bundles, worker source copies, and executable
+contents before and after each attempt. Detected changes produce `input_changed`.
+It verifies private dataset copies and their canonical cache objects immediately
+before and after each worker operation, including hello, failed exchanges, and
+shutdown. Dataset changes produce `dataset_mutation` and prevent observation
+publication, even if a later operation would restore the original bytes. A
+changed canonical object is atomically quarantined under the cache lock before
+another attempt can reuse it. Later slots continue with fresh private copies if
+the canonical dataset still verifies; otherwise, they fail before worker launch.
+
+Successful and failed attempt provenance records `dataset_immutability` with
+`view: "copy"`, `enforcement: "best_effort"`, and
+`verification: "each_worker_operation"`. The local executor cannot prevent its
+OS user from accessing undeclared paths or restoring bytes within one operation.
+The `prepare_and_execute` timer remains continuous, including result writing and
+integrity checks between the two exchanges. Execution provenance records that
+overhead as `timing_dataset_integrity: "included_between_prepare_and_execute"`.
 
 ## Events and final output
 
@@ -147,9 +160,9 @@ an attempt with no observation. A valid result that misses its scientific target
 still publishes its observation and records `completion_target_not_reached` on
 the failed attempt. Failed attempts do not cancel the remaining selection.
 Their diagnostics distinguish implementation failure or crash, phase timeout,
-invalid result, evaluator failure, protocol error, setup failure, and input
-mutation. The final report uses exit code `5` if any attempt failed; the same
-diagnostics and affected IDs appear as human text on standard error.
+invalid result, evaluator failure, protocol error, setup failure, input changes,
+and dataset mutation. The final report uses exit code `5` if any attempt failed;
+the same diagnostics and affected IDs appear as human text on standard error.
 
 Successful or scientifically incomplete runs retain the existing publisher's
 scoped implementation and evaluator logs. Technical failures currently retain
@@ -157,7 +170,11 @@ the typed diagnostic and resolution provenance, with `logs_available: false`.
 The lower-level runtime discards those failed workers' private log buffers.
 
 Cache failures use `artifact_cache_failed` with exit code `74`. A corrupted or
-incomplete cache entry fails verification without being overwritten or reused.
+incomplete content object fails verification and is moved into quarantine without
+being reused. The invocation that discovers corruption during source resolution
+stops before creating run output. A later invocation can reconstruct the missing
+object, but its derivation mapping still requires the original output hash.
+Corrupted mapping metadata also fails verification.
 
 Preflight or publication errors produce a terminal diagnostic envelope, following
 any events already streamed in JSON Lines mode. Publication failure never emits

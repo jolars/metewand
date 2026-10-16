@@ -2,7 +2,7 @@
 
 use std::{
     fs,
-    os::unix::fs::{PermissionsExt, symlink},
+    os::unix::fs::{MetadataExt, PermissionsExt, symlink},
     sync::{Arc, Barrier},
     thread,
 };
@@ -32,6 +32,22 @@ fn imported_trees_survive_reopening_and_attempt_views_are_independent() {
     let second = object.private_view(attempts.path()).unwrap();
     assert_eq!(store.active_leases().unwrap().len(), 3);
     assert_ne!(first.directory(), second.directory());
+    assert_ne!(
+        fs::metadata(first.directory().join("payload"))
+            .unwrap()
+            .ino(),
+        fs::metadata(second.directory().join("payload"))
+            .unwrap()
+            .ino()
+    );
+    assert_ne!(
+        fs::metadata(first.directory().join("payload"))
+            .unwrap()
+            .ino(),
+        fs::metadata(object.directory().join("payload"))
+            .unwrap()
+            .ino()
+    );
     assert_eq!(hash_local_tree(first.directory()).unwrap(), digest);
     fs::write(first.directory().join("payload"), b"changed").unwrap();
     assert!(first.verify().is_err());
@@ -130,7 +146,178 @@ fn completion_marker_has_exact_versioned_bytes() {
 }
 
 #[test]
-fn corrupted_objects_are_rejected_without_replacement_or_worker_copies() {
+fn changed_canonical_objects_are_quarantined_even_with_live_readers_and_views() {
+    for boundary in ["get", "verify", "view", "existing_view", "publication"] {
+        let cache = tempfile::tempdir().unwrap();
+        let source = tempfile::tempdir().unwrap();
+        let views = tempfile::tempdir().unwrap();
+        fs::write(source.path().join("payload"), b"abc").unwrap();
+        let digest = hash_local_tree(source.path()).unwrap();
+        let store = ArtifactStore::open(cache.path()).unwrap();
+        let object = store.import_tree(source.path(), digest).unwrap();
+        let reader = store.get(digest).unwrap().unwrap();
+        let view = reader.private_view(views.path()).unwrap();
+        let canonical = object.directory().parent().unwrap().to_owned();
+        fs::write(object.directory().join("payload"), b"changed").unwrap();
+
+        let failed = match boundary {
+            "get" => store.get(digest).is_err(),
+            "verify" => object.verify().is_err(),
+            "view" => reader.private_view(views.path()).is_err(),
+            "existing_view" => view.verify().is_err(),
+            "publication" => store.import_tree(source.path(), digest).is_err(),
+            _ => unreachable!(),
+        };
+        assert!(failed, "{boundary}");
+        assert!(!canonical.exists(), "{boundary}");
+        assert!(store.get(digest).unwrap().is_none());
+        assert!(reader.private_view(views.path()).is_err());
+        let quarantined = fs::read_dir(cache.path().join("quarantine"))
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .collect::<Vec<_>>();
+        assert_eq!(quarantined.len(), 1, "{boundary}");
+        assert_eq!(
+            fs::read(quarantined[0].join("object/data/payload")).unwrap(),
+            b"changed"
+        );
+        assert!(quarantined[0].join("object/manifest.json").is_file());
+        assert_eq!(fs::read(view.directory().join("payload")).unwrap(), b"abc");
+        // Reuse requires independently verified publication of the original bytes.
+        let repaired = store.import_tree(source.path(), digest).unwrap();
+        repaired.verify().unwrap();
+        assert_eq!(
+            fs::read(repaired.directory().join("payload")).unwrap(),
+            b"abc"
+        );
+        assert_eq!(
+            fs::read_dir(cache.path().join("quarantine"))
+                .unwrap()
+                .count(),
+            1
+        );
+    }
+}
+
+#[test]
+fn concurrent_readers_quarantine_a_corrupted_address_once() {
+    let cache = tempfile::tempdir().unwrap();
+    let source = tempfile::tempdir().unwrap();
+    fs::write(source.path().join("payload"), b"abc").unwrap();
+    let digest = hash_local_tree(source.path()).unwrap();
+    let store = ArtifactStore::open(cache.path()).unwrap();
+    let object = store.import_tree(source.path(), digest).unwrap();
+    fs::write(object.directory().join("payload"), b"changed").unwrap();
+    let barrier = Arc::new(Barrier::new(4));
+    let handles = (0..4)
+        .map(|_| {
+            let store = store.clone();
+            let barrier = barrier.clone();
+            thread::spawn(move || {
+                barrier.wait();
+                match store.get(digest) {
+                    Ok(Some(_)) => panic!("a corrupted address must never be reused"),
+                    Ok(None) => false,
+                    Err(_) => true,
+                }
+            })
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        handles
+            .into_iter()
+            .map(|h| h.join().unwrap())
+            .filter(|failed| *failed)
+            .count(),
+        1
+    );
+    assert_eq!(
+        fs::read_dir(cache.path().join("objects")).unwrap().count(),
+        0
+    );
+    assert_eq!(
+        fs::read_dir(cache.path().join("quarantine"))
+            .unwrap()
+            .count(),
+        1
+    );
+    let reopened = ArtifactStore::open(cache.path()).unwrap();
+    assert!(reopened.get(digest).unwrap().is_none());
+    assert!(object.verify().is_err());
+}
+
+#[test]
+fn quarantine_survives_the_detecting_process_exiting_abruptly() {
+    use std::{
+        io::{BufRead, BufReader},
+        process::{Command, Stdio},
+    };
+    let cache = tempfile::tempdir().unwrap();
+    let source = tempfile::tempdir().unwrap();
+    fs::write(source.path().join("payload"), b"abc").unwrap();
+    let digest = hash_local_tree(source.path()).unwrap();
+    let store = ArtifactStore::open(cache.path()).unwrap();
+    let object = store.import_tree(source.path(), digest).unwrap();
+    fs::write(object.directory().join("payload"), b"changed").unwrap();
+    let mut child = Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", "quarantine_process_helper", "--nocapture"])
+        .env("METEWAND_TEST_QUARANTINE_ROOT", cache.path())
+        .env(
+            "METEWAND_TEST_QUARANTINE_DIGEST",
+            serde_json::to_string(digest.bytes()).unwrap(),
+        )
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut output = BufReader::new(child.stdout.take().unwrap());
+    loop {
+        let mut line = String::new();
+        assert_ne!(output.read_line(&mut line).unwrap(), 0);
+        if line.trim() == "QUARANTINED" {
+            break;
+        }
+    }
+    child.kill().unwrap();
+    child.wait().unwrap();
+    let reopened = ArtifactStore::open(cache.path()).unwrap();
+    assert!(reopened.get(digest).unwrap().is_none());
+    assert!(object.verify().is_err());
+    let quarantine = fs::read_dir(cache.path().join("quarantine"))
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    assert_eq!(
+        fs::read(quarantine.join("object/data/payload")).unwrap(),
+        b"changed"
+    );
+    assert_eq!(reopened.quarantine_abandoned_leases().unwrap(), 0);
+}
+
+#[test]
+fn quarantine_process_helper() {
+    use std::io::Write;
+    let Some(cache) = std::env::var_os("METEWAND_TEST_QUARANTINE_ROOT") else {
+        return;
+    };
+    let digest = metewand_core::records::ContentDigest::new(
+        serde_json::from_str(&std::env::var("METEWAND_TEST_QUARANTINE_DIGEST").unwrap()).unwrap(),
+    );
+    let store = ArtifactStore::open(std::path::Path::new(&cache)).unwrap();
+    assert!(matches!(
+        store.get(digest),
+        Err(ArtifactStoreError::Quarantined { .. })
+    ));
+    println!("QUARANTINED");
+    std::io::stdout().flush().unwrap();
+    loop {
+        thread::park();
+    }
+}
+
+#[test]
+fn corrupted_objects_are_quarantined_without_worker_copies() {
     for corruption in [
         "bytes",
         "mode",
@@ -186,16 +373,19 @@ fn corrupted_objects_are_rejected_without_replacement_or_worker_copies() {
             _ => unreachable!(),
         }
         assert!(store.get(digest).is_err(), "{corruption}");
-        assert!(
-            store.import_tree(source.path(), digest).is_err(),
-            "{corruption}"
-        );
         assert!(object.private_view(views.path()).is_err(), "{corruption}");
         assert_eq!(fs::read_dir(views.path()).unwrap().count(), 0);
         assert_eq!(
             fs::read_dir(cache.path().join("objects")).unwrap().count(),
+            0
+        );
+        assert_eq!(
+            fs::read_dir(cache.path().join("quarantine"))
+                .unwrap()
+                .count(),
             1
         );
+        assert!(store.get(digest).unwrap().is_none());
     }
 }
 

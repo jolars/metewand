@@ -371,7 +371,7 @@
       }
     },
     {
-      "name": "failed one-shot attempt without observations",
+      "name": "dataset mutation invalidates the attempt without observations",
       "schema": "attempt",
       "instance": {
         "schema_version": 1,
@@ -381,8 +381,8 @@
         "outcome": {
           "kind": "failed",
           "diagnostic": {
-            "code": "worker_crash",
-            "message": "The worker exited before replying."
+            "code": "dataset_mutation",
+            "message": "The dataset changed around implementation prepare."
           }
         },
         "observations": [],
@@ -392,7 +392,15 @@
           "tool_version": "0.1.0",
           "wire_protocol_version": 1,
           "execution_semantics_version": 1,
-          "data": {}
+          "data": {
+            "context": {
+              "dataset_immutability": {
+                "view": "copy",
+                "enforcement": "best_effort",
+                "verification": "each_worker_operation"
+              }
+            }
+          }
         }
       }
     },

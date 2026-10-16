@@ -59,6 +59,7 @@ pub struct CachedDataset {
 }
 
 /// An independent per-attempt copy; dropping it removes the private directory.
+/// Verification also checks its canonical object, including quarantine on failure.
 #[derive(Debug)]
 pub struct DatasetView {
     directory: TempDir,
@@ -151,11 +152,14 @@ impl ArtifactStore {
         File::open(&stage)?.sync_all()?;
         verify_object(&stage, expected)?;
         let destination = self.object_path(expected);
+        let _guard = self.lock()?;
         match rename_no_replace(&stage, &destination) {
             Ok(()) => {}
             Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
-                verify_object(&destination, expected)?;
-                if !same_bytes(&data, &destination.join("data"))? {
+                self.verify_or_quarantine(expected)?;
+                let compared = same_bytes(&data, &destination.join("data"));
+                self.verify_or_quarantine(expected)?;
+                if !compared? {
                     return Err(ArtifactStoreError::ChangedContent);
                 }
             }
@@ -176,10 +180,11 @@ impl ArtifactStore {
     pub fn get(&self, digest: ContentDigest) -> Result<Option<StoredArtifact>, ArtifactStoreError> {
         let lease = self.lease("read", digest)?;
         let path = self.object_path(digest);
+        let _guard = self.lock()?;
         if missing(&path)? {
             return Ok(None);
         }
-        verify_object(&path, digest)?;
+        self.verify_or_quarantine(digest)?;
         Ok(Some(StoredArtifact {
             store: self.clone(),
             digest,
@@ -227,6 +232,7 @@ impl ArtifactStore {
         // Serialize mapping claims so identical outputs may retain the first
         // receipt even when operational acquisition evidence differs.
         let _guard = self.lock()?;
+        self.verify_or_quarantine(artifact.digest)?;
         if !missing(&destination)? {
             verify_finalized_directory(&destination)?;
             let existing =
@@ -263,9 +269,11 @@ impl ArtifactStore {
         let document = CanonicalValue::from_slice(&fs::read(path.join("dataset.json"))?)?;
         validate(PublicSchema::DatasetCacheEntry, &document)?;
         let digest = verify_receipt(&document, derivation)?;
-        let artifact = self
-            .get(digest)?
-            .ok_or(ArtifactStoreError::InvalidMapping)?;
+        let Some(artifact) = self.get(digest)? else {
+            // Retain the recipe's expected hash while allowing verified reconstruction
+            // after quarantine removed its output from the live address space.
+            return Ok(None);
+        };
         let manifest = serde_json::from_value(document.as_json()["manifest"].clone())?;
         Ok(Some(CachedDataset {
             artifact,
@@ -345,6 +353,31 @@ impl ArtifactStore {
             .join(format!("tree-v{LOCAL_TREE_HASH_VERSION}-{}", hex(digest)))
     }
 
+    // Callers hold the store lock through verification, quarantine, and any copy
+    // into a worker view, so other readers cannot consume a known-bad address.
+    fn verify_or_quarantine(&self, digest: ContentDigest) -> Result<(), ArtifactStoreError> {
+        let object = self.object_path(digest);
+        if missing(&object)? {
+            return Err(ArtifactStoreError::ChangedContent);
+        }
+        if let Err(source) = verify_object(&object, digest) {
+            let quarantine = Builder::new()
+                .prefix(&format!("tree-v{LOCAL_TREE_HASH_VERSION}-{}-", hex(digest)))
+                .tempdir_in(self.root.join("quarantine"))?;
+            rename_no_replace(&object, &quarantine.path().join("object"))?;
+            // Retain the evidence even if synchronizing the move fails.
+            let quarantine = quarantine.keep();
+            File::open(&quarantine)?.sync_all()?;
+            File::open(self.root.join("quarantine"))?.sync_all()?;
+            File::open(self.root.join("objects"))?.sync_all()?;
+            return Err(ArtifactStoreError::Quarantined {
+                tree_sha256: hex(digest),
+                source: Box::new(source),
+            });
+        }
+        Ok(())
+    }
+
     fn lock(&self) -> Result<File, ArtifactStoreError> {
         let lock = OpenOptions::new()
             .create(true)
@@ -398,25 +431,25 @@ impl StoredArtifact {
         self.digest
     }
     pub fn verify(&self) -> Result<(), ArtifactStoreError> {
-        verify_object(
-            self.directory.parent().expect("object data has a parent"),
-            self.digest,
-        )
+        let _guard = self.store.lock()?;
+        self.store.verify_or_quarantine(self.digest)
     }
     /// Copies into a unique private directory and verifies both sides of the
     /// boundary. The worker never receives the canonical cache path.
     pub fn private_view(&self, private_parent: &Path) -> Result<DatasetView, ArtifactStoreError> {
-        self.verify()?;
         let parent = fs::canonicalize(private_parent)?;
         if parent.starts_with(&self.store.root) {
             return Err(ArtifactStoreError::OverlappingTrees);
         }
         let lease = self.store.lease("view", self.digest)?;
+        let _guard = self.store.lock()?;
+        self.store.verify_or_quarantine(self.digest)?;
         let directory = Builder::new()
             .prefix("metewand-dataset-view-")
             .tempdir_in(parent)?;
-        copy_verified(self.directory(), directory.path(), self.digest)?;
-        self.verify()?;
+        let copied = copy_verified(self.directory(), directory.path(), self.digest);
+        self.store.verify_or_quarantine(self.digest)?;
+        copied?;
         Ok(DatasetView {
             directory,
             digest: self.digest,
@@ -430,14 +463,27 @@ impl DatasetView {
     pub fn directory(&self) -> &Path {
         self.directory.path()
     }
-    pub fn verify(&self) -> Result<(), ArtifactStoreError> {
-        real_directory(self.directory())?;
-        inventory(self.directory())?;
-        if hash_local_tree(self.directory())? != self.digest {
-            return Err(ArtifactStoreError::ChangedContent);
-        }
-        Ok(())
+    #[must_use]
+    pub fn digest(&self) -> ContentDigest {
+        self.digest
     }
+    pub fn verify(&self) -> Result<(), ArtifactStoreError> {
+        let _guard = self._lease.store.lock()?;
+        self._lease.store.verify_or_quarantine(self.digest)?;
+        verify_dataset_tree(self.directory(), self.digest)
+    }
+}
+
+pub(crate) fn verify_dataset_tree(
+    directory: &Path,
+    expected: ContentDigest,
+) -> Result<(), ArtifactStoreError> {
+    real_directory(directory)?;
+    inventory(directory)?;
+    if hash_local_tree(directory)? != expected {
+        return Err(ArtifactStoreError::ChangedContent);
+    }
+    Ok(())
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -670,6 +716,12 @@ pub enum ArtifactStoreError {
     UnsafeEntry(PathBuf),
     #[error("artifact bytes or completion inventory changed")]
     ChangedContent,
+    #[error("canonical artifact {tree_sha256} was quarantined: {source}")]
+    Quarantined {
+        tree_sha256: String,
+        #[source]
+        source: Box<ArtifactStoreError>,
+    },
     #[error("dataset derivation already maps to a different output hash")]
     DerivationConflict,
     #[error("dataset cache mapping does not match its construction identity or output")]

@@ -119,6 +119,18 @@ fn run_streams_events_and_publishes_a_self_describing_attempt() {
         .join(attempt["observation_directory"].as_str().unwrap());
     verify_finalized_directory(&attempt_dir).unwrap();
     verify_finalized_directory(&observation_dir).unwrap();
+    let provenance = document(&attempt_dir.join("attempt.json"));
+    let enforcement = serde_json::json!({
+        "view": "copy", "enforcement": "best_effort", "verification": "each_worker_operation",
+    });
+    assert_eq!(
+        provenance["provenance"]["data"]["context"]["dataset_immutability"],
+        enforcement
+    );
+    assert_eq!(
+        provenance["provenance"]["data"]["execution"]["dataset_immutability"],
+        enforcement
+    );
     assert_eq!(
         document(&attempt_dir.join("attempt.json"))["observations"][0],
         attempt["observation_id"]
@@ -455,10 +467,271 @@ fn input_mutation_fails_the_attempt_and_preserves_repository_files() {
     let report = &records.last().unwrap()["data"];
     assert_eq!(report["summary"]["failed_attempts"], 2);
     for attempt in report["attempts"].as_array().unwrap() {
-        assert_eq!(attempt["diagnostic"]["code"], "input_changed");
+        assert_eq!(attempt["diagnostic"]["code"], "dataset_mutation");
         assert!(attempt["observation_id"].is_null());
+        let failed = document(
+            &root
+                .path()
+                .join("run")
+                .join(attempt["attempt_directory"].as_str().unwrap())
+                .join("attempt.json"),
+        );
+        assert_eq!(
+            failed["provenance"]["data"]["context"]["dataset_immutability"]["enforcement"],
+            "best_effort"
+        );
     }
     assert_eq!(fs::read(root.path().join("data.json")).unwrap(), original);
+}
+
+#[test]
+fn a_private_view_mutation_does_not_poison_the_next_attempt() {
+    let root = repository();
+    let first_attempt = root.path().join("first-attempt");
+    let views = root.path().join("views");
+    replace(
+        root.path(),
+        "metewand.toml",
+        "measurement_repetitions = 1",
+        "measurement_repetitions = 2",
+    );
+    replace(
+        root.path(),
+        "worker.py",
+        "prepared = sum(values) + request[\"problem_parameters\"][\"offset\"]",
+        &format!(
+            "prepared = sum(values) + request[\"problem_parameters\"][\"offset\"]\n            with open({views:?}, 'a') as views: views.write(request['dataset_dir'] + '\\n')\n            marker = Path({first_attempt:?})\n            if not marker.exists():\n                marker.touch()\n                path = Path(request['dataset_dir']) / 'data.json'\n                path.write_bytes(path.read_bytes() + b'\\n')"
+        ),
+    );
+    let output = metewand(
+        root.path(),
+        &["run", "--output-dir", "run", "--output", "jsonl"],
+    );
+    assert_eq!(output.status.code(), Some(5), "{output:?}");
+    let records = envelopes(&output);
+    let report = &records.last().unwrap()["data"];
+    assert_eq!(report["summary"]["failed_attempts"], 1);
+    assert_eq!(report["summary"]["accepted_attempts"], 1);
+    assert_eq!(
+        report["attempts"][0]["diagnostic"]["code"],
+        "dataset_mutation"
+    );
+    assert!(report["attempts"][0]["observation_id"].is_null());
+    assert_eq!(
+        report["attempts"][1]["result"],
+        serde_json::json!({"answer": 8})
+    );
+    let views = fs::read_to_string(views).unwrap();
+    let paths = views.lines().collect::<Vec<_>>();
+    assert_eq!(paths.len(), 2);
+    assert_ne!(paths[0], paths[1]);
+    assert!(paths.iter().all(|path| !Path::new(path).exists()));
+}
+
+#[test]
+fn prepare_and_execute_timing_includes_integrity_checks_between_operations() {
+    let root = repository();
+    let cache_lock = root.path().join("cache/.lock");
+    replace(
+        root.path(),
+        "worker.py",
+        "prepared = sum(values) + request[\"problem_parameters\"][\"offset\"]",
+        &format!(
+            "prepared = sum(values) + request[\"problem_parameters\"][\"offset\"]\n            import fcntl, threading, time\n            cache_lock = open({cache_lock:?}, 'r+')\n            fcntl.flock(cache_lock, fcntl.LOCK_EX)\n            def release():\n                time.sleep(0.25)\n                fcntl.flock(cache_lock, fcntl.LOCK_UN)\n                cache_lock.close()\n            threading.Thread(target=release).start()"
+        ),
+    );
+    let output = metewand(
+        root.path(),
+        &[
+            "run",
+            "--output-dir",
+            "run",
+            "--cache-dir",
+            "cache",
+            "--output",
+            "jsonl",
+        ],
+    );
+    assert!(output.status.success(), "{output:?}");
+    let records = envelopes(&output);
+    let attempt = &records.last().unwrap()["data"]["attempts"][0];
+    let observation = document(
+        &root
+            .path()
+            .join("run")
+            .join(attempt["observation_directory"].as_str().unwrap())
+            .join("observation.json"),
+    );
+    assert!(
+        observation["timing"]["timed_wall_time_ns"]
+            .as_u64()
+            .unwrap()
+            >= 200_000_000
+    );
+    let attempt = document(
+        &root
+            .path()
+            .join("run")
+            .join(attempt["attempt_directory"].as_str().unwrap())
+            .join("attempt.json"),
+    );
+    assert_eq!(
+        attempt["provenance"]["data"]["execution"]["timing_dataset_integrity"],
+        "included_between_prepare_and_execute"
+    );
+}
+
+#[test]
+fn dataset_mutations_stop_at_each_operation_before_later_restoration() {
+    for (role, phase, next_phase) in [
+        ("implementation", "prepare", "implementation.execute"),
+        ("implementation", "execute", "problem_evaluator.evaluate"),
+        ("problem_evaluator", "evaluate", "implementation.shutdown"),
+        ("implementation", "shutdown", "problem_evaluator.shutdown"),
+        ("problem_evaluator", "shutdown", "finished"),
+    ] {
+        let root = repository();
+        let operations = root.path().join("operations");
+        replace(
+            root.path(),
+            "worker.py",
+            "prepared = None",
+            "prepared = None\n    dataset_path = None\n    original_dataset = None",
+        );
+        replace(
+            root.path(),
+            "worker.py",
+            "method = request[\"method\"]",
+            &format!(
+                "method = request[\"method\"]\n        with open({operations:?}, 'a') as events: events.write(role + '.' + method + '\\n')\n        if 'dataset_dir' in request:\n            dataset_path = Path(request['dataset_dir']) / 'data.json'\n            original_dataset = dataset_path.read_bytes()\n        if dataset_path and method != {phase:?}:\n            dataset_path.write_bytes(original_dataset)"
+            ),
+        );
+        replace(
+            root.path(),
+            "worker.py",
+            "writer.write(json.dumps(response",
+            &format!(
+                "if role == {role:?} and method == {phase:?}:\n            dataset_path.write_bytes(original_dataset + b'\\n')\n        writer.write(json.dumps(response"
+            ),
+        );
+        let output = metewand(
+            root.path(),
+            &["run", "--output-dir", "run", "--output", "jsonl"],
+        );
+        assert_eq!(output.status.code(), Some(5), "{role}.{phase}: {output:?}");
+        let records = envelopes(&output);
+        let attempt = &records.last().unwrap()["data"]["attempts"][0];
+        assert_eq!(
+            attempt["diagnostic"]["code"], "dataset_mutation",
+            "{role}.{phase}"
+        );
+        assert!(
+            attempt["diagnostic"]["message"]
+                .as_str()
+                .unwrap()
+                .contains(phase)
+        );
+        assert!(attempt["observation_id"].is_null());
+        assert!(!root.path().join("run/observations").exists());
+        let operations = fs::read_to_string(operations).unwrap();
+        assert!(operations.contains(&format!("{role}.{phase}")));
+        assert!(!operations.contains(next_phase), "{operations}");
+        assert_eq!(
+            fs::read(root.path().join("data.json")).unwrap(),
+            fs::read(
+                PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../examples/fixed-dataset/data.json")
+            )
+            .unwrap()
+        );
+    }
+}
+
+#[test]
+fn canonical_dataset_mutations_quarantine_the_object_before_another_attempt() {
+    let root = repository();
+    let cache_parent = tempfile::tempdir().unwrap();
+    let cache = cache_parent.path().join("cache");
+    let initial = metewand(
+        root.path(),
+        &[
+            "run",
+            "--output-dir",
+            "initial",
+            "--cache-dir",
+            cache.to_str().unwrap(),
+            "--output",
+            "jsonl",
+        ],
+    );
+    assert!(initial.status.success(), "{initial:?}");
+    let object = fs::read_dir(cache.join("objects"))
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    let operations = root.path().join("operations");
+    replace(
+        root.path(),
+        "metewand.toml",
+        "measurement_repetitions = 1",
+        "measurement_repetitions = 2",
+    );
+    replace(
+        root.path(),
+        "worker.py",
+        "method = request[\"method\"]",
+        &format!(
+            "method = request[\"method\"]\n        with open({operations:?}, 'a') as events: events.write(role + '.' + method + '\\n')"
+        ),
+    );
+    replace(
+        root.path(),
+        "worker.py",
+        "prepared = sum(values) + request[\"problem_parameters\"][\"offset\"]",
+        &format!(
+            "prepared = sum(values) + request[\"problem_parameters\"][\"offset\"]\n            Path({:?}).write_bytes(b'changed canonical bytes')",
+            object.join("data/data.json")
+        ),
+    );
+    let output = metewand(
+        root.path(),
+        &[
+            "run",
+            "--output-dir",
+            "mutated",
+            "--cache-dir",
+            cache.to_str().unwrap(),
+            "--output",
+            "jsonl",
+        ],
+    );
+    assert_eq!(output.status.code(), Some(5), "{output:?}");
+    let records = envelopes(&output);
+    let attempts = records.last().unwrap()["data"]["attempts"]
+        .as_array()
+        .unwrap();
+    assert_eq!(attempts.len(), 2);
+    for attempt in attempts {
+        assert_eq!(attempt["diagnostic"]["code"], "dataset_mutation");
+        assert!(attempt["observation_id"].is_null());
+    }
+    let operations = fs::read_to_string(operations).unwrap();
+    assert_eq!(operations.matches("implementation.prepare").count(), 1);
+    assert!(!operations.contains("implementation.execute"));
+    assert!(!object.exists());
+    let quarantined = fs::read_dir(cache.join("quarantine"))
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    assert_eq!(
+        fs::read(quarantined.join("object/data/data.json")).unwrap(),
+        b"changed canonical bytes"
+    );
+    assert!(!root.path().join("mutated/observations").exists());
 }
 
 #[test]
@@ -779,7 +1052,7 @@ fn persistent_cache_reuses_constructions_and_assigns_a_private_view_to_each_atte
             );
         }
     }
-    assert_eq!(fs::read_to_string(builds).unwrap(), "1");
+    assert_eq!(fs::read_to_string(&builds).unwrap(), "1");
     assert!(
         artifacts
             .iter()
@@ -836,9 +1109,43 @@ fn persistent_cache_reuses_constructions_and_assigns_a_private_view_to_each_atte
     let diagnostic: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(diagnostic["data"]["code"], "artifact_cache_failed");
     assert!(!root.path().join("third").exists());
+    assert!(!object.exists());
+    let quarantined = fs::read_dir(root.path().join("cache/quarantine"))
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
     assert_eq!(
-        fs::read(object.join("data/data.json")).unwrap(),
+        fs::read(quarantined.join("object/data/data.json")).unwrap(),
         b"changed canonical data"
+    );
+    let rebuilt = metewand(
+        root.path(),
+        &[
+            "run",
+            "--output-dir",
+            "rebuilt",
+            "--cache-dir",
+            "cache",
+            "--output",
+            "json",
+        ],
+    );
+    assert!(rebuilt.status.success(), "{rebuilt:?}");
+    assert_eq!(fs::read_to_string(builds).unwrap(), "11");
+    assert!(object.join("manifest.json").is_file());
+    assert_eq!(
+        fs::read_dir(root.path().join("cache/quarantine"))
+            .unwrap()
+            .count(),
+        1
+    );
+    assert_eq!(
+        fs::read_dir(root.path().join("cache/derivations"))
+            .unwrap()
+            .count(),
+        1
     );
 }
 

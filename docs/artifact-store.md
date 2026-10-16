@@ -39,7 +39,8 @@ leases/lease-<unique-token>/
   lease.json                    versioned owner, purpose, and object digest
   object/ or mapping-*/         unfinished publication, when present
 quarantine/lease-<token>/        abandoned staging retained for diagnosis
-.lock                           serializes lease snapshots and mapping claims
+quarantine/tree-v1-<hash>-<token>/object/  corrupt canonical object and its marker
+.lock                           serializes cache reads, publication, and quarantine
 ```
 
 Content addresses use the existing [local-tree transcript](local-tree-hashing.md).
@@ -59,8 +60,9 @@ duplicate. Publication never replaces an existing object.
 
 `get` returns only a completed object whose exact inventory, file hashes, sizes,
 executable flags, and local-tree digest verify. A missing address returns
-`None`; incomplete or corrupted objects return errors. Extra files, missing
-entries, changed directory structure, and invalid completion markers also fail.
+`None`; incomplete or corrupted objects return errors and are quarantined.
+Extra files, missing entries, changed directory structure, and invalid
+completion markers also fail.
 
 ## Construction mappings
 
@@ -77,6 +79,10 @@ and output retains that mapping; a different output hash returns
 transcript, then verifies and leases the referenced output. CLI cache hits also
 revalidate the dataset against the selected output schema before execution.
 Different recipes may share one content object without sharing a mapping.
+When quarantine removes an output, its mappings remain as constraints on the
+expected output hash. A later lookup returns a cache miss, allowing construction
+to run again. Publication must reproduce the original hash; a different hash
+still fails with `DerivationConflict`.
 Pinned external sources still require source resolution before recipe lookup;
 the CLI does not provide an offline source-selection index or locked execution.
 Runtime callers remain responsible for any contract-owned binary checker
@@ -103,18 +109,67 @@ verifying canonical and copied bytes around the transfer. Each CLI attempt
 passes that copy to its implementation and evaluator. Views share neither file
 inodes nor writable dataset directories with other attempts or the canonical
 object. Dropping the view removes its private directory and releases its lease.
-The runner checks the copy after the attempt, so a changed view fails that
-attempt and subsequent attempts receive fresh copies.
+Copies use separate file inodes, never hard links. This portable strategy works
+without filesystem-specific snapshot support. The runner verifies the private
+view and canonical object immediately before worker launch and after hello, and
+before and after prepare, execute, evaluate, and each worker's shutdown. It also
+checks after terminating workers on a failed exchange. These checks cover the
+complete tree, including empty directories, executable bits, and the dataset
+manifest. The `prepare_and_execute` timer runs continuously from immediately
+before prepare through receipt of the execute response. Integrity checks between
+those exchanges contribute to its duration. Execution provenance records
+`timing_dataset_integrity: "included_between_prepare_and_execute"`; checks before
+prepare and after execute, evaluation, and shutdown remain outside the timer.
+
+A changed view fails the attempt with `dataset_mutation`, prevents observation
+publication, and is discarded. Mutation takes precedence over a simultaneous
+worker error, crash, timeout, or invalid output. Later attempts receive fresh
+copies if the canonical object still verifies. Attempts record
+`dataset_immutability` in their provenance:
+
+```json
+{"enforcement":"best_effort","verification":"each_worker_operation","view":"copy"}
+```
+
+The lower-level `run_fixed_dataset` API accepts a caller-owned directory and
+records `view: "caller_provided"`. It establishes the expected hash before
+launch and applies the same operation checks, rejecting links and special files.
+It does not own that directory
+or quarantine it.
 
 `import_source` similarly copies a verified `ResolvedSource`. It rechecks the
 source around import and leaves resolver ownership and provider storage intact.
 It never adopts, moves, chmods, deletes, or hard-links files from a provider's
 cache. A later provider mutation cannot change the stored copy.
 
-The local executor still permits undeclared filesystem access and reports its
-existing best-effort controls. Per-operation mutation enforcement, transactional
-quarantine, durable attempt recovery, and garbage collection remain later
-roadmap slices.
+The local executor permits undeclared filesystem access. Copies isolate the
+normal worker paths, but do not enforce read-only access against the worker's
+OS user. Hash checks detect changes at operation boundaries; a change restored
+within one operation can escape detection. Enforcement therefore remains
+`best_effort`. Read-only mounts and stronger isolation belong to other executors.
+
+## Canonical-object quarantine
+
+All object readers, verification, view transfers, deduplicating publishers, and
+mapping claims use the same exclusive store lock. When verification finds an
+unverifiable canonical object, the store atomically moves that exact object,
+including its completion marker, into a unique quarantine directory. It
+synchronizes both affected parents and the quarantine directory before releasing
+the lock. The detecting call returns `ArtifactStoreError::Quarantined`; no new
+reader or view can reuse the changed address. Live leases do not prevent
+quarantine of corrupt content. Existing handles must reverify and fail while
+their canonical address is absent, even when their private copies are intact.
+
+The store preserves quarantined evidence and other objects, mappings, and
+provider-owned exports. It never repairs an object in place. A verified import
+may republish the original bytes at the vacant content address while retaining
+the quarantined object for diagnosis. Concurrent detectors quarantine an address
+only once. Reopening the cache preserves the move; a missing address cannot be
+returned as a completed object.
+
+This transaction uses a kernel lock, atomic rename, and directory synchronization.
+It does not depend on the later SQLite run-state store. Durable attempt recovery
+and garbage collection remain later roadmap slices.
 
 ## Compatibility and conformance
 
@@ -122,12 +177,22 @@ roadmap slices.
 Their public schemas are `artifact-cache-object`, `dataset-cache-entry`, and
 `artifact-cache-lease`. They join the initial version-1 catalog without changing
 existing records. `LOCAL_TREE_HASH_VERSION`, identity, manifest, wire-protocol,
-execution-semantics, and public-schema compatibility constants remain 1: content
-transcripts, worker requests, and measurement timing are unchanged.
+execution-semantics, and public-schema compatibility constants remain 1. This
+completes the unreleased version-1 immutability contract: content transcripts,
+worker requests, and the timing boundary remain unchanged. The continuous timer
+includes integrity verification between prepare and execute, and the new
+diagnostic and provenance use the existing extensible fields. Quarantine adds a private storage location
+without changing the object, mapping, or lease formats.
 
 The schema [conformance cases](../schemas/v1/fixtures/conformance.json) cover the
 new formats and reject unknown versions. Runtime tests cover exact canonical
 marker bytes, empty trees, executable flags, concurrent publication, incomplete
-objects, independent views and provider imports, construction conflicts, and
-live and crashed lease owners. CLI tests cover persistent construction reuse,
-private paths across attempts, and preflight without cache creation.
+objects, independent views and provider imports, construction conflicts,
+live and crashed lease owners, corruption at each cache boundary, concurrent
+quarantine, survival after a detector exits abruptly, and reconstruction
+constrained by the original mapping. Worker tests
+cover mutations during hello, prepare, execute, evaluation, and both shutdowns,
+including failed exchanges. CLI tests cover persistent construction reuse,
+private paths across attempts, mutation restored by a later operation, canonical
+quarantine before the next attempt, enforcement provenance, continuous timing
+across integrity checks, and preflight without cache creation.

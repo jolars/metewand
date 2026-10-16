@@ -39,6 +39,7 @@ def run_role(role: str) -> int:
                 raise RequestError("requests require a nonempty string ID")
 
             method = request.get("method")
+            _mutate_dataset(method)
             if method == "shutdown":
                 _require_shape(request, "shutdown", set())
                 _send(writer, {"id": request_id, "ok": True})
@@ -134,7 +135,29 @@ def _accept_hello(reader: BinaryIO, writer: BinaryIO, role: str) -> None:
     _require_shape(request, "hello", {"protocols", "role", "worker_id"})
     if request["role"] != role:
         raise RequestError(f"expected role {role!r}")
+    _mutate_dataset("hello")
     _send(writer, _hello_response(request))
+
+
+def _mutate_dataset(method: object) -> None:
+    phase = os.environ.get("METEWAND_TEST_MUTATION_PHASE")
+    if phase is None or method != phase:
+        return
+    path = Path(os.environ["METEWAND_TEST_MUTATION_PATH"])
+    mode = os.environ.get("METEWAND_TEST_MUTATION_KIND", "bytes")
+    if mode == "bytes":
+        path.write_bytes(path.read_bytes() + b"\n")
+    elif mode == "missing":
+        path.unlink()
+    elif mode == "directory":
+        (path.parent / "undeclared").mkdir()
+    elif mode == "symlink":
+        path.unlink()
+        path.symlink_to("missing-target")
+    elif mode == "mode":
+        path.chmod(path.stat().st_mode ^ 0o111)
+    else:
+        raise RequestError(f"unknown mutation kind {mode!r}")
 
 
 def _hello_response(request: dict[str, object]) -> dict[str, object]:
