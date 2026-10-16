@@ -933,21 +933,6 @@ fn generated_datasets_record_derivation_and_share_materialization() {
             marker.to_str().unwrap()
         ),
     );
-    let manifest = fs::read_to_string(root.path().join("metewand.toml")).unwrap();
-    let start = manifest.find("[implementations.reference]").unwrap();
-    let end = manifest[start..].find("[environments.local]").unwrap() + start;
-    let alias = manifest[start..end].replace("implementations.reference", "implementations.second");
-    fs::write(
-        root.path().join("metewand.toml"),
-        format!(
-            "{}\n{alias}",
-            manifest.replace(
-                "implementations = [\"reference\"]",
-                "implementations = [\"reference\", \"second\"]"
-            )
-        ),
-    )
-    .unwrap();
     let output = metewand(
         root.path(),
         &["run", "--output-dir", "run", "--output", "json"],
@@ -982,7 +967,11 @@ fn generated_datasets_record_derivation_and_share_materialization() {
         );
         derivations.push(materialization["derivation_id"].clone());
     }
-    assert_eq!(derivations[0], derivations[1]);
+    assert!(
+        derivations
+            .iter()
+            .all(|derivation| derivation == &derivations[0])
+    );
 }
 
 #[test]
@@ -1038,7 +1027,7 @@ fn persistent_cache_reuses_constructions_and_assigns_a_private_view_to_each_atte
             String::from_utf8_lossy(&output.stderr)
         );
         let report: Value = serde_json::from_slice(&output.stdout).unwrap();
-        assert_eq!(report["data"]["summary"]["accepted_attempts"], 2);
+        assert_eq!(report["data"]["summary"]["accepted_attempts"], 4);
         for attempt in report["data"]["attempts"].as_array().unwrap() {
             let record = document(
                 &root
@@ -1062,7 +1051,7 @@ fn persistent_cache_reuses_constructions_and_assigns_a_private_view_to_each_atte
     let view_paths = view_paths
         .lines()
         .collect::<std::collections::BTreeSet<_>>();
-    assert_eq!(view_paths.len(), 4);
+    assert_eq!(view_paths.len(), 8);
     for path in view_paths {
         assert!(!path.contains("/cache/"));
         assert!(!Path::new(path).exists());

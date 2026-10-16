@@ -43,6 +43,83 @@ also bounds the HTTP request. `check` and `plan` never acquire
 sources or execute workers. The [generated dataset example](../examples/generated-dataset)
 provides a complete raw-protocol generator, implementation, and evaluator.
 
+## Materialization and implementation preparation
+
+Shared materialization constructs the input to a comparison. Every selected
+implementation receives a private view of that same immutable dataset instance.
+Implementation preparation adapts that input to one implementation without
+changing the instance or the requested computation.
+
+| Work | Owner and boundary |
+| --- | --- |
+| Generation, fold selection, or scientific preprocessing shared by the comparison | The benchmark-owned materializer uses dataset parameters and the dataset seed before measurement. |
+| A transformation into a different dataset schema | An explicit materializer declares the output schema accepted by the problem contract. Planning never infers a conversion from matching fields. |
+| Loading JSON into a native array, packing integers, or converting an array layout for one library | The implementation performs the conversion in `prepare` or `execute`, preserving the contract's values and conventions. |
+| A change to the target, selected data, standardization, or result interpretation | The benchmark author represents the change in the dataset or problem configuration, even when a library exposes it as an implementation option. |
+
+The materializer request contains only the verified source directory, canonical
+dataset parameters, dataset seed, and assigned output directory. It receives no
+implementation configuration or implementation seed. Changing the selected
+implementation or its preparation does not create another shared dataset
+construction. A changed materializer source bundle does change the derivation,
+including when implementation and materializer code share that bundle.
+
+An implementation must not write converted files into `dataset_dir`, even
+though that view is private to the attempt. It keeps native data in memory or
+its private working directory. Metewand checks the dataset around every worker
+operation; adding a conversion file or rewriting an input invalidates the
+attempt with `dataset_mutation` before execution continues. Local enforcement
+remains best-effort, as described in [artifact storage](artifact-store.md).
+
+### Work outside the timed scope
+
+Dataset acquisition, shared construction, and validation precede measured
+execution. Moving implementation-specific preprocessing into materialization
+would exclude that implementation's cost and violate this boundary. A shared
+scientific transformation must be part of the declared dataset recipe and the
+problem's data conventions.
+
+The problem contract defines allowed implementation preparation in its
+schema-validated, hashed family semantics. For example, the generated dataset
+contract declares:
+
+```toml
+[semantics.preprocessing]
+shared_materialization = "canonical_integer_json"
+implementation_conversion = "preserve_integer_values_and_order"
+allowed_outside_timed_scope = []
+```
+
+These field names belong to this problem family. Metewand validates and hashes
+them; the benchmark author, worker conformance tests, and independent evaluator
+establish their scientific meaning. Metewand does not infer permission from a
+method name or discover hidden preprocessing in arbitrary worker code.
+
+The selected policy determines the actual timer. `prepare_and_execute` includes
+all of `prepare`, `execute`, and canonical result writing, even if the contract
+would permit some preparation outside another scope. Dataset integrity checks
+between prepare and execute also remain inside that continuous timer. Worker
+startup, result validation, evaluation, metrics validation, and shutdown remain
+outside it and are identified in execution provenance. `cold_end_to_end` also
+includes worker launch. `execute_only` permits untimed preparation only under
+precise contract rules and must be reported as an operation-scope benchmark.
+Readers must not implicitly pool measurements from different scopes. The
+current local CLI implements only `prepare_and_execute` and rejects other scopes
+before worker launch or output creation, even if the contract permits them.
+
+The [generated dataset example](../examples/generated-dataset) exercises this
+boundary with list and packed-integer implementations. Its
+[conversion vector](../examples/generated-dataset/fixtures/preparation.json)
+specifies the exact native values and expected result and metrics. The
+[CLI conformance tests](../crates/metewand-cli/tests/dataset_preparation.rs)
+verify one shared construction, identical input bytes and problem instances,
+separate attempt views, exact conversions, preparation on every attempt,
+conversion and result writing inside the timer, and shared construction outside
+every timer. They also verify mutation rejection, incompatible schema and timing
+rejection before launch, and the effect of preparation rules on contract
+identity without changing the dataset derivation. These cases clarify existing
+version-1 semantics; compatibility constants and public schemas are unchanged.
+
 ## External provider evidence
 
 External selection remains explicit through `SourceRequest::External` and a

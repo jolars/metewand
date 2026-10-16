@@ -1,0 +1,9 @@
+{
+  "dataset_parameters": { "values": [1, 2, 3] },
+  "prepared_values": {
+    "list": [1, 2, 3],
+    "bytes": "010000000000000002000000000000000300000000000000"
+  },
+  "result": { "answer": 8 },
+  "metrics": { "absolute_error": 0 }
+}

@@ -2,10 +2,24 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "properties": {
+    "preprocessing": {
+      "type": "object",
+      "properties": {
+        "shared_materialization": { "const": "canonical_integer_json" },
+        "implementation_conversion": { "const": "preserve_integer_values_and_order" },
+        "allowed_outside_timed_scope": {
+          "type": "array",
+          "items": { "enum": ["integer_packing"] },
+          "uniqueItems": true
+        }
+      },
+      "required": ["shared_materialization", "implementation_conversion", "allowed_outside_timed_scope"],
+      "additionalProperties": false
+    },
     "validity": { "$ref": "#/$defs/exact" },
     "one_shot_completion": { "$ref": "#/$defs/exact" }
   },
-  "required": ["validity", "one_shot_completion"],
+  "required": ["preprocessing", "validity", "one_shot_completion"],
   "additionalProperties": false,
   "$defs": {
     "exact": {

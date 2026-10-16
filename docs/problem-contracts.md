@@ -51,6 +51,14 @@ all other family-specific semantics, are validated against `semantics_schema`.
 This separation lets later profile observations remain valid without implying
 that a one-shot completion threshold has been reached.
 
+The family semantics also define preprocessing and any preparation allowed
+outside the timed scope. These rules distinguish shared scientific dataset
+construction from implementation-specific conversion and form part of the
+contract identity. The execution policy must select an allowed timing scope;
+contract permission alone does not exclude work from that policy's timer. See
+[materialization and implementation preparation](dataset-materialization.md#materialization-and-implementation-preparation)
+for the boundary, a concrete contract, and executable conformance cases.
+
 An evaluator is not embedded in the language-neutral contract. The owning
 problem definition in `metewand.toml` must declare its evaluator worker,
 including its environment and, for interpreted workers, its complete source

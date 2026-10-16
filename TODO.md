@@ -206,7 +206,7 @@ provides an optional source of recorded datasets and verified decoding.
   best-effort.
 - [x] Detect mutations, invalidate the attempt, and transactionally quarantine a
   changed canonical cache object before it can be reused.
-- [ ] Add conformance tests and documentation for the boundary between shared
+- [x] Add conformance tests and documentation for the boundary between shared
   dataset materialization and implementation preparation, including
   implementation-specific conversions and the problem contract's rules for
   work outside the timed scope.

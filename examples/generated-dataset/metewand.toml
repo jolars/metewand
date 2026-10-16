@@ -31,6 +31,15 @@ environment = "local"
 problem_contracts = ["sum"]
 capabilities = ["one_shot"]
 
+[implementations.packed]
+runner = "command"
+program = "python3"
+args = ["{sources}/worker.py", "implementation", "packed"]
+sources = ["worker.py"]
+environment = "local"
+problem_contracts = ["sum"]
+capabilities = ["one_shot"]
+
 [environments.local]
 kind = "local"
 
@@ -38,7 +47,7 @@ kind = "local"
 name = "main"
 problem = "sum"
 datasets = ["numbers"]
-implementations = ["reference"]
+implementations = ["reference", "packed"]
 execution_policy = "local"
 observation_policy = "final"
 implementation_repetitions = 1

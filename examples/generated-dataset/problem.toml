@@ -9,6 +9,11 @@ semantics_schema = "schemas/semantics.json"
 allowed_timing_scopes = ["prepare_and_execute"]
 supported_budgets = ["none"]
 
+[semantics.preprocessing]
+shared_materialization = "canonical_integer_json"
+implementation_conversion = "preserve_integer_values_and_order"
+allowed_outside_timed_scope = []
+
 [semantics.validity]
 exact_sum = true
 

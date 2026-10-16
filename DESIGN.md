@@ -1472,6 +1472,27 @@ consumes resolved sources and produces the canonical dataset instance. All
 selected implementations consume private views of that instance under the
 problem contract's preparation and timing rules.
 
+Shared materialization defines the input to the comparison. It may generate
+data, select folds, or apply contract-defined scientific preprocessing, but it
+does not receive implementation parameters or seeds and must not perform one
+implementation's preparation on behalf of every candidate. Implementation-owned
+conversion, such as packing the canonical values into a library's native array
+layout, belongs to `prepare` or `execute`. It must preserve the problem instance
+and leave the dataset view unchanged; workers keep converted data in memory or
+their private working directories. A conversion to a different dataset schema
+requires an explicit shared dataset materializer. A change to the requested
+scientific computation belongs to the dataset or problem configuration.
+
+The contract's validated, hashed family semantics specify which implementation
+preparation may occur outside the timed scope. Such permission does not move
+work outside the selected policy's timer: `prepare_and_execute` includes all
+preparation, while `execute_only` requires precise rules for untimed preparation
+and produces an operation-scope comparison. These rules and the
+[materialization and preparation conformance cases](docs/dataset-materialization.md#materialization-and-implementation-preparation)
+complete existing version-1 semantics without adding a manifest field, wire
+message, schema version, or identity transcript. Other timing scopes remain a
+later executor slice.
+
 The runtime boundary introduces no new manifest syntax, serialized public
 schema, identity transcript, wire message, or execution timing rule. Existing
 compatibility constants remain unchanged. Manifest support for external
