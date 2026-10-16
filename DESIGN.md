@@ -1493,18 +1493,30 @@ complete existing version-1 semantics without adding a manifest field, wire
 message, schema version, or identity transcript. Other timing scopes remain a
 later executor slice.
 
-The runtime boundary introduces no new manifest syntax, serialized public
-schema, identity transcript, wire message, or execution timing rule. Existing
-compatibility constants remain unchanged. Manifest support for external
-providers and serialized source receipts require their own compatibility review
+The generic source-resolution boundary introduces no new manifest syntax,
+serialized public schema, identity transcript, wire message, or execution timing
+rule. Existing compatibility constants remain unchanged. Manifest support for
+external providers and serialized source receipts require their own compatibility review
 and conformance vectors. An explicitly selected HTTP(S) backend now supports
 bounded pinned downloads.
 A separate extraction API admits tar and tar.gz regular files and directories
 with mandatory entry-count and expanded-size limits. It rejects all links,
 special entries, traversal, duplicate paths, and tar metadata extensions.
 Extraction rechecks the source before use and leaves archive permissions and
-ownership unapplied. A Datamonger adapter remains a separate implementation
-slice. The current local `run` path uses the repository branch of this boundary for fixed data and an explicit HTTP(S) backend for
+ownership unapplied. The optional Datamonger adapter invokes the public Python
+client in an isolated, bounded process with an explicit strong registry selector
+and dataset version. It exports independently verified copies of raw artifacts,
+preserves provider cache ownership, and separately records artifact-only or
+decoded-value verification. A decoded request must verify the registered
+representation's shapes and canonical digest or fail without a downgrade.
+Its selector and standalone command have initial version-1 public schemas under
+`DATAMONGER_ADAPTER_VERSION = 1`; existing compatibility constants and manifest
+representations remain unchanged. The [runnable example](examples/datamonger)
+constructs a standard dataset and compares implementations using private views
+of the same instance after source resolution, with no further provider access.
+See [Datamonger sources](docs/datamonger.md) for limits, evidence, and offline
+conformance tests. The current local `run` path uses the repository branch of
+this boundary for fixed data and an explicit HTTP(S) backend for
 generated datasets.
 
 Artifacts live in a content-addressed cache. Downloaded files are verified

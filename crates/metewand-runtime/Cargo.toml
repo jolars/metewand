@@ -23,3 +23,7 @@ sha2.workspace = true
 tar.workspace = true
 tempfile.workspace = true
 thiserror.workspace = true
+
+[[example]]
+name = "datamonger"
+path = "../../examples/datamonger/main.rs"

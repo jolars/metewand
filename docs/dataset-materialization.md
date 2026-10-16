@@ -146,6 +146,11 @@ and associate the exported inventory and decoding evidence with that selection.
 The receipt keeps the provider name, exact selector, resolved dataset version,
 recipe, status, complete file sizes and hashes, and original acquisition receipt.
 External-provider manifest syntax remains outside the current CLI contract.
+The optional [Datamonger adapter](datamonger.md) supplies this evidence through a
+separate process. Its [example](../examples/datamonger) transforms verified raw
+exports into a standard dataset and compares two implementations using private
+views of that instance, including execution after the provider becomes
+unavailable.
 
 ## Contract-owned binary validation
 

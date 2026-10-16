@@ -49,12 +49,18 @@ pub enum PublicSchema {
     DatasetMaterialization,
     /// Versioned request passed to a contract-owned binary dataset checker.
     DatasetValidationRequest,
+    /// Immutable Datamonger registry, dataset, and verification selection.
+    DatamongerSelector,
+    /// Versioned command request to the optional Datamonger bridge.
+    DatamongerAcquisitionRequest,
+    /// Verified provider evidence and exported raw artifact inventory.
+    DatamongerAcquisitionResponse,
     /// Worker session handshake or one-shot exchange message.
     WorkerProtocolMessage,
 }
 
 /// Every public schema entry point in stable presentation order.
-pub const PUBLIC_SCHEMAS: [PublicSchema; 16] = [
+pub const PUBLIC_SCHEMAS: [PublicSchema; 19] = [
     PublicSchema::MachineOutput,
     PublicSchema::RunOutput,
     PublicSchema::Manifest,
@@ -70,6 +76,9 @@ pub const PUBLIC_SCHEMAS: [PublicSchema; 16] = [
     PublicSchema::Metrics,
     PublicSchema::DatasetMaterialization,
     PublicSchema::DatasetValidationRequest,
+    PublicSchema::DatamongerSelector,
+    PublicSchema::DatamongerAcquisitionRequest,
+    PublicSchema::DatamongerAcquisitionResponse,
     PublicSchema::WorkerProtocolMessage,
 ];
 
@@ -93,6 +102,9 @@ impl PublicSchema {
             Self::Metrics => "metrics",
             Self::DatasetMaterialization => "dataset-materialization",
             Self::DatasetValidationRequest => "dataset-validation-request",
+            Self::DatamongerSelector => "datamonger-selector",
+            Self::DatamongerAcquisitionRequest => "datamonger-acquisition-request",
+            Self::DatamongerAcquisitionResponse => "datamonger-acquisition-response",
             Self::WorkerProtocolMessage => "worker-protocol-message",
         }
     }
@@ -124,6 +136,13 @@ impl PublicSchema {
             Self::Metrics => "schemas/v1/metrics.schema.json",
             Self::DatasetMaterialization => "schemas/v1/dataset-materialization.schema.json",
             Self::DatasetValidationRequest => "schemas/v1/dataset-validation-request.schema.json",
+            Self::DatamongerSelector => "schemas/v1/datamonger-selector.schema.json",
+            Self::DatamongerAcquisitionRequest => {
+                "schemas/v1/datamonger-acquisition-request.schema.json"
+            }
+            Self::DatamongerAcquisitionResponse => {
+                "schemas/v1/datamonger-acquisition-response.schema.json"
+            }
             Self::WorkerProtocolMessage => "schemas/v1/worker-protocol-message.schema.json",
         })
     }
@@ -152,6 +171,13 @@ impl PublicSchema {
             }
             Self::DatasetValidationRequest => {
                 "metewand://schemas/v1/dataset-validation-request.schema.json"
+            }
+            Self::DatamongerSelector => "metewand://schemas/v1/datamonger-selector.schema.json",
+            Self::DatamongerAcquisitionRequest => {
+                "metewand://schemas/v1/datamonger-acquisition-request.schema.json"
+            }
+            Self::DatamongerAcquisitionResponse => {
+                "metewand://schemas/v1/datamonger-acquisition-response.schema.json"
             }
             Self::WorkerProtocolMessage => {
                 "metewand://schemas/v1/worker-protocol-message.schema.json"
@@ -197,6 +223,15 @@ impl PublicSchema {
             }
             Self::DatasetValidationRequest => {
                 include_str!("../../../schemas/v1/dataset-validation-request.schema.json")
+            }
+            Self::DatamongerSelector => {
+                include_str!("../../../schemas/v1/datamonger-selector.schema.json")
+            }
+            Self::DatamongerAcquisitionRequest => {
+                include_str!("../../../schemas/v1/datamonger-acquisition-request.schema.json")
+            }
+            Self::DatamongerAcquisitionResponse => {
+                include_str!("../../../schemas/v1/datamonger-acquisition-response.schema.json")
             }
             Self::WorkerProtocolMessage => {
                 include_str!("../../../schemas/v1/worker-protocol-message.schema.json")

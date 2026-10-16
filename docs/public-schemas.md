@@ -30,6 +30,9 @@ than infer it from the Metewand release that produced the record.
 | `metrics` | Metewand metadata around evaluator-owned metric data. |
 | `dataset-materialization` | Construction receipt with a derivation identity and separate output hash. |
 | `dataset-validation-request` | Versioned request to a contract-owned binary dataset checker. |
+| `datamonger-selector` | Pinned registry, explicit dataset version, and required verification level. |
+| `datamonger-acquisition-request` | Bounded standalone command request to the optional Datamonger bridge. |
+| `datamonger-acquisition-response` | Provider evidence and the complete raw artifact export inventory. |
 | `worker-protocol-message` | Strict version-1 worker hello request and response. |
 
 The CLI's [`json` and `jsonl` modes](machine-output.md) emit the

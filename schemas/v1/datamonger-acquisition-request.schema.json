@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "metewand://schemas/v1/datamonger-acquisition-request.schema.json",
+  "x-metewand-compatibility-version": 1,
+  "title": "Datamonger acquisition command request",
+  "type": "object",
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "selector": {
+      "$ref": "datamonger-selector.schema.json"
+    },
+    "cache_dir": {
+      "type": "string",
+      "pattern": "^/"
+    },
+    "output_dir": {
+      "type": "string",
+      "pattern": "^/"
+    },
+    "receipt_path": {
+      "type": "string",
+      "pattern": "^/"
+    },
+    "offline": {
+      "type": "boolean"
+    },
+    "max_bytes": {
+      "$ref": "common.schema.json#/$defs/safe_positive_integer"
+    }
+  },
+  "required": [
+    "version",
+    "selector",
+    "cache_dir",
+    "output_dir",
+    "receipt_path",
+    "offline",
+    "max_bytes"
+  ],
+  "additionalProperties": false
+}

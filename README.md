@@ -70,6 +70,10 @@ from read-only checking and planning. The [artifact store](docs/artifact-store.m
 durably publishes verified trees, maps dataset constructions to output hashes,
 and leases private per-attempt copies. `run --cache-dir PATH` enables persistent
 construction reuse.
+The optional [Datamonger adapter](docs/datamonger.md) resolves a pinned registry
+and dataset version through a process, records artifact or decoded verification,
+and feeds benchmark-owned materialization. Its [runnable example](examples/datamonger)
+compares two implementations using private views of one dataset instance.
 
 The Gate 1 [domain-record graph](docs/domain-records.md) separates definitions,
 configurations, logical plans, resolved execution dependencies, observations,

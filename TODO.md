@@ -210,7 +210,7 @@ provides an optional source of recorded datasets and verified decoding.
   dataset materialization and implementation preparation, including
   implementation-specific conversions and the problem contract's rules for
   work outside the timed scope.
-- [ ] Add an optional Datamonger adapter and runnable example using a pinned
+- [x] Add an optional Datamonger adapter and runnable example using a pinned
   registry selector and dataset version through a process boundary. Distinguish
   artifact-only verification from decoded-value verification, produce a
   standard Metewand dataset artifact, and demonstrate that all implementations

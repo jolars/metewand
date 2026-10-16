@@ -119,16 +119,18 @@ provide decoding and record whether decoded values were verified.
 ## Current support and compatibility
 
 The built-in implementations resolve repository files and pinned HTTP(S) URLs.
-External acquisition remains an extension point; a Datamonger adapter remains a
-separate roadmap item.
+The optional [Datamonger adapter](datamonger.md) resolves an explicit external
+selection through its Python client in a separate process, with pinned registry
+and dataset versions and an explicit artifact or decoded verification request.
 `metewand run` continues to support the [trusted local
 selection](run-cli.md#supported-selection).
 
-This boundary adds no manifest syntax or serialized public interface. The
+The generic boundary adds no manifest syntax or serialized public interface. The
 manifest, public schema, identity, local-tree hash, protocol, and execution
 semantics versions retain their existing values. External-provider manifest
-syntax or serialized receipts must introduce the corresponding versioned
-contracts and conformance fixtures before use.
+syntax requires a separate compatibility review. The Datamonger adapter's
+standalone command and selector have their own initial version-1 schemas and
+conformance fixtures.
 
 ## Pinned HTTP downloads and archive extraction
 

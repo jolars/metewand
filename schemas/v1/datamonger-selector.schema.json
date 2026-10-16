@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "metewand://schemas/v1/datamonger-selector.schema.json",
+  "x-metewand-compatibility-version": 1,
+  "title": "Pinned Datamonger source selection",
+  "type": "object",
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "registry": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "release": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]*$",
+          "not": {
+            "enum": [
+              "latest",
+              "current",
+              "default"
+            ]
+          }
+        },
+        "index_sha256": {
+          "$ref": "common.schema.json#/$defs/sha256"
+        },
+        "index_url": {
+          "type": "string",
+          "pattern": "^https?://[^/]+/"
+        }
+      },
+      "required": [
+        "schema_version",
+        "release",
+        "index_sha256",
+        "index_url"
+      ],
+      "additionalProperties": false
+    },
+    "dataset": {
+      "type": "object",
+      "properties": {
+        "source": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]*$"
+        },
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]*$"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._+\\-]*$"
+        }
+      },
+      "required": [
+        "source",
+        "name",
+        "version"
+      ],
+      "additionalProperties": false
+    },
+    "verification": {
+      "enum": [
+        "artifact",
+        "decoded"
+      ]
+    }
+  },
+  "required": [
+    "version",
+    "registry",
+    "dataset",
+    "verification"
+  ],
+  "additionalProperties": false
+}

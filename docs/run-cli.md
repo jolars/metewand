@@ -61,6 +61,8 @@ receives its own verified dataset copy, including fixed and unit datasets. See
 [runnable example](../examples/generated-dataset). External providers and optional
 contract-owned binary checkers are explicit runtime APIs; the current manifest
 does not select those integrations.
+The optional [Datamonger example](../examples/datamonger) demonstrates external
+resolution and shared materialization through those runtime APIs.
 
 ## Inputs and launches
 
