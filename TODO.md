@@ -187,13 +187,13 @@ provides an optional source of recorded datasets and verified decoding.
   artifacts and provenance. Keep `check` and `plan` free of downloads and
   materialization, and document the contract in `DESIGN.md` and user-facing
   documentation.
-- [ ] Add pinned downloads with digest verification before use and safe archive
+- [x] Add pinned downloads with digest verification before use and safe archive
   extraction with traversal, link, entry-type, entry-count, and
   expanded-size limits.
-- [ ] Execute benchmark-owned generators and transformations through the
+- [x] Execute benchmark-owned generators and transformations through the
   materializer protocol, including canonical dataset manifests, dataset seeds,
   schema checks, and optional contract-owned binary validation.
-- [ ] Record external source selectors, resolved dataset versions, artifact
+- [x] Record external source selectors, resolved dataset versions, artifact
   digests, decoding recipes, and verification status. Bind verified sources,
   materializer code and environment, canonical parameters, and dataset seeds
   into derivation identities, with separately recorded output hashes.

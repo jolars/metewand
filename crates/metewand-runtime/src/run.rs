@@ -63,7 +63,7 @@ pub fn run_repository(
     mut event_sink: impl FnMut(&RunEvent) -> io::Result<()>,
 ) -> Result<RunReport, RunError> {
     let output_directory = destination(output_directory)?;
-    let resolved = resolution::resolve(repository, plan)?;
+    let resolved = resolution::resolve(repository, plan, &output_directory)?;
     for candidate in &resolved.candidates {
         candidate.validate_destination(&output_directory)?;
     }
@@ -331,6 +331,9 @@ fn destination(path: &Path) -> Result<PathBuf, RunError> {
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum RunError {
+    /// Dataset construction or contract validation failed.
+    #[error(transparent)]
+    Materialization(#[from] crate::dataset_materialization::MaterializationError),
     /// The selected manifest requires a later execution gate.
     #[error("{0}")]
     Unsupported(String),

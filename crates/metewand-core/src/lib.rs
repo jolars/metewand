@@ -5,6 +5,7 @@ pub mod compatibility;
 pub mod identity;
 pub mod manifest;
 pub mod manifest_hash;
+pub mod materialization;
 pub mod parameters;
 pub mod planning;
 pub mod problem_contract;

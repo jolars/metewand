@@ -116,9 +116,9 @@ provide decoding and record whether decoded values were verified.
 
 ## Current support and compatibility
 
-The built-in implementation resolves repository files. URL and external
-acquisition are runtime extension points tested with offline backends; download
-transports and the Datamonger adapter remain separate roadmap items.
+The built-in implementations resolve repository files and pinned HTTP(S) URLs.
+External acquisition remains an extension point; a Datamonger adapter remains a
+separate roadmap item.
 `metewand run` continues to support the [trusted local
 selection](run-cli.md#supported-selection).
 
@@ -127,3 +127,39 @@ manifest, public schema, identity, local-tree hash, protocol, and execution
 semantics versions retain their existing values. External-provider manifest
 syntax or serialized receipts must introduce the corresponding versioned
 contracts and conformance fixtures before use.
+
+## Pinned HTTP downloads and archive extraction
+
+Runtime callers explicitly construct `source_acquisition::HttpAcquirer` with a
+request timeout and maximum raw byte count, then pass it to `resolve_source`.
+The backend accepts HTTP and HTTPS URLs without embedded credentials. It rejects
+redirects and non-success responses and preserves the response body without
+transparent content decompression. It streams into an unnamed temporary file,
+checks the SHA-256 pin, and only then writes `source`. The resolver independently
+checks the resulting inventory and manifest pin. Failed resolution removes all
+staging files. TLS uses the transport's bundled public roots.
+
+`extract_archive(&resolved, format, limits, private_parent)` rechecks a resolved
+pinned URL source before extraction and again before returning a separate owned
+`TempDir`. Choose `ArchiveFormat::Tar` or `ArchiveFormat::TarGzip` explicitly and
+supply both `ArchiveLimits::max_entries` and `max_expanded_bytes`. Formats are
+never inferred from URL suffixes. Other formats are unsupported.
+
+The extractor accepts regular files and directories with relative UTF-8 paths.
+It rejects absolute paths, parent traversal, backslashes, colons, duplicate
+paths, file/directory conflicts, all symbolic and hard links, devices, FIFOs,
+and other special entries. It also rejects tar metadata extensions, including
+PAX and GNU long-name and sparse entries, rather than allowing hidden entries
+to bypass the budgets. Directory entries count toward the entry limit. Declared
+entry data sizes count toward the total expanded byte limit before any payload
+is written; truncated payloads fail. Archive permissions, executable bits,
+ownership, and timestamps are not restored. Errors remove partial extraction.
+The caller must provide a private staging parent that untrusted processes cannot
+modify. This operation does not publish an artifact or create a cache lease.
+
+These runtime APIs add no manifest syntax or serialized compatibility contract.
+`SOURCE_RESOLUTION_VERSION`, local-tree identities, schemas, wire messages, and
+execution semantics retain their current versions. The CLI selects the HTTP
+backend during explicitly requested generated-dataset runs. [Dataset materialization](dataset-materialization.md) records source and
+decoding evidence alongside the construction identity. `check` and `plan` never
+invoke acquisition or materialization.

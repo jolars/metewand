@@ -67,6 +67,7 @@ identical artifact contents have one content address.
 | `dataset-configuration` | `DatasetConfigurationRecord` |
 | `problem-configuration` | `ProblemConfigurationRecord` |
 | `implementation-configuration` | `ImplementationConfigurationRecord` |
+| `dataset-derivation` | `DatasetDerivationRecord` |
 | `dataset-instance` | `DatasetInstanceRecord` |
 | `problem-instance` | `ProblemInstanceRecord` |
 | `logical-candidate` | `LogicalCandidateRecord` |
@@ -176,3 +177,8 @@ mw1-execution-policy-79195d67021c7f14bbf4e2d2acd946b76e2e7e8f895842e56c6403fc1fa
 
 Changing any representation or kind is a compatibility change and requires an
 explicit review of `IDENTITY_VERSION`.
+
+Dataset construction uses the new `dataset-derivation` kind without changing
+existing transcripts. See [Dataset materialization](dataset-materialization.md)
+for its input fields and exact conformance vector. Output hashes are recorded
+separately and never participate in the construction identity.

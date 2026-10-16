@@ -39,12 +39,16 @@ pub enum PublicSchema {
     Attempt,
     /// Evaluator-owned metrics envelope.
     Metrics,
+    /// Construction inputs and separately observed dataset output hash.
+    DatasetMaterialization,
+    /// Versioned request passed to a contract-owned binary dataset checker.
+    DatasetValidationRequest,
     /// Worker session handshake or one-shot exchange message.
     WorkerProtocolMessage,
 }
 
 /// Every public schema entry point in stable presentation order.
-pub const PUBLIC_SCHEMAS: [PublicSchema; 11] = [
+pub const PUBLIC_SCHEMAS: [PublicSchema; 13] = [
     PublicSchema::MachineOutput,
     PublicSchema::RunOutput,
     PublicSchema::Manifest,
@@ -55,6 +59,8 @@ pub const PUBLIC_SCHEMAS: [PublicSchema; 11] = [
     PublicSchema::Observation,
     PublicSchema::Attempt,
     PublicSchema::Metrics,
+    PublicSchema::DatasetMaterialization,
+    PublicSchema::DatasetValidationRequest,
     PublicSchema::WorkerProtocolMessage,
 ];
 
@@ -73,6 +79,8 @@ impl PublicSchema {
             Self::Observation => "observation",
             Self::Attempt => "attempt",
             Self::Metrics => "metrics",
+            Self::DatasetMaterialization => "dataset-materialization",
+            Self::DatasetValidationRequest => "dataset-validation-request",
             Self::WorkerProtocolMessage => "worker-protocol-message",
         }
     }
@@ -99,6 +107,8 @@ impl PublicSchema {
             Self::Observation => "schemas/v1/observation.schema.json",
             Self::Attempt => "schemas/v1/attempt.schema.json",
             Self::Metrics => "schemas/v1/metrics.schema.json",
+            Self::DatasetMaterialization => "schemas/v1/dataset-materialization.schema.json",
+            Self::DatasetValidationRequest => "schemas/v1/dataset-validation-request.schema.json",
             Self::WorkerProtocolMessage => "schemas/v1/worker-protocol-message.schema.json",
         })
     }
@@ -119,6 +129,12 @@ impl PublicSchema {
             Self::Observation => "metewand://schemas/v1/observation.schema.json",
             Self::Attempt => "metewand://schemas/v1/attempt.schema.json",
             Self::Metrics => "metewand://schemas/v1/metrics.schema.json",
+            Self::DatasetMaterialization => {
+                "metewand://schemas/v1/dataset-materialization.schema.json"
+            }
+            Self::DatasetValidationRequest => {
+                "metewand://schemas/v1/dataset-validation-request.schema.json"
+            }
             Self::WorkerProtocolMessage => {
                 "metewand://schemas/v1/worker-protocol-message.schema.json"
             }
@@ -149,6 +165,12 @@ impl PublicSchema {
             Self::Observation => include_str!("../../../schemas/v1/observation.schema.json"),
             Self::Attempt => include_str!("../../../schemas/v1/attempt.schema.json"),
             Self::Metrics => include_str!("../../../schemas/v1/metrics.schema.json"),
+            Self::DatasetMaterialization => {
+                include_str!("../../../schemas/v1/dataset-materialization.schema.json")
+            }
+            Self::DatasetValidationRequest => {
+                include_str!("../../../schemas/v1/dataset-validation-request.schema.json")
+            }
             Self::WorkerProtocolMessage => {
                 include_str!("../../../schemas/v1/worker-protocol-message.schema.json")
             }

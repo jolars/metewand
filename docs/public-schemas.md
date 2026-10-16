@@ -25,6 +25,8 @@ than infer it from the Metewand release that produced the record.
 | `observation` | Independently finalized result, metrics, timing, validity, and provenance. |
 | `attempt` | Terminal accepted or failed execution with its observations and provenance. |
 | `metrics` | Metewand metadata around evaluator-owned metric data. |
+| `dataset-materialization` | Construction receipt with a derivation identity and separate output hash. |
+| `dataset-validation-request` | Versioned request to a contract-owned binary dataset checker. |
 | `worker-protocol-message` | Strict version-1 worker hello request and response. |
 
 The CLI's [`json` and `jsonl` modes](machine-output.md) emit the

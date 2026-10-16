@@ -1009,6 +1009,11 @@ impl CommandError {
             return Self::output_write(error.to_string());
         }
         let (exit_code, code, cause) = match error {
+            RunError::Materialization(_) => (
+                EXIT_RUN_FAILED,
+                "dataset_materialization_failed",
+                "materialization_failed",
+            ),
             RunError::Publication(_) => (EXIT_IO, "run_publication_failed", "publication_failed"),
             RunError::Io(_) => (EXIT_IO, "run_setup_failed", "execution_input_unavailable"),
             RunError::Identity(_) | RunError::Canonical(_) | RunError::PublicSchemas(_) => (

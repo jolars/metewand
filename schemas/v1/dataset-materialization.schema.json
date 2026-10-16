@@ -1,0 +1,267 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "metewand://schemas/v1/dataset-materialization.schema.json",
+  "x-metewand-compatibility-version": 1,
+  "title": "Dataset construction receipt",
+  "type": "object",
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "derivation_id": {
+      "$ref": "common.schema.json#/$defs/identity"
+    },
+    "derivation": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "definition": {
+          "$ref": "common.schema.json#/$defs/identity"
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "selection": {
+                "type": "object"
+              },
+              "tree_hash_version": {
+                "const": 1
+              },
+              "tree_sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "decoding": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "resolved_dataset_version": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "decoding_recipe": {
+                        "type": "object"
+                      },
+                      "decoded_values": {
+                        "enum": [
+                          "not_verified",
+                          "provider_verified"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "resolved_dataset_version",
+                      "decoding_recipe",
+                      "decoded_values"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "selection",
+              "tree_hash_version",
+              "tree_sha256",
+              "decoding"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "materializer": {
+          "type": "object",
+          "properties": {
+            "source_bundle": {
+              "anyOf": [
+                {
+                  "$ref": "common.schema.json#/$defs/identity"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "environment": {
+              "$ref": "common.schema.json#/$defs/identity"
+            },
+            "launch": {
+              "$ref": "common.schema.json#/$defs/identity"
+            }
+          },
+          "required": [
+            "source_bundle",
+            "environment",
+            "launch"
+          ],
+          "additionalProperties": false
+        },
+        "parameters": {
+          "type": "object"
+        },
+        "seed": {
+          "type": "object",
+          "properties": {
+            "value": {
+              "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
+            },
+            "derivation_digest": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          },
+          "required": [
+            "value",
+            "derivation_digest"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "version",
+        "definition",
+        "sources",
+        "materializer",
+        "parameters",
+        "seed"
+      ],
+      "additionalProperties": false
+    },
+    "output": {
+      "type": "object",
+      "properties": {
+        "tree_hash_version": {
+          "const": 1
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "tree_hash_version",
+        "sha256"
+      ],
+      "additionalProperties": false
+    },
+    "source": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "raw_bytes_verified": {
+              "const": true
+            },
+            "files": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "path": {
+                    "$ref": "common.schema.json#/$defs/repository_path"
+                  },
+                  "size_bytes": {
+                    "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
+                  },
+                  "sha256": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  }
+                },
+                "required": [
+                  "path",
+                  "size_bytes",
+                  "sha256"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "acquisition": {}
+          },
+          "required": [
+            "raw_bytes_verified",
+            "files",
+            "acquisition"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "materializer_sdk": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "version": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "name",
+            "version"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "binary_validation": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "command_version": {
+              "const": 1
+            },
+            "contract": {
+              "$ref": "common.schema.json#/$defs/identity"
+            },
+            "worker": {
+              "$ref": "common.schema.json#/$defs/identity"
+            },
+            "status": {
+              "const": "accepted"
+            }
+          },
+          "required": [
+            "command_version",
+            "contract",
+            "worker",
+            "status"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "version",
+    "derivation_id",
+    "derivation",
+    "output",
+    "source",
+    "materializer_sdk",
+    "binary_validation"
+  ],
+  "additionalProperties": false
+}

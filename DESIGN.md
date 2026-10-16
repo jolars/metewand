@@ -1467,9 +1467,16 @@ The runtime boundary introduces no new manifest syntax, serialized public
 schema, identity transcript, wire message, or execution timing rule. Existing
 compatibility constants remain unchanged. Manifest support for external
 providers and serialized source receipts require their own compatibility review
-and conformance vectors. Download transports, a Datamonger adapter, and general
-materialization are separate implementation slices. The current local `run`
-path uses the repository branch of this boundary.
+and conformance vectors. An explicitly selected HTTP(S) backend now supports
+bounded pinned downloads.
+A separate extraction API admits tar and tar.gz regular files and directories
+with mandatory entry-count and expanded-size limits. It rejects all links,
+special entries, traversal, duplicate paths, and tar metadata extensions.
+Extraction rechecks the source before use and leaves archive permissions and
+ownership unapplied. A Datamonger adapter and durable artifact caching remain
+separate implementation slices. The current local `run` path uses the repository
+branch of this boundary for fixed data and an explicit HTTP(S) backend for
+generated datasets.
 
 Artifacts live in a content-addressed cache. Downloaded files are verified
 before extraction. Local trees are hashed from sorted normalized paths, entry
@@ -1477,6 +1484,26 @@ types, file bytes, symlink targets, and semantically relevant executable bits;
 timestamps and ownership are excluded. Archives are extracted with traversal,
 link-target, size, and entry-count checks; device nodes, sockets, FIFOs,
 escaping hard links, and unsupported entry types are rejected.
+
+The runtime now executes generators and transformations through
+`dataset_materialization::materialize_dataset`, with canonical manifests,
+planned dataset seeds, complete inventory checks, and offline output-schema
+validation. Runtime callers may select a contract-owned binary checker through
+the separately versioned dataset-validation command interface. The checker
+receives a canonical request and accepts only by exiting zero within its
+operational deadline. Source or output mutations reject materialization.
+The current manifest does not declare that optional checker hook.
+
+External acquisition evidence used for materialization must record the resolved
+dataset version, decoding recipe, and decoded-value verification status.
+Provider claims remain distinct from Metewand's independent raw-byte checks.
+The version-1 `dataset-derivation` identity binds these semantics and the verified
+source trees to the resolved materializer, canonical parameters, and dataset
+seed. Construction receipts record output hashes separately. See
+[Dataset materialization](docs/dataset-materialization.md) for the runtime
+interfaces, standalone validation command, and compatibility review. The local
+`run` command materializes each selected dataset configuration once per run;
+`check` and `plan` remain side-effect-free.
 
 A dataset derivation identity covers the dataset definition, verified sources,
 materializer source and environment, canonical parameters, and dataset seed. The

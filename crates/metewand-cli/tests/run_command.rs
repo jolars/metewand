@@ -636,3 +636,177 @@ fn source_arguments_and_repository_programs_cannot_escape_their_roots() {
     );
     assert!(!root.path().join("run").exists());
 }
+
+#[test]
+fn generated_datasets_record_derivation_and_share_materialization() {
+    let root = TempDir::new().unwrap();
+    copy_tree(
+        &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/generated-dataset"),
+        root.path(),
+    );
+    replace(
+        root.path(),
+        "metewand.toml",
+        "measurement_repetitions = 1",
+        "measurement_repetitions = 2",
+    );
+    let marker = root.path().join("materialization-count");
+    replace(
+        root.path(),
+        "worker.py",
+        "assert role == \"dataset_materializer\"",
+        &format!(
+            "assert role == \"dataset_materializer\"\n            with open({:?}, 'a') as count: count.write('1')",
+            marker.to_str().unwrap()
+        ),
+    );
+    let manifest = fs::read_to_string(root.path().join("metewand.toml")).unwrap();
+    let start = manifest.find("[implementations.reference]").unwrap();
+    let end = manifest[start..].find("[environments.local]").unwrap() + start;
+    let alias = manifest[start..end].replace("implementations.reference", "implementations.second");
+    fs::write(
+        root.path().join("metewand.toml"),
+        format!(
+            "{}\n{alias}",
+            manifest.replace(
+                "implementations = [\"reference\"]",
+                "implementations = [\"reference\", \"second\"]"
+            )
+        ),
+    )
+    .unwrap();
+    let output = metewand(
+        root.path(),
+        &["run", "--output-dir", "run", "--output", "json"],
+    );
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let attempts = report["data"]["attempts"].as_array().unwrap();
+    assert_eq!(attempts.len(), 4);
+    assert_eq!(fs::read_to_string(marker).unwrap(), "1");
+    let mut derivations = Vec::new();
+    for attempt in attempts {
+        let path = root
+            .path()
+            .join("run")
+            .join(attempt["attempt_directory"].as_str().unwrap());
+        let provenance = document(&path.join("attempt.json"));
+        let materialization =
+            &provenance["provenance"]["data"]["context"]["dataset_materialization"];
+        assert!(
+            materialization["derivation_id"]
+                .as_str()
+                .unwrap()
+                .starts_with("mw1-dataset-derivation-")
+        );
+        assert_eq!(
+            materialization["output"]["sha256"].as_str().unwrap().len(),
+            64
+        );
+        derivations.push(materialization["derivation_id"].clone());
+    }
+    assert_eq!(derivations[0], derivations[1]);
+}
+
+#[test]
+fn pinned_transform_downloads_only_during_run() {
+    use std::{
+        io::{Read, Write},
+        net::TcpListener,
+        thread,
+    };
+    let root = TempDir::new().unwrap();
+    copy_tree(
+        &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/generated-dataset"),
+        root.path(),
+    );
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("http://{}/data", listener.local_addr().unwrap());
+    replace(
+        root.path(),
+        "metewand.toml",
+        "parameter_defaults = { values = [1, 2, 3] }",
+        &format!(
+            "parameter_defaults = {{ values = [1, 2, 3] }}\nsource = {{ url = {url:?}, sha256 = \"4cf6ac7faa18ca1751f7b12a1391efef4e57a497c909157394ec9072d29f0641\" }}"
+        ),
+    );
+    for command in ["check", "plan"] {
+        let output = metewand(root.path(), &[command]);
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    listener.set_nonblocking(true).unwrap();
+    assert_eq!(
+        listener.accept().unwrap_err().kind(),
+        std::io::ErrorKind::WouldBlock
+    );
+    listener.set_nonblocking(false).unwrap();
+    let server = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut request = [0; 4096];
+        assert!(stream.read(&mut request).unwrap() > 0);
+        let body = br#"{"values":[4,5]}"#;
+        write!(
+            stream,
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            body.len()
+        )
+        .unwrap();
+        stream.write_all(body).unwrap();
+    });
+    let output = metewand(
+        root.path(),
+        &["run", "--output-dir", "run", "--output", "json"],
+    );
+    server.join().unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let attempt = &report["data"]["attempts"][0];
+    let path = root
+        .path()
+        .join("run")
+        .join(attempt["attempt_directory"].as_str().unwrap());
+    let record = document(&path.join("attempt.json"));
+    let source = &record["provenance"]["data"]["context"]["dataset_materialization"]["derivation"]
+        ["sources"][0];
+    assert_eq!(source["selection"]["url"], url);
+    assert_eq!(
+        source["selection"]["sha256"],
+        "4cf6ac7faa18ca1751f7b12a1391efef4e57a497c909157394ec9072d29f0641"
+    );
+}
+
+#[test]
+fn materialization_failure_reports_a_diagnostic_before_attempts_exist() {
+    let root = TempDir::new().unwrap();
+    copy_tree(
+        &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/generated-dataset"),
+        root.path(),
+    );
+    replace(
+        root.path(),
+        "worker.py",
+        "elif method == \"materialize\":",
+        "elif method == \"materialize\":\n            os._exit(17)",
+    );
+    let output = metewand(
+        root.path(),
+        &["run", "--output-dir", "run", "--output", "json"],
+    );
+    assert_eq!(output.status.code(), Some(5));
+    let diagnostic: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(diagnostic["kind"], "diagnostic");
+    assert_eq!(diagnostic["data"]["code"], "dataset_materialization_failed");
+    assert!(!root.path().join("run").exists());
+}

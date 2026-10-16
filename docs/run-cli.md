@@ -28,7 +28,8 @@ expected result is `{"answer":8}` and the metrics are `{"absolute_error":0}`.
 
 The command executes every selected candidate, implementation repetition, and
 measurement repetition in deterministic logical-plan order. It supports fixed
-local datasets, the built-in empty unit dataset for dataset-free problems,
+local datasets, local generators and transformations with pinned HTTP(S) sources,
+the built-in empty unit dataset for dataset-free problems,
 one-shot workers, local environments, dedicated POSIX protocol pipes, fresh
 processes, `prepare_and_execute` wall timing, sequential order, and
 `best_effort` enforcement. Complete preflight precedes every worker launch and
@@ -37,7 +38,7 @@ experiments are rejected; distinct experiment seeds select independent runs.
 
 Policies requiring CPU, thread, or memory limits, other timing scopes,
 randomized scheduling, reuse, warm-ups, or required enforcement are rejected.
-Generated datasets, provisioning backends, standard-I/O protocol transport,
+Provisioning backends, standard-I/O protocol transport,
 symbolic links in copied inputs, locked execution, and resume are also rejected.
 These features belong to later roadmap slices. A rejected selection emits a
 structured diagnostic without launching any worker or creating the destination.
@@ -47,6 +48,14 @@ for each protocol phase, including hello and shutdown. Gate 1 accepts a positive
 integer followed by `ms`, `s`, `min`, or `h`, with optional intervening whitespace.
 The default is ten seconds per phase. These deadlines do not add a scientific
 budget or change the primary timing boundary.
+
+Generated datasets execute the materializer protocol before any measurements.
+Each dataset configuration is constructed once per run, validated against its
+output schema, and recorded with its derivation identity and separate output
+hash. See [Dataset materialization](dataset-materialization.md) and its
+[runnable example](../examples/generated-dataset). External providers and optional
+contract-owned binary checkers are explicit runtime APIs; the current manifest
+does not select those integrations.
 
 ## Inputs and launches
 
@@ -160,3 +169,7 @@ and timing semantics remain version 1. Source and program bindings complete the
 unreleased Gate-1 resolver without changing existing record representations.
 Schema conformance cases, exact event bytes, relocated-input tests, and
 end-to-end publication and failure tests cover these interfaces.
+
+A materializer failure occurs before resolved attempt identities exist. It emits
+`dataset_materialization_failed` with exit code `5`, removes private construction
+output, and leaves the requested run destination uncreated.

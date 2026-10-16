@@ -7,6 +7,8 @@ pub const LOCAL_TREE_HASH_VERSION: u32 = 1;
 pub const SOURCE_RESOLUTION_VERSION: u32 = 1;
 
 #[cfg(unix)]
+pub mod dataset_materialization;
+#[cfg(unix)]
 pub mod fixed_dataset_run;
 pub mod local_tree;
 #[cfg(unix)]
@@ -16,6 +18,7 @@ pub mod publication;
 pub mod repository;
 #[cfg(unix)]
 pub mod run;
+pub mod source_acquisition;
 pub mod source_bundle;
 pub mod source_resolution;
 pub mod worker_output;

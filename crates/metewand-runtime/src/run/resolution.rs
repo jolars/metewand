@@ -3,6 +3,7 @@ use std::{
     env, fs, io,
     os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
+    sync::Arc,
     time::Duration,
 };
 
@@ -36,11 +37,14 @@ use tempfile::{Builder, TempDir};
 
 use crate::{
     LOCAL_TREE_HASH_VERSION,
+    dataset_materialization::{DatasetMaterialization, materialize_dataset},
     local_tree::hash_local_tree,
     repository::CheckedRepository,
+    source_acquisition::HttpAcquirer,
     source_bundle::identify_source_bundle,
     source_resolution::{SourceRequest, SourceResolutionError, resolve_source},
     worker_output::WorkerOutputValidator,
+    worker_process::WorkerLogLimits,
     worker_session::PhaseTimeouts,
 };
 
@@ -52,7 +56,7 @@ pub(super) struct ResolvedRun {
 }
 
 pub(super) struct ResolvedCandidate {
-    pub dataset: Snapshot,
+    pub dataset: Arc<Snapshot>,
     pub implementation: ResolvedWorker,
     pub evaluator: ResolvedWorker,
     pub measurements: Vec<ResolvedMeasurement>,
@@ -149,41 +153,47 @@ impl ResolvedCandidate {
     }
 
     pub fn validate_destination(&self, output: &Path) -> Result<(), RunError> {
-        for snapshot in std::iter::once(&self.dataset)
+        for snapshot in std::iter::once(self.dataset.as_ref())
             .chain(self.implementation.sources.iter())
             .chain(self.evaluator.sources.iter())
         {
-            if let Some((root, patterns, _)) = &snapshot.original {
-                for pattern in patterns {
-                    let mut prefix = PathBuf::new();
-                    let mut has_glob = false;
-                    for component in pattern.as_path().components() {
-                        if component
-                            .as_os_str()
-                            .to_string_lossy()
-                            .contains(['*', '?', '[', '{'])
-                        {
-                            has_glob = true;
-                            break;
-                        }
-                        prefix.push(component);
-                    }
-                    let prefix = root.join(prefix);
-                    if (has_glob || prefix.is_dir()) && output.starts_with(prefix) {
-                        return Err(unsupported(
-                            "choose an output directory outside declared source directories and glob prefixes",
-                        ));
-                    }
-                }
-            }
+            validate_snapshot_destination(snapshot, output)?;
         }
         Ok(())
     }
 }
 
+fn validate_snapshot_destination(snapshot: &Snapshot, output: &Path) -> Result<(), RunError> {
+    if let Some((root, patterns, _)) = &snapshot.original {
+        for pattern in patterns {
+            let mut prefix = PathBuf::new();
+            let mut has_glob = false;
+            for component in pattern.as_path().components() {
+                if component
+                    .as_os_str()
+                    .to_string_lossy()
+                    .contains(['*', '?', '[', '{'])
+                {
+                    has_glob = true;
+                    break;
+                }
+                prefix.push(component);
+            }
+            let prefix = root.join(prefix);
+            if (has_glob || prefix.is_dir()) && output.starts_with(prefix) {
+                return Err(unsupported(
+                    "choose an output directory outside declared source directories and glob prefixes",
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
 pub(super) fn resolve(
     repository: &CheckedRepository,
     plan: &LogicalPlan,
+    output: &Path,
 ) -> Result<ResolvedRun, RunError> {
     for experiment in &plan.experiments {
         let policy = &experiment.execution_policy.record;
@@ -214,6 +224,20 @@ pub(super) fn resolve(
         ));
     }
 
+    let mut logical_slots = BTreeSet::new();
+    for experiment in &plan.experiments {
+        for candidate in &experiment.candidates {
+            for specification in &candidate.specifications {
+                for slot in &specification.attempt_slots {
+                    if !logical_slots.insert(slot.id) {
+                        return Err(unsupported(
+                            "the plan selects a resolved attempt slot more than once; use distinct experiment seeds for independent executions",
+                        ));
+                    }
+                }
+            }
+        }
+    }
     let private_root = Builder::new().prefix("metewand-run-").tempdir()?;
     let executor = identify_record(ExecutorDefinitionRecord {
         kind: serde_json::from_value(json!("trusted_local")).expect("static valid name"),
@@ -221,17 +245,124 @@ pub(super) fn resolve(
             json!({"environment_class": "development", "isolation": "unsupported"}),
         )?,
     })?;
-    let mut candidates = Vec::new();
+    // Resolve every launch and fixed dataset before any acquisition or worker runs.
+    let mut prepared = Vec::new();
     for experiment in &plan.experiments {
         for candidate in &experiment.candidates {
-            candidates.push(resolve_candidate(
+            let implementation_name = repository
+                .planning_catalog
+                .implementation_definitions
+                .iter()
+                .find(|(_, id)| **id == candidate.implementation_configuration.record.definition)
+                .expect("checked implementation")
+                .0;
+            let problem_name = repository
+                .planning_catalog
+                .problem_definitions
+                .iter()
+                .find(|(_, id)| **id == candidate.problem_configuration.record.definition)
+                .expect("checked problem")
+                .0;
+            let implementation = resolve_worker(
                 repository,
-                candidate,
+                &repository.manifest.implementations[implementation_name].worker,
                 private_root.path(),
-                executor.id,
+            )?;
+            let evaluator = resolve_worker(
+                repository,
+                &repository.manifest.problems[problem_name].evaluator,
+                private_root.path(),
+            )?;
+            let dataset = prepare_dataset(repository, candidate, private_root.path())?;
+            for sources in implementation
+                .sources
+                .iter()
+                .chain(evaluator.sources.iter())
+            {
+                validate_snapshot_destination(sources, output)?;
+            }
+            match &dataset {
+                DatasetPlan::Ready(snapshot, _) => validate_snapshot_destination(snapshot, output)?,
+                DatasetPlan::Generated(_, materializer) => {
+                    if let Some(sources) = &materializer.sources {
+                        validate_snapshot_destination(sources, output)?;
+                    }
+                }
+            }
+
+            prepared.push((
+                candidate,
                 phase_timeouts(experiment.execution_policy.record.timeout.as_deref())?,
-            )?);
+                implementation,
+                evaluator,
+                dataset,
+            ));
         }
+    }
+    let mut datasets = BTreeMap::new();
+    let mut candidates = Vec::new();
+    for (candidate, timeouts, implementation, evaluator, dataset_plan) in prepared {
+        let key = candidate.dataset_configuration.id;
+        if let std::collections::btree_map::Entry::Vacant(entry) = datasets.entry(key) {
+            let (snapshot, output_schema, provenance) = match dataset_plan {
+                DatasetPlan::Ready(snapshot, schema) => (Arc::new(snapshot), schema, None),
+                DatasetPlan::Generated(definition, materializer) => {
+                    materializer.verify()?;
+                    let source = definition
+                        .source
+                        .as_ref()
+                        .map(|source| {
+                            let backend =
+                                HttpAcquirer::new(timeouts.materialize, 1024 * 1024 * 1024)?;
+                            resolve_source(
+                                &SourceRequest::PinnedUrl(source),
+                                Some(&backend),
+                                private_root.path(),
+                            )
+                        })
+                        .transpose()?;
+                    let materialized = materialize_dataset(DatasetMaterialization {
+                        configuration: &candidate.dataset_configuration.record,
+                        source: source.as_ref(),
+                        launch: &materializer.launch,
+                        worker: &materializer.record,
+                        output_schema: definition.output_schema.as_path(),
+                        schemas: &repository.schemas,
+                        validator: None,
+                        private_root: private_root.path(),
+                        timeouts,
+                        log_limits: WorkerLogLimits::new(64 * 1024, 64 * 1024),
+                    })?;
+                    materializer.verify()?;
+                    let digest = materialized.output_digest;
+                    let provenance = materialized.provenance.clone();
+                    let directory = materialized.into_directory();
+                    (
+                        Arc::new(Snapshot {
+                            directory,
+                            digest,
+                            original: None,
+                        }),
+                        repository.resources.schemas[definition.output_schema.as_path()],
+                        Some(provenance),
+                    )
+                }
+            };
+            entry.insert(ResolvedDataset {
+                snapshot,
+                output_schema,
+                provenance,
+            });
+        }
+        candidates.push(resolve_candidate(
+            repository,
+            candidate,
+            executor.id,
+            timeouts,
+            implementation,
+            evaluator,
+            &datasets[&key],
+        )?);
     }
     let mut slots = BTreeSet::new();
     for candidate in &candidates {
@@ -249,13 +380,19 @@ pub(super) fn resolve(
     })
 }
 
-fn resolve_candidate(
-    repository: &CheckedRepository,
+enum DatasetPlan<'a> {
+    Ready(Snapshot, RecordId<metewand_core::records::SchemaResource>),
+    Generated(
+        &'a metewand_core::manifest::GeneratedDatasetDefinition,
+        Box<ResolvedWorker>,
+    ),
+}
+
+fn prepare_dataset<'a>(
+    repository: &'a CheckedRepository,
     candidate: &LogicalCandidatePlan,
     private_root: &Path,
-    executor: RecordId<ExecutorDefinitionRecord>,
-    timeouts: PhaseTimeouts,
-) -> Result<ResolvedCandidate, RunError> {
+) -> Result<DatasetPlan<'a>, RunError> {
     let catalog = &repository.planning_catalog;
     let dataset_definition = catalog
         .dataset_definitions
@@ -263,11 +400,11 @@ fn resolve_candidate(
         .find(|(_, id)| **id == candidate.dataset_configuration.record.definition)
         .expect("checked plan dataset definition")
         .0;
-    let (dataset, output_schema) = match dataset_definition {
+    match dataset_definition {
         DatasetConfigurationDefinition::Unit => {
             let directory = Builder::new().prefix("unit-").tempdir_in(private_root)?;
             let digest = hash_local_tree(directory.path())?;
-            (
+            Ok(DatasetPlan::Ready(
                 Snapshot {
                     directory,
                     digest,
@@ -276,13 +413,27 @@ fn resolve_candidate(
                 identify_builtin_unit_dataset_definition()?
                     .record
                     .output_schema,
-            )
+            ))
         }
         DatasetConfigurationDefinition::Named(name) => {
-            let DatasetDefinition::Fixed(definition) = &repository.manifest.datasets[name] else {
-                return Err(unsupported(format!(
-                    "dataset `{name}` requires materialization; Gate 1 supports fixed local datasets and the built-in unit dataset"
-                )));
+            let definition = match &repository.manifest.datasets[name] {
+                DatasetDefinition::Fixed(definition) => definition,
+                DatasetDefinition::Generated(definition) => {
+                    if let Some(source) = &definition.source {
+                        let url = reqwest::Url::parse(&source.url)
+                            .map_err(|_| unsupported("invalid materializer source URL"))?;
+                        if !matches!(url.scheme(), "http" | "https")
+                            || !url.username().is_empty()
+                            || url.password().is_some()
+                        {
+                            return Err(unsupported(
+                                "materializer URLs require HTTP(S) without credentials",
+                            ));
+                        }
+                    }
+                    let worker = resolve_worker(repository, &definition.worker, private_root)?;
+                    return Ok(DatasetPlan::Generated(definition, Box::new(worker)));
+                }
             };
             let mut snapshot = snapshot(repository, &definition.sources, private_root)?;
             let manifest_path = snapshot.directory.path().join("dataset-manifest.json");
@@ -306,12 +457,33 @@ fn resolve_candidate(
                 definition.output_schema.as_path(),
             )?;
             snapshot.digest = hash_local_tree(snapshot.directory.path())?;
-            (
+            Ok(DatasetPlan::Ready(
                 snapshot,
                 repository.resources.schemas[definition.output_schema.as_path()],
-            )
+            ))
         }
-    };
+    }
+}
+
+struct ResolvedDataset {
+    snapshot: Arc<Snapshot>,
+    output_schema: RecordId<metewand_core::records::SchemaResource>,
+    provenance: Option<CanonicalValue>,
+}
+
+fn resolve_candidate(
+    repository: &CheckedRepository,
+    candidate: &LogicalCandidatePlan,
+    executor: RecordId<ExecutorDefinitionRecord>,
+    timeouts: PhaseTimeouts,
+    implementation: ResolvedWorker,
+    evaluator: ResolvedWorker,
+    dataset: &ResolvedDataset,
+) -> Result<ResolvedCandidate, RunError> {
+    let output_schema = dataset.output_schema;
+    let dataset_provenance = dataset.provenance.as_ref();
+    let dataset = Arc::clone(&dataset.snapshot);
+    let catalog = &repository.planning_catalog;
     let dataset_instance = identify_record(DatasetInstanceRecord {
         configuration: candidate.dataset_configuration.id,
         artifact: dataset.artifact::<DatasetArtifact>()?,
@@ -327,22 +499,6 @@ fn resolve_candidate(
         .find(|(_, id)| **id == candidate.problem_configuration.record.definition)
         .expect("checked plan problem definition")
         .0;
-    let implementation_name = catalog
-        .implementation_definitions
-        .iter()
-        .find(|(_, id)| **id == candidate.implementation_configuration.record.definition)
-        .expect("checked plan implementation definition")
-        .0;
-    let implementation = resolve_worker(
-        repository,
-        &repository.manifest.implementations[implementation_name].worker,
-        private_root,
-    )?;
-    let evaluator = resolve_worker(
-        repository,
-        &repository.manifest.problems[problem_name].evaluator,
-        private_root,
-    )?;
     let contract = &repository.problem_contracts[problem_name];
     let mut measurements = Vec::new();
     for specification in &candidate.specifications {
@@ -373,6 +529,7 @@ fn resolve_candidate(
                 "manifest_hash": repository.manifest_hash.to_string(),
                 "logical_candidate_id": candidate.candidate.id,
                 "logical_slot_id": slot.id,
+                "dataset_materialization": dataset_provenance.map(CanonicalValue::as_json),
                 "dataset_instance": record_document(&dataset_instance.record)?,
                 "problem_instance": record_document(&problem_instance.record)?,
                 "resolved_specification": record_document(&resolved.record)?,
