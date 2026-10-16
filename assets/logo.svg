@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+<title id="title">Metewand — measuring rod</title>
+<desc id="desc">A square-ended measuring rod with nine evenly spaced graduations, angled upwards to the right.</desc>
+<g transform="translate(256 256) rotate(38) translate(-5 2)">
+<!-- The narrow side face makes this a solid rod rather than a flat ruler. -->
+<path d="M34 -190 46 -198V182L34 190Z" fill="#0D2B2A"/>
+<path d="M34 -190 46 -198V-172L34 -164Z" fill="#AB7938"/>
+<path d="M34 164 46 156V182L34 190Z" fill="#AB7938"/>
+<path d="M-34 -190 -22 -198H46L34 -190Z" fill="#E6BA70"/>
+<!-- Even-odd subpaths make the graduations fully transparent. -->
+<path d="M-34 -190H34V190H-34Z M-26 -139.5h42v7h-42Z
+M-26 -105.5h24v7h-24Z
+M-26 -71.5h42v7h-42Z
+M-26 -37.5h24v7h-24Z
+M-26 -3.5h42v7h-42Z
+M-26 30.5h24v7h-24Z
+M-26 64.5h42v7h-42Z
+M-26 98.5h24v7h-24Z
+M-26 132.5h42v7h-42Z" fill="#173E3C" fill-rule="evenodd"/>
+<path d="M-34 -190H34V-164H-34Z M-34 164H34V190H-34Z" fill="#D5A04B"/>
+</g>
+</svg>
