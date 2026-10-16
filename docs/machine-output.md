@@ -142,6 +142,7 @@ The CLI emits these stable codes:
 | `execution_input_unavailable` | A required executable or run path is unavailable. |
 | `execution_resolution_failed` | An internal resolution invariant failed. |
 | `invalid_execution_input` | Fixed data or other resolved inputs are invalid or changed. |
+| `artifact_cache_failed` | Artifact publication, integrity checking, construction lookup, or a cache lease failed. |
 | `run_publication_failed` | An execution artifact could not be finalized. |
 | `publication_failed` | The nested publisher diagnostic explains why publication failed. |
 

@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "metewand://schemas/v1/artifact-cache-object.schema.json",
+  "x-metewand-compatibility-version": 1,
+  "title": "Completed content-addressed artifact tree",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "complete": {
+      "const": true
+    },
+    "tree_hash_version": {
+      "const": 1
+    },
+    "tree_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "entries": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "const": "directory"
+              },
+              "path": {
+                "$ref": "common.schema.json#/$defs/repository_path"
+              }
+            },
+            "required": [
+              "kind",
+              "path"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "const": "file"
+              },
+              "path": {
+                "$ref": "common.schema.json#/$defs/repository_path"
+              },
+              "size_bytes": {
+                "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "executable": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "kind",
+              "path",
+              "size_bytes",
+              "sha256",
+              "executable"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      }
+    }
+  },
+  "required": [
+    "schema_version",
+    "complete",
+    "tree_hash_version",
+    "tree_sha256",
+    "entries"
+  ],
+  "additionalProperties": false
+}

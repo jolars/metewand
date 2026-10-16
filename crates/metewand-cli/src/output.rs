@@ -1014,6 +1014,9 @@ impl CommandError {
                 "dataset_materialization_failed",
                 "materialization_failed",
             ),
+            RunError::ArtifactStore(_) => {
+                (EXIT_IO, "artifact_cache_failed", "artifact_cache_failed")
+            }
             RunError::Publication(_) => (EXIT_IO, "run_publication_failed", "publication_failed"),
             RunError::Io(_) => (EXIT_IO, "run_setup_failed", "execution_input_unavailable"),
             RunError::Identity(_) | RunError::Canonical(_) | RunError::PublicSchemas(_) => (

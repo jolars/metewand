@@ -124,6 +124,95 @@ fn generator_receives_dataset_seed_and_canonical_parameters() {
 }
 
 #[test]
+fn construction_mappings_reopen_verify_and_reject_different_outputs() {
+    use metewand_core::identity::canonical_identity_bytes;
+    use metewand_runtime::artifact_store::{ArtifactStore, ArtifactStoreError};
+    let root = tempfile::tempdir().unwrap();
+    let cache = tempfile::tempdir().unwrap();
+    let config = configuration();
+    let launch = launch();
+    let worker = worker();
+    let schemas = schemas(true);
+    let build = |config: &DatasetConfigurationRecord| {
+        materialize_dataset(DatasetMaterialization {
+            configuration: config,
+            source: None,
+            launch: &launch,
+            worker: &worker,
+            output_schema: Path::new("schemas/dataset.json"),
+            schemas: &schemas,
+            validator: None,
+            private_root: root.path(),
+            timeouts: timeouts(),
+            log_limits: WorkerLogLimits::new(1024, 1024),
+        })
+        .unwrap()
+    };
+    let first = build(&config);
+    let store = ArtifactStore::open(cache.path()).unwrap();
+    store.publish_dataset(&first).unwrap();
+    store.publish_dataset(&build(&config)).unwrap();
+    let reopened = ArtifactStore::open(cache.path()).unwrap();
+    let cached = reopened.lookup_dataset(&first.derivation).unwrap().unwrap();
+    assert_eq!(cached.artifact.digest(), first.output_digest);
+    assert_eq!(cached.provenance, first.provenance);
+    assert_eq!(cached.manifest.as_path(), first.manifest.manifest_path());
+    cached.artifact.verify().unwrap();
+
+    let mut equivalent_output = configuration();
+    equivalent_output.parameters =
+        CanonicalValue::try_from(json!({"values":[1,2,3],"unused":true})).unwrap();
+    let equivalent_output = build(&equivalent_output);
+    assert_ne!(equivalent_output.derivation.id, first.derivation.id);
+    assert_eq!(equivalent_output.output_digest, first.output_digest);
+    let shared = store.publish_dataset(&equivalent_output).unwrap();
+    assert_eq!(shared.directory(), cached.artifact.directory());
+    assert_eq!(
+        fs::read_dir(cache.path().join("objects")).unwrap().count(),
+        1
+    );
+    assert_eq!(
+        fs::read_dir(cache.path().join("derivations"))
+            .unwrap()
+            .count(),
+        2
+    );
+
+    let mut other_config = configuration();
+    other_config.parameters = CanonicalValue::try_from(json!({"values":[4,5,6]})).unwrap();
+    let mut drifted = build(&other_config);
+    // Model a nondeterministic recipe producing a second independently valid
+    // dataset while reporting the same verified construction inputs.
+    drifted.derivation = first.derivation.clone();
+    let mut receipt = drifted.provenance.as_json().clone();
+    receipt["derivation_id"] = json!(first.derivation.id);
+    receipt["derivation"] =
+        serde_json::from_slice(&canonical_identity_bytes(&first.derivation.record).unwrap())
+            .unwrap();
+    drifted.provenance = CanonicalValue::try_from(receipt).unwrap();
+    assert!(matches!(
+        store.publish_dataset(&drifted),
+        Err(ArtifactStoreError::DerivationConflict)
+    ));
+    assert_eq!(
+        store
+            .lookup_dataset(&first.derivation)
+            .unwrap()
+            .unwrap()
+            .artifact
+            .digest(),
+        first.output_digest
+    );
+
+    let mapping = cache
+        .path()
+        .join("derivations")
+        .join(first.derivation.id.to_string());
+    fs::remove_file(mapping.join("manifest.json")).unwrap();
+    assert!(store.lookup_dataset(&first.derivation).is_err());
+}
+
+#[test]
 fn schema_failure_removes_output() {
     let root = tempfile::tempdir().unwrap();
     let config = configuration();

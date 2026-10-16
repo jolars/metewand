@@ -146,6 +146,29 @@ pub fn verified_source_record(
     })
 }
 
+/// Identifies verified construction inputs before deciding whether to reuse a
+/// completed cache entry or execute the materializer.
+pub fn identify_dataset_derivation(
+    configuration: &DatasetConfigurationRecord,
+    source: Option<&ResolvedSource>,
+    worker: &ResolvedWorkerRecord,
+) -> Result<IdentifiedRecord<DatasetDerivationRecord>, MaterializationError> {
+    if !configuration.parameters.as_json().is_object() {
+        return Err(MaterializationError::InvalidParameters);
+    }
+    Ok(identify_record(DatasetDerivationRecord {
+        definition: configuration.definition,
+        sources: source
+            .map(verified_source_record)
+            .transpose()?
+            .into_iter()
+            .collect(),
+        materializer: worker.clone(),
+        parameters: configuration.parameters.clone(),
+        seed: configuration.seed,
+    })?)
+}
+
 /// Executes a generator or transformation, closes its process, canonicalizes the
 /// manifest, checks its complete inventory and schema, and optionally validates
 /// binary payloads with a contract-owned command. Errors remove private output.
@@ -157,19 +180,7 @@ pub fn materialize_dataset(
     if !input.configuration.parameters.as_json().is_object() {
         return Err(MaterializationError::InvalidParameters);
     }
-    let sources = input
-        .source
-        .map(verified_source_record)
-        .transpose()?
-        .into_iter()
-        .collect();
-    let derivation = identify_record(DatasetDerivationRecord {
-        definition: input.configuration.definition,
-        sources,
-        materializer: input.worker.clone(),
-        parameters: input.configuration.parameters.clone(),
-        seed: input.configuration.seed,
-    })?;
+    let derivation = identify_dataset_derivation(input.configuration, input.source, input.worker)?;
     let empty = Builder::new()
         .prefix("metewand-generator-input-")
         .tempdir_in(input.private_root)?;

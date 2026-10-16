@@ -4,8 +4,9 @@
 benchmark-owned generator or transformation through the version-1 materializer
 protocol. The operation returns an owned private dataset, its validated manifest,
 a construction identity, a separate output tree hash, bounded process logs, and
-canonical provenance. Errors remove partial output. Durable storage, leases,
-and derivation-to-output cache mappings are separate runtime operations.
+canonical provenance. Errors remove partial output. The
+[artifact store](artifact-store.md) provides durable publication, leases, derivation-to-output mappings, and private
+attempt views as separate runtime operations.
 
 ## Execution and validation
 
@@ -36,8 +37,9 @@ consumer calls `MaterializedDataset::verify()` before use.
 `metewand run` supports local generators and transformations with pinned HTTP(S)
 inputs. It preflights every selected launch and fixed dataset before acquisition
 or materializer execution and constructs each distinct dataset configuration
-once per run. The download limit is 1 GiB of raw bytes, and the materialization
-phase timeout also bounds the HTTP request. `check` and `plan` never acquire
+once per run or reuses its verified construction from an explicit `--cache-dir`.
+The download limit is 1 GiB of raw bytes, and the materialization phase timeout
+also bounds the HTTP request. `check` and `plan` never acquire
 sources or execute workers. The [generated dataset example](../examples/generated-dataset)
 provides a complete raw-protocol generator, implementation, and evaluator.
 

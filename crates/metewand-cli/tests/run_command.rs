@@ -713,6 +713,210 @@ fn generated_datasets_record_derivation_and_share_materialization() {
 }
 
 #[test]
+fn persistent_cache_reuses_constructions_and_assigns_a_private_view_to_each_attempt() {
+    let root = TempDir::new().unwrap();
+    copy_tree(
+        &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/generated-dataset"),
+        root.path(),
+    );
+    replace(
+        root.path(),
+        "metewand.toml",
+        "measurement_repetitions = 1",
+        "measurement_repetitions = 2",
+    );
+    let builds = root.path().join("build-count");
+    let views = root.path().join("dataset-views");
+    replace(
+        root.path(),
+        "worker.py",
+        "assert role == \"dataset_materializer\"",
+        &format!(
+            "assert role == \"dataset_materializer\"\n            with open({:?}, 'a') as count: count.write('1')",
+            builds.to_str().unwrap()
+        ),
+    );
+    replace(
+        root.path(),
+        "worker.py",
+        "assert role == \"implementation\"\n            values =",
+        &format!(
+            "assert role == \"implementation\"\n            with open({:?}, 'a') as views: views.write(request['dataset_dir'] + '\\n')\n            values =",
+            views.to_str().unwrap()
+        ),
+    );
+    let mut artifacts = Vec::new();
+    for destination in ["first", "second"] {
+        let output = metewand(
+            root.path(),
+            &[
+                "run",
+                "--output-dir",
+                destination,
+                "--cache-dir",
+                "cache",
+                "--output",
+                "json",
+            ],
+        );
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(report["data"]["summary"]["accepted_attempts"], 2);
+        for attempt in report["data"]["attempts"].as_array().unwrap() {
+            let record = document(
+                &root
+                    .path()
+                    .join(destination)
+                    .join(attempt["attempt_directory"].as_str().unwrap())
+                    .join("attempt.json"),
+            );
+            artifacts.push(
+                record["provenance"]["data"]["context"]["dataset_instance"]["artifact"].clone(),
+            );
+        }
+    }
+    assert_eq!(fs::read_to_string(builds).unwrap(), "1");
+    assert!(
+        artifacts
+            .iter()
+            .all(|a| a == &artifacts[0] && a.is_string())
+    );
+    let view_paths = fs::read_to_string(views).unwrap();
+    let view_paths = view_paths
+        .lines()
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(view_paths.len(), 4);
+    for path in view_paths {
+        assert!(!path.contains("/cache/"));
+        assert!(!Path::new(path).exists());
+    }
+    assert_eq!(
+        fs::read_dir(root.path().join("cache/objects"))
+            .unwrap()
+            .count(),
+        1
+    );
+    assert_eq!(
+        fs::read_dir(root.path().join("cache/derivations"))
+            .unwrap()
+            .count(),
+        1
+    );
+    assert_eq!(
+        fs::read_dir(root.path().join("cache/leases"))
+            .unwrap()
+            .count(),
+        0
+    );
+
+    let object = fs::read_dir(root.path().join("cache/objects"))
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    fs::write(object.join("data/data.json"), b"changed canonical data").unwrap();
+    let output = metewand(
+        root.path(),
+        &[
+            "run",
+            "--output-dir",
+            "third",
+            "--cache-dir",
+            "cache",
+            "--output",
+            "json",
+        ],
+    );
+    assert_eq!(output.status.code(), Some(74));
+    let diagnostic: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(diagnostic["data"]["code"], "artifact_cache_failed");
+    assert!(!root.path().join("third").exists());
+    assert_eq!(
+        fs::read(object.join("data/data.json")).unwrap(),
+        b"changed canonical data"
+    );
+}
+
+#[test]
+fn cache_preflight_refuses_source_overlap_and_unsupported_policies_without_creating_a_cache() {
+    let root = repository();
+    replace(
+        root.path(),
+        "metewand.toml",
+        "timing_scope = \"prepare_and_execute\"",
+        "timing_scope = \"prepare_and_execute\"\nenforcement = \"required\"",
+    );
+    let output = metewand(
+        root.path(),
+        &[
+            "run",
+            "--output-dir",
+            "run",
+            "--cache-dir",
+            "cache",
+            "--output",
+            "json",
+        ],
+    );
+    assert!(!output.status.success());
+    assert!(!root.path().join("cache").exists());
+    assert!(!root.path().join("run").exists());
+    replace(
+        root.path(),
+        "metewand.toml",
+        "enforcement = \"required\"",
+        "enforcement = \"best_effort\"",
+    );
+    let output = metewand(
+        root.path(),
+        &[
+            "run",
+            "--output-dir",
+            "run",
+            "--cache-dir",
+            "run",
+            "--output",
+            "json",
+        ],
+    );
+    assert!(!output.status.success());
+    assert!(!root.path().join("run").exists());
+
+    fs::create_dir(root.path().join("data")).unwrap();
+    fs::copy(
+        root.path().join("data.json"),
+        root.path().join("data/input.json"),
+    )
+    .unwrap();
+    replace(
+        root.path(),
+        "metewand.toml",
+        "sources = [\"data.json\"]",
+        "sources = [\"data\"]",
+    );
+    let output = metewand(
+        root.path(),
+        &[
+            "run",
+            "--output-dir",
+            "run",
+            "--cache-dir",
+            "data/cache",
+            "--output",
+            "json",
+        ],
+    );
+    assert!(!output.status.success());
+    assert!(!root.path().join("data/cache").exists());
+    assert!(!root.path().join("run").exists());
+}
+
+#[test]
 fn pinned_transform_downloads_only_during_run() {
     use std::{
         io::{Read, Write},

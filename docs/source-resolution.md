@@ -22,7 +22,9 @@ The caller supplies an existing parent directory for private staging. Repository
 staging must be outside selected source directories and glob prefixes. It may
 use an unselected directory inside the repository. The returned `ResolvedSource`
 owns a temporary directory, which is removed when dropped. `into_directory()`
-transfers that ownership to a later runtime operation.
+transfers that ownership to a later runtime operation. For durable storage,
+[`ArtifactStore::import_source`](artifact-store.md) makes another verified copy
+without adopting resolver directories or changing provider-owned caches.
 
 The directory preserves repository-relative paths for repository sources.
 Acquired files have normalized relative UTF-8 paths. The boundary rejects

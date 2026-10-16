@@ -66,7 +66,10 @@ The runtime's [source-resolution boundary](docs/source-resolution.md) returns
 privately staged source files, verified content digests, and provenance. It
 resolves repository bundles directly and provides explicit acquisition hooks
 for pinned URLs and optional external providers, keeping acquisition separate
-from read-only checking and planning.
+from read-only checking and planning. The [artifact store](docs/artifact-store.md)
+durably publishes verified trees, maps dataset constructions to output hashes,
+and leases private per-attempt copies. `run --cache-dir PATH` enables persistent
+construction reuse.
 
 The Gate 1 [domain-record graph](docs/domain-records.md) separates definitions,
 configurations, logical plans, resolved execution dependencies, observations,

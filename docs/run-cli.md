@@ -14,7 +14,10 @@ cargo run --locked -p metewand-cli -- run \
 The destination must be new, and its parent must exist. The command refuses an
 existing file, directory, or symlink without changing it. `run` authorizes
 worker launches, private temporary input copies, and publication beneath this
-explicit destination. It never rewrites the manifest or original source files.
+explicit destination. Optional `--cache-dir PATH` assigns a separate directory to
+Metewand for persistent [artifact storage](artifact-store.md) and construction
+reuse; its parent must exist. Without it, the run uses a temporary store. It
+never rewrites the manifest or original source files.
 Manifest paths resolve from the invoking directory; declared inputs resolve
 from the manifest's parent. The output directory resolves from the invoking
 directory and must lie outside declared source directories and glob prefixes.
@@ -50,9 +53,11 @@ The default is ten seconds per phase. These deadlines do not add a scientific
 budget or change the primary timing boundary.
 
 Generated datasets execute the materializer protocol before any measurements.
-Each dataset configuration is constructed once per run, validated against its
-output schema, and recorded with its derivation identity and separate output
-hash. See [Dataset materialization](dataset-materialization.md) and its
+Each dataset configuration is constructed once per run or recovered from a
+verified persistent cache mapping, validated against its output schema, and
+recorded with its derivation identity and separate output hash. Every attempt
+receives its own verified dataset copy, including fixed and unit datasets. See
+[Dataset materialization](dataset-materialization.md) and its
 [runnable example](../examples/generated-dataset). External providers and optional
 contract-owned binary checkers are explicit runtime APIs; the current manifest
 does not select those integrations.
@@ -151,6 +156,9 @@ scoped implementation and evaluator logs. Technical failures currently retain
 the typed diagnostic and resolution provenance, with `logs_available: false`.
 The lower-level runtime discards those failed workers' private log buffers.
 
+Cache failures use `artifact_cache_failed` with exit code `74`. A corrupted or
+incomplete cache entry fails verification without being overwritten or reused.
+
 Preflight or publication errors produce a terminal diagnostic envelope, following
 any events already streamed in JSON Lines mode. Publication failure never emits
 an accepted terminal event. A previously finalized observation may remain as an
@@ -158,8 +166,10 @@ orphan, as described by the publisher. Closing the event pipe stops further
 execution and returns successful cancellation; already published artifacts remain.
 
 Gate 1 uses an independent fresh destination per invocation, with retry index
-zero. It does not coordinate stores, persist an event database, reserve retry
-indices across invocations, provide recovery, or claim resume semantics.
+zero. It does not coordinate attempt acceptance across runs, persist an event
+database, reserve retry indices across invocations, provide attempt recovery,
+or claim resume semantics. The artifact cache coordinates content publication
+and construction mappings independently of those later run-state features.
 
 ## Compatibility
 

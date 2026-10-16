@@ -31,6 +31,12 @@ pub enum PublicSchema {
     OneShotObservationPolicy,
     /// Hash-complete artifact directory manifest.
     ArtifactManifest,
+    /// Completed content-addressed tree inventory.
+    ArtifactCacheObject,
+    /// Dataset construction mapped to its verified output.
+    DatasetCacheEntry,
+    /// Process-held artifact lease.
+    ArtifactCacheLease,
     /// Canonical result envelope.
     ResultManifest,
     /// Independently finalized run observation.
@@ -48,13 +54,16 @@ pub enum PublicSchema {
 }
 
 /// Every public schema entry point in stable presentation order.
-pub const PUBLIC_SCHEMAS: [PublicSchema; 13] = [
+pub const PUBLIC_SCHEMAS: [PublicSchema; 16] = [
     PublicSchema::MachineOutput,
     PublicSchema::RunOutput,
     PublicSchema::Manifest,
     PublicSchema::ProblemContract,
     PublicSchema::OneShotObservationPolicy,
     PublicSchema::ArtifactManifest,
+    PublicSchema::ArtifactCacheObject,
+    PublicSchema::DatasetCacheEntry,
+    PublicSchema::ArtifactCacheLease,
     PublicSchema::ResultManifest,
     PublicSchema::Observation,
     PublicSchema::Attempt,
@@ -69,6 +78,9 @@ impl PublicSchema {
     #[must_use]
     pub const fn slug(self) -> &'static str {
         match self {
+            Self::ArtifactCacheObject => "artifact-cache-object",
+            Self::DatasetCacheEntry => "dataset-cache-entry",
+            Self::ArtifactCacheLease => "artifact-cache-lease",
             Self::MachineOutput => "machine-output",
             Self::RunOutput => "run-output",
             Self::Manifest => "manifest",
@@ -97,6 +109,9 @@ impl PublicSchema {
     #[must_use]
     pub fn repository_path(self) -> &'static Path {
         Path::new(match self {
+            Self::ArtifactCacheObject => "schemas/v1/artifact-cache-object.schema.json",
+            Self::DatasetCacheEntry => "schemas/v1/dataset-cache-entry.schema.json",
+            Self::ArtifactCacheLease => "schemas/v1/artifact-cache-lease.schema.json",
             Self::MachineOutput => "schemas/v1/machine-output.schema.json",
             Self::RunOutput => "schemas/v1/run-output.schema.json",
             Self::Manifest => "schemas/v1/manifest.schema.json",
@@ -117,6 +132,9 @@ impl PublicSchema {
     #[must_use]
     pub const fn id(self) -> &'static str {
         match self {
+            Self::ArtifactCacheObject => "metewand://schemas/v1/artifact-cache-object.schema.json",
+            Self::DatasetCacheEntry => "metewand://schemas/v1/dataset-cache-entry.schema.json",
+            Self::ArtifactCacheLease => "metewand://schemas/v1/artifact-cache-lease.schema.json",
             Self::MachineOutput => "metewand://schemas/v1/machine-output.schema.json",
             Self::RunOutput => "metewand://schemas/v1/run-output.schema.json",
             Self::Manifest => "metewand://schemas/v1/manifest.schema.json",
@@ -145,6 +163,15 @@ impl PublicSchema {
     #[must_use]
     pub const fn source(self) -> &'static str {
         match self {
+            Self::ArtifactCacheObject => {
+                include_str!("../../../schemas/v1/artifact-cache-object.schema.json")
+            }
+            Self::DatasetCacheEntry => {
+                include_str!("../../../schemas/v1/dataset-cache-entry.schema.json")
+            }
+            Self::ArtifactCacheLease => {
+                include_str!("../../../schemas/v1/artifact-cache-lease.schema.json")
+            }
             Self::MachineOutput => {
                 include_str!("../../../schemas/v1/machine-output.schema.json")
             }

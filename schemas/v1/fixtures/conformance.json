@@ -515,6 +515,93 @@
         "materializer_sdk": null,
         "binary_validation": null
       }
+    },
+    {
+      "name": "artifact-cache-object version one",
+      "schema": "artifact-cache-object",
+      "instance": {
+        "schema_version": 1,
+        "complete": true,
+        "tree_hash_version": 1,
+        "tree_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+        "entries": [
+          {
+            "kind": "directory",
+            "path": "empty"
+          },
+          {
+            "kind": "file",
+            "path": "payload",
+            "size_bytes": 3,
+            "sha256": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+            "executable": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "dataset-cache-entry version one",
+      "schema": "dataset-cache-entry",
+      "instance": {
+        "schema_version": 1,
+        "manifest": "dataset-manifest.json",
+        "receipt": {
+          "version": 1,
+          "derivation_id": "mw1-dataset-derivation-2222222222222222222222222222222222222222222222222222222222222222",
+          "derivation": {
+            "definition": "mw1-dataset-definition-0101010101010101010101010101010101010101010101010101010101010101",
+            "materializer": {
+              "environment": "mw1-resolved-environment-0404040404040404040404040404040404040404040404040404040404040404",
+              "launch": "mw1-resolved-launch-0505050505050505050505050505050505050505050505050505050505050505",
+              "source_bundle": "mw1-artifact-0303030303030303030303030303030303030303030303030303030303030303"
+            },
+            "parameters": {
+              "n": 10
+            },
+            "seed": {
+              "derivation_digest": "0606060606060606060606060606060606060606060606060606060606060606",
+              "value": 7
+            },
+            "sources": [
+              {
+                "decoding": {
+                  "decoded_values": "provider_verified",
+                  "decoding_recipe": {
+                    "format": "binary"
+                  },
+                  "resolved_dataset_version": "v1"
+                },
+                "selection": {
+                  "provider": "registry",
+                  "selector": {
+                    "version": "v1"
+                  }
+                },
+                "tree_hash_version": 1,
+                "tree_sha256": "0202020202020202020202020202020202020202020202020202020202020202"
+              }
+            ],
+            "version": 1
+          },
+          "output": {
+            "tree_hash_version": 1,
+            "sha256": "3333333333333333333333333333333333333333333333333333333333333333"
+          },
+          "source": null,
+          "materializer_sdk": null,
+          "binary_validation": null
+        }
+      }
+    },
+    {
+      "name": "artifact-cache-lease version one",
+      "schema": "artifact-cache-lease",
+      "instance": {
+        "schema_version": 1,
+        "purpose": "view",
+        "owner_pid": 123,
+        "tree_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      }
     }
   ],
   "invalid": [
@@ -914,6 +1001,93 @@
         "source": null,
         "materializer_sdk": null,
         "binary_validation": null
+      }
+    },
+    {
+      "name": "artifact-cache-object rejects unknown version",
+      "schema": "artifact-cache-object",
+      "instance": {
+        "schema_version": 2,
+        "complete": true,
+        "tree_hash_version": 1,
+        "tree_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+        "entries": [
+          {
+            "kind": "directory",
+            "path": "empty"
+          },
+          {
+            "kind": "file",
+            "path": "payload",
+            "size_bytes": 3,
+            "sha256": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+            "executable": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "dataset-cache-entry rejects unknown version",
+      "schema": "dataset-cache-entry",
+      "instance": {
+        "schema_version": 2,
+        "manifest": "dataset-manifest.json",
+        "receipt": {
+          "version": 1,
+          "derivation_id": "mw1-dataset-derivation-2222222222222222222222222222222222222222222222222222222222222222",
+          "derivation": {
+            "definition": "mw1-dataset-definition-0101010101010101010101010101010101010101010101010101010101010101",
+            "materializer": {
+              "environment": "mw1-resolved-environment-0404040404040404040404040404040404040404040404040404040404040404",
+              "launch": "mw1-resolved-launch-0505050505050505050505050505050505050505050505050505050505050505",
+              "source_bundle": "mw1-artifact-0303030303030303030303030303030303030303030303030303030303030303"
+            },
+            "parameters": {
+              "n": 10
+            },
+            "seed": {
+              "derivation_digest": "0606060606060606060606060606060606060606060606060606060606060606",
+              "value": 7
+            },
+            "sources": [
+              {
+                "decoding": {
+                  "decoded_values": "provider_verified",
+                  "decoding_recipe": {
+                    "format": "binary"
+                  },
+                  "resolved_dataset_version": "v1"
+                },
+                "selection": {
+                  "provider": "registry",
+                  "selector": {
+                    "version": "v1"
+                  }
+                },
+                "tree_hash_version": 1,
+                "tree_sha256": "0202020202020202020202020202020202020202020202020202020202020202"
+              }
+            ],
+            "version": 1
+          },
+          "output": {
+            "tree_hash_version": 1,
+            "sha256": "3333333333333333333333333333333333333333333333333333333333333333"
+          },
+          "source": null,
+          "materializer_sdk": null,
+          "binary_validation": null
+        }
+      }
+    },
+    {
+      "name": "artifact-cache-lease rejects unknown version",
+      "schema": "artifact-cache-lease",
+      "instance": {
+        "schema_version": 2,
+        "purpose": "view",
+        "owner_pid": 123,
+        "tree_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
       }
     }
   ]

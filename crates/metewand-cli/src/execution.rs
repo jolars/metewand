@@ -5,7 +5,7 @@ use std::{io, io::Write as _};
 
 use crate::output::{CommandError, CommandResult, OutputFormat};
 
-const HELP: &str = "Usage: metewand [--output FORMAT] run [--manifest PATH] --output-dir PATH\n\nExecute the complete supported logical plan using trusted local workers, fixed or unit datasets, and prepare_and_execute timing. Publish results in a new directory whose parent exists. JSON Lines output streams versioned events; JSON output includes the same events in one terminal document.\n";
+const HELP: &str = "Usage: metewand [--output FORMAT] run [--manifest PATH] --output-dir PATH [--cache-dir PATH]\n\nExecute the complete supported logical plan using trusted local workers, fixed or unit datasets, and prepare_and_execute timing. Publish results in a new directory whose parent exists. Optional --cache-dir assigns a separate Metewand-owned directory for verified dataset construction reuse; its parent must exist. JSON Lines output streams versioned events; JSON output includes the same events in one terminal document.\n";
 
 pub fn command(
     arguments: &[OsString],
@@ -16,6 +16,7 @@ pub fn command(
     }
     let mut manifest = None;
     let mut output_directory = None;
+    let mut cache_directory = None;
     let mut arguments = arguments.iter();
     while let Some(argument) = arguments.next() {
         let (target, missing, empty, duplicate) = if argument == "--manifest" {
@@ -31,6 +32,13 @@ pub fn command(
                 "missing_output_directory",
                 "empty_output_directory",
                 "duplicate_output_directory",
+            )
+        } else if argument == "--cache-dir" {
+            (
+                &mut cache_directory,
+                "missing_cache_directory",
+                "empty_cache_directory",
+                "duplicate_cache_directory",
             )
         } else if argument == "--locked" || argument == "--resume" {
             return Err(CommandError::unsupported(
@@ -72,13 +80,19 @@ pub fn command(
         )
     })?;
     let manifest = manifest.unwrap_or_else(|| PathBuf::from("metewand.toml"));
-    execute(&manifest, &output_directory, output_format)
+    execute(
+        &manifest,
+        &output_directory,
+        cache_directory.as_deref(),
+        output_format,
+    )
 }
 
 #[cfg(unix)]
 fn execute(
     manifest: &std::path::Path,
     output_directory: &std::path::Path,
+    cache_directory: Option<&std::path::Path>,
     output_format: OutputFormat,
 ) -> Result<CommandResult, CommandError> {
     let repository = metewand_runtime::repository::check_repository(manifest)
@@ -86,8 +100,12 @@ fn execute(
     let plan = repository
         .logical_plan()
         .map_err(|error| CommandError::planning("run", &error))?;
-    let report =
-        metewand_runtime::run::run_repository(&repository, &plan, output_directory, |event| {
+    let report = metewand_runtime::run::run_repository_with_cache(
+        &repository,
+        &plan,
+        output_directory,
+        cache_directory,
+        |event| {
             let rendered =
                 crate::output::render_event(event, output_format).map_err(io::Error::other)?;
             match output_format {
@@ -99,8 +117,9 @@ fn execute(
                 OutputFormat::Human => io::stderr().write_all(rendered.as_bytes()),
                 OutputFormat::Json => Ok(()),
             }
-        })
-        .map_err(|error| CommandError::execution(&error))?;
+        },
+    )
+    .map_err(|error| CommandError::execution(&error))?;
     Ok(CommandResult::Run(Box::new(report)))
 }
 
@@ -108,6 +127,7 @@ fn execute(
 fn execute(
     _: &std::path::Path,
     _: &std::path::Path,
+    _: Option<&std::path::Path>,
     _: OutputFormat,
 ) -> Result<CommandResult, CommandError> {
     Err(CommandError::unsupported(

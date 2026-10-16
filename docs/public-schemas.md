@@ -21,6 +21,9 @@ than infer it from the Metewand release that produced the record.
 | `problem-contract` | Problem-owned schemas, timing scopes, semantics, and reference cases. |
 | `one-shot-observation-policy` | One result without a scientific budget. |
 | `artifact-manifest` | Completion marker and hash-complete file inventory for an immutable artifact. |
+| `artifact-cache-object` | Completed content-addressed tree, including directories and executable flags. |
+| `dataset-cache-entry` | Dataset manifest path and construction receipt for a derivation mapping. |
+| `artifact-cache-lease` | Process-held lease receipt for publication, reading, or a private view. |
 | `result-manifest` | Metewand metadata around problem-defined canonical result data and referenced files. |
 | `observation` | Independently finalized result, metrics, timing, validity, and provenance. |
 | `attempt` | Terminal accepted or failed execution with its observations and provenance. |

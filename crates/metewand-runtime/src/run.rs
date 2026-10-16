@@ -60,10 +60,53 @@ pub fn run_repository(
     repository: &CheckedRepository,
     plan: &LogicalPlan,
     output_directory: &Path,
+    event_sink: impl FnMut(&RunEvent) -> io::Result<()>,
+) -> Result<RunReport, RunError> {
+    run_repository_with_cache(repository, plan, output_directory, None, event_sink)
+}
+
+/// Executes with an optional explicitly owned persistent artifact cache.
+/// Without a cache directory, the run uses an owned temporary cache. Cache
+/// creation follows complete selection preflight. Existing completed dataset
+/// constructions are verified and reused without launching the materializer.
+pub fn run_repository_with_cache(
+    repository: &CheckedRepository,
+    plan: &LogicalPlan,
+    output_directory: &Path,
+    cache_directory: Option<&Path>,
     mut event_sink: impl FnMut(&RunEvent) -> io::Result<()>,
 ) -> Result<RunReport, RunError> {
     let output_directory = destination(output_directory)?;
-    let resolved = resolution::resolve(repository, plan, &output_directory)?;
+    let cache_directory = cache_directory
+        .map(|path| {
+            let path = if path.is_absolute() {
+                path.to_owned()
+            } else {
+                std::env::current_dir()?.join(path)
+            };
+            if fs::symlink_metadata(&path).is_ok() {
+                if !fs::symlink_metadata(&path)?.is_dir() {
+                    return Err(io::Error::other("cache root must be a real directory"));
+                }
+                fs::canonicalize(&path)
+            } else {
+                Ok(fs::canonicalize(
+                    path.parent()
+                        .ok_or_else(|| io::Error::other("cache root needs an existing parent"))?,
+                )?
+                .join(
+                    path.file_name()
+                        .ok_or_else(|| io::Error::other("cache root needs a name"))?,
+                ))
+            }
+        })
+        .transpose()?;
+    let resolved = resolution::resolve(
+        repository,
+        plan,
+        &output_directory,
+        cache_directory.as_deref(),
+    )?;
     for candidate in &resolved.candidates {
         candidate.validate_destination(&output_directory)?;
     }
@@ -159,8 +202,20 @@ fn execute(
             error.to_string(),
         );
     }
+    let dataset_view = match candidate.dataset.artifact.private_view(private_root) {
+        Ok(view) => view,
+        Err(error) => {
+            return failed_attempt(
+                measurement,
+                output_root,
+                started_at,
+                "input_changed",
+                error.to_string(),
+            );
+        }
+    };
     let result = run_fixed_dataset(FixedDatasetRun {
-        dataset_dir: candidate.dataset.directory.path(),
+        dataset_dir: dataset_view.directory(),
         problem_contract_id: &candidate.contract_id,
         problem_parameters: &candidate.problem_parameters,
         implementation_parameters: &candidate.implementation_parameters,
@@ -176,6 +231,15 @@ fn execute(
         timeouts: candidate.timeouts,
         log_limits: WorkerLogLimits::new(64 * 1024, 64 * 1024),
     });
+    if let Err(error) = dataset_view.verify() {
+        return failed_attempt(
+            measurement,
+            output_root,
+            started_at,
+            "input_changed",
+            error.to_string(),
+        );
+    }
     if let Err(error) = candidate.verify() {
         return failed_attempt(
             measurement,
@@ -331,6 +395,9 @@ fn destination(path: &Path) -> Result<PathBuf, RunError> {
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum RunError {
+    /// Artifact storage, construction mapping, or private-view creation failed.
+    #[error(transparent)]
+    ArtifactStore(#[from] crate::artifact_store::ArtifactStoreError),
     /// Dataset construction or contract validation failed.
     #[error(transparent)]
     Materialization(#[from] crate::dataset_materialization::MaterializationError),

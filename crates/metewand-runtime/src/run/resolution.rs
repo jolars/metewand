@@ -37,7 +37,10 @@ use tempfile::{Builder, TempDir};
 
 use crate::{
     LOCAL_TREE_HASH_VERSION,
-    dataset_materialization::{DatasetMaterialization, materialize_dataset},
+    artifact_store::{ArtifactStore, StoredArtifact},
+    dataset_materialization::{
+        DatasetMaterialization, identify_dataset_derivation, materialize_dataset,
+    },
     local_tree::hash_local_tree,
     repository::CheckedRepository,
     source_acquisition::HttpAcquirer,
@@ -56,7 +59,7 @@ pub(super) struct ResolvedRun {
 }
 
 pub(super) struct ResolvedCandidate {
-    pub dataset: Arc<Snapshot>,
+    pub dataset: Arc<DatasetSnapshot>,
     pub implementation: ResolvedWorker,
     pub evaluator: ResolvedWorker,
     pub measurements: Vec<ResolvedMeasurement>,
@@ -90,6 +93,21 @@ pub(super) struct Snapshot {
     pub directory: TempDir,
     digest: ContentDigest,
     original: Option<(PathBuf, Vec<RepositoryPath>, RecordId<SourceBundleResource>)>,
+}
+
+pub(super) struct DatasetSnapshot {
+    pub artifact: StoredArtifact,
+    original: Option<Snapshot>,
+}
+
+impl DatasetSnapshot {
+    fn verify(&self) -> Result<(), RunError> {
+        self.artifact.verify()?;
+        if let Some(original) = &self.original {
+            original.verify()?;
+        }
+        Ok(())
+    }
 }
 
 enum LaunchArgument {
@@ -153,7 +171,10 @@ impl ResolvedCandidate {
     }
 
     pub fn validate_destination(&self, output: &Path) -> Result<(), RunError> {
-        for snapshot in std::iter::once(self.dataset.as_ref())
+        for snapshot in self
+            .dataset
+            .original
+            .iter()
             .chain(self.implementation.sources.iter())
             .chain(self.evaluator.sources.iter())
         {
@@ -194,6 +215,7 @@ pub(super) fn resolve(
     repository: &CheckedRepository,
     plan: &LogicalPlan,
     output: &Path,
+    cache_directory: Option<&Path>,
 ) -> Result<ResolvedRun, RunError> {
     for experiment in &plan.experiments {
         let policy = &experiment.execution_policy.record;
@@ -299,13 +321,51 @@ pub(super) fn resolve(
             ));
         }
     }
+    let temporary_cache = private_root.path().join("artifacts");
+    let cache_directory = cache_directory.unwrap_or(&temporary_cache);
+    if cache_directory.starts_with(output) || output.starts_with(cache_directory) {
+        return Err(unsupported(
+            "artifact cache and run output must be separate directories",
+        ));
+    }
+    for (_, _, implementation, evaluator, dataset) in &prepared {
+        for snapshot in implementation
+            .sources
+            .iter()
+            .chain(evaluator.sources.iter())
+        {
+            validate_snapshot_destination(snapshot, cache_directory)?;
+        }
+        match dataset {
+            DatasetPlan::Ready(snapshot, _) => {
+                validate_snapshot_destination(snapshot, cache_directory)?
+            }
+            DatasetPlan::Generated(_, materializer) => {
+                if let Some(snapshot) = &materializer.sources {
+                    validate_snapshot_destination(snapshot, cache_directory)?;
+                }
+            }
+        }
+    }
+    let store = ArtifactStore::open(cache_directory)?;
     let mut datasets = BTreeMap::new();
     let mut candidates = Vec::new();
     for (candidate, timeouts, implementation, evaluator, dataset_plan) in prepared {
         let key = candidate.dataset_configuration.id;
         if let std::collections::btree_map::Entry::Vacant(entry) = datasets.entry(key) {
             let (snapshot, output_schema, provenance) = match dataset_plan {
-                DatasetPlan::Ready(snapshot, schema) => (Arc::new(snapshot), schema, None),
+                DatasetPlan::Ready(snapshot, schema) => {
+                    snapshot.verify()?;
+                    let artifact = store.import_tree(snapshot.directory.path(), snapshot.digest)?;
+                    (
+                        Arc::new(DatasetSnapshot {
+                            artifact,
+                            original: Some(snapshot),
+                        }),
+                        schema,
+                        None,
+                    )
+                }
                 DatasetPlan::Generated(definition, materializer) => {
                     materializer.verify()?;
                     let source = definition
@@ -321,26 +381,43 @@ pub(super) fn resolve(
                             )
                         })
                         .transpose()?;
-                    let materialized = materialize_dataset(DatasetMaterialization {
-                        configuration: &candidate.dataset_configuration.record,
-                        source: source.as_ref(),
-                        launch: &materializer.launch,
-                        worker: &materializer.record,
-                        output_schema: definition.output_schema.as_path(),
-                        schemas: &repository.schemas,
-                        validator: None,
-                        private_root: private_root.path(),
-                        timeouts,
-                        log_limits: WorkerLogLimits::new(64 * 1024, 64 * 1024),
-                    })?;
+                    let derivation = identify_dataset_derivation(
+                        &candidate.dataset_configuration.record,
+                        source.as_ref(),
+                        &materializer.record,
+                    )?;
+                    let (artifact, provenance) =
+                        if let Some(cached) = store.lookup_dataset(&derivation)? {
+                            WorkerOutputValidator::new(&repository.schemas)?
+                                .validate_materialized_dataset(
+                                    cached.artifact.directory(),
+                                    &MaterializeResponse::new(
+                                        "cache".parse().expect("static request ID"),
+                                        cached.manifest.as_path().to_str().expect("UTF-8 manifest"),
+                                    ),
+                                    definition.output_schema.as_path(),
+                                )?;
+                            (cached.artifact, cached.provenance)
+                        } else {
+                            let materialized = materialize_dataset(DatasetMaterialization {
+                                configuration: &candidate.dataset_configuration.record,
+                                source: source.as_ref(),
+                                launch: &materializer.launch,
+                                worker: &materializer.record,
+                                output_schema: definition.output_schema.as_path(),
+                                schemas: &repository.schemas,
+                                validator: None,
+                                private_root: private_root.path(),
+                                timeouts,
+                                log_limits: WorkerLogLimits::new(64 * 1024, 64 * 1024),
+                            })?;
+                            let artifact = store.publish_dataset(&materialized)?;
+                            (artifact, materialized.provenance.clone())
+                        };
                     materializer.verify()?;
-                    let digest = materialized.output_digest;
-                    let provenance = materialized.provenance.clone();
-                    let directory = materialized.into_directory();
                     (
-                        Arc::new(Snapshot {
-                            directory,
-                            digest,
+                        Arc::new(DatasetSnapshot {
+                            artifact,
                             original: None,
                         }),
                         repository.resources.schemas[definition.output_schema.as_path()],
@@ -466,7 +543,7 @@ fn prepare_dataset<'a>(
 }
 
 struct ResolvedDataset {
-    snapshot: Arc<Snapshot>,
+    snapshot: Arc<DatasetSnapshot>,
     output_schema: RecordId<metewand_core::records::SchemaResource>,
     provenance: Option<CanonicalValue>,
 }
@@ -486,7 +563,10 @@ fn resolve_candidate(
     let catalog = &repository.planning_catalog;
     let dataset_instance = identify_record(DatasetInstanceRecord {
         configuration: candidate.dataset_configuration.id,
-        artifact: dataset.artifact::<DatasetArtifact>()?,
+        artifact: identify_canonical::<DatasetArtifact>(&canonical(json!({
+            "tree_hash_version": LOCAL_TREE_HASH_VERSION,
+            "tree_sha256": hex(dataset.artifact.digest().bytes()),
+        }))?)?,
         output_schema,
     })?;
     let problem_instance = identify_record(ProblemInstanceRecord {

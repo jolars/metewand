@@ -197,7 +197,7 @@ provides an optional source of recorded datasets and verified decoding.
   digests, decoding recipes, and verification status. Bind verified sources,
   materializer code and environment, canonical parameters, and dataset seeds
   into derivation identities, with separately recorded output hashes.
-- [ ] Implement the content-addressed artifact store, derivation-to-output
+- [x] Implement the content-addressed artifact store, derivation-to-output
   mappings, completion markers, leases, and private per-attempt dataset
   views. Import provider exports through verified copies or snapshots while
   preserving ownership of provider caches.

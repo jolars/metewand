@@ -344,7 +344,7 @@ fn staging(parent: &Path) -> Result<TempDir, PublicationError> {
     Ok(Builder::new().prefix(".staging-").tempdir_in(parent)?)
 }
 
-fn write_file(path: &Path, bytes: &[u8]) -> Result<(), PublicationError> {
+pub(crate) fn write_file(path: &Path, bytes: &[u8]) -> Result<(), PublicationError> {
     let mut file = OpenOptions::new().create_new(true).write(true).open(path)?;
     file.write_all(bytes)?;
     file.sync_all()?;
@@ -361,7 +361,7 @@ fn write_document(
     write_file(&root.join(name), &document.to_canonical_bytes()?)
 }
 
-fn publish(stage: TempDir, destination: &Path) -> Result<PathBuf, PublicationError> {
+pub(crate) fn publish(stage: TempDir, destination: &Path) -> Result<PathBuf, PublicationError> {
     let files = inventory(stage.path())?;
     for entry in files.values() {
         File::open(stage.path().join(&entry.path))?.sync_all()?;
@@ -409,7 +409,7 @@ fn publish(stage: TempDir, destination: &Path) -> Result<PathBuf, PublicationErr
     target_os = "ios",
     target_os = "redox"
 ))]
-fn rename_no_replace(source: &Path, destination: &Path) -> io::Result<()> {
+pub(crate) fn rename_no_replace(source: &Path, destination: &Path) -> io::Result<()> {
     rustix::fs::renameat_with(
         rustix::fs::CWD,
         source,
@@ -426,14 +426,14 @@ fn rename_no_replace(source: &Path, destination: &Path) -> io::Result<()> {
     target_os = "ios",
     target_os = "redox"
 )))]
-fn rename_no_replace(_source: &Path, _destination: &Path) -> io::Result<()> {
+pub(crate) fn rename_no_replace(_source: &Path, _destination: &Path) -> io::Result<()> {
     Err(io::Error::new(
         io::ErrorKind::Unsupported,
         "atomic no-replace directory publication is unavailable",
     ))
 }
 
-fn sync_directories(root: &Path) -> io::Result<()> {
+pub(crate) fn sync_directories(root: &Path) -> io::Result<()> {
     for entry in fs::read_dir(root)? {
         let entry = entry?;
         if entry.file_type()?.is_dir() {

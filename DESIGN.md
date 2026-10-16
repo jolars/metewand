@@ -1473,9 +1473,8 @@ A separate extraction API admits tar and tar.gz regular files and directories
 with mandatory entry-count and expanded-size limits. It rejects all links,
 special entries, traversal, duplicate paths, and tar metadata extensions.
 Extraction rechecks the source before use and leaves archive permissions and
-ownership unapplied. A Datamonger adapter and durable artifact caching remain
-separate implementation slices. The current local `run` path uses the repository
-branch of this boundary for fixed data and an explicit HTTP(S) backend for
+ownership unapplied. A Datamonger adapter remains a separate implementation
+slice. The current local `run` path uses the repository branch of this boundary for fixed data and an explicit HTTP(S) backend for
 generated datasets.
 
 Artifacts live in a content-addressed cache. Downloaded files are verified
@@ -1502,8 +1501,9 @@ source trees to the resolved materializer, canonical parameters, and dataset
 seed. Construction receipts record output hashes separately. See
 [Dataset materialization](docs/dataset-materialization.md) for the runtime
 interfaces, standalone validation command, and compatibility review. The local
-`run` command materializes each selected dataset configuration once per run;
-`check` and `plan` remain side-effect-free.
+`run` command materializes each selected dataset configuration once per run or
+reuses its verified construction from an explicit `--cache-dir`; `check` and
+`plan` remain side-effect-free.
 
 A dataset derivation identity covers the dataset definition, verified sources,
 materializer source and environment, canonical parameters, and dataset seed. The
@@ -1522,6 +1522,20 @@ finalized object only when its manifest contains a completion marker written
 last and the database references the same content identity. Recovery may
 validate and import a completed orphan left by a crash between publication and
 the terminal transaction.
+
+The initial filesystem store implements this artifact boundary through
+`artifact_store::ArtifactStore` with `ARTIFACT_STORE_VERSION = 1`. It publishes
+content trees and construction mappings separately, writes completion metadata
+outside the addressed tree, and gives each local attempt an independent,
+verified copy. `import_source` copies verified provider exports while preserving
+provider ownership. Kernel locks protect unique staging, reader, and view
+leases for their owners' lifetimes; explicit recovery quarantines abandoned
+lease staging only after acquiring its released lock. The CLI uses a temporary
+store unless `--cache-dir` selects persistent construction reuse. The new object,
+mapping, and lease schemas join the initial version-1 public catalog without
+changing identity or tree-hash transcripts. Transactional database references,
+canonical-object quarantine, and garbage collection remain later slices. See
+[Artifact storage and private dataset views](docs/artifact-store.md).
 
 Later reads verify hashes whenever data crosses from the cache into a worker
 view, before evaluation, and during export or explicit cache verification.
