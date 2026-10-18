@@ -87,7 +87,8 @@ impl RunStore {
     ///
     /// # Errors
     /// Rejects stale ownership, unsafe entries, conflicting content, expired
-    /// leases, and synchronization, rename, population, or database failures.
+    /// leases, recovery lock contention, and synchronization, rename,
+    /// population, or database failures.
     pub fn publish_artifact(
         &mut self,
         attempt: &OwnedAttempt,
@@ -137,7 +138,8 @@ impl RunStore {
     /// # Errors
     /// Rejects invalid outcomes or references, stale or expired owners, missing
     /// success claims, unsafe or conflicting content, and filesystem or database
-    /// failures. Errors can leave leased stages or complete orphans, never a
+    /// failures, including recovery lock contention. Errors can leave leased
+    /// stages or complete orphans, never a
     /// terminal receipt. Recovery is a separate operation.
     pub fn publish_finalization(
         &mut self,
@@ -184,6 +186,7 @@ impl RunStore {
 
     fn stage(&mut self, attempt: &OwnedAttempt, now_ns: u64) -> Result<Stage, RunStoreError> {
         let now = timestamp(now_ns)?.max(timestamp(attempt.updated_at_ns())?);
+        let _creation_lock = super::recovery::coordination_lock(self, true)?;
         let root = self
             .database_path()
             .parent()
@@ -287,40 +290,54 @@ impl RunStore {
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
         check_stage(&tx, attempt, stage, finished)?;
         validate_finalization(&tx, attempt, outcome, now)?;
-        let mut references = references.to_vec();
-        references.sort();
-        if references.windows(2).any(|pair| pair[0] == pair[1])
-            || references
-                .iter()
-                .any(|(role, _)| role.trim().is_empty() || role == "final")
-        {
-            return Err(invalid(
-                "dependency roles must be nonempty, non-final, and unique per artifact",
-            ));
-        }
-        let dependencies = references.iter().map(|(role, id)| {
+        let document = build_outcome_document(&tx, attempt, outcome, references, finished)?;
+        tx.commit()?;
+        Ok(document)
+    }
+}
+
+pub(super) fn build_outcome_document(
+    tx: &Transaction<'_>,
+    attempt: &OwnedAttempt,
+    outcome: &TerminalOutcome,
+    references: &[(String, String)],
+    finished: u64,
+) -> Result<CanonicalValue, RunStoreError> {
+    let mut references = references.to_vec();
+    references.sort();
+    if references.windows(2).any(|pair| pair[0] == pair[1])
+        || references
+            .iter()
+            .any(|(role, _)| role.trim().is_empty() || role == "final")
+    {
+        return Err(invalid(
+            "dependency roles must be nonempty, non-final, and unique per artifact",
+        ));
+    }
+    let dependencies = references.iter().map(|(role, id)| {
             tx.query_row("SELECT kind, relative_path, content_sha256, storage_kind, manifest_sha256 FROM artifacts WHERE id = ?1",
                 [id], |r| Ok(json!({"role":role, "id":id, "kind":r.get::<_, String>(0)?,
                     "relative_path":r.get::<_, String>(1)?, "content_sha256":r.get::<_, String>(2)?,
                     "storage_kind":r.get::<_, String>(3)?, "manifest_sha256":r.get::<_, Option<String>>(4)?})))
-                .map_err(RunStoreError::from)
+                .map_err(|error| match error {
+                    rusqlite::Error::QueryReturnedNoRows => invalid("dependency is not registered"),
+                    other => RunStoreError::from(other),
+                })
         }).collect::<Result<Vec<_>, _>>()?;
-        let started: i64 = tx.query_row(
-            "SELECT started_at_ns FROM attempts WHERE id = ?1",
-            [attempt.id().to_string()],
-            |r| r.get(0),
-        )?;
-        let coordination = coordination_snapshot(&tx, attempt)?;
-        let document = CanonicalValue::try_from(json!({
-            "run_store_version": RUN_STORE_SCHEMA_VERSION,
-            "attempt_id": attempt.id(), "slot_id":attempt.slot(), "retry_index":attempt.retry_index(),
-            "finalizing_revision":attempt.revision(), "state":outcome.state(), "details":outcome.details()?,
-            "started_at_ns":started.to_string(), "finished_at_ns":finished.to_string(), "references":dependencies,
-            "coordination": coordination,
-        }))?;
-        tx.commit()?;
-        Ok(document)
-    }
+    let started: i64 = tx.query_row(
+        "SELECT started_at_ns FROM attempts WHERE id = ?1",
+        [attempt.id().to_string()],
+        |r| r.get(0),
+    )?;
+    let coordination = coordination_snapshot(tx, attempt)?;
+    let document = CanonicalValue::try_from(json!({
+        "run_store_version": RUN_STORE_SCHEMA_VERSION,
+        "attempt_id": attempt.id(), "slot_id":attempt.slot(), "retry_index":attempt.retry_index(),
+        "finalizing_revision":attempt.revision(), "state":outcome.state(), "details":outcome.details()?,
+        "started_at_ns":started.to_string(), "finished_at_ns":finished.to_string(), "references":dependencies,
+        "coordination": coordination,
+    }))?;
+    Ok(document)
 }
 
 fn coordination_snapshot(
@@ -391,7 +408,7 @@ fn release_stage(tx: &Transaction<'_>, stage: &Stage, now: u64) -> Result<(), Ru
     Ok(())
 }
 
-fn register_artifact(
+pub(super) fn register_artifact(
     tx: &Transaction<'_>,
     artifact: &ArtifactRegistration,
     kind: &str,

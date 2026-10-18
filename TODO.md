@@ -234,7 +234,7 @@ workflows](DESIGN.md#automation-and-agentic-workflows).
 - [x] Publish artifacts from same-filesystem staging directories using complete
   validation, file and directory synchronization, atomic no-replace rename,
   parent synchronization, and a final database transaction.
-- [ ] Recover expired reservations, interrupted staging directories, completed
+- [x] Recover expired reservations, interrupted staging directories, completed
   orphans, and finalization claims without manufacturing success or
   duplicating an accepted slot.
 - [ ] Add fault injection at every database, synchronization, rename, and

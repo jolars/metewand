@@ -57,11 +57,11 @@ pub struct LeaseRequest {
 /// previous revisions cannot write. Tokens must be kept private to the owner.
 #[derive(Clone, Debug)]
 pub struct OwnedAttempt {
-    id: RecordId<RunAttemptRecord>,
-    slot: RecordId<ResolvedAttemptSlotRecord>,
-    retry_index: u64,
-    revision: u64,
-    updated_at_ns: u64,
+    pub(super) id: RecordId<RunAttemptRecord>,
+    pub(super) slot: RecordId<ResolvedAttemptSlotRecord>,
+    pub(super) retry_index: u64,
+    pub(super) revision: u64,
+    pub(super) updated_at_ns: u64,
     pub(super) lease_id: String,
     pub(super) owner_token: String,
 }
@@ -411,12 +411,36 @@ pub(super) fn commit_finalization_in(
 ) -> Result<TerminalAttempt, RunStoreError> {
     let now = timestamp(now_ns)?.max(timestamp(attempt.updated_at_ns)?);
     let checked = timestamp(checked_at_ns)?.max(now);
+    validate_finalization(tx, attempt, &outcome, checked)?;
+    commit_terminal_in(
+        tx,
+        attempt,
+        outcome,
+        artifact,
+        references,
+        now_ns,
+        checked_at_ns,
+    )
+}
+
+// Recovery performs its own expiry and evidence checks while holding the write
+// lock. Both paths then use the same terminal projection and claim release.
+pub(super) fn commit_terminal_in(
+    tx: &Transaction<'_>,
+    attempt: &OwnedAttempt,
+    outcome: TerminalOutcome,
+    artifact: ArtifactRegistration,
+    references: &[(String, String)],
+    now_ns: u64,
+    checked_at_ns: u64,
+) -> Result<TerminalAttempt, RunStoreError> {
+    let now = timestamp(now_ns)?.max(timestamp(attempt.updated_at_ns)?);
+    let checked = timestamp(checked_at_ns)?.max(now);
     let verified = timestamp(artifact.verified_at_ns)?;
     if artifact.id.is_empty() || verified > checked {
         return Err(invalid("invalid finalized artifact metadata"));
     }
     let details = outcome.details()?;
-    validate_finalization(tx, attempt, &outcome, checked)?;
     let state = "finalizing";
     tx.execute("INSERT INTO artifacts(id, kind, relative_path, content_sha256, storage_kind, manifest_sha256, verified_at_ns)
             VALUES (?1, 'attempt', ?2, ?3, 'directory', ?4, ?5)", params![artifact.id, artifact.relative_path,
@@ -543,12 +567,12 @@ pub(super) fn fence(
     state.ok_or(RunStoreError::StaleAttempt)
 }
 
-struct TerminalProjection<'a> {
+pub(super) struct TerminalProjection<'a> {
     artifact_id: &'a str,
     failure_code: Option<&'a str>,
 }
 
-fn transition(
+pub(super) fn transition(
     tx: &Transaction<'_>,
     attempt: &OwnedAttempt,
     from: &str,
@@ -630,7 +654,10 @@ fn append_transition(
     Ok(())
 }
 
-fn validate_acceptance(tx: &Transaction<'_>, attempt: &OwnedAttempt) -> Result<(), RunStoreError> {
+pub(super) fn validate_acceptance(
+    tx: &Transaction<'_>,
+    attempt: &OwnedAttempt,
+) -> Result<(), RunStoreError> {
     let (kind, role): (String, String) = tx.query_row(
         "SELECT kind, role FROM attempt_slots WHERE id = ?1",
         [attempt.slot.to_string()],

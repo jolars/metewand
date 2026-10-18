@@ -700,8 +700,10 @@ filesystem capability probes. Its transactional writer API fences reservations,
 transitions, finalization claims, and terminal outcomes by lease ownership and
 revision. Its publisher creates leased same-filesystem stages, validates and
 synchronizes complete artifacts, publishes them without replacement, and only
-then commits their references and terminal state. Recovery and CLI integration
-are subsequent implementation slices. Uniqueness constraints permit at most one
+then commits their references and terminal state. Explicit recovery validates
+completed orphans, durably fails interrupted attempts, and quarantines abandoned
+stages while preserving claims until terminal commit. CLI integration remains
+a subsequent implementation slice. Uniqueness constraints permit at most one
 accepted attempt per resolved execution slot and one selected valid observation
 per resolved observation slot.
 Before writing its immutable outcome record, a successful attempt atomically
@@ -1780,8 +1782,10 @@ derivation mappings constrain any reconstruction to the original output hash.
 These controls complete the unreleased version-1 immutability contract without
 changing its compatibility constants. The separate run-store publisher connects
 leased publication and terminal database references as described in [Durable run-store
-schema](docs/run-store-schema.md#transactional-publication). CLI integration,
-recovery, and garbage collection remain later slices. See
+schema](docs/run-store-schema.md#transactional-publication). Its explicit
+[recovery API](docs/run-store-schema.md#explicit-recovery) resolves expired
+attempts, claimed orphans, and abandoned stages. CLI integration and garbage
+collection remain later slices. See
 [Artifact storage and private dataset views](docs/artifact-store.md).
 
 Later reads verify hashes whenever data crosses from the cache into a worker

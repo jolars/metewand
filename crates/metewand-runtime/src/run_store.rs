@@ -11,6 +11,8 @@ mod durable;
 #[cfg(unix)]
 mod publisher;
 #[cfg(unix)]
+mod recovery;
+#[cfg(unix)]
 pub use attempts::{
     ArtifactRegistration, AttemptPhase, ClaimDisposition, Finalization, LeaseRequest, OwnedAttempt,
     RetryAuthorization, TerminalAttempt, TerminalOutcome,
@@ -19,6 +21,8 @@ pub use attempts::{
 pub use durable::{RunStore, RunStoreError};
 #[cfg(unix)]
 pub use publisher::{ArtifactKind, PublishedArtifact, PublishedFinalization};
+#[cfg(unix)]
+pub use recovery::{RecoveryReport, RejectedArtifact};
 
 /// Internal SQLite layout version, independent of public record compatibility.
 pub const RUN_STORE_SCHEMA_VERSION: u32 = 1;

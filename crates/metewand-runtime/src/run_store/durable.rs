@@ -113,7 +113,7 @@ pub enum RunStoreError {
     UnsupportedSchema { version: u32, reason: &'static str },
     #[error("required run-store capability is unavailable: {0}")]
     Capability(&'static str),
-    #[error("timed out acquiring the run-store initialization lock")]
+    #[error("run-store coordination lock is busy")]
     Busy,
     #[error("run-store I/O failed: {0}")]
     Io(#[from] io::Error),

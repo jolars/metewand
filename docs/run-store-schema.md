@@ -111,7 +111,8 @@ error after the schema commits can leave an initialized database, which a retry
 checks and reopens. Interrupted probe directories do not establish any attempt
 state. The writer API below adds transactional attempt transitions and final
 artifact registration. The publisher API below connects durable filesystem publication to these
-transactions. Connecting the CLI and implementing recovery remain later slices. Executing the schema SQL alone
+transactions. Explicit recovery is described below; CLI integration remains a
+later slice. Executing the schema SQL alone
 does not perform any of these durability checks.
 
 ## Rows and relationships
@@ -245,7 +246,8 @@ CLI's public event stream. Operations return guards or terminal receipts only
 after commit. `TerminalAttempt.event_sequence` identifies the committed terminal
 event even when unrelated events occur between transitions. Errors roll back
 all partial writes, including failure after the terminal projection changes.
-Recovery and a delivery/subscription API remain later slices.
+Recovery uses the same terminal projection and event writer; a
+delivery/subscription API remains a later slice.
 
 ## Observation selection and attempt acceptance
 
@@ -348,13 +350,15 @@ already accepted attempt or selected observation must respect the same unique
 constraints. Recovery must never infer success from the presence of a staging
 directory, a completion marker alone, an artifact row, or a claim. Replay uses
 the same reservation and transition constraints, preserving every recovered
-retry identity. Recovery algorithms and exhaustive boundary fault injection are later slices.
+retry identity. The explicit recovery API below implements this handoff;
+exhaustive boundary fault injection remains a later slice.
 
 ## Transactional publication
 
 On Unix, `RunStore::publish_artifact` and `RunStore::publish_finalization` own the
 filesystem-to-database boundary. These methods mutate the explicitly opened
-store. They do not change the current CLI execution path or add recovery.
+store. They do not change the current CLI execution path. Recovery is an
+explicit operation described below.
 
 `publish_artifact(&attempt, kind, populate, clock)` publishes an independent
 artifact. `ArtifactKind` covers observation, result, metrics, dataset, source,
@@ -472,8 +476,9 @@ Registered stages survive errors with their lock released, and a failure after
 rename may leave a fully verified orphan. Neither state implies acceptance.
 After commit, staging cleanup is best effort; a leftover released stage cannot
 revoke completion. Reopening the store imports neither stages nor orphans.
-Explicit recovery, automatic observation selection, CLI integration, and
-exhaustive boundary fault injection remain subsequent slices.
+The explicit recovery API below handles these leftovers. Automatic observation
+selection, CLI integration, and exhaustive boundary fault injection remain
+subsequent slices.
 
 Publication tests cover exact outcome bytes, current epoch nanoseconds, backward
 clock adjustments, live-stage renewal, same-filesystem placement, kernel locks,
@@ -482,6 +487,104 @@ unsafe entries, stale revisions, missing claims and dependencies, corruption,
 concurrent identical content, expiry after rename, and rollback after a terminal
 projection update. Late failures leave verifiable orphans while preserving the
 claim and nonterminal database state.
+
+## Explicit recovery
+
+On Unix, `RunStore::recover(clock)` mutates an explicitly opened store. Opening
+alone never imports an orphan, marks an expired attempt successful, or allocates
+a retry. The clock follows the publisher's epoch-nanosecond convention and must
+read the actual current time in production.
+
+```rust
+let recovered = store.recover(&mut clock)?;
+for terminal in recovered.terminals {
+    // Each receipt identifies a committed terminal event.
+    println!("{} {}", terminal.id, terminal.event_sequence);
+}
+```
+
+Recovery takes an exclusive kernel lock on `.run-store-recovery.lock` and
+rechecks expiration and revisions under SQLite write locks. Publishers take
+this lock in shared mode while creating and registering a stage, closing the
+interval before a stage has its own lock file or database lease. Lock contention
+returns `RunStoreError::Busy`; callers may retry explicitly. Recovery also tries
+each stage's kernel lock without waiting. A held lock defers that stage and its
+attempt even after lease expiry. An unlocked stage with a live lease stays
+available to its owner. An expired staging lease can be quarantined independently
+when its reservation was renewed after that staging lease expired.
+
+An attempt becomes recoverable when its reservation or owned finalization claim
+expires or is released. Recovery never renews expired owners or changes their
+tokens. For each recoverable attempt it validates completed, unregistered
+`artifacts/attempt-<tree-sha256>` directories, including:
+
+- the complete manifest, exact file inventory, content address, and canonical
+  version-1 coordination outcome;
+- the attempt identity derived from the resolved slot and retry index, current
+  finalizing revision, reservation start, and immutable finish timestamp;
+- exact coordination records, resolved memberships, observation selections, and
+  dependency metadata against the authoritative database snapshot; and
+- the content, completion manifests, storage kinds, and safe paths of referenced
+  artifacts, produced and selected observations, and their artifact roots.
+
+Acceptance additionally requires the original claim, owned by that attempt's
+reservation owner, to have authorized the immutable finish time. Recovery uses
+the writer's policy-specific observation acceptance checks. As with normal
+publication, the trusted orchestrator must have validated problem-owned
+scientific rules before publishing the outcome; recovery does not rerun workers
+or infer scientific success from a completion marker. Missing dependencies,
+changed records, invalid identities, missing claims, and ambiguous completed
+outcomes cannot establish acceptance.
+
+When exactly one completed outcome passes these checks, recovery synchronizes
+its files and directories and their publication parent. Its final transaction
+rechecks the coordination evidence and expired owner, registers the exact
+artifact and roots, appends the terminal transition and event, releases the
+resolved claim, and releases the attempt's leases. The immutable finish time and
+original accepted, failed, censored, or superseded outcome survive import.
+The existing uniqueness constraints still permit at most one accepted attempt
+per execution slot and one selected observation per observation slot.
+
+Without an unambiguous verified outcome, recovery moves the expired attempt to
+`finalizing` if needed, then publishes a canonical `Failed` outcome with code
+`interrupted_attempt`. It retains the attempt's leased artifact roots and commits
+failure before releasing its claim. Its private recovery stages use the global
+kernel lock for their lifetime. A crash after publishing this failure but before
+commit leaves another recoverable orphan. The
+[recovered-failure conformance vector](../crates/metewand-runtime/src/run_store/fixtures/recovered-failure-v1.json)
+pins the canonical bytes for an expired reservation. The schema and public
+compatibility constants remain at version 1; recovery reuses their existing
+representations and constraints.
+
+Recovery atomically moves abandoned stages intact to
+`artifacts/.quarantine/<original-stage-name>` and synchronizes both parents before
+releasing their staging leases. It also handles stages left before lease
+registration, stages whose cleanup was interrupted after a successful commit,
+and missing stages whose database leases remain. A complete but unpublished
+`object/` inside staging never establishes success. Repeating recovery after a
+quarantine rename or terminal commit is safe.
+
+Independent completed orphans can be registered as verified artifact bytes.
+This creates no observation, selection, or accepted attempt. Recovery preserves
+existing selections and valid observations when their producing attempt fails.
+It does not reconstruct a missing database from outcome snapshots, restore
+implementation state, start workers, or allocate retries. Resuming failed slots
+still requires an explicit retry authorization and a new attempt identity.
+
+`RecoveryReport` returns committed `terminals`, independently
+`imported_artifacts`, store-relative `quarantined_stages` and `busy_stages`, and
+`rejected_artifacts` with paths and diagnostic reasons. Rejected completed
+objects stay on disk for inspection. Publication, synchronization, unsafe stage
+paths, and database failures return an error; transactions already committed earlier
+in a pass remain committed. Repeating the operation resolves surviving work
+without duplicating terminal events or acceptance.
+
+Recovery tests cover expiration at the exact boundary, live-owner preservation,
+expired claims, active process locks, process death before and after publication,
+unregistered and complete staging directories, independent orphans, all terminal
+outcomes, corrupted dependencies, changed metadata, missing claims, ambiguous
+outcomes, preserved observations, concurrent recoverers, and transaction rollback
+followed by import of the same immutable orphan.
 
 ## Artifact references and retention
 
