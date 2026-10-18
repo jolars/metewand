@@ -1,9 +1,13 @@
 //! Versioned SQLite layout for durable run coordination.
 //!
-//! This module exposes the schema without opening a store or claiming durable
-//! execution. Connection initialization, filesystem checks, transactional writer
-//! operations, and recovery are separate implementation slices. See
+//! Store initialization verifies SQLite settings and filesystem capabilities.
+//! Transactional attempt writers and recovery remain separate slices. See
 //! `docs/run-store-schema.md` for the transaction and validation requirements.
+
+#[cfg(unix)]
+mod durable;
+#[cfg(unix)]
+pub use durable::{RunStore, RunStoreError};
 
 /// Internal SQLite layout version, independent of public record compatibility.
 pub const RUN_STORE_SCHEMA_VERSION: u32 = 1;

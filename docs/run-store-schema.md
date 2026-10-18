@@ -17,11 +17,14 @@ states and slot kinds in this layout reserve the semantics described in
 [DESIGN.md](../DESIGN.md#automation-and-agentic-workflows); they do not add profile
 support to the current one-shot domain records or CLI.
 
-A future initializer must read `user_version` before applying any DDL, create
-version 1 only in an empty database, and reject unknown versions. Migration must
-be deliberate and transactional. The SQL intentionally omits `IF NOT EXISTS` so
-an existing, incompatible table cannot silently pass initialization. Apply the
-whole script in one transaction and roll back on any error.
+`RunStore::open` reads `user_version` before changing the persistent journal
+mode or applying DDL. It creates version 1 only in an empty database, rejects
+unknown versions and unversioned databases with user objects, and checks an
+existing version-1 database against the embedded tables, indexes, and triggers.
+Migration must be deliberate and transactional. The SQL intentionally omits
+`IF NOT EXISTS` so an existing, incompatible table cannot silently pass
+initialization. The initializer applies the whole script in one immediate
+transaction and rolls it back on any error.
 
 Every connection must enable and verify `PRAGMA foreign_keys = ON` and
 `PRAGMA recursive_triggers = ON` before starting a transaction. The latter makes
@@ -33,11 +36,79 @@ support strict tables and JSON functions. These requirements follow SQLite's
 [strict table rules](https://www.sqlite.org/stricttables.html), and
 [partial unique index rules](https://www.sqlite.org/partialindex.html).
 
-WAL mode, full synchronous durability, busy handling, filesystem capability
-checks, and refusal of unsupported durable operation belong to the next slice.
-Executing this schema alone proves none of those properties. Tests use bundled
-SQLite through a development dependency; the runtime has no SQLite connection
-or writer dependency yet.
+## Durable initialization
+
+On Unix, `metewand_runtime::run_store::RunStore::open` initializes or reopens a
+durable connection. The caller authorizes mutation by invoking it and supplies
+an existing absolute directory on a filesystem shared by processes on one host.
+The initializer does not create that root; the caller must durably create it
+and its parents first. Paths and ancestors must remain under trusted control
+while the store is open.
+
+```rust
+use metewand_runtime::run_store::RunStore;
+
+let store = RunStore::open(output_root)?;
+let database_path = store.database_path();
+```
+
+The root contains `run.sqlite3`, SQLite's live `run.sqlite3-wal` and
+`run.sqlite3-shm` sidecars, and a persistent `.run-store-init.lock` file. The
+initializer rejects a symbolic link at the root, database, lock file, or an
+existing SQLite sidecar, and requires regular files for database objects. It
+opens SQLite without URI interpretation or VFS overrides. All initializers
+serialize on the lock file with a five-second timeout; the file stays in place
+so another process cannot accidentally lock a replacement inode.
+
+Every connection sets and reads back `journal_mode = WAL`, `synchronous = FULL`,
+`locking_mode = NORMAL`, `foreign_keys = ON`, and `recursive_triggers = ON`.
+It also enables and verifies `fullfsync` and `checkpoint_fullfsync` for platforms
+that implement stronger synchronization through those settings. SQLite busy
+handling waits at most five seconds per lock acquisition. The runtime uses
+bundled SQLite, including strict tables and JSON functions. The connection
+stays private so callers cannot weaken these settings. WAL persists in the
+database, while connection-local settings are reapplied on every open.
+
+Every open runs capability probes in a private disposable directory within the
+supplied root before opening the real database:
+
+- Two independently opened descriptors must enforce exclusive file locks and
+  permit reacquisition after release. These locks serialize initialization.
+- Short-lived child processes must fail to acquire a conflicting POSIX record
+  lock and succeed after its release. SQLite uses this locking family. The
+  child performs only `fcntl` and immediate process exit after `fork`, and the
+  parent reaps it. Process creation or probe failure refuses initialization.
+- A written file and its containing directories must synchronize successfully.
+- Atomic no-replace directory rename must preserve the payload and refuse to
+  replace both populated and empty destinations without changing either tree.
+  The probe synchronizes the parent after successful publication.
+- Two WAL connections must exclude competing immediate write transactions,
+  hide uncommitted data, expose commits, discard rolled-back writes, and
+  complete a WAL checkpoint. The probe also exercises strict tables and JSON.
+
+The initializer removes its disposable directory and synchronizes the root.
+After the schema transaction commits, it synchronizes the database file and
+root before returning the connection. A failed probe or synchronization returns
+an error; there is no fallback to rollback journals, weaker synchronization,
+ordinary replacing rename, or an in-memory database. Platforms without the
+required no-replace rename refuse initialization. Linux also rejects recognized
+network filesystems, including NFS, SMB/CIFS, AFS, Ceph, Coda, NCP, and 9P,
+because a local probe cannot establish shared-memory safety across hosts.
+SQLite documents the [WAL filesystem restrictions](https://sqlite.org/wal.html)
+and [synchronization settings](https://sqlite.org/pragma.html#pragma_synchronous).
+
+These checks establish that the required operations report success and enforce
+exclusion on the current filesystem. They cannot detect storage hardware that
+acknowledges synchronization without honoring it. Durable use requires storage
+that honors these operations; network filesystems are unsupported even when a
+mount cannot be recognized automatically.
+
+Opening records no attempts or success events and imports no artifacts. An
+error after the schema commits can leave an initialized database, which a retry
+checks and reopens. Interrupted probe directories do not establish any attempt
+state. Attempt transitions, artifact registration, and recovery remain later
+slices, and the CLI continues to use the filesystem publisher. Executing the
+schema SQL alone does not perform any of these durability checks.
 
 ## Rows and relationships
 
@@ -220,3 +291,10 @@ transition history and event linkage, all terminal outcomes, claim ownership,
 recovery ordering, immutable selections, retained checkpoints, artifact kinds,
 and normalized paths. They establish schema invariants without claiming crash
 durability or implementing the later store operations.
+
+Initialization tests cover fresh and repeated opens, all required connection
+settings, history retention, concurrent threads and processes, unsupported WAL,
+unknown or altered schemas, unsafe paths, and refusal on injected locking,
+file-sync, directory-sync, and rename failures. Failures at later capability
+boundaries never return a store handle, and reopening checks the surviving
+layout without manufacturing events.

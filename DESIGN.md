@@ -695,7 +695,8 @@ applicability decisions, resolved attempt and observation slots, leases,
 transitions, durable checkpoint observations, and finalized artifact references;
 event rows are insert-only, and state changes occur in transactions. The
 [version-1 SQLite schema](docs/run-store-schema.md) defines this coordination
-layout; store initialization, transactional writers, and recovery are subsequent
+layout. The runtime initializes stores with verified WAL/FULL settings and
+filesystem capability probes; transactional writers and recovery are subsequent
 implementation slices. Uniqueness constraints permit at most one accepted
 attempt per resolved execution slot and one selected valid observation per
 resolved observation slot.

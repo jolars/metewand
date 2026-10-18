@@ -226,7 +226,7 @@ workflows](DESIGN.md#automation-and-agentic-workflows).
   observations, attempts, leases, insert-only events, state transitions,
   finalization claims, artifact references, and the uniqueness constraints
   for selected observations and accepted attempts.
-- [ ] Initialize SQLite in WAL mode with full synchronous durability and refuse
+- [x] Initialize SQLite in WAL mode with full synchronous durability and refuse
   durable operation when required locking, synchronization, or atomic rename
   behavior is unavailable.
 - [ ] Implement transactional attempt transitions from reservation through
