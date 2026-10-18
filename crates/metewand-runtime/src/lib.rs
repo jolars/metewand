@@ -22,6 +22,7 @@ pub mod publication;
 pub mod repository;
 #[cfg(unix)]
 pub mod run;
+pub mod run_store;
 pub mod source_acquisition;
 pub mod source_bundle;
 pub mod source_resolution;

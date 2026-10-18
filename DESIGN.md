@@ -690,9 +690,12 @@ Long-running operations emit append-only structured events. An authoritative
 SQLite database in WAL mode with full synchronous durability coordinates
 applicability decisions, resolved attempt and observation slots, leases,
 transitions, durable checkpoint observations, and finalized artifact references;
-event rows are insert-only, and state changes occur in transactions. Uniqueness
-constraints permit at most one accepted attempt per resolved execution slot and
-one selected valid observation per resolved observation slot.
+event rows are insert-only, and state changes occur in transactions. The
+[version-1 SQLite schema](docs/run-store-schema.md) defines this coordination
+layout; store initialization, transactional writers, and recovery are subsequent
+implementation slices. Uniqueness constraints permit at most one accepted
+attempt per resolved execution slot and one selected valid observation per
+resolved observation slot.
 Before writing its immutable outcome record, a successful attempt atomically
 acquires a leased finalization claim; a concurrent loser is finalized as
 superseded. The claim alone never satisfies the slot: acceptance becomes

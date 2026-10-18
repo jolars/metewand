@@ -140,6 +140,11 @@ and reports durable accepted and failed attempts. The
 [fixed-dataset example](examples/fixed-dataset) demonstrates the complete path
 with raw workers and an independent evaluator.
 
+The [durable run-store schema](docs/run-store-schema.md) defines versioned SQLite
+coordination for resolved slots, retries, observations, leases, events, and
+finalization claims. Store initialization, transactional execution, and recovery
+remain subsequent implementation slices.
+
 ## Development
 
 The development environment pins Rust 1.98.0 and includes rustfmt, Clippy, and

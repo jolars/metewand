@@ -222,7 +222,7 @@ provides an optional source of recorded datasets and verified decoding.
 See [Automation and agentic
 workflows](DESIGN.md#automation-and-agentic-workflows).
 
-- [ ] Design the SQLite schema for resolved observation and attempt slots, run
+- [x] Design the SQLite schema for resolved observation and attempt slots, run
   observations, attempts, leases, insert-only events, state transitions,
   finalization claims, artifact references, and the uniqueness constraints
   for selected observations and accepted attempts.
