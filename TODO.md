@@ -231,7 +231,7 @@ workflows](DESIGN.md#automation-and-agentic-workflows).
   behavior is unavailable.
 - [x] Implement transactional attempt transitions from reservation through
   finalization and every terminal outcome.
-- [ ] Publish artifacts from same-filesystem staging directories using complete
+- [x] Publish artifacts from same-filesystem staging directories using complete
   validation, file and directory synchronization, atomic no-replace rename,
   parent synchronization, and a final database transaction.
 - [ ] Recover expired reservations, interrupted staging directories, completed

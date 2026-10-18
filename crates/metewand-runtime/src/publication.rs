@@ -362,45 +362,68 @@ fn write_document(
 }
 
 pub(crate) fn publish(stage: TempDir, destination: &Path) -> Result<PathBuf, PublicationError> {
-    let files = inventory(stage.path())?;
-    for entry in files.values() {
-        File::open(stage.path().join(&entry.path))?.sync_all()?;
+    prepare_directory(stage.path())?;
+    publish_prepared_directory(stage.path(), destination)?;
+    let _ = stage.keep();
+    Ok(destination.to_path_buf())
+}
+
+pub(crate) fn prepare_directory(stage: &Path) -> Result<(), PublicationError> {
+    let files = inventory(stage)?;
+    if files.contains_key("manifest.json") {
+        return Err(PublicationError::Conflict(stage.join("manifest.json")));
     }
-    sync_directories(stage.path())?;
+    for entry in files.values() {
+        File::open(stage.join(&entry.path))?.sync_all()?;
+    }
+    sync_directories(stage)?;
     let marker = CanonicalValue::try_from(json!({
         "schema_version": PUBLIC_SCHEMA_VERSION,
         "complete": true,
         "files": files.into_values().collect::<Vec<_>>(),
     }))?;
     write_document(
-        stage.path(),
+        stage,
         "manifest.json",
         PublicSchema::ArtifactManifest,
         &marker,
     )?;
-    File::open(stage.path())?.sync_all()?;
-    verify_finalized_directory(stage.path())?;
-    match rename_no_replace(stage.path(), destination) {
-        Ok(()) => {
-            // Disarm TempDir only after rename succeeds. No incomplete staging
-            // directory can be mistaken for a published identity.
-            let _ = stage.keep();
-        }
+    File::open(stage)?.sync_all()?;
+    verify_finalized_directory(stage)
+}
+
+pub(crate) fn publish_prepared_directory(
+    stage: &Path,
+    destination: &Path,
+) -> Result<(), PublicationError> {
+    verify_finalized_directory(stage)?;
+    match rename_no_replace(stage, destination) {
+        Ok(()) => (),
         Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
             verify_finalized_directory(destination)?;
-            if !same_contents(stage.path(), destination)? {
+            if !same_contents(stage, destination)? {
                 return Err(PublicationError::Conflict(destination.to_path_buf()));
             }
+            // A competing writer may not yet have synchronized the destination
+            // parent, so this writer independently completes the durability work.
+            for entry in inventory(destination)?.values() {
+                File::open(destination.join(&entry.path))?.sync_all()?;
+            }
+            sync_directories(destination)?;
+            fs::remove_dir_all(stage)?;
         }
         Err(error) => return Err(error.into()),
     }
     File::open(
         destination
             .parent()
-            .expect("published directories have a parent"),
+            .expect("published directory has a parent"),
     )?
     .sync_all()?;
-    Ok(destination.to_path_buf())
+    if stage.parent() != destination.parent() {
+        File::open(stage.parent().expect("staging directory has a parent"))?.sync_all()?;
+    }
+    Ok(())
 }
 
 #[cfg(any(

@@ -95,6 +95,8 @@ impl RunStore {
 /// Store operations never fall back to a weaker durability mode.
 #[derive(Debug, Error)]
 pub enum RunStoreError {
+    #[error(transparent)]
+    Publication(#[from] crate::publication::PublicationError),
     #[error("invalid attempt operation: {0}")]
     InvalidAttempt(&'static str),
     #[error("attempt ownership, lease, or expected revision is stale")]

@@ -698,10 +698,12 @@ event rows are insert-only, and state changes occur in transactions. The
 layout. The runtime initializes stores with verified WAL/FULL settings and
 filesystem capability probes. Its transactional writer API fences reservations,
 transitions, finalization claims, and terminal outcomes by lease ownership and
-revision. Publisher integration and recovery are subsequent implementation
-slices. Uniqueness constraints permit at most one accepted
-attempt per resolved execution slot and one selected valid observation per
-resolved observation slot.
+revision. Its publisher creates leased same-filesystem stages, validates and
+synchronizes complete artifacts, publishes them without replacement, and only
+then commits their references and terminal state. Recovery and CLI integration
+are subsequent implementation slices. Uniqueness constraints permit at most one
+accepted attempt per resolved execution slot and one selected valid observation
+per resolved observation slot.
 Before writing its immutable outcome record, a successful attempt atomically
 acquires a leased finalization claim; a concurrent loser is finalized as
 superseded. The claim alone never satisfies the slot: acceptance becomes
@@ -1776,8 +1778,10 @@ lock. Quarantine atomically moves the exact changed object out of the live
 address space and synchronizes both parents before releasing the lock. Retained
 derivation mappings constrain any reconstruction to the original output hash.
 These controls complete the unreleased version-1 immutability contract without
-changing its compatibility constants. Transactional database references and
-garbage collection remain later slices. See
+changing its compatibility constants. The separate run-store publisher connects
+leased publication and terminal database references as described in [Durable run-store
+schema](docs/run-store-schema.md#transactional-publication). CLI integration,
+recovery, and garbage collection remain later slices. See
 [Artifact storage and private dataset views](docs/artifact-store.md).
 
 Later reads verify hashes whenever data crosses from the cache into a worker

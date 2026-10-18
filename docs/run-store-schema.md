@@ -110,8 +110,8 @@ Opening records no attempts or success events and imports no artifacts. An
 error after the schema commits can leave an initialized database, which a retry
 checks and reopens. Interrupted probe directories do not establish any attempt
 state. The writer API below adds transactional attempt transitions and final
-artifact registration. Connecting the publisher and CLI to these transactions
-and implementing recovery remain later slices. Executing the schema SQL alone
+artifact registration. The publisher API below connects durable filesystem publication to these
+transactions. Connecting the CLI and implementing recovery remain later slices. Executing the schema SQL alone
 does not perform any of these durability checks.
 
 ## Rows and relationships
@@ -191,14 +191,15 @@ belong in its event payload and immutable attempt document.
 On Unix, `RunStore` provides the following transactional writer API. These are
 coordination operations for the trusted orchestrator. They require resolved
 slots and applicability records already registered by the planner. This slice
-does not connect the existing CLI planner and filesystem publisher to SQLite.
-The connection remains private.
+does not connect the existing CLI planner to SQLite. The transactional
+publisher below uses the same fencing and finalization operations. The connection
+remains private.
 
 | Operation | Committed effect |
 | --- | --- |
 | `reserve(slot, authorization, lease, now_ns)` | Allocates the next retry, derives its existing version-1 attempt ID, and inserts the attempt, reservation lease, event, and revision-zero transition together. |
 | `advance(&attempt, phase, now_ns)` | Checks ownership and revision, appends one legal transition and event, and advances the projection. |
-| `renew(&attempt, expires_at_ns, now_ns)` | Renews the reservation and any owned finalization lease together, without shortening either expiration. |
+| `renew(&attempt, expires_at_ns, now_ns)` | Renews the reservation, any owned finalization lease, and live staging leases together, without shortening expiration. |
 | `begin_finalization(&attempt, lease, now_ns)` | Enters `finalizing` and records either acquisition of a success claim or a `superseded` decision in the same transaction. |
 | `commit_finalization(&attempt, outcome, artifact, references, now_ns)` | Registers the published attempt artifact and dependency references, appends the terminal event and transition, updates the projection, deletes its resolved claim, and releases its leases together. |
 
@@ -221,7 +222,9 @@ lease ID, release status, expiration, and current revision. If the attempt owns
 a finalization claim, its lease must also belong to that owner and remain live.
 Expiration is exclusive: a lease cannot write or renew at its expiration time.
 Renewal checks all applicable leases before committing, so a failed renewal
-cannot partly extend ownership. Callers supply current epoch nanoseconds for
+cannot partly extend ownership. It also extends live staging leases belonging to
+the attempt. Expired staging leases remain for recovery and do not prevent the
+owner from renewing its reservation. Callers supply current epoch nanoseconds for
 deterministic testing and must use an actual current clock in production.
 Lease checks use at least the preceding transition time when the clock moves
 backward. Newly acquired finalization leases must extend beyond that time.
@@ -325,7 +328,7 @@ must name an existing artifact. Every terminal outcome retains these roots.
 The writer validates the metadata and database relationships; it does not hash,
 synchronize, rename, or otherwise publish directories. Its trusted caller must
 perform complete artifact and scientific validation before invoking it. The
-next publication slice will connect these responsibilities. The current public
+transactional publisher below connects these responsibilities. The current public
 one-shot documents still support only accepted and failed outcomes; the new
 coordination outcomes do not extend those schemas or add streaming execution.
 
@@ -346,6 +349,139 @@ constraints. Recovery must never infer success from the presence of a staging
 directory, a completion marker alone, an artifact row, or a claim. Replay uses
 the same reservation and transition constraints, preserving every recovered
 retry identity. Recovery algorithms and exhaustive boundary fault injection are later slices.
+
+## Transactional publication
+
+On Unix, `RunStore::publish_artifact` and `RunStore::publish_finalization` own the
+filesystem-to-database boundary. These methods mutate the explicitly opened
+store. They do not change the current CLI execution path or add recovery.
+
+`publish_artifact(&attempt, kind, populate, clock)` publishes an independent
+artifact. `ArtifactKind` covers observation, result, metrics, dataset, source,
+environment, and other directories. The callback writes the complete payload
+beneath its supplied private path and relinquishes all writers before returning.
+It must validate problem-owned content before returning; inventory verification
+does not establish scientific validity. The runtime owns `manifest.json` and
+rejects a caller-supplied completion marker. An observation artifact registration
+alone creates neither an observation row nor a selection.
+
+```rust
+use metewand_runtime::run_store::ArtifactKind;
+
+let dataset = store.publish_artifact(
+    &attempt,
+    ArtifactKind::Dataset,
+    |directory| std::fs::write(directory.join("data.bin"), &dataset_bytes),
+    &mut clock,
+)?;
+```
+
+`clock` must return actual current epoch nanoseconds as `u64` in production.
+The publisher samples it before staging and after filesystem publication. It
+checks the reservation, current revision, any owned claim, and staging lease
+again in the final write transaction. It samples the final clock after acquiring
+the SQLite write lock, so lock contention cannot preserve stale authorization. Time spent in the callback, hashing,
+synchronization, and rename cannot authorize an expired owner. Timestamp samples
+are clamped to the staging acquisition and preceding transition times when the
+wall clock moves backward.
+
+Staging lives in uniquely named, owner-only `artifacts/.staging-*/` directories
+under the same parent as completed objects. Each stage has a committed SQLite
+lease and an exclusively locked `lock` file outside its `object/` inventory.
+The stage lease inherits the reservation owner and expiration; `renew` extends
+live stages together with the reservation. The lock remains held through
+publication and commit. No SQLite write transaction remains open during the
+callback, hashing, synchronization, or rename.
+
+The publisher validates normalized paths and the complete file inventory,
+rejecting symbolic links, special files, and extra empty directories. It
+computes file hashes and sizes, synchronizes every file and nested directory,
+writes and synchronizes the version-1 public completion manifest last, and
+synchronizes the object root. It then computes the version-1 local-tree hash of
+the **entire completed directory**, including `manifest.json`, and the SHA-256
+of the exact manifest bytes. The addressed path is
+`artifacts/<kind>-<tree-sha256>`, with internal artifact ID
+`run-store-v1:<kind>-<tree-sha256>`. These are storage identities, independent of
+public typed result, dataset, observation, and attempt identities.
+
+Publication uses atomic no-replace rename. If another writer won the address,
+the publisher verifies the existing complete inventory and compares every byte
+before discarding the duplicate. It independently synchronizes the reused files
+and directories, verifies the complete tree hash, and synchronizes both rename
+parents. An empty, incomplete, changed, or conflicting destination fails without
+replacement. Identical concurrent publications share one immutable artifact row;
+registration checks every indexed digest, kind, and path before reusing that
+row. The final transaction registers the artifact, roots it under the live
+reservation lease, and releases the staging lease together. A receipt is
+returned only after commit.
+
+`publish_finalization(&attempt, outcome, references, populate, clock)` adds the
+terminal transaction. The attempt must already be finalizing. For success, call
+`begin_finalization` first and honor its committed claim decision. Use
+`TerminalOutcome::Superseded` for a losing contender. The callback may add logs
+or validated public documents, but the runtime owns `outcome.json` as well as
+`manifest.json`.
+
+```rust
+let published = store.publish_finalization(
+    &finalizing_attempt,
+    outcome,
+    &[("dataset".into(), dataset.artifact.id.clone())],
+    |directory| std::fs::write(directory.join("stderr.log"), &stderr_bytes),
+    &mut clock,
+)?;
+let terminal_event = published.terminal.event_sequence;
+```
+
+Before writing the immutable outcome, a short transaction checks finalizing
+ownership, any success claim, observation acceptance constraints, and dependency
+membership. Dependency roles must be nonempty, cannot be `final`, and cannot
+repeat the same artifact within a role. The canonical internal `outcome.json`
+uses `run_store_version: 1` and binds:
+
+- the attempt and resolved slot IDs, retry index, and finalizing revision;
+- the terminal state and complete failure or censoring details;
+- reservation start and immutable finish times as decimal nanosecond strings,
+  preserving SQLite's full integer range within canonical JSON;
+- sorted dependency roles, IDs, paths, storage kinds, and content and manifest
+  digests; and
+- snapshots of the applicable decision, resolved run, execution slot, observation
+  slots, produced observations, and selected observations used by that slot.
+
+The snapshot retains canonical domain records alongside their indexed columns.
+It contains no owner tokens, lease IDs, or staging paths. The internal
+[conformance vector](../crates/metewand-runtime/src/run_store/fixtures/outcome-v1.json)
+pins its exact canonical bytes. This internal coordination record supplements
+public one-shot documents; it does not extend their schemas with profile
+outcomes. The SQLite layout and all existing public compatibility constants
+remain at version 1.
+
+The publisher takes an additional clock sample before writing the outcome to
+fix its finish timestamp. After durable publication, the final transaction uses
+the latest clock sample to recheck reservation, staging, and claim expiry and
+revision. It also checks that the coordination snapshot still describes the
+committed records. It then registers the exact attempt artifact, retains dependency
+roots, appends the terminal transition and event, updates the projection with
+the immutable finish time, removes the resolved claim, and releases the
+attempt's leases. The artifact verification and lease-release timestamps can
+therefore follow the immutable finish timestamp. All terminal outcomes use the
+same publication and commit boundary.
+
+Any failure before the final commit returns an error and no terminal receipt.
+Registered stages survive errors with their lock released, and a failure after
+rename may leave a fully verified orphan. Neither state implies acceptance.
+After commit, staging cleanup is best effort; a leftover released stage cannot
+revoke completion. Reopening the store imports neither stages nor orphans.
+Explicit recovery, automatic observation selection, CLI integration, and
+exhaustive boundary fault injection remain subsequent slices.
+
+Publication tests cover exact outcome bytes, current epoch nanoseconds, backward
+clock adjustments, live-stage renewal, same-filesystem placement, kernel locks,
+transaction-free population, all terminal outcomes, retained dependency roots,
+unsafe entries, stale revisions, missing claims and dependencies, corruption,
+concurrent identical content, expiry after rename, and rollback after a terminal
+projection update. Late failures leave verifiable orphans while preserving the
+claim and nonterminal database state.
 
 ## Artifact references and retention
 

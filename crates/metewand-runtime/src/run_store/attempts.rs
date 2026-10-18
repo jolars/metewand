@@ -62,8 +62,8 @@ pub struct OwnedAttempt {
     retry_index: u64,
     revision: u64,
     updated_at_ns: u64,
-    lease_id: String,
-    owner_token: String,
+    pub(super) lease_id: String,
+    pub(super) owner_token: String,
 }
 
 impl OwnedAttempt {
@@ -104,7 +104,7 @@ pub enum TerminalOutcome {
 }
 
 impl TerminalOutcome {
-    fn state(&self) -> &'static str {
+    pub(super) fn state(&self) -> &'static str {
         match self {
             Self::Accepted => "accepted",
             Self::Censored { .. } => "censored",
@@ -113,7 +113,7 @@ impl TerminalOutcome {
         }
     }
 
-    fn details(&self) -> Result<Value, RunStoreError> {
+    pub(super) fn details(&self) -> Result<Value, RunStoreError> {
         Ok(match self {
             Self::Failed { code, details } => {
                 if code.trim().is_empty() || !details.as_json().is_object() {
@@ -271,7 +271,7 @@ impl RunStore {
         Ok(advanced)
     }
 
-    /// Renews the reservation and, when owned, finalization lease together.
+    /// Renews the reservation, owned finalization lease, and live staging leases together.
     ///
     /// # Errors
     /// Rejects expired/released leases, stale revisions, shortened expiration,
@@ -291,11 +291,15 @@ impl RunStore {
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
         fence(&tx, attempt, now)?;
-        let mut query = tx.prepare("SELECT id, expires_at_ns FROM leases WHERE attempt_id = ?1 AND released_at_ns IS NULL AND purpose IN ('reservation', 'finalization')")?;
+        let mut query = tx.prepare("SELECT id, expires_at_ns FROM leases WHERE attempt_id = ?1 AND released_at_ns IS NULL AND (purpose IN ('reservation', 'finalization') OR (purpose = 'staging' AND expires_at_ns > ?2))")?;
         let leases = query
-            .query_map([attempt.id.to_string()], |r| {
-                Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))
-            })?
+            .query_map(
+                params![
+                    attempt.id.to_string(),
+                    now.max(timestamp(attempt.updated_at_ns)?)
+                ],
+                |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)),
+            )?
             .collect::<Result<Vec<_>, _>>()?;
         drop(query);
         for (id, old_expiry) in leases {
@@ -386,79 +390,112 @@ impl RunStore {
         references: &[(String, String)],
         now_ns: u64,
     ) -> Result<TerminalAttempt, RunStoreError> {
-        let now = timestamp(now_ns)?.max(timestamp(attempt.updated_at_ns)?);
-        let verified = timestamp(artifact.verified_at_ns)?;
-        if artifact.id.is_empty() || verified > now {
-            return Err(invalid("invalid finalized artifact metadata"));
-        }
-        let details = outcome.details()?;
         let tx = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let state = fence(&tx, attempt, now)?;
-        if state != "finalizing" {
-            return Err(invalid("terminal outcome requires finalizing"));
-        }
-        if matches!(outcome, TerminalOutcome::Accepted) {
-            let owns_claim: bool = tx.query_row(
-                "SELECT EXISTS(SELECT 1 FROM finalization_claims WHERE attempt_id = ?1)",
-                [attempt.id.to_string()],
-                |r| r.get(0),
-            )?;
-            if !owns_claim {
-                return Err(invalid("acceptance requires this attempt's claim"));
-            }
-            validate_acceptance(&tx, attempt)?;
-        }
-        tx.execute("INSERT INTO artifacts(id, kind, relative_path, content_sha256, storage_kind, manifest_sha256, verified_at_ns)
-            VALUES (?1, 'attempt', ?2, ?3, 'directory', ?4, ?5)", params![artifact.id, artifact.relative_path,
-                hex(artifact.content_sha256), hex(artifact.manifest_sha256), verified])?;
-        tx.execute(
-            "INSERT INTO attempt_artifacts VALUES (?1, 'final', ?2)",
-            params![attempt.id.to_string(), artifact.id],
-        )?;
-        for (role, artifact_id) in references {
-            tx.execute(
-                "INSERT INTO attempt_artifacts VALUES (?1, ?2, ?3)",
-                params![attempt.id.to_string(), role, artifact_id],
-            )?;
-        }
-        let failure = match &outcome {
-            TerminalOutcome::Failed { code, .. } => Some(code.as_str()),
-            _ => None,
-        };
-        let finished = transition(
-            &tx,
-            attempt,
-            &state,
-            outcome.state(),
-            now,
-            details,
-            Some(TerminalProjection {
-                artifact_id: &artifact.id,
-                failure_code: failure,
-            }),
-        )?;
-        let event_sequence = tx.query_row("SELECT event_sequence FROM attempt_transitions WHERE attempt_id = ?1 AND revision = ?2", params![attempt.id.to_string(), timestamp(finished.revision)?], |r| r.get(0))?;
-        tx.execute(
-            "DELETE FROM finalization_claims WHERE attempt_id = ?1",
-            [attempt.id.to_string()],
-        )?;
-        tx.execute("UPDATE leases SET released_at_ns = ?2 WHERE attempt_id = ?1 AND released_at_ns IS NULL", params![attempt.id.to_string(), timestamp(finished.updated_at_ns)?])?;
+        let terminal =
+            commit_finalization_in(&tx, attempt, outcome, artifact, references, now_ns, now_ns)?;
         tx.commit()?;
-        Ok(TerminalAttempt {
-            id: attempt.id,
-            outcome,
-            finished_at_ns: finished.updated_at_ns,
-            event_sequence,
-        })
+        Ok(terminal)
     }
 }
 
-fn invalid(message: &'static str) -> RunStoreError {
+pub(super) fn commit_finalization_in(
+    tx: &Transaction<'_>,
+    attempt: &OwnedAttempt,
+    outcome: TerminalOutcome,
+    artifact: ArtifactRegistration,
+    references: &[(String, String)],
+    now_ns: u64,
+    checked_at_ns: u64,
+) -> Result<TerminalAttempt, RunStoreError> {
+    let now = timestamp(now_ns)?.max(timestamp(attempt.updated_at_ns)?);
+    let checked = timestamp(checked_at_ns)?.max(now);
+    let verified = timestamp(artifact.verified_at_ns)?;
+    if artifact.id.is_empty() || verified > checked {
+        return Err(invalid("invalid finalized artifact metadata"));
+    }
+    let details = outcome.details()?;
+    validate_finalization(tx, attempt, &outcome, checked)?;
+    let state = "finalizing";
+    tx.execute("INSERT INTO artifacts(id, kind, relative_path, content_sha256, storage_kind, manifest_sha256, verified_at_ns)
+            VALUES (?1, 'attempt', ?2, ?3, 'directory', ?4, ?5)", params![artifact.id, artifact.relative_path,
+                hex(artifact.content_sha256), hex(artifact.manifest_sha256), verified])?;
+    tx.execute(
+        "INSERT INTO attempt_artifacts VALUES (?1, 'final', ?2)",
+        params![attempt.id.to_string(), artifact.id],
+    )?;
+    for (role, artifact_id) in references {
+        tx.execute(
+            "INSERT INTO attempt_artifacts VALUES (?1, ?2, ?3)",
+            params![attempt.id.to_string(), role, artifact_id],
+        )?;
+    }
+    let failure = match &outcome {
+        TerminalOutcome::Failed { code, .. } => Some(code.as_str()),
+        _ => None,
+    };
+    let finished = transition(
+        tx,
+        attempt,
+        state,
+        outcome.state(),
+        now,
+        details,
+        Some(TerminalProjection {
+            artifact_id: &artifact.id,
+            failure_code: failure,
+        }),
+    )?;
+    let event_sequence = tx.query_row(
+        "SELECT event_sequence FROM attempt_transitions WHERE attempt_id = ?1 AND revision = ?2",
+        params![attempt.id.to_string(), timestamp(finished.revision)?],
+        |r| r.get(0),
+    )?;
+    tx.execute(
+        "DELETE FROM finalization_claims WHERE attempt_id = ?1",
+        [attempt.id.to_string()],
+    )?;
+    tx.execute(
+        "UPDATE leases SET released_at_ns = ?2 WHERE attempt_id = ?1 AND released_at_ns IS NULL",
+        params![attempt.id.to_string(), checked],
+    )?;
+    Ok(TerminalAttempt {
+        id: attempt.id,
+        outcome,
+        finished_at_ns: finished.updated_at_ns,
+        event_sequence,
+    })
+}
+
+pub(super) fn validate_finalization(
+    tx: &Transaction<'_>,
+    attempt: &OwnedAttempt,
+    outcome: &TerminalOutcome,
+    now: i64,
+) -> Result<(), RunStoreError> {
+    let state = fence(tx, attempt, now)?;
+    if state != "finalizing" {
+        return Err(invalid("terminal outcome requires finalizing"));
+    }
+    if matches!(outcome, TerminalOutcome::Accepted) {
+        let owns_claim: bool = tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM finalization_claims WHERE attempt_id = ?1)",
+            [attempt.id.to_string()],
+            |r| r.get(0),
+        )?;
+        if !owns_claim {
+            return Err(invalid("acceptance requires this attempt's claim"));
+        }
+        validate_acceptance(tx, attempt)?;
+    }
+    Ok(())
+}
+
+pub(super) fn invalid(message: &'static str) -> RunStoreError {
     RunStoreError::InvalidAttempt(message)
 }
-fn timestamp(value: u64) -> Result<i64, RunStoreError> {
+pub(super) fn timestamp(value: u64) -> Result<i64, RunStoreError> {
     i64::try_from(value).map_err(|_| invalid("timestamp exceeds SQLite's signed integer range"))
 }
 fn validate_lease(lease: &LeaseRequest, now: i64) -> Result<(), RunStoreError> {
@@ -491,7 +528,11 @@ fn satisfied(db: &Connection, slot: &str) -> Result<bool, RunStoreError> {
 
 // Every writer checks fencing after taking the write lock. Expiry is not
 // permission to release or replace a claim; only recovery may resolve it.
-fn fence(tx: &Transaction<'_>, attempt: &OwnedAttempt, now: i64) -> Result<String, RunStoreError> {
+pub(super) fn fence(
+    tx: &Transaction<'_>,
+    attempt: &OwnedAttempt,
+    now: i64,
+) -> Result<String, RunStoreError> {
     let state = tx.query_row("SELECT a.state FROM attempts a JOIN leases l ON l.attempt_id = a.id
         WHERE a.id = ?1 AND a.slot_id = ?2 AND a.retry_index = ?3 AND a.revision = ?4
         AND a.finished_at_ns IS NULL AND l.id = ?5 AND l.owner_token = ?6

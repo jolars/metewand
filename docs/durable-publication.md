@@ -136,8 +136,10 @@ returned as complete objects.
 `verify_finalized_directory` checks the completion marker and exact file
 inventory, rejecting missing, changed, undeclared, duplicated, or unsafe entries.
 It verifies directory integrity; scientific validation occurs before publication.
-This publisher does not add a metadata database, recovery/import transactions,
-or quarantine. The [`metewand run` command](run-cli.md) composes it with manifest
+This Gate-1 publisher does not add a metadata database, recovery/import
+transactions, or quarantine. The separate [transactional run-store
+publisher](run-store-schema.md#transactional-publication) connects leased artifact
+publication to SQLite completion; the current CLI does not use it yet. The [`metewand run` command](run-cli.md) composes it with manifest
 resolution and execution. A completed orphan alone does not establish attempt
 acceptance. `finalize_failed_attempt` uses the same durable boundary to publish
 technical failures without creating an observation.
