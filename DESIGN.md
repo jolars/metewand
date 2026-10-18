@@ -62,7 +62,9 @@ execution, and complete provenance.
    silently omitted or misreported as an execution failure.
 10. **Profiles use common evaluation.** Implementations may expose different
     observation controls, but convergence targets are expressed in
-    problem-owned metrics and evaluated independently of the implementations.
+    problem-owned metrics and saved results are evaluated independently of the
+    implementations. Instrumented profiles may measure and stop locally, with
+    their timing and stopping claims explicitly attributed to instrumentation.
 
 ## 2. User model
 
@@ -620,7 +622,8 @@ Language SDKs own only:
 - protocol serialization;
 - dispatch to user-supplied callbacks/classes;
 - consistent error reporting;
-- monotonic timing around the implementation call.
+- monotonic timing around the implementation call;
+- bounded local trace collection and dispatch to benchmark-supplied observers.
 
 Any executable may implement the protocol directly; an SDK is never required.
 
@@ -755,15 +758,15 @@ ResolvedRunSpecification
                       logical specification + materialized dataset instance + resolved source,
                       environment, launch, problem evaluator, and executor artifacts
 LogicalObservationSlot
-                      logical specification + observation control or checkpoint index
+                      logical specification + observation control or snapshot index
                       + measurement index
 ResolvedObservationSlot logical observation slot + resolved specification
-LogicalAttemptSlot    one-shot, fresh-observation, or stream execution + warm-up role
+LogicalAttemptSlot    one-shot, fresh-observation, stream, or buffered execution + warm-up role
                       + schedule priority
 ResolvedAttemptSlot   logical slot + resolved specification
 RunAttempt            resolved slot + retry identity + one observed execution
 RunObservation        resolved observation slot + producing attempt + canonical result,
-                      evaluator metrics, and observation timing
+                      evaluator metrics, observation timing, and measurement basis
 ResultSnapshot        selected attempts and observations + artifacts + export lineage
 ```
 
@@ -826,11 +829,14 @@ scope. Materialization, untimed startup or preparation, evaluation, reset, and
 shutdown have separate operational timeouts with fully resolved defaults, so no
 worker phase can hang indefinitely. Executor-observed CPU time may be another
 primary measure only when it covers the same process tree and scope. In-worker
-`implementation_time` is always secondary diagnostic provenance; it cannot be
-the sole authoritative comparison measure. Metewand-owned validation and
-evaluation occur after the timed scope. Dataset integrity checks surround worker
-operations. For `prepare_and_execute`, the timer remains continuous from
-immediately before `prepare` through receipt of the complete `execute` response.
+`implementation_time` is secondary diagnostic provenance; it cannot replace
+the execution policy's primary measure. An explicitly selected instrumented
+profile may instead use local measurements for its curve coordinates under the
+rules below, while retaining the executor-observed attempt duration.
+Metewand-owned validation and evaluation occur after the timed scope. Dataset
+integrity checks surround worker operations. For `prepare_and_execute`, the
+timer remains continuous from immediately before `prepare` through receipt of
+the complete `execute` response.
 Integrity checks between those operations therefore contribute to the measured
 duration, and execution provenance records their inclusion. Compilation,
 preprocessing, conversion, and result serialization are included whenever they
@@ -858,14 +864,25 @@ problem contract's allowed timing scopes.
 Every experiment also selects an observation policy. A `one_shot` policy
 produces one canonical result per run under an optional problem-defined
 scientific budget. A `profile` policy produces a time-quality curve; each
-selected implementation binds one of two delivery modes under the same policy:
+selected implementation binds a delivery mode under the same policy:
 
 - `fresh_sequence` executes a bounded sequence of implementation-specific
   observation controls from clean algorithmic state and independently evaluates
   each result;
 - `streaming_profile` executes once and cooperatively publishes bounded
   checkpoint results for independent evaluation while preserving algorithmic
-  state between checkpoints.
+  state between checkpoints;
+- `buffered_profile` executes once, records a bounded local trace and selected
+  result snapshots, and returns them for independent evaluation after execution.
+  It supports direct recording and a local measurement-and-stopping callback.
+
+Buffered profiles and local observers are planned extensions. Their examples
+below specify intended interfaces, not capabilities of the current CLI or SDKs.
+Implementation must review the manifest, public-schema, wire-protocol, identity,
+and execution-semantics versions and add conformance vectors before exposing
+these fields. This design change leaves the implemented compatibility constants
+and schemas unchanged; existing strict schema entry points require a new
+compatibility version when extended.
 
 For example, one profile may bind heterogeneous SLOPE adapters without treating
 their controls as a common budget:
@@ -899,7 +916,9 @@ An observation policy may run a fixed number of observations or stop when a
 named evaluator metric reaches a threshold. The metric, direction, threshold,
 maximum observation count, and time bound are canonical policy fields. The
 metric name must exist in the problem's metric schema. The evaluator, not the
-implementation, decides whether a target has been reached. Later planned
+implementation, decides whether a saved result has reached the target. Streaming
+and fresh-sequence profiles use that decision during execution; buffered
+profiles validate local stopping claims afterward. Later planned
 observation and execution slots that are no longer needed receive the terminal
 disposition `skipped_target_reached` rather than disappearing or masquerading as
 observed data.
@@ -912,8 +931,9 @@ such as an iteration limit or library tolerance. Each implementation bound
 through `fresh_sequence` declares a separate observation-control schema and a
 finite explicit, linear, or geometric schedule in the manifest. Controls and
 their schedules are hashed and recorded, but their numeric values are not
-presumed comparable across implementations. Comparison is based on
-executor-observed time and common evaluator metrics.
+presumed comparable across implementations. Comparison is based on common
+evaluator metrics and an explicitly identified timing source: executor-observed
+by default, or instrumented under the opt-in rules below.
 
 The problem contract distinguishes result validity from profile completion. A
 schema-valid, finite, semantically meaningful early checkpoint may be retained
@@ -936,6 +956,162 @@ checkpoint evaluation and total session lifetime.
 Work-unit counts are therefore useful controls and diagnostics, not an assumed
 fair comparison scale. A benchmark that does not request a profile compares
 final results under explicit implementation completion or stopping rules.
+
+### Instrumented profiles and local observers
+
+Internal solver comparisons should not require a fresh solve for each accuracy
+target or an evaluation round trip at every diagnostic check. A
+`buffered_profile` preserves algorithmic state in one execution and separates
+local observation from later independent validation. The implementation can
+record observations directly, or invoke a local observer from its iteration
+loop. Both interfaces produce the same buffered artifacts and use the same
+negotiated worker capability; a callback is not a separate transport mode.
+
+The profile binding explicitly selects `measurement_basis = "instrumented"`
+and a contract-defined `instrumented_scope`. Problem contracts must opt in to
+instrumented measurements and define each permitted scope's clock origin,
+included work, and excluded preparation. Contracts that omit this permission
+allow only executor-observed profile measurements. For example:
+
+```toml
+[observation_policies.internal_gap]
+version = 1
+kind = "profile"
+metric = "relative_duality_gap"
+direction = "at_most"
+threshold = 1e-8
+record_thresholds = [1e-4, 1e-6, 1e-8]
+max_observations = 3
+max_trace_points = 10000
+max_buffer_bytes = 67108864
+max_active_time = "30 s"
+
+[observation_policies.internal_gap.implementations.hybrid]
+delivery = "buffered_profile"
+measurement_basis = "instrumented"
+instrumented_scope = "complete_solver_call"
+instrumentation_schema = "schemas/hybrid-observer.json"
+instrumentation = { check_every = 5, observer = "duality_gap" }
+```
+
+The optional `record_thresholds` list requests snapshots at the first locally
+observed crossing of each listed threshold. Values are finite, distinct, ordered
+from least to most demanding under the metric direction, and end at the
+profile's completion threshold. A snapshot may serve several thresholds crossed
+at one check; it is evaluated once and retains all corresponding threshold
+references. The policy must permit enough observations for the requested
+snapshots, including the last observed result if execution stops short of the
+target. Thresholds do not request independent solves. A study that needs
+different stopping settings to change the trajectory must declare separate run
+specifications rather than interpreting one trace as those separate solves.
+
+Instrumentation configuration includes the observer selection, check schedule,
+snapshot rule, and any locally applied bounds. It is schema-validated, hashed,
+and passed to the worker. Observer code and its dependencies belong to the
+declared worker source bundle and environment; the problem's independent
+evaluator retains its own source bundle and environment. Changing an observer,
+schedule, timing scope, measurement basis, or threshold list changes dependent
+run identities. No observer code is loaded into the orchestrator.
+Buffered snapshot slots use their bounded capture ordinal, not measured times or
+metric values, with threshold and trace references recorded as observation
+metadata. Direct and callback recording of the same selected instrumentation
+must follow the same slot rules.
+
+The local observer is an ordinary function called synchronously by the solver:
+
+```text
+observe(progress, measure, snapshot) -> continue | stop(reason)
+```
+
+`progress` contains a monotone check index and implementation-specific work
+counts. `measure` computes problem-defined provisional metrics at the current
+iterate. The observer invokes it at the declared checks, reads a monotonic clock
+after measurement, records the metrics and cumulative elapsed time, and returns
+a decision under the selected policy. `snapshot` lazily captures an immutable
+canonical result when a threshold is crossed or the last observed result must
+be retained. It must capture that checked iterate before the solver mutates it.
+The callback does not expose a live solver object across the process boundary,
+perform protocol I/O, or invoke the independent evaluator.
+Measurement and snapshot functions read the current iterate without changing
+algorithmic state, random-number streams, or update schedules. The observer may
+stop execution but cannot steer subsequent updates; numerical diagnostics may
+use separate scratch storage.
+
+At solver termination, the observer performs a final check if the current
+iterate has not already been checked and retains that result if needed. The
+policy reserves capacity for this terminal observation; the same metric and
+snapshot costs apply. No retrospective timestamp is assigned to an unchecked
+final state. A solver that stops between scheduled checks records this terminal
+check separately from the regular schedule.
+
+The solver must honor `stop` before another update and finalize its buffered
+results; continuing is a protocol-contract violation. The decision records
+whether the local target, a declared bound, or an implementation stopping rule
+caused termination. A provisional metric can trigger local stopping but cannot
+establish accepted target attainment. Direct recording must preserve the same
+clock, snapshot, bound, and stopping semantics. Existing solver diagnostics may
+provide the measurement so the observer need not repeat the numerical work.
+
+Clock reads, metric computation, callback dispatch, and earlier snapshot work
+remain in cumulative instrumented time; the clock never pauses to subtract
+instrumentation costs. A point's timestamp follows its metric computation and
+precedes copying that point's snapshot. Its snapshot cost therefore enters
+subsequent points and total attempt time, while final serialization enters the
+executor-observed duration. This boundary is part of the named scope, not an
+implicit end-to-end measurement. Internal stopping checks and traces remain
+solver work. An observer does not require callback crossings into a host
+language: a Rust loop may implement the same local API natively and return the
+buffer after the solve.
+
+The worker returns a bounded trace of check indices, work counts, provisional
+metrics, and nonnegative, nondecreasing integer nanosecond offsets, together
+with selected immutable result snapshots, their trace references, and its stop
+reason. A trace row without a saved canonical result is diagnostic provenance,
+not an independently validated `RunObservation`. Count, byte, and active-time
+bounds apply during collection, not just at upload. Capacity for the terminal
+trace entry and result is reserved. Reaching a collection bound stops the solve
+explicitly; a result too large to fit produces a typed resource-limit failure,
+and entries are never silently dropped. The executor still enforces the
+scientific timeout over the selected execution scope,
+including snapshot copying and serialization, regardless of the worker's local
+clock or decisions.
+
+After execution, Metewand validates the complete buffer and independently
+evaluates each saved result. Evaluator metrics determine saved-result validity
+and accepted target attainment. Provisional metrics remain separately named;
+the contract defines any required agreement tolerances and mismatch failures.
+If a locally claimed target is not confirmed, a valid result remains available
+but the attempt is censored unless a contract violation requires failure. Early
+termination for another solver rule or bound is also censored when the evaluator
+has not confirmed the target. Fixed-count completion requires its declared
+observations. Independent evaluation time and total experiment wall time remain
+visible even though evaluation occurs outside the timed solve.
+
+Records and exports distinguish the following evidence:
+
+  | Claim                                                            | Evidence                                  |
+  | ---------------------------------------------------------------- | ----------------------------------------- |
+  | Total selected execution duration                                | Executor-observed timing                  |
+  | Time at an internal check                                        | Worker-reported monotonic instrumentation |
+  | Quality of a saved iterate                                       | Independent evaluator metrics             |
+  | Quality at an unsaved check or first observed threshold crossing | Local instrumentation only                |
+
+An instrumented curve may be the primary analysis for an explicitly instrumented
+experiment. Independent evaluation does not verify its timestamps or prove
+that an earlier unsaved iterate failed the target. Exports label its points as
+instrumented, independently validated only where a snapshot exists, and first
+observed rather than exact first-hitting times. Readers never silently pool
+instrumented curves with executor-observed curves or different instrumented
+scopes. Heterogeneous delivery modes can share a scientific target without
+acquiring equivalent timing evidence.
+
+Buffering trades immediate durable checkpoints for lower observation overhead.
+A worker crash before a complete buffer is returned provides no accepted trace
+points. After a valid buffer is received, each independently evaluated snapshot
+is durably published in order and survives later evaluation or publication
+failure. Retries start clean algorithmic state and never splice partial curves
+from separate executions. Streaming profiles remain the mode for evaluator-owned
+online stopping and durable progress during a long solve.
 
 ## 4. Worker protocol
 
@@ -1020,6 +1196,7 @@ check_applicability(dataset_dir, dataset_manifest, problem_contract_id,
 prepare(dataset_dir, problem_contract_id, problem_parameters, implementation_parameters, implementation_seed)
 execute(result_dir, optional_scientific_budget, optional_observation_control)
 execute_stream(checkpoint_root, optional_scientific_budget)           # optional
+execute_buffered(result_root, instrumentation, optional_scientific_budget)  # optional, planned
 reset()
 shutdown()
 ```
@@ -1028,7 +1205,14 @@ shutdown()
 `applicability` capability. `execute` is used by `one_shot` and
 `fresh_sequence`; the latter passes one canonical observation-control value from
 the implementation's declared schema and schedule. `execute_stream` is required
-for `streaming_profile`.
+for `streaming_profile`. The planned `execute_buffered` method requires the
+`buffered_profile` capability and returns one completed buffer manifest after
+the solve, without checkpoint events or continuation messages. That manifest
+references the trace, canonical snapshot manifests, provisional stop reason,
+clock and scope metadata, and total instrumented duration. All files are closed
+and visible before the response; ordinary artifact, path, size, and hash checks
+apply to every referenced file. Raw workers may implement this directly without
+an SDK.
 
 `execute` returns scalar metadata and a manifest of files under `result_dir`:
 
@@ -1155,9 +1339,9 @@ as does any failed `reset`.
 
 The conformance kernel initially implements `one_shot` without a scientific
 budget. The first general release additionally implements applicability,
-canonical problem-defined scientific budgets, `fresh_sequence`, and
-`streaming_profile`; adaptive budget schedules and checkpoint state restoration
-require later protocol capabilities.
+canonical problem-defined scientific budgets, `fresh_sequence`,
+`streaming_profile`, and `buffered_profile`; adaptive budget schedules and
+checkpoint state restoration require later protocol capabilities.
 
 The protocol and executor are not a security boundary for hostile benchmark
 code. Benchmark repositories and workers are trusted inputs; isolation controls
@@ -1234,9 +1418,9 @@ An observation is valid only if all of the following hold:
    published.
 
 An attempt is `accepted` only when it completes its one-shot result, its selected
-fresh observation, or its streaming policy according to the policy's fixed or
+fresh observation, or its profile according to the policy's fixed or
 target-based completion rule and durably publishes the enclosing attempt
-record. A streaming profile attempt that reaches a bound before its target is
+record. A profile attempt that reaches a bound before its target is
 `censored`, and an attempt that violates the protocol or result-validity rules
 fails, but any earlier valid observations remain part of the result set with
 their relationship to the terminal attempt outcome intact.
@@ -1268,6 +1452,8 @@ execute_request_time   executor-observed execute request and result serializatio
 timed_wall_time        orchestrator-observed selected timing scope
 active_timed_wall_time cumulative timed execution excluding checkpoint evaluation
 elapsed_wall_time      total elapsed profile-session time including evaluator pauses
+instrumented_time_ns   worker-reported cumulative time at an internal check
+instrumented_total_time_ns worker-reported complete instrumented scope duration
 evaluation_time        independent result evaluation
 cpu_time / peak_rss    executor-observed process-tree use where supported
 ```
@@ -1277,8 +1463,11 @@ covering its complete timing scope. Measurements that cannot include the
 complete worker process tree are marked partial and cannot satisfy a policy that
 requires complete accounting. For a streaming profile, the authoritative curve
 coordinate is cumulative `active_timed_wall_time`; `elapsed_wall_time` exposes
-the orchestration and evaluation pauses rather than hiding them. Warm-up and
-untimed preparation are recorded even when excluded from the primary measure.
+the orchestration and evaluation pauses rather than hiding them. A buffered
+profile uses `instrumented_time_ns` as its explicitly instrumented curve
+coordinate, retains both complete durations, and never describes an internal
+timestamp as executor-observed. Warm-up and untimed preparation are recorded even
+when excluded from the primary measure.
 
 ## 6. Environments, execution, and artifacts
 
@@ -1415,10 +1604,10 @@ implementations without making seeds or identities depend on completion order. A
 fresh-sequence profile adds observation rounds ordered by each implementation's
 schedule index, allowing operating points from different implementations to be
 interleaved without asserting that their control values are equivalent. A
-streaming profile occupies one serial execution slot; its internal checkpoints
-are not interleaved with another implementation. A sequential order remains
-available when explicitly requested. Concurrent execution is opt-in and becomes
-part of the run identity and provenance because contention changes the
+streaming or buffered profile occupies one serial execution slot; its internal
+observations are not interleaved with another implementation. A sequential order
+remains available when explicitly requested. Concurrent execution is opt-in and
+becomes part of the run identity and provenance because contention changes the
 comparison conditions.
 
 ### Source acquisition and dataset materialization
@@ -1605,8 +1794,8 @@ logs/                 role- and attempt-scoped worker output
 manifest.json         completion marker plus hashes and sizes of all other files
 ```
 
-Each one-shot result or streaming checkpoint is independently finalized before
-the attempt record may reference it:
+Each one-shot result, streaming checkpoint, or returned buffered snapshot is
+independently finalized before the attempt record may reference it:
 
 ```text
 observation.json      slot, producing attempt, control, timing, and validity
@@ -1628,8 +1817,11 @@ direction where applicable. The schema preserves applicability evidence,
 observation controls and target status, slot and retry identities, pairing keys,
 component seeds, warm-up status, timeout limits, run order, machine/environment
 blocks, observed controls, guarantee classes, and the execution policy's
-authoritative timing measure. Metewand never silently averages repetitions or
-drops failed attempts.
+authoritative timing measure. Profile records additionally preserve delivery
+mode, measurement basis, instrumented scope and clock metadata, trace references,
+provisional metrics and stop reasons, and evaluator-confirmed target status.
+Measurement evidence remains separate from environment and control guarantees.
+Metewand never silently averages repetitions or drops failed attempts.
 
 Every export has an adjacent or enveloping export manifest containing the
 canonical selector, the ordered source candidate, attempt, and observation
@@ -1692,6 +1884,7 @@ metewand::serve_implementation(
   ) { ... },
   execute = function(state, budget, observation_control) { ... },
   execute_stream = function(state, budget, checkpoint) { ... },
+  execute_buffered = function(state, budget, trace) { ... },
   result = function(state, directory) { ... }
 )
 ```
@@ -1712,6 +1905,7 @@ class SklearnImplementation(Implementation):
     ): ...
     def execute(self, budget, observation_control): ...
     def execute_stream(self, budget, checkpoint): ...
+    def execute_buffered(self, budget, trace): ...
     def write_result(self, directory): ...
 
 serve_implementation(SklearnImplementation())
@@ -1721,14 +1915,38 @@ The Julia API provides the same callbacks using ordinary Julia functions and
 structs; it is covered by the same canonicalization, seed, protocol, and error
 golden vectors as R and Python.
 
+For the planned buffered API, `trace.record` accepts measurements supplied by
+existing instrumentation; `trace.observe(progress, measure, snapshot)` is the
+local observer passed into a cooperative solver. Both enforce the selected
+schema, schedule, clock boundary, and collection bounds. `trace.finish` captures
+any required terminal check and snapshot before result serialization. A solver
+integration looks like this:
+
+```python
+def execute_buffered(self, budget, trace):
+    state = solve(self.inputs, budget=budget, observe=trace.observe)
+    trace.finish(state.progress, state.measure, state.snapshot)
+```
+
+The solver supplies measurement and snapshot functions for its current iterate,
+and checks each callback's `continue` or `stop(reason)` return before advancing.
+The SDK dispatches local measurements and applies the declared provisional
+stopping rule; scientific metric formulas remain benchmark-owned code. Native
+solvers may implement the observer without calling Python, R, or Julia per
+iteration and submit the equivalent buffer through the worker adapter. The
+blocking streaming `checkpoint` callback and the local buffered `observe`
+callback are distinct APIs with different timing and durability guarantees.
+
 An SDK may report monotonic `implementation_time` around only the user execute
 callback. It writes each canonical result before replying to `execute` or
 invoking the streaming `checkpoint` callback, so the orchestrator's active
 timing envelope includes serialization. The SDKs also provide analogous, small
 helpers for dataset materializers and problem evaluators. They must not
 provision environments, acquire source artifacts, choose observation schedules,
-apply target stopping, define parameter semantics, or calculate trusted metrics
-independently of user-supplied evaluator code.
+define parameter semantics, or calculate trusted metrics independently of
+user-supplied evaluator code. Buffered helpers may apply the manifest's declared
+schedule and provisional local stopping rule; only independent evaluation
+establishes accepted target attainment.
 
 ## 8. MVP and acceptance criteria
 
@@ -1776,22 +1994,25 @@ applicability semantics add more state transitions.
    explicit unchecked plan states, and exported not-applicable candidates.
 2. Add canonical problem-defined scientific budgets, fixed and target-based
    observation policies, implementation-specific control schemas and schedules,
-   fresh-sequence execution, and the bounded streaming checkpoint subprotocol.
+   fresh-sequence execution, the bounded streaming checkpoint subprotocol, and
+   buffered instrumented profiles with direct recording and local observers.
 3. Add durable observation publication, evaluator-controlled continuation,
    active-time accounting, target and bound censoring, and crash recovery that
    retains valid observations without claiming implementation-state recovery.
 4. Add the Julia SDK for implementations, dataset materializers, evaluators,
-   applicability checks, and streaming checkpoints, including all cross-language
-   golden vectors.
+   applicability checks, streaming checkpoints, and buffered local observers,
+   including all cross-language golden vectors.
 5. Add export lineage manifests and portable snapshot creation, offline
    verification, and atomic import.
 6. Port representative experiments from the motivating intercept-strategy and
-   SLOPE-package studies and make their smoke-sized forms release-blocking.
+   SLOPE-package studies and the internal clustered-lasso solver comparison, and
+   make their smoke-sized forms release-blocking.
 
 This is the first release called an MVP. It can run final-result comparisons and
-evaluator-controlled convergence profiles locally with reproducible data
-artifacts, durable execution records, and explicit observed-control claims. It
-still makes only development-environment guarantees until Gate 4.
+evaluator-controlled and instrumented convergence profiles locally with
+reproducible data artifacts, durable execution records, and explicit
+observed-control claims. It still makes only development-environment guarantees
+until Gate 4.
 
 ### Gate 4: locked environments
 
@@ -1844,6 +2065,9 @@ cases:
 - **Convergence profile:** iteration-, tolerance-, and callback-controlled
   implementations produce time-quality curves under one evaluator-owned target;
   target completion and timeout censoring retain every valid observation;
+- **Internal solver profile:** one trajectory yields several instrumented
+  threshold observations through direct recording or a local callback, with
+  independent snapshot evaluation and explicitly attributed timing evidence;
 - **Semantic equivalence:** every implementation receives the same problem
   instance, and its independent evaluator rejects results that violate the
   problem contract;
@@ -1902,6 +2126,16 @@ The following automated tests are release-blocking:
   streaming fixtures preserve state, stop on an evaluator metric, retain valid
   observations before failure, and never treat work-unit values as comparable
   across implementations;
+- buffered fixtures obtain several threshold points from one trajectory,
+  preserve checked iterates after subsequent mutation, and agree across direct
+  recording and local callbacks, including native loops without host-language
+  transitions or per-check protocol traffic;
+- instrumented timing fixtures include measurement and callback work, include
+  earlier snapshot copies in later timestamps, and retain executor-observed
+  serialization and evaluation costs under their separate timing fields;
+- local observer fixtures cover terminal checks, stop decisions, provisional
+  metric disagreement, bound exits, malformed traces, byte limits, and crash
+  recovery without treating unreturned buffers as accepted observations;
 - fault injection terminates the process at every database, file-sync, rename,
   and finalization boundary, after which resume yields no false success and no
   duplicate accepted slot;
@@ -1915,14 +2149,17 @@ The following automated tests are release-blocking:
   derivation, resolved program, output NAR, or recursive closure;
 - exports retain not-applicable candidates, valid observations, and invalid,
   censored, superseded, and failed attempts and refuse to silently pool
-  incompatible timing, environment, or control classes;
+  incompatible timing, measurement evidence, instrumented scopes, environment,
+  or control classes;
 - snapshot round trips preserve every selected identity and artifact, and
   verification rejects a changed manifest, result, metric, schema, contract, or
   provenance record;
-- smoke-sized ports of the intercept-strategy grid and the SLOPE convergence
-  benchmark exercise Julia/R/Python data interchange, per-cell resume, pinned
-  implementation variants, conditional applicability, fresh controls,
-  streaming callbacks, and evaluator-owned stopping.
+- smoke-sized ports of the intercept-strategy grid, the SLOPE convergence
+  benchmark, and the internal clustered-lasso comparison exercise Julia/R/Python
+  data interchange, per-cell resume, pinned implementation variants, conditional
+  applicability, fresh controls, streaming callbacks, buffered local observers,
+  and independent target
+  confirmation.
 
 ### Explicit non-goals for v1
 

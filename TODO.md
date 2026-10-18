@@ -344,11 +344,20 @@ and [Main domain types](DESIGN.md#main-domain-types).
 
 - [ ] Publish versioned schemas for applicability decisions, profile policies,
   observation-control values and schedules, checkpoint events and decisions,
-  run observations, export lineage, and result snapshots.
+  buffered traces and snapshot manifests, run observations, export lineage,
+  and result snapshots.
 - [ ] Validate `one_shot` and `profile` policies, metric names and directions
   against problem metric schemas, finite explicit/linear/geometric
   schedules, delivery capabilities, maximum observation counts, and active
   time bounds.
+- [ ] Validate opt-in instrumented scopes and measurement bases, recording
+  thresholds, instrumentation schemas, check schedules, trace and byte bounds,
+  and reserved terminal-observation capacity. Keep provisional metrics distinct
+  from independent evaluator metrics.
+- [ ] Review the manifest, public-schema, wire-protocol, identity, and
+  execution-semantics compatibility constants before implementing the new
+  buffered fields and capability. Add conformance vectors for the selected
+  versions; the design-only extension does not change existing version-1 bytes.
 - [ ] Validate canonical problem-defined scientific budget values against each
   contract's budget schema and every selected implementation's declared
   capability without conflating them with observation controls.
@@ -417,20 +426,57 @@ and artifacts](DESIGN.md#6-environments-execution-and-artifacts).
   boundary, proving that resume selects at most one valid observation per
   slot and never manufactures an accepted attempt.
 
-### 3.5 Julia SDK and cross-language conformance
+### 3.5 Buffered instrumented profiles and local observers
+
+See [Instrumented profiles and local
+observers](DESIGN.md#instrumented-profiles-and-local-observers) and [Initial
+SDK APIs](DESIGN.md#7-initial-sdk-apis).
+
+- [ ] Implement the negotiated `buffered_profile` capability and bounded
+  `execute_buffered` response, with one state-preserving solve, a trace, selected
+  immutable canonical snapshots, clock metadata, and a provisional stop reason.
+- [ ] Provide equivalent direct recording and local
+  `observe(progress, measure, snapshot) -> continue | stop(reason)` helpers in
+  Rust, R, and Python. Support native loops without a host-language callback or
+  protocol round trip at each check; finish with an explicit terminal check
+  when needed.
+- [ ] Apply declared schedules, first-observed threshold recording, local
+  stopping, and collection bounds without silently dropping observations.
+  Snapshot the checked iterate before subsequent mutation, deduplicate snapshots
+  serving several thresholds, and reserve terminal capacity.
+- [ ] Include metrics, callback dispatch, and prior snapshot work in cumulative
+  local time; record each timestamp before its own snapshot copy. Retain total
+  instrumented and executor-observed durations and independently enforce the
+  scientific timeout over the selected scope, including serialization.
+- [ ] Validate the returned buffer, independently evaluate every saved result,
+  and publish observations in capture order. Preserve provisional metrics,
+  evaluator-confirmed target status, mismatch outcomes, measurement evidence,
+  and diagnostic-only unsaved trace rows in exports and snapshots.
+- [ ] Test that one trajectory serves several thresholds only under unchanged
+  solver settings, callback and direct recording agree, and instrumentation
+  preserves the trajectory apart from its declared stopping rule. Cover
+  decreasing times, malformed indices, mutated snapshots, metric disagreement,
+  ignored stop decisions, oversized buffers, terminal checks, and bound exits.
+- [ ] Add crash and recovery fixtures proving that incomplete buffers publish
+  no accepted points, independently finalized returned snapshots survive later
+  failures, and retries never splice trajectories. Refuse silent pooling with
+  executor-observed curves or different instrumented scopes.
+
+### 3.6 Julia SDK and cross-language conformance
 
 See [Initial SDK APIs](DESIGN.md#7-initial-sdk-apis).
 
 - [ ] Build Julia helpers for implementation, dataset-materializer, evaluator,
   applicability, fresh-sequence, and streaming-profile callbacks without
-  exposing orchestrator responsibilities.
+  exposing orchestrator responsibilities; add buffered recording and local
+  observers with the same timing and validation semantics.
 - [ ] Include Julia in canonicalization, identity, seed, error, framing, and
   protocol golden vectors alongside Rust, R, and Python.
 - [ ] Add a local multi-runtime fixture in which Julia materializes one dataset
   and Julia, R, and Python implementations return the same canonical result
   for one independent evaluator.
 
-### 3.6 Export lineage and portable snapshots
+### 3.7 Export lineage and portable snapshots
 
 See [Environments, execution, and
 artifacts](DESIGN.md#6-environments-execution-and-artifacts).
@@ -448,7 +494,7 @@ artifacts](DESIGN.md#6-environments-execution-and-artifacts).
   object, and round-trip tests; prove that snapshotting preserves rather
   than upgrades recorded guarantee classes.
 
-### 3.7 Motivating workflow ports
+### 3.8 Motivating workflow ports
 
 - [ ] Port a smoke-sized intercept-strategy grid with a seeded Julia
   materializer, Julia/R/Python implementations, paired data across
@@ -458,13 +504,18 @@ artifacts](DESIGN.md#6-environments-execution-and-artifacts).
   coupled dataset cases, iteration and tolerance fresh schedules, one
   callback stream, conditional implementation applicability, a common
   evaluator-owned relative-duality-gap target, and timeout censoring.
+- [ ] Port a smoke-sized internal clustered-lasso comparison with shared inputs,
+  native local observers and direct traces, several gap thresholds from one
+  trajectory, independent snapshot evaluation, and separate instrumented and
+  executor-observed timing evidence. Keep internal and package-track conclusions
+  separate, and preserve historical measurements under their original scopes.
 - [ ] Document the resulting adapter, schema, and manifest surface and simplify
-  it until both ports are materially easier to inspect and resume than their
+  it until the ports are materially easier to inspect and resume than their
   source workflows; keep their smoke tests release-blocking.
 - [ ] Pass Gate 3 acceptance tests for applicability, observation identities,
   fresh resets, checkpoint protocol and timing, target stopping, durable
-  partial curves, Julia conformance, export lineage, snapshot round trips,
-  and both motivating ports.
+  partial curves, buffered timing and local stopping, Julia conformance, export
+  lineage, snapshot round trips, and all three motivating ports.
 
 ## 4. Gate 4: locked environments
 
