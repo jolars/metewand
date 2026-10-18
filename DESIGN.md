@@ -696,8 +696,10 @@ transitions, durable checkpoint observations, and finalized artifact references;
 event rows are insert-only, and state changes occur in transactions. The
 [version-1 SQLite schema](docs/run-store-schema.md) defines this coordination
 layout. The runtime initializes stores with verified WAL/FULL settings and
-filesystem capability probes; transactional writers and recovery are subsequent
-implementation slices. Uniqueness constraints permit at most one accepted
+filesystem capability probes. Its transactional writer API fences reservations,
+transitions, finalization claims, and terminal outcomes by lease ownership and
+revision. Publisher integration and recovery are subsequent implementation
+slices. Uniqueness constraints permit at most one accepted
 attempt per resolved execution slot and one selected valid observation per
 resolved observation slot.
 Before writing its immutable outcome record, a successful attempt atomically

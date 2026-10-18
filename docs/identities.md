@@ -25,6 +25,8 @@ representation version, not a package version.
 - `identify_record`, which returns an `IdentifiedRecord<T>`;
 - `record_id`, which hashes a borrowed identity-ready record;
 - `canonical_identity_bytes`, which exposes the exact compatibility bytes;
+- `run_attempt_id`, which identifies a reserved slot and retry before its
+  terminal record exists, using the existing attempt representation;
 - `identify_canonical`, which identifies a typed, validated canonical
   resource; and
 - typed `Display`, `FromStr`, `Serialize`, and `Deserialize` implementations

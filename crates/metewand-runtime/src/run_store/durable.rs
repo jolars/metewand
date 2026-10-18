@@ -17,14 +17,13 @@ const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// A verified WAL/FULL connection to an explicitly authorized run-store root.
 ///
-/// Opening the store mutates disk. The root must already exist. Attempt writers
-/// and recovery are not yet implemented, and opening never infers acceptance
-/// from artifacts. The connection stays private so callers cannot weaken its
-/// durability settings.
+/// Opening the store mutates disk. The root must already exist. Opening never
+/// infers acceptance from artifacts. The connection stays private so callers
+/// cannot weaken its durability settings.
 #[derive(Debug)]
 pub struct RunStore {
     database_path: PathBuf,
-    _connection: Connection,
+    pub(super) connection: Connection,
 }
 
 impl RunStore {
@@ -88,14 +87,24 @@ impl RunStore {
         sync_directory(&root_file, check)?;
         Ok(Self {
             database_path,
-            _connection: connection,
+            connection,
         })
     }
 }
 
-/// Initialization failures never fall back to a weaker durability mode.
+/// Store operations never fall back to a weaker durability mode.
 #[derive(Debug, Error)]
 pub enum RunStoreError {
+    #[error("invalid attempt operation: {0}")]
+    InvalidAttempt(&'static str),
+    #[error("attempt ownership, lease, or expected revision is stale")]
+    StaleAttempt,
+    #[error("attempt slot is already satisfied")]
+    SatisfiedSlot,
+    #[error("attempt identity failed: {0}")]
+    Identity(#[from] metewand_core::identity::IdentityError),
+    #[error("attempt event is not canonical JSON: {0}")]
+    Canonical(#[from] metewand_core::canonical::CanonicalJsonError),
     #[error("run store requires an existing absolute directory and regular files: {0}")]
     UnsafePath(PathBuf),
     #[error("unsupported run-store schema version {version}: {reason}")]
@@ -480,14 +489,14 @@ mod tests {
             ] {
                 assert_eq!(
                     store
-                        ._connection
+                        .connection
                         .pragma_query_value::<u32, _>(None, pragma, |r| r.get(0))
                         .unwrap(),
                     expected
                 );
             }
-            assert!(store._connection.execute("INSERT INTO events(occurred_at_ns, kind, payload_json) VALUES (0, 'test', '{}')", []).is_ok());
-            assert!(store._connection.execute("DELETE FROM events", []).is_err());
+            assert!(store.connection.execute("INSERT INTO events(occurred_at_ns, kind, payload_json) VALUES (0, 'test', '{}')", []).is_ok());
+            assert!(store.connection.execute("DELETE FROM events", []).is_err());
         }
     }
 
@@ -560,7 +569,7 @@ mod tests {
             let reopened = RunStore::open(root.path()).unwrap();
             assert_eq!(
                 reopened
-                    ._connection
+                    .connection
                     .query_row("SELECT count(*) FROM events", [], |r| r.get::<_, u32>(0))
                     .unwrap(),
                 0

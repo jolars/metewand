@@ -15,7 +15,10 @@ manifest, public JSON Schemas, identities, execution semantics, wire protocol,
 or artifact-store compatibility constants, which remain at version 1. Profile
 states and slot kinds in this layout reserve the semantics described in
 [DESIGN.md](../DESIGN.md#automation-and-agentic-workflows); they do not add profile
-support to the current one-shot domain records or CLI.
+support to the current one-shot domain records or CLI. The writer uses these
+existing version-1 edges and constraints without changing any compatibility
+constant. Identity conformance tests also check the reservation helper against
+the existing terminal-attempt vectors.
 
 `RunStore::open` reads `user_version` before changing the persistent journal
 mode or applying DDL. It creates version 1 only in an empty database, rejects
@@ -106,9 +109,10 @@ mount cannot be recognized automatically.
 Opening records no attempts or success events and imports no artifacts. An
 error after the schema commits can leave an initialized database, which a retry
 checks and reopens. Interrupted probe directories do not establish any attempt
-state. Attempt transitions, artifact registration, and recovery remain later
-slices, and the CLI continues to use the filesystem publisher. Executing the
-schema SQL alone does not perform any of these durability checks.
+state. The writer API below adds transactional attempt transitions and final
+artifact registration. Connecting the publisher and CLI to these transactions
+and implementing recovery remain later slices. Executing the schema SQL alone
+does not perform any of these durability checks.
 
 ## Rows and relationships
 
@@ -184,11 +188,61 @@ executor timing separately. Terminal attempts cannot change or be deleted.
 A failed attempt requires a nonempty diagnostic code; full diagnostic details
 belong in its event payload and immutable attempt document.
 
-This slice defines and tests the relational constraints. The transactional
-writer API, lease fencing checks, complete event vocabulary, and recovery
-operations remain subsequent slices. In particular, writers must update the
-projection with every appended transition; they must not append future history
-without advancing the current state.
+On Unix, `RunStore` provides the following transactional writer API. These are
+coordination operations for the trusted orchestrator. They require resolved
+slots and applicability records already registered by the planner. This slice
+does not connect the existing CLI planner and filesystem publisher to SQLite.
+The connection remains private.
+
+| Operation | Committed effect |
+| --- | --- |
+| `reserve(slot, authorization, lease, now_ns)` | Allocates the next retry, derives its existing version-1 attempt ID, and inserts the attempt, reservation lease, event, and revision-zero transition together. |
+| `advance(&attempt, phase, now_ns)` | Checks ownership and revision, appends one legal transition and event, and advances the projection. |
+| `renew(&attempt, expires_at_ns, now_ns)` | Renews the reservation and any owned finalization lease together, without shortening either expiration. |
+| `begin_finalization(&attempt, lease, now_ns)` | Enters `finalizing` and records either acquisition of a success claim or a `superseded` decision in the same transaction. |
+| `commit_finalization(&attempt, outcome, artifact, references, now_ns)` | Registers the published attempt artifact and dependency references, appends the terminal event and transition, updates the projection, deletes its resolved claim, and releases its leases together. |
+
+`RetryAuthorization::FirstAttempt` permits only retry zero.
+`RetryAuthorization::Retry { next_index, max_index }` authorizes exactly the
+next retry and imposes an inclusive limit. Both values are checked while holding
+the write lock, so competing requests cannot silently allocate extra retries.
+A satisfied slot refuses every new reservation. An explicitly authorized retry
+may overlap an active attempt; finalization claims serialize acceptance.
+`run_attempt_id(slot, retry_index)` computes the same identity as the eventual
+`RunAttemptRecord`, without inventing a terminal record at reservation time.
+Retry indices and event revisions must also fit the canonical JSON integer
+range, which is narrower than SQLite's integer range.
+
+A `LeaseRequest` supplies a unique lease ID, a private owner token, and an
+expiration. Every successful transition returns a new opaque `OwnedAttempt`
+guard. Reusing an earlier revision fails, including from another connection.
+Each operation takes `BEGIN IMMEDIATE` before checking the reservation owner,
+lease ID, release status, expiration, and current revision. If the attempt owns
+a finalization claim, its lease must also belong to that owner and remain live.
+Expiration is exclusive: a lease cannot write or renew at its expiration time.
+Renewal checks all applicable leases before committing, so a failed renewal
+cannot partly extend ownership. Callers supply current epoch nanoseconds for
+deterministic testing and must use an actual current clock in production.
+Lease checks use at least the preceding transition time when the clock moves
+backward. Newly acquired finalization leases must extend beyond that time.
+
+The writer emits canonical object payloads and these internal event kinds:
+
+- `attempt_reserved`: `from: null`, `to: "reserved"`, `revision: 0`, the resolved
+  `slot`, and `retry_index`.
+- `attempt_transition`: `from`, `to`, and `revision` for an execution phase.
+- `attempt_finalizing`: the same transition fields and, for a success contender,
+  `claim: "claimed"` or `claim: "superseded"`.
+- `attempt_finished`: the terminal transition fields; failures also include
+  `failure_code` and an object `diagnostic`, and censoring includes a nonempty
+  `reason`.
+
+These events belong to the internal version-1 coordination layout, not the
+CLI's public event stream. Operations return guards or terminal receipts only
+after commit. `TerminalAttempt.event_sequence` identifies the committed terminal
+event even when unrelated events occur between transitions. Errors roll back
+all partial writes, including failure after the terminal projection changes.
+Recovery and a delivery/subscription API remain later slices.
 
 ## Observation selection and attempt acceptance
 
@@ -219,14 +273,21 @@ The partial unique index `one_accepted_attempt_per_slot` permits at most one
 kind `attempt` and a finish timestamp. Merely entering `finalizing` or owning a
 claim never satisfies the slot.
 
-Before recording acceptance, the writer must validate the policy-specific
+Before requesting acceptance, the orchestrator must validate the policy-specific
 completion rule and every required selected observation and artifact dependency.
 For one-shot and fresh-observation execution, check that the attempt produced
-its required valid result and reached its completion rule. A stream may reuse
-previously selected checkpoint slots but must reach its contracted target and
+its required valid result and reached its completion rule. The writer checks
+that each required slot has a valid selection and a complete valid observation
+produced by this attempt. These can be different observations: a retry may
+produce a new result while preserving an earlier immutable selection. A stream
+may reuse previously selected checkpoint slots but must reach its contracted target and
 retain the producing-attempt lineage of every observation. A warm-up is never
 selected as a measured observation. SQL enforces relational integrity, not
 problem-owned scientific rules or the truth of filesystem verification.
+The writer checks that every stream checkpoint slot has a valid selected
+observation. Intermediate checkpoints may be `not_reached`; the trusted
+publisher must separately validate the stream's contracted target before
+requesting acceptance. Warm-up acceptance requires no measured slot membership.
 
 ## Finalization claims and recovery handoff
 
@@ -238,6 +299,14 @@ execution slot, and finalization lease. A claim cannot use a released lease,
 change owners, or attach to an already accepted slot. A concurrent loser records
 `superseded` in its immutable outcome instead of publishing a second success.
 
+`begin_finalization` returns a committed `ClaimDisposition`. A loser retains
+its own retry history and must publish a `TerminalOutcome::Superseded` document.
+It does not create an unused finalization lease. A competitor that finishes
+acceptance before this operation also causes a superseded decision. A failed
+or censored claim owner can release its claim only by committing its terminal
+outcome; another retry can then acquire the slot. An expired claim is retained
+and cannot be renewed, finalized, or stolen through this API.
+
 Outside the transaction, finalize the outcome document and complete manifest,
 synchronize files and directories, rename from same-filesystem staging with
 no replacement, and synchronize the destination parent. The final transaction
@@ -247,6 +316,19 @@ transition, update the attempt, delete the resolved claim, and release its
 leases. Acceptance requires that exact attempt to own the claim when its
 projection changes. Failure or censoring can finalize without a success claim.
 
+`TerminalOutcome` covers `Accepted`, `Censored { reason }`, `Superseded`, and
+`Failed { code, details }`. Failures require a nonempty stable code and object
+diagnostic. `ArtifactRegistration` carries the already verified attempt
+directory's identity, normalized store-relative path, content and manifest
+digests, and verification time. Each additional `(role, artifact_id)` reference
+must name an existing artifact. Every terminal outcome retains these roots.
+The writer validates the metadata and database relationships; it does not hash,
+synchronize, rename, or otherwise publish directories. Its trusted caller must
+perform complete artifact and scientific validation before invoking it. The
+next publication slice will connect these responsibilities. The current public
+one-shot documents still support only accepted and failed outcomes; the new
+coordination outcomes do not extend those schemas or add streaming execution.
+
 Lease expiry is a recovery signal, never an automatic deletion condition. Claims
 remain unique even after expiry. Recovery must acquire the required filesystem
 locks and recheck owner fencing before inspecting staging and completed paths.
@@ -255,7 +337,7 @@ outcome or durably finalize it as a typed failure. Only then may it remove the
 claim and permit another retry to claim that slot. The delete guard prevents
 claim release while its attempt is nonterminal. Owner tokens cannot change;
 renewals cannot shorten expiry, and released leases cannot become active again.
-An expired owner cannot renew or publish through the future writer API.
+An expired owner cannot renew or publish through the writer API.
 
 Recovering an orphan must validate its full directory, record identities,
 resolved memberships, references, and completion semantics. Importing an
@@ -263,7 +345,7 @@ already accepted attempt or selected observation must respect the same unique
 constraints. Recovery must never infer success from the presence of a staging
 directory, a completion marker alone, an artifact row, or a claim. Replay uses
 the same reservation and transition constraints, preserving every recovered
-retry identity. Recovery algorithms and fault injection are later slices.
+retry identity. Recovery algorithms and exhaustive boundary fault injection are later slices.
 
 ## Artifact references and retention
 
@@ -298,3 +380,13 @@ unknown or altered schemas, unsafe paths, and refusal on injected locking,
 file-sync, directory-sync, and rename failures. Failures at later capability
 boundaries never return a store handle, and reopening checks the surviving
 layout without manufacturing events.
+
+Transactional writer tests exercise every execution phase and terminal outcome,
+exact canonical event bytes, backward clock adjustments, stale guards, expired
+and released owners, retry authorization, duplicate lease rollback, missing
+artifact roots, and rollback after a terminal projection update. Independent
+connections race to allocate a retry and acquire a success claim. Acceptance
+tests cover missing, invalid, unselected, and incomplete observations, retained
+stream checkpoints, and successful retries that preserve earlier selections.
+Reopening verifies committed terminal state, history, artifacts, and claim
+release without replaying events or inferring acceptance from directories.

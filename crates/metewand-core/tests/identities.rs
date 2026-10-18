@@ -184,3 +184,11 @@ fn rejects_record_fields_outside_the_canonical_domain() {
         Err(IdentityError::Canonical(_))
     ));
 }
+
+#[test]
+fn pre_execution_attempt_identity_rejects_retry_indices_outside_the_canonical_domain() {
+    let slot = RecordId::<ResolvedAttemptSlotRecord>::from_digest([1; 32]);
+    assert!(metewand_core::identity::run_attempt_id(slot, MAX_SAFE_INTEGER).is_ok());
+    assert!(metewand_core::identity::run_attempt_id(slot, MAX_SAFE_INTEGER + 1).is_err());
+    assert!(metewand_core::identity::run_attempt_id(slot, u64::MAX).is_err());
+}

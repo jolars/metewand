@@ -640,6 +640,18 @@ fn graph(mutation: Option<&str>, order: ObjectOrder) -> IdentityGraph {
             provenance: provenance.clone(),
         },
     );
+    assert_eq!(
+        metewand_core::identity::run_attempt_id(
+            resolved_attempt_slot,
+            if is_mutated(mutation, "attempt") {
+                1
+            } else {
+                0
+            },
+        )
+        .unwrap(),
+        run_attempt,
+    );
 
     add_record(
         &mut vectors,

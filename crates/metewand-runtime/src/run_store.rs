@@ -1,11 +1,18 @@
 //! Versioned SQLite layout for durable run coordination.
 //!
 //! Store initialization verifies SQLite settings and filesystem capabilities.
-//! Transactional attempt writers and recovery remain separate slices. See
+//! Attempt writers fence transactions by lease ownership and revision. See
 //! `docs/run-store-schema.md` for the transaction and validation requirements.
 
 #[cfg(unix)]
+mod attempts;
+#[cfg(unix)]
 mod durable;
+#[cfg(unix)]
+pub use attempts::{
+    ArtifactRegistration, AttemptPhase, ClaimDisposition, Finalization, LeaseRequest, OwnedAttempt,
+    RetryAuthorization, TerminalAttempt, TerminalOutcome,
+};
 #[cfg(unix)]
 pub use durable::{RunStore, RunStoreError};
 

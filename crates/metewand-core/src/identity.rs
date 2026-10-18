@@ -76,6 +76,27 @@ pub fn record_id<T: IdentityRecord>(record: &T) -> Result<RecordId<T>, IdentityE
     )))
 }
 
+/// Computes an attempt's identity before its terminal record exists.
+///
+/// This uses the same versioned representation as [`RunAttemptRecord`].
+///
+/// # Errors
+///
+/// Returns an error when the retry index exceeds the canonical integer range.
+pub fn run_attempt_id(
+    slot: RecordId<ResolvedAttemptSlotRecord>,
+    retry_index: u64,
+) -> Result<RecordId<RunAttemptRecord>, IdentityError> {
+    let bytes = canonical_bytes(object([
+        ("version", json!(crate::IDENTITY_VERSION)),
+        ("slot", id(&slot)),
+        ("retry_index", json!(retry_index)),
+    ]))?;
+    Ok(RecordId::from_digest(hash_identity::<RunAttemptRecord>(
+        &bytes,
+    )))
+}
+
 /// Returns a record's exact versioned canonical identity bytes.
 ///
 /// # Errors

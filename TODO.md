@@ -229,7 +229,7 @@ workflows](DESIGN.md#automation-and-agentic-workflows).
 - [x] Initialize SQLite in WAL mode with full synchronous durability and refuse
   durable operation when required locking, synchronization, or atomic rename
   behavior is unavailable.
-- [ ] Implement transactional attempt transitions from reservation through
+- [x] Implement transactional attempt transitions from reservation through
   finalization and every terminal outcome.
 - [ ] Publish artifacts from same-filesystem staging directories using complete
   validation, file and directory synchronization, atomic no-replace rename,

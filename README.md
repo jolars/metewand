@@ -143,8 +143,10 @@ with raw workers and an independent evaluator.
 The [durable run-store schema](docs/run-store-schema.md) defines versioned SQLite
 coordination for resolved slots, retries, observations, leases, events, and
 finalization claims. The runtime initializes durable stores with verified
-WAL/FULL settings and filesystem capability probes. Transactional execution and
-recovery remain subsequent implementation slices.
+WAL/FULL settings and filesystem capability probes. Its writer API coordinates
+leased reservations, revision-checked transitions, finalization claims, and all
+terminal outcomes in transactions. Integrating durable artifact publication and
+recovery with this API remains subsequent work.
 
 ## Development
 
