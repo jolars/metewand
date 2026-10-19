@@ -479,6 +479,7 @@ fn worker_provenance(launch: &ResolvedLaunchRecord, session: &WorkerSession) -> 
         "program": launch.program,
         "args": launch.args,
         "environment_variables": launch.environment_variables,
+        "worker_environment": session.environment(),
         "environment_id": launch.environment,
         "worker_id": session.negotiated().worker_id(),
         "sdk": session.negotiated().sdk(),

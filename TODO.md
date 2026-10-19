@@ -250,7 +250,7 @@ artifacts](DESIGN.md#6-environments-execution-and-artifacts).
 - [x] Implement the reusable executor interface and a POSIX local-process
   executor with process-group containment, bounded termination, isolated
   directories, and explicit capability preflight.
-- [ ] Build minimal, allowlisted worker environments with fixed locale,
+- [x] Build minimal, allowlisted worker environments with fixed locale,
   timezone, umask, working directory, private home/temp/cache locations, and
   redacted secret channels.
 - [ ] Measure and record materialization, startup, prepare, execute request,

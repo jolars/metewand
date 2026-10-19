@@ -100,6 +100,14 @@ fn generator_receives_dataset_seed_and_canonical_parameters() {
         .unwrap()
     };
     let first = run();
+    assert_eq!(
+        first.provenance.as_json()["worker_environment"]["umask"],
+        "0077"
+    );
+    assert_eq!(
+        first.provenance.as_json()["worker_environment"]["environment_variables"]["LC_ALL"],
+        "C"
+    );
     metewand_core::public_schemas::public_schema_catalog()
         .unwrap()
         .validate(
@@ -312,6 +320,18 @@ if mode=='mutate': (p/'data.json').write_text('changed')
         match mode {
             "accept" => {
                 let output = outcome.unwrap();
+                assert_eq!(
+                    output.provenance.as_json()["validator_environment"]["umask"],
+                    "0077"
+                );
+                metewand_core::public_schemas::public_schema_catalog()
+                    .unwrap()
+                    .validate(
+                        metewand_core::public_schemas::PublicSchema::DatasetMaterialization
+                            .repository_path(),
+                        output.provenance.as_json(),
+                    )
+                    .unwrap();
                 assert_eq!(
                     output.provenance.as_json()["binary_validation"]["status"],
                     "accepted"

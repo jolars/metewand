@@ -567,7 +567,8 @@ pub struct ResolvedLaunchRecord {
     pub program: String,
     /// Exact worker arguments.
     pub args: Vec<String>,
-    /// Allowlisted environment variables.
+    /// Allowlisted variables, including stable private-directory templates and
+    /// `{secret}` declarations rather than secret values.
     pub environment_variables: BTreeMap<String, String>,
     /// Path-independent working-directory convention.
     pub working_directory: WorkerWorkingDirectory,

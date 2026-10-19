@@ -269,6 +269,8 @@ pub fn materialize_dataset(
             "acquisition":source.provenance().acquisition.as_ref().map(CanonicalValue::as_json),
         })),
         "materializer_sdk":sdk,
+        "worker_environment": materializer_output.environment,
+        "validator_environment": validator_output.as_ref().and_then(|output| output.environment.as_ref()),
         "binary_validation": input.validator.as_ref().map(|hook| json!({"command_version":DATASET_VALIDATION_COMMAND_VERSION,"contract":hook.contract,"worker":record_id(hook.worker).expect("validated identity"),"status":"accepted"})),
     }))?;
     Ok(MaterializedDataset {

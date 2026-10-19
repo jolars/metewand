@@ -113,9 +113,9 @@ shutdown exchanges under phase-specific deadlines. The
 [POSIX worker transport](docs/worker-process-transport.md) carries those frames
 over dedicated inherited descriptors while concurrently draining bounded
 standard-output and standard-error logs through EOF, even after truncation. Its
-minimal trusted-local launch path creates an owner-only working directory and
-starts an already resolved worker with only explicitly allowlisted environment
-variables.
+trusted local launch path supplies [worker environments](docs/worker-environments.md)
+with fixed locale, timezone, and umask, private home, temp, and cache directories,
+and explicit allowlists and redacted secret channels.
 The runtime's [worker-output validator](docs/worker-output-validation.md) then
 confines returned manifests to their assigned directories, rejects special or
 undeclared entries, verifies every declared size and SHA-256 digest, and checks

@@ -21,7 +21,11 @@ use metewand_protocol::{
 use serde_json::Value;
 use thiserror::Error;
 
-use crate::worker_process::{PosixWorkerProcess, WorkerProcessError, WorkerProcessOutput};
+use crate::{
+    redaction::Redactor,
+    worker_environment::WorkerEnvironmentProvenance,
+    worker_process::{PosixWorkerProcess, WorkerProcessError, WorkerProcessOutput},
+};
 
 /// Fully resolved operational deadline for every Gate-1 worker phase.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -78,6 +82,7 @@ impl std::fmt::Display for WorkerPhase {
 /// One negotiated worker process that executes serial typed requests.
 #[derive(Debug)]
 pub struct WorkerSession {
+    redactor: Redactor,
     role: WorkerRole,
     negotiated: Option<NegotiatedSession>,
     requests: RequestTracker,
@@ -114,6 +119,7 @@ impl WorkerSession {
             }
         };
         let mut session = Self {
+            redactor: process.redactor(),
             role,
             negotiated: None,
             requests: RequestTracker::new(),
@@ -146,6 +152,14 @@ impl WorkerSession {
         self.negotiated
             .as_ref()
             .expect("a public worker session has completed its handshake")
+    }
+
+    /// Returns realized worker settings while the session owns its process.
+    #[must_use]
+    pub fn environment(&self) -> Option<&WorkerEnvironmentProvenance> {
+        self.process
+            .as_ref()
+            .and_then(PosixWorkerProcess::environment)
     }
 
     /// Requests one dataset artifact from a materializer worker.
@@ -369,7 +383,7 @@ impl WorkerSession {
             return Err(WorkerSessionError::ProtocolThreadStopped { phase });
         }
 
-        let value = match reply_receiver.recv_timeout(timeout) {
+        let mut value = match reply_receiver.recv_timeout(timeout) {
             Ok(Ok(Some(value))) => value,
             Ok(Ok(None)) => {
                 self.discard();
@@ -381,6 +395,9 @@ impl WorkerSession {
             }
             Ok(Err(ProtocolIoError::Read(source))) => {
                 self.discard();
+                if !self.redactor.is_empty() {
+                    return Err(WorkerSessionError::RedactedProtocolRead { phase });
+                }
                 return Err(WorkerSessionError::ProtocolRead { phase, source });
             }
             Err(RecvTimeoutError::Timeout) => {
@@ -395,6 +412,8 @@ impl WorkerSession {
                 return Err(WorkerSessionError::ProtocolThreadStopped { phase });
             }
         };
+
+        self.redactor.value(&mut value);
 
         match decode_operation_response::<R>(value, &mut self.requests) {
             Ok(OperationResponse::Success(response)) => Ok(response),
@@ -508,6 +527,12 @@ fn run_protocol_io(
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum WorkerSessionError {
+    /// Secret-bearing sessions omit raw framing diagnostics that can quote input.
+    #[error("worker {phase} protocol read failed (secret-bearing diagnostic redacted)")]
+    RedactedProtocolRead {
+        /// Failed request phase.
+        phase: WorkerPhase,
+    },
     /// The protocol I/O thread could not be created.
     #[error("failed to start worker protocol I/O: {source}")]
     StartProtocolThread {

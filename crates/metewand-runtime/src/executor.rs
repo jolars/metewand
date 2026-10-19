@@ -1,7 +1,11 @@
 //! Reusable execution boundary and trusted POSIX local-process implementation.
 
 use crate::{
-    local_worker::{LocalWorkerLaunchError, launch_trusted_local_worker},
+    local_worker::{
+        LocalWorkerLaunchError, launch_trusted_local_worker,
+        launch_trusted_local_worker_with_secrets,
+    },
+    worker_environment::WorkerSecrets,
     worker_process::{PosixWorkerProcess, WorkerLogLimits, WorkerProcessError},
 };
 use metewand_core::records::ResolvedLaunchRecord;
@@ -77,6 +81,27 @@ impl LocalProcessExecutor {
     #[must_use]
     pub const fn new(grace: Duration) -> Self {
         Self { grace }
+    }
+
+    /// Launches with ephemeral values for declared secret environment channels.
+    ///
+    /// # Errors
+    /// Returns a preflight, environment validation, allocation, or launch error.
+    pub fn spawn_with_secrets(
+        &self,
+        launch: &ResolvedLaunchRecord,
+        private_root: &Path,
+        logs: WorkerLogLimits,
+        requirements: ExecutorRequirements,
+        secrets: &WorkerSecrets,
+    ) -> Result<PosixWorkerProcess, ExecutorError> {
+        self.preflight(requirements)?;
+        Ok(launch_trusted_local_worker_with_secrets(
+            launch,
+            private_root,
+            logs,
+            secrets,
+        )?)
     }
 }
 

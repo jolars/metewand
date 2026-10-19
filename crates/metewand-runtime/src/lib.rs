@@ -24,6 +24,8 @@ pub mod local_tree;
 pub mod local_worker;
 #[cfg(unix)]
 pub mod publication;
+#[cfg(unix)]
+mod redaction;
 pub mod repository;
 #[cfg(unix)]
 pub mod run;
@@ -31,6 +33,8 @@ pub mod run_store;
 pub mod source_acquisition;
 pub mod source_bundle;
 pub mod source_resolution;
+#[cfg(unix)]
+pub mod worker_environment;
 pub mod worker_output;
 #[cfg(unix)]
 pub mod worker_process;

@@ -39,6 +39,8 @@ use rustix::pipe::{PipeFlags, pipe_with};
 use tempfile::TempDir;
 use thiserror::Error;
 
+use crate::{redaction::Redactor, worker_environment::WorkerEnvironmentProvenance};
+
 /// Name of the environment variable containing the worker's protocol read descriptor.
 pub const PROTOCOL_READ_FD_ENV: &str = "METEWAND_PROTOCOL_READ_FD";
 
@@ -100,6 +102,8 @@ impl CapturedWorkerLog {
 /// Exit status and completely drained standard-stream logs for a worker.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WorkerProcessOutput {
+    /// Realized worker settings, with redacted secret channels.
+    pub environment: Option<WorkerEnvironmentProvenance>,
     /// Worker's process exit status.
     pub status: ExitStatus,
     /// Bounded standard-output capture.
@@ -116,6 +120,8 @@ pub struct WorkerProcessOutput {
 /// [`PROTOCOL_READ_FD_ENV`] and [`PROTOCOL_WRITE_FD_ENV`].
 #[derive(Debug)]
 pub struct PosixWorkerProcess {
+    environment: Option<WorkerEnvironmentProvenance>,
+    redactor: Redactor,
     child: Child,
     group: ProcessGroup,
     private_working_directory: Option<TempDir>,
@@ -138,8 +144,16 @@ impl PosixWorkerProcess {
     /// Returns a typed transport error if pipes cannot be created, the process
     /// cannot be spawned, or either log-drain thread cannot be started.
     pub fn spawn(
+        command: Command,
+        log_limits: WorkerLogLimits,
+    ) -> Result<Self, WorkerProcessError> {
+        Self::spawn_redacted(command, log_limits, Redactor::default())
+    }
+
+    pub(crate) fn spawn_redacted(
         mut command: Command,
         log_limits: WorkerLogLimits,
+        redactor: Redactor,
     ) -> Result<Self, WorkerProcessError> {
         let (worker_request_reader, parent_request_writer) =
             protocol_pipe().map_err(WorkerProcessError::CreateRequestPipe)?;
@@ -185,32 +199,42 @@ impl PosixWorkerProcess {
             });
         };
 
-        let stdout_drain =
-            match start_log_drain(WorkerLogStream::Stdout, stdout, log_limits.stdout_bytes) {
-                Ok(drain) => drain,
-                Err(source) => {
-                    abort_spawn(&mut child);
-                    return Err(WorkerProcessError::StartLogDrain {
-                        stream: WorkerLogStream::Stdout,
-                        source,
-                    });
-                }
-            };
-        let stderr_drain =
-            match start_log_drain(WorkerLogStream::Stderr, stderr, log_limits.stderr_bytes) {
-                Ok(drain) => drain,
-                Err(source) => {
-                    abort_spawn(&mut child);
-                    let _ = stdout_drain.join();
-                    return Err(WorkerProcessError::StartLogDrain {
-                        stream: WorkerLogStream::Stderr,
-                        source,
-                    });
-                }
-            };
+        let stdout_drain = match start_log_drain(
+            WorkerLogStream::Stdout,
+            stdout,
+            log_limits.stdout_bytes,
+            redactor.clone(),
+        ) {
+            Ok(drain) => drain,
+            Err(source) => {
+                abort_spawn(&mut child);
+                return Err(WorkerProcessError::StartLogDrain {
+                    stream: WorkerLogStream::Stdout,
+                    source,
+                });
+            }
+        };
+        let stderr_drain = match start_log_drain(
+            WorkerLogStream::Stderr,
+            stderr,
+            log_limits.stderr_bytes,
+            redactor.clone(),
+        ) {
+            Ok(drain) => drain,
+            Err(source) => {
+                abort_spawn(&mut child);
+                let _ = stdout_drain.join();
+                return Err(WorkerProcessError::StartLogDrain {
+                    stream: WorkerLogStream::Stderr,
+                    source,
+                });
+            }
+        };
 
         let group = ProcessGroup(child.id() as libc::pid_t);
         Ok(Self {
+            environment: None,
+            redactor,
             group,
             child,
             private_working_directory: None,
@@ -249,6 +273,20 @@ impl PosixWorkerProcess {
 
     pub(crate) fn retain_private_working_directory(&mut self, directory: TempDir) {
         self.private_working_directory = Some(directory);
+    }
+
+    pub(crate) fn retain_environment(&mut self, environment: WorkerEnvironmentProvenance) {
+        self.environment = Some(environment);
+    }
+
+    /// Returns actual worker settings with all secret channels redacted.
+    #[must_use]
+    pub fn environment(&self) -> Option<&WorkerEnvironmentProvenance> {
+        self.environment.as_ref()
+    }
+
+    pub(crate) fn redactor(&self) -> Redactor {
+        self.redactor.clone()
     }
 
     /// Returns the private current directory retained for a local worker.
@@ -306,6 +344,7 @@ impl PosixWorkerProcess {
     /// drain thread panics.
     pub fn wait(self) -> Result<WorkerProcessOutput, WorkerProcessError> {
         let Self {
+            environment,
             mut child,
             group,
             private_working_directory: _private_working_directory,
@@ -313,6 +352,7 @@ impl PosixWorkerProcess {
             protocol_writer,
             stdout_drain,
             stderr_drain,
+            ..
         } = self;
         drop(protocol_reader);
         drop(protocol_writer);
@@ -333,6 +373,7 @@ impl PosixWorkerProcess {
         let stderr = join_log_drain(WorkerLogStream::Stderr, stderr_drain);
 
         Ok(WorkerProcessOutput {
+            environment,
             status,
             stdout: stdout?,
             stderr: stderr?,
@@ -425,17 +466,25 @@ fn start_log_drain(
     stream: WorkerLogStream,
     reader: impl Read + Send + 'static,
     limit: usize,
+    redactor: Redactor,
 ) -> io::Result<JoinHandle<io::Result<CapturedWorkerLog>>> {
     thread::Builder::new()
         .name(format!("metewand-worker-{stream}"))
-        .spawn(move || drain_log(reader, limit))
+        .spawn(move || drain_log(reader, limit, &redactor))
 }
 
-fn drain_log(mut reader: impl Read, limit: usize) -> io::Result<CapturedWorkerLog> {
+fn drain_log(
+    mut reader: impl Read,
+    limit: usize,
+    redactor: &Redactor,
+) -> io::Result<CapturedWorkerLog> {
     let mut bytes = Vec::with_capacity(limit.min(8192));
     let mut total_bytes = 0_u64;
     let mut truncated = false;
     let mut buffer = [0_u8; 8192];
+    // Retain enough lookahead to recognize a secret crossing the byte limit.
+    // Filtering after EOF also handles arbitrary pipe-read fragmentation.
+    let retained_limit = limit.saturating_add(redactor.lookahead());
 
     loop {
         let read = reader.read(&mut buffer)?;
@@ -444,10 +493,16 @@ fn drain_log(mut reader: impl Read, limit: usize) -> io::Result<CapturedWorkerLo
         }
         total_bytes = total_bytes.saturating_add(u64::try_from(read).unwrap_or(u64::MAX));
 
-        let retained = read.min(limit.saturating_sub(bytes.len()));
+        let retained = read.min(retained_limit.saturating_sub(bytes.len()));
         bytes.extend_from_slice(&buffer[..retained]);
         truncated |= retained < read;
     }
+
+    // Lookahead determines whether the original prefix ends inside a secret;
+    // it must never become visible after earlier replacements shorten output.
+    bytes = redactor.prefix(&bytes, limit);
+    truncated |= bytes.len() > limit || total_bytes > u64::try_from(limit).unwrap_or(u64::MAX);
+    bytes.truncate(limit);
 
     Ok(CapturedWorkerLog {
         bytes,
@@ -553,5 +608,69 @@ impl ProcessGroup {
 impl Drop for ProcessGroup {
     fn drop(&mut self) {
         let _ = self.signal(libc::SIGKILL);
+    }
+}
+
+#[cfg(test)]
+mod redaction_tests {
+    use super::*;
+    use crate::worker_environment::WorkerSecrets;
+    use std::collections::BTreeMap;
+
+    struct Fragmented<'a>(&'a [u8]);
+
+    impl Read for Fragmented<'_> {
+        fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+            let count = buffer.len().min(2).min(self.0.len());
+            buffer[..count].copy_from_slice(&self.0[..count]);
+            self.0 = &self.0[count..];
+            Ok(count)
+        }
+    }
+
+    #[test]
+    fn redacts_fragmented_overlapping_and_non_utf8_logs() {
+        let secrets = WorkerSecrets::new(BTreeMap::from([
+            ("FIRST".into(), "abc".into()),
+            ("SECOND".into(), "bcd".into()),
+        ]))
+        .unwrap();
+        let log = drain_log(Fragmented(b"\xff abcd tail"), 100, &Redactor::new(&secrets)).unwrap();
+        assert_eq!(log.bytes(), b"\xff [REDACTED] tail");
+        assert_eq!(log.total_bytes(), 11);
+        assert!(!log.truncated());
+    }
+
+    #[test]
+    fn redacts_secrets_crossing_retention_and_read_boundaries() {
+        let secrets =
+            WorkerSecrets::new(BTreeMap::from([("TOKEN".into(), "abcdef".into())])).unwrap();
+        let redactor = Redactor::new(&secrets);
+        for limit in 0..10 {
+            let log = drain_log(Fragmented(b"xxabcdef more log bytes"), limit, &redactor).unwrap();
+            let expected = b"xx[REDACTED] more log bytes";
+            assert_eq!(log.bytes(), &expected[..limit]);
+            assert_eq!(log.total_bytes(), 23);
+            assert!(log.truncated());
+        }
+        let mut bytes = vec![b'x'; 8190];
+        bytes.extend_from_slice(b"abcdef tail");
+        let log = drain_log(bytes.as_slice(), 8193, &redactor).unwrap();
+        assert_eq!(&log.bytes()[8190..], b"[RE");
+        assert!(log.truncated());
+    }
+
+    #[test]
+    fn redaction_never_exposes_lookahead_after_shortening_earlier_secrets() {
+        let secret = "abcdefghijklmnopqrstuvwxyz";
+        let secrets =
+            WorkerSecrets::new(BTreeMap::from([("TOKEN".into(), secret.into())])).unwrap();
+        let bytes = format!("{secret}{}{secret} tail", "x".repeat(38));
+        let log = drain_log(bytes.as_bytes(), 50, &Redactor::new(&secrets)).unwrap();
+        assert_eq!(
+            log.bytes(),
+            format!("[REDACTED]{}", "x".repeat(24)).as_bytes()
+        );
+        assert!(log.truncated());
     }
 }

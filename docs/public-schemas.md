@@ -34,6 +34,7 @@ than infer it from the Metewand release that produced the record.
 | `datamonger-acquisition-request` | Bounded standalone command request to the optional Datamonger bridge. |
 | `datamonger-acquisition-response` | Provider evidence and the complete raw artifact export inventory. |
 | `worker-protocol-message` | Strict version-1 worker hello request and response. |
+| `worker-environment` | Actual worker settings and allocated paths with redacted secret channels. |
 
 The CLI's [`json` and `jsonl` modes](machine-output.md) emit the
 `machine-output` envelope and document their stream, exit-code, and diagnostic

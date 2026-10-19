@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "metewand://schemas/v1/worker-environment.schema.json",
+  "x-metewand-compatibility-version": 1,
+  "title": "Realized worker environment provenance",
+  "type": "object",
+  "properties": {
+    "version": { "const": 1 },
+    "working_directory": { "type": "string", "pattern": "^/" },
+    "environment_variables": {
+      "type": "object",
+      "propertyNames": { "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+      "additionalProperties": { "type": "string" }
+    },
+    "umask": { "const": "0077" }
+  },
+  "required": ["version", "working_directory", "environment_variables", "umask"],
+  "additionalProperties": false
+}

@@ -61,7 +61,9 @@ drained-byte counts.
 
 `local_worker::launch_trusted_local_worker` consumes an already resolved
 `ResolvedLaunchRecord`. It constructs the exact program and ordered arguments,
-clears the parent environment, and adds only the record's allowlisted variables.
+clears the parent environment, supplies the fixed
+[worker environment](worker-environments.md), and adds the record's allowlisted
+variables after validating them.
 The process transport subsequently adds the two version-1 protocol descriptor
 variables; they are transport state rather than inherited user configuration.
 
@@ -73,11 +75,11 @@ available for the session.
 
 No variable is implicitly copied from the orchestrator. In particular, an
 entrypoint using `/usr/bin/env` needs an explicitly allowlisted `PATH`. This
-minimal Gate-1 path expects its resolved environment map to contain every value
-the trusted fixture needs. Fixed locale, timezone, umask, private home and cache
-templates and resource controls belong to
-the later reusable executor and do not become accidental implicit behavior
-here.
+launch path fixes locale and timezone, sets umask `0077` in the child, and points
+home, temporary, configuration, and ecosystem cache locations to private storage.
+Declared secret channels receive values separately from identity-bearing launch
+records, with filtered logs and typed-session diagnostics. Resource controls
+remain the responsibility of the executor backend.
 
 The local-launch integration tests inspect the worker's actual current
 directory and environment after `exec`, and establish a typed session with the

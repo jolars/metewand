@@ -197,6 +197,13 @@
         }
       ]
     },
+    "worker_environment": { "$ref": "worker-environment.schema.json" },
+    "validator_environment": {
+      "anyOf": [
+        { "$ref": "worker-environment.schema.json" },
+        { "type": "null" }
+      ]
+    },
     "materializer_sdk": {
       "anyOf": [
         {
@@ -261,6 +268,8 @@
     "output",
     "source",
     "materializer_sdk",
+    "worker_environment",
+    "validator_environment",
     "binary_validation"
   ],
   "additionalProperties": false

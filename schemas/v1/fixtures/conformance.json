@@ -2,6 +2,16 @@
   "version": 1,
   "valid": [
     {
+      "name": "private worker environment with a redacted channel",
+      "schema": "worker-environment",
+      "instance": {
+        "version": 1,
+        "working_directory": "/private/worker",
+        "environment_variables": { "HOME": "/private/worker/home", "TOKEN": "{secret}" },
+        "umask": "0077"
+      }
+    },
+    {
       "name": "run lifecycle begins with a sequenced slot count",
       "schema": "run-output",
       "instance": {
@@ -521,6 +531,13 @@
         },
         "source": null,
         "materializer_sdk": null,
+        "worker_environment": {
+          "version": 1,
+          "working_directory": "/private/worker",
+          "environment_variables": { "LC_ALL": "C", "TZ": "UTC" },
+          "umask": "0077"
+        },
+        "validator_environment": null,
         "binary_validation": null
       }
     },
@@ -597,6 +614,13 @@
           },
           "source": null,
           "materializer_sdk": null,
+          "worker_environment": {
+            "version": 1,
+            "working_directory": "/private/worker",
+            "environment_variables": { "LC_ALL": "C", "TZ": "UTC" },
+            "umask": "0077"
+          },
+          "validator_environment": null,
           "binary_validation": null
         }
       }
@@ -763,6 +787,26 @@
     }
   ],
   "invalid": [
+    {
+      "name": "worker environment rejects a relative working directory",
+      "schema": "worker-environment",
+      "instance": { "version": 1, "working_directory": "worker", "environment_variables": {}, "umask": "0077" }
+    },
+    {
+      "name": "worker environment rejects a permissive umask",
+      "schema": "worker-environment",
+      "instance": { "version": 1, "working_directory": "/worker", "environment_variables": {}, "umask": "0022" }
+    },
+    {
+      "name": "worker environment rejects nonportable channel names",
+      "schema": "worker-environment",
+      "instance": { "version": 1, "working_directory": "/worker", "environment_variables": { "BAD=NAME": "{secret}" }, "umask": "0077" }
+    },
+    {
+      "name": "worker environment rejects unknown provenance fields",
+      "schema": "worker-environment",
+      "instance": { "version": 1, "working_directory": "/worker", "environment_variables": {}, "umask": "0077", "extra": true }
+    },
     {
       "name": "run events reject unknown transitions",
       "schema": "run-output",
@@ -1158,6 +1202,13 @@
         },
         "source": null,
         "materializer_sdk": null,
+        "worker_environment": {
+          "version": 1,
+          "working_directory": "/private/worker",
+          "environment_variables": { "LC_ALL": "C", "TZ": "UTC" },
+          "umask": "0077"
+        },
+        "validator_environment": null,
         "binary_validation": null
       }
     },
@@ -1234,6 +1285,13 @@
           },
           "source": null,
           "materializer_sdk": null,
+          "worker_environment": {
+            "version": 1,
+            "working_directory": "/private/worker",
+            "environment_variables": { "LC_ALL": "C", "TZ": "UTC" },
+            "umask": "0077"
+          },
+          "validator_environment": null,
           "binary_validation": null
         }
       }

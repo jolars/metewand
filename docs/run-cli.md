@@ -98,9 +98,12 @@ arguments. Metewand does not infer file references from arbitrary argument text.
 References must exist in the selected bundle and cannot escape it. Embedded
 workspace and temporary paths are rejected rather than included in identities.
 
-Workers inherit only the resolved allowlist: `LC_ALL=C`, `TZ=UTC`,
-`PYTHONDONTWRITEBYTECODE=1`, a minimal `PATH`, and the transport's descriptor
-variables. Their working directories are private. This remains a trusted local
+Workers receive the resolved allowlist, including fixed locale and timezone,
+Python user-site and bytecode settings, a minimal `PATH`, and the transport's
+descriptor variables. Their [worker environments](worker-environments.md) use
+umask `0077` and private working, home, temp, configuration, and cache directories.
+Resolved launch identities bind stable path templates; attempt provenance records
+the allocated paths. This remains a trusted local
 development path with observed provenance. Network isolation, undeclared-file
 access prevention, process-tree containment, and comprehensive accounting are
 unsupported and are reported as such.

@@ -19,6 +19,8 @@ const COMMON_SOURCE: &str = include_str!("../../../schemas/v1/common.schema.json
 /// A public version-1 schema entry point.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum PublicSchema {
+    /// Realized worker settings with redacted secret channels.
+    WorkerEnvironment,
     /// Envelope used for command events, results, and diagnostics.
     MachineOutput,
     /// Lifecycle events and terminal reports for the run command.
@@ -60,7 +62,7 @@ pub enum PublicSchema {
 }
 
 /// Every public schema entry point in stable presentation order.
-pub const PUBLIC_SCHEMAS: [PublicSchema; 19] = [
+pub const PUBLIC_SCHEMAS: [PublicSchema; 20] = [
     PublicSchema::MachineOutput,
     PublicSchema::RunOutput,
     PublicSchema::Manifest,
@@ -80,6 +82,7 @@ pub const PUBLIC_SCHEMAS: [PublicSchema; 19] = [
     PublicSchema::DatamongerAcquisitionRequest,
     PublicSchema::DatamongerAcquisitionResponse,
     PublicSchema::WorkerProtocolMessage,
+    PublicSchema::WorkerEnvironment,
 ];
 
 impl PublicSchema {
@@ -87,6 +90,7 @@ impl PublicSchema {
     #[must_use]
     pub const fn slug(self) -> &'static str {
         match self {
+            Self::WorkerEnvironment => "worker-environment",
             Self::ArtifactCacheObject => "artifact-cache-object",
             Self::DatasetCacheEntry => "dataset-cache-entry",
             Self::ArtifactCacheLease => "artifact-cache-lease",
@@ -121,6 +125,7 @@ impl PublicSchema {
     #[must_use]
     pub fn repository_path(self) -> &'static Path {
         Path::new(match self {
+            Self::WorkerEnvironment => "schemas/v1/worker-environment.schema.json",
             Self::ArtifactCacheObject => "schemas/v1/artifact-cache-object.schema.json",
             Self::DatasetCacheEntry => "schemas/v1/dataset-cache-entry.schema.json",
             Self::ArtifactCacheLease => "schemas/v1/artifact-cache-lease.schema.json",
@@ -151,6 +156,7 @@ impl PublicSchema {
     #[must_use]
     pub const fn id(self) -> &'static str {
         match self {
+            Self::WorkerEnvironment => "metewand://schemas/v1/worker-environment.schema.json",
             Self::ArtifactCacheObject => "metewand://schemas/v1/artifact-cache-object.schema.json",
             Self::DatasetCacheEntry => "metewand://schemas/v1/dataset-cache-entry.schema.json",
             Self::ArtifactCacheLease => "metewand://schemas/v1/artifact-cache-lease.schema.json",
@@ -189,6 +195,9 @@ impl PublicSchema {
     #[must_use]
     pub const fn source(self) -> &'static str {
         match self {
+            Self::WorkerEnvironment => {
+                include_str!("../../../schemas/v1/worker-environment.schema.json")
+            }
             Self::ArtifactCacheObject => {
                 include_str!("../../../schemas/v1/artifact-cache-object.schema.json")
             }

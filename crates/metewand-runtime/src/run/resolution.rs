@@ -795,20 +795,16 @@ fn resolve_worker(
     let source_executable = sources
         .as_ref()
         .is_some_and(|sources| executable.starts_with(sources.directory.path()));
-    let mut variables = BTreeMap::from([
-        ("LC_ALL".to_owned(), "C".to_owned()),
-        ("TZ".to_owned(), "UTC".to_owned()),
-        ("PYTHONDONTWRITEBYTECODE".to_owned(), "1".to_owned()),
-        (
-            "PATH".to_owned(),
-            if source_executable {
-                "/usr/bin:/bin"
-            } else {
-                "{program_directory}:/usr/bin:/bin"
-            }
-            .to_owned(),
-        ),
-    ]);
+    let mut variables = crate::worker_environment::worker_environment_template();
+    variables.insert(
+        "PATH".to_owned(),
+        if source_executable {
+            "/usr/bin:/bin"
+        } else {
+            "{program_directory}:/usr/bin:/bin"
+        }
+        .to_owned(),
+    );
     let normalized_program = if let Some(sources) = &sources
         && let Ok(relative) = executable.strip_prefix(sources.directory.path())
     {

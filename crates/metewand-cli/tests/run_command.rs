@@ -120,6 +120,25 @@ fn run_streams_events_and_publishes_a_self_describing_attempt() {
     verify_finalized_directory(&attempt_dir).unwrap();
     verify_finalized_directory(&observation_dir).unwrap();
     let provenance = document(&attempt_dir.join("attempt.json"));
+    for role in ["implementation", "evaluator"] {
+        let realized = &provenance["provenance"]["data"]["execution"][role]["worker_environment"];
+        public_schema_catalog()
+            .unwrap()
+            .validate(PublicSchema::WorkerEnvironment.repository_path(), realized)
+            .unwrap();
+        assert_eq!(realized["environment_variables"]["LC_ALL"], "C");
+        assert_eq!(
+            realized["environment_variables"]["HOME"],
+            format!("{}/home", realized["working_directory"].as_str().unwrap())
+        );
+        assert_eq!(realized["umask"], "0077");
+        let normalized = &provenance["provenance"]["data"]["context"][role];
+        assert!(
+            !normalized
+                .to_string()
+                .contains(realized["working_directory"].as_str().unwrap())
+        );
+    }
     let enforcement = serde_json::json!({
         "view": "copy", "enforcement": "best_effort", "verification": "each_worker_operation",
     });

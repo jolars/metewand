@@ -48,11 +48,15 @@ fn fixture_worker() {
     let mut environment = env::vars().collect::<BTreeMap<_, _>>();
     environment.remove(PROTOCOL_READ_FD_ENV);
     environment.remove(PROTOCOL_WRITE_FD_ENV);
+    File::create("created-file").unwrap();
+    fs::create_dir("created-directory").unwrap();
     serde_json::to_writer(
         &mut write_pipe,
         &json!({
             "cwd": env::current_dir().unwrap(),
             "environment": environment,
+            "file_mode": fs::metadata("created-file").unwrap().permissions().mode() & 0o777,
+            "directory_mode": fs::metadata("created-directory").unwrap().permissions().mode() & 0o777,
         }),
     )
     .unwrap();
@@ -100,19 +104,50 @@ fn trusted_local_launch_uses_a_private_directory_and_only_allowlisted_environmen
     worker.protocol_writer().write_all(b"inspect\n").unwrap();
     worker.protocol_writer().flush().unwrap();
     let response = worker.protocol_reader().read_frame().unwrap().unwrap();
-    assert_eq!(
-        response,
-        json!({
-            "cwd": working_directory,
-            "environment": {
-                (FIXTURE_MODE): "1",
-                "METEWAND_ALLOWED": "present",
-            },
-        })
-    );
+    assert_eq!(response["cwd"], json!(working_directory));
+    assert_eq!(response["file_mode"], 0o600);
+    assert_eq!(response["directory_mode"], 0o700);
+    let environment = response["environment"].as_object().unwrap();
+    let mut expected = metewand_runtime::worker_environment::worker_environment_template();
+    for value in expected.values_mut() {
+        *value = value.replace("{worker}", working_directory.to_str().unwrap());
+    }
+    expected.extend(launch.environment_variables.clone());
+    assert_eq!(response["environment"], json!(expected));
+    assert_eq!(environment["LC_ALL"], "C");
+    assert_eq!(environment["LANG"], "C");
+    assert_eq!(environment["TZ"], "UTC");
+    assert_eq!(environment[FIXTURE_MODE], "1");
+    assert_eq!(environment["METEWAND_ALLOWED"], "present");
+    for variable in [
+        "HOME",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        "XDG_CONFIG_HOME",
+        "XDG_CACHE_HOME",
+        "XDG_DATA_HOME",
+        "XDG_STATE_HOME",
+        "XDG_RUNTIME_DIR",
+        "PYTHONUSERBASE",
+        "PIP_CACHE_DIR",
+        "UV_CACHE_DIR",
+        "R_USER",
+        "R_LIBS_USER",
+        "JULIA_DEPOT_PATH",
+    ] {
+        let path = Path::new(environment[variable].as_str().unwrap());
+        assert!(path.starts_with(&working_directory), "{variable}: {path:?}");
+        assert!(path.is_dir(), "{variable}: {path:?}");
+        assert_eq!(path.metadata().unwrap().permissions().mode() & 0o777, 0o700);
+    }
 
     let output = worker.wait().unwrap();
     assert!(output.status.success());
+    let provenance = output.environment.unwrap();
+    assert_eq!(provenance.environment_variables, expected);
+    assert_eq!(provenance.working_directory, working_directory);
+    assert_eq!(provenance.umask, "0077");
     assert!(!working_directory.exists());
 }
 
