@@ -5,7 +5,7 @@ use std::{io, io::Write as _};
 
 use crate::output::{CommandError, CommandResult, OutputFormat};
 
-const HELP: &str = "Usage: metewand [--output FORMAT] run [--manifest PATH] --output-dir PATH [--cache-dir PATH]\n\nExecute the complete supported logical plan using trusted local workers, fixed or unit datasets, and prepare_and_execute timing. Publish results in a new directory whose parent exists. Optional --cache-dir assigns a separate Metewand-owned directory for verified dataset construction reuse; its parent must exist. JSON Lines output streams versioned events; JSON output includes the same events in one terminal document.\n";
+const HELP: &str = "Usage: metewand [--output FORMAT] run [--manifest PATH] --output-dir PATH [--cache-dir PATH]\n\nExecute the complete supported logical plan using trusted local workers, fixed or unit datasets, and contract-authorized cold_end_to_end, prepare_and_execute, or execute_only wall timing. Publish results in a new directory whose parent exists. Optional --cache-dir assigns a separate Metewand-owned directory for verified dataset construction reuse; its parent must exist. JSON Lines output streams versioned events; JSON output includes the same events in one terminal document.\n";
 
 pub fn command(
     arguments: &[OsString],

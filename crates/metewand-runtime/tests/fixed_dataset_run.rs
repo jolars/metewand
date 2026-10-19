@@ -10,6 +10,7 @@ use std::{
 
 use metewand_core::{
     identity::IdentityKind,
+    manifest::TimingScope,
     materialization::hex,
     records::{
         ContentDigest, RecordId, ResolvedEnvironmentRecord, ResolvedLaunchRecord,
@@ -20,8 +21,8 @@ use metewand_core::{
 use metewand_protocol::WorkerIdentity;
 use metewand_runtime::{
     fixed_dataset_run::{
-        FixedDatasetFailureKind, FixedDatasetRun, FixedDatasetRunError, FixedDatasetRunOutcome,
-        run_fixed_dataset, run_fixed_dataset_outcome,
+        ExecutionTimingPolicy, FixedDatasetFailureKind, FixedDatasetRun, FixedDatasetRunError,
+        FixedDatasetRunOutcome, run_fixed_dataset, run_fixed_dataset_outcome,
     },
     worker_process::WorkerLogLimits,
     worker_session::{PhaseTimeouts, WorkerPhase, WorkerSessionError},
@@ -31,6 +32,212 @@ use tempfile::TempDir;
 
 const WORKER_ID: &str =
     "mw1-resolved-worker-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+#[test]
+fn untimed_preparation_keeps_its_own_operational_limit() {
+    let (_private, outcome) = run_timing_case(
+        Some(("METEWAND_TEST_TIMING_DELAY_MS", "300")),
+        None,
+        PhaseTimeouts {
+            prepare: Duration::from_millis(100),
+            ..timeouts()
+        },
+        ExecutionTimingPolicy {
+            scope: TimingScope::ExecuteOnly,
+            timeout: Some(Duration::from_millis(500)),
+        },
+    );
+    let FixedDatasetRunOutcome::Failed { kind, diagnostic } = outcome else {
+        panic!("expected operational timeout")
+    };
+    assert_eq!(kind, FixedDatasetFailureKind::PhaseTimeout);
+    let details = diagnostic.details.unwrap();
+    assert_eq!(
+        details.as_json()["measurements"]["timed_wall_time_ns"]["reason"],
+        "not_started"
+    );
+    assert_eq!(details.as_json()["timing_scope"], "execute_only");
+    assert_eq!(details.as_json()["scientific_timeout_ns"], "500000000");
+    assert_eq!(
+        details.as_json()["operational_timeouts_ns"]["prepare"],
+        "100000000"
+    );
+}
+
+#[test]
+fn independent_evaluation_keeps_its_own_operational_limit() {
+    for scope in [
+        TimingScope::ColdEndToEnd,
+        TimingScope::PrepareAndExecute,
+        TimingScope::ExecuteOnly,
+    ] {
+        let (_private, outcome) = run_timing_case(
+            None,
+            Some(("METEWAND_TEST_EVALUATE_DELAY_MS", "300")),
+            PhaseTimeouts {
+                evaluate: Duration::from_millis(100),
+                ..timeouts()
+            },
+            ExecutionTimingPolicy {
+                scope,
+                timeout: Some(Duration::from_millis(500)),
+            },
+        );
+        let FixedDatasetRunOutcome::Failed { kind, diagnostic } = outcome else {
+            panic!("expected evaluator timeout")
+        };
+        assert_eq!(kind, FixedDatasetFailureKind::PhaseTimeout);
+        let details = diagnostic.details.unwrap();
+        assert_eq!(
+            details.as_json()["measurements"]["timed_wall_time_ns"]["status"],
+            "complete"
+        );
+        assert_eq!(
+            details.as_json()["measurements"]["evaluation_time_ns"]["status"],
+            "partial"
+        );
+    }
+}
+
+#[test]
+fn scientific_limits_must_form_positive_monotonic_deadlines() {
+    for timeout in [Duration::ZERO, Duration::MAX] {
+        let (_private, outcome) = run_timing_case(
+            None,
+            None,
+            timeouts(),
+            ExecutionTimingPolicy {
+                scope: TimingScope::ColdEndToEnd,
+                timeout: Some(timeout),
+            },
+        );
+        let FixedDatasetRunOutcome::Failed { kind, diagnostic } = outcome else {
+            panic!("expected invalid timeout")
+        };
+        assert_eq!(kind, FixedDatasetFailureKind::SetupFailure);
+        assert_eq!(
+            diagnostic.details.unwrap().as_json()["measurements"]["worker_startup_time_ns"]["reason"],
+            "not_started"
+        );
+    }
+}
+
+#[test]
+fn every_timing_envelope_includes_exactly_its_selected_phases() {
+    for scope in [
+        TimingScope::ColdEndToEnd,
+        TimingScope::PrepareAndExecute,
+        TimingScope::ExecuteOnly,
+    ] {
+        let (_private, outcome) = run_timing_case(
+            Some(("METEWAND_TEST_TIMING_DELAY_MS", "80")),
+            Some(("METEWAND_TEST_EVALUATE_DELAY_MS", "100")),
+            timeouts(),
+            ExecutionTimingPolicy {
+                scope,
+                timeout: None,
+            },
+        );
+        let FixedDatasetRunOutcome::Validated(result) = outcome else {
+            panic!("{outcome:?}")
+        };
+        let measured = &result.measurements;
+        let prepare = measured.prepare_time_ns.complete_value().unwrap();
+        let execute = measured.execute_request_time_ns.complete_value().unwrap();
+        let startup = measured.worker_startup_time_ns.complete_value().unwrap();
+        let timed = measured.timed_wall_time_ns.complete_value().unwrap();
+        assert_eq!(u128::from(timed), result.timed_wall_time.as_nanos());
+        assert!(prepare >= 80_000_000 && execute >= 80_000_000);
+        match scope {
+            TimingScope::ColdEndToEnd => assert!(timed >= startup + prepare + execute),
+            TimingScope::PrepareAndExecute => assert!(timed >= prepare + execute),
+            TimingScope::ExecuteOnly => {
+                assert!(timed >= execute);
+                assert!(
+                    timed - execute < 40_000_000,
+                    "untimed work entered execute scope: {measured:?}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn a_scientific_timeout_covers_the_whole_prepare_execute_envelope() {
+    let (_private, outcome) = run_timing_case(
+        Some(("METEWAND_TEST_TIMING_DELAY_MS", "300")),
+        None,
+        timeouts(),
+        ExecutionTimingPolicy {
+            scope: TimingScope::PrepareAndExecute,
+            timeout: Some(Duration::from_millis(500)),
+        },
+    );
+    let FixedDatasetRunOutcome::Failed { kind, diagnostic } = outcome else {
+        panic!("expected shared timeout")
+    };
+    assert_eq!(kind, FixedDatasetFailureKind::ScientificTimeout);
+    let measured = &diagnostic.details.unwrap().as_json()["measurements"].clone();
+    assert_eq!(measured["prepare_time_ns"]["status"], "complete");
+    assert_eq!(measured["execute_request_time_ns"]["status"], "partial");
+    assert_eq!(measured["timed_wall_time_ns"]["status"], "partial");
+    assert_eq!(measured["evaluation_time_ns"]["reason"], "not_started");
+}
+
+#[test]
+fn cold_startup_consumes_scientific_time_but_untimed_startup_does_not() {
+    for scope in [
+        TimingScope::ColdEndToEnd,
+        TimingScope::PrepareAndExecute,
+        TimingScope::ExecuteOnly,
+    ] {
+        let (_private, outcome) = run_timing_case(
+            Some(("METEWAND_TEST_STARTUP_DELAY_MS", "600")),
+            None,
+            timeouts(),
+            ExecutionTimingPolicy {
+                scope,
+                timeout: Some(Duration::from_millis(300)),
+            },
+        );
+        match (scope, outcome) {
+            (TimingScope::ColdEndToEnd, FixedDatasetRunOutcome::Failed { kind, diagnostic }) => {
+                assert_eq!(kind, FixedDatasetFailureKind::ScientificTimeout);
+                let details = diagnostic.details.unwrap();
+                assert_eq!(
+                    details.as_json()["measurements"]["timed_wall_time_ns"]["status"],
+                    "partial"
+                );
+                assert_eq!(
+                    details.as_json()["measurements"]["prepare_time_ns"]["reason"],
+                    "not_started"
+                );
+            }
+            (
+                TimingScope::PrepareAndExecute | TimingScope::ExecuteOnly,
+                FixedDatasetRunOutcome::Validated(_),
+            ) => {}
+            (_, outcome) => panic!("unexpected outcome: {outcome:?}"),
+        }
+    }
+}
+
+#[test]
+fn execute_only_excludes_preparation_from_the_scientific_budget() {
+    let (_private, outcome) = run_timing_case(
+        Some(("METEWAND_TEST_TIMING_DELAY_MS", "200")),
+        None,
+        timeouts(),
+        ExecutionTimingPolicy {
+            scope: TimingScope::ExecuteOnly,
+            timeout: Some(Duration::from_millis(300)),
+        },
+    );
+    assert!(
+        matches!(outcome, FixedDatasetRunOutcome::Validated(_)),
+        "{outcome:?}"
+    );
+}
 
 #[test]
 fn phase_measurements_keep_distinct_boundaries_and_missing_values() {
@@ -224,6 +431,7 @@ fn fixed_dataset_runs_through_implementation_and_independent_evaluator() {
         schemas: &schemas,
         private_root: private_root.path(),
         timeouts: timeouts(),
+        timing: ExecutionTimingPolicy::default(),
         log_limits: WorkerLogLimits::new(4096, 4096),
     })
     .unwrap();
@@ -271,6 +479,7 @@ fn rejected_prepare_does_not_leave_private_output() {
         schemas: &schemas,
         private_root: private_root.path(),
         timeouts: timeouts(),
+        timing: ExecutionTimingPolicy::default(),
         log_limits: WorkerLogLimits::new(4096, 4096),
     })
     .unwrap_err();
@@ -414,6 +623,7 @@ fn run_mutation_case(
         schemas: &schemas,
         private_root: private_root.path(),
         timeouts: deadlines,
+        timing: ExecutionTimingPolicy::default(),
         log_limits: WorkerLogLimits::new(4096, 4096),
     });
     assert_eq!(fs::read_dir(private_root.path()).unwrap().count(), 0);
@@ -532,6 +742,20 @@ fn run_case(
     evaluator_mode: Option<(&str, &str)>,
     deadlines: PhaseTimeouts,
 ) -> (TempDir, FixedDatasetRunOutcome) {
+    run_timing_case(
+        implementation_mode,
+        evaluator_mode,
+        deadlines,
+        ExecutionTimingPolicy::default(),
+    )
+}
+
+fn run_timing_case(
+    implementation_mode: Option<(&str, &str)>,
+    evaluator_mode: Option<(&str, &str)>,
+    deadlines: PhaseTimeouts,
+    timing: ExecutionTimingPolicy,
+) -> (TempDir, FixedDatasetRunOutcome) {
     let private_root = TempDir::new().unwrap();
     let schemas = fixture_schema_catalog();
     let problem_parameters = json!({"offset": 2});
@@ -565,6 +789,7 @@ fn run_case(
         schemas: &schemas,
         private_root: private_root.path(),
         timeouts: deadlines,
+        timing,
         log_limits: WorkerLogLimits::new(4096, 4096),
     });
     if matches!(outcome, FixedDatasetRunOutcome::Failed { .. }) {

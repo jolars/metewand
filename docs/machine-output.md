@@ -147,7 +147,7 @@ The CLI emits these stable codes:
 | `publication_failed` | The nested publisher diagnostic explains why publication failed. |
 
 The run result also retains attempt diagnostic codes: `setup_failure`,
-`implementation_failure`, `implementation_crash`, `phase_timeout`,
+`implementation_failure`, `implementation_crash`, `scientific_timeout`, `phase_timeout`,
 `invalid_result`, `evaluator_failure`, `protocol_error`, `input_changed`, and
 `completion_target_not_reached`. See [execution output](run-cli.md) for their
 publication and exit behavior.

@@ -22,6 +22,7 @@ use serde_json::Value;
 use thiserror::Error;
 
 use crate::{
+    executor::{Executor, LocalProcessExecutor},
     redaction::Redactor,
     worker_environment::WorkerEnvironmentProvenance,
     worker_process::{PosixWorkerProcess, WorkerProcessError, WorkerProcessOutput},
@@ -44,6 +45,35 @@ pub struct PhaseTimeouts {
     pub evaluate: Duration,
     /// Shutdown response and clean process exit.
     pub shutdown: Duration,
+}
+
+impl PhaseTimeouts {
+    pub(crate) fn provenance(self) -> Value {
+        serde_json::json!({
+            "hello": self.hello.as_nanos().to_string(),
+            "materialize": self.materialize.as_nanos().to_string(),
+            "prepare": self.prepare.as_nanos().to_string(),
+            "execute": self.execute.as_nanos().to_string(),
+            "reset": self.reset.as_nanos().to_string(),
+            "evaluate": self.evaluate.as_nanos().to_string(),
+            "shutdown": self.shutdown.as_nanos().to_string(),
+        })
+    }
+}
+
+impl Default for PhaseTimeouts {
+    fn default() -> Self {
+        let limit = Duration::from_secs(10);
+        Self {
+            hello: limit,
+            materialize: limit,
+            prepare: limit,
+            execute: limit,
+            reset: limit,
+            evaluate: limit,
+            shutdown: limit,
+        }
+    }
 }
 
 /// A version-1 worker phase with an independent operational deadline.
@@ -87,6 +117,7 @@ pub struct WorkerSession {
     negotiated: Option<NegotiatedSession>,
     requests: RequestTracker,
     timeouts: PhaseTimeouts,
+    scientific_deadline: Option<Instant>,
     process: Option<PosixWorkerProcess>,
     protocol_sender: Option<Sender<ProtocolCommand>>,
     protocol_thread: Option<JoinHandle<()>>,
@@ -103,11 +134,34 @@ impl WorkerSession {
     ///
     /// Returns a typed phase, transport, protocol, timeout, or handshake error.
     pub fn connect(
+        process: PosixWorkerProcess,
+        role: WorkerRole,
+        worker_id: WorkerIdentity,
+        selected_capabilities: &[Capability],
+        timeouts: PhaseTimeouts,
+    ) -> Result<Self, WorkerSessionError> {
+        Self::connect_with_deadline(
+            process,
+            role,
+            worker_id,
+            selected_capabilities,
+            timeouts,
+            None,
+        )
+    }
+
+    /// Connects a worker whose launch belongs to an already-started timed scope.
+    ///
+    /// # Errors
+    ///
+    /// Returns the same failures as `connect`, including scientific deadline expiry.
+    pub fn connect_with_deadline(
         mut process: PosixWorkerProcess,
         role: WorkerRole,
         worker_id: WorkerIdentity,
         selected_capabilities: &[Capability],
         timeouts: PhaseTimeouts,
+        scientific_deadline: Option<Instant>,
     ) -> Result<Self, WorkerSessionError> {
         let (reader, writer) = process.take_protocol_io();
         let (protocol_sender, protocol_thread) = match start_protocol_io(reader, writer) {
@@ -124,6 +178,7 @@ impl WorkerSession {
             negotiated: None,
             requests: RequestTracker::new(),
             timeouts,
+            scientific_deadline,
             process: Some(process),
             protocol_sender: Some(protocol_sender),
             protocol_thread: Some(protocol_thread),
@@ -144,6 +199,14 @@ impl WorkerSession {
         };
         session.negotiated = Some(negotiated);
         Ok(session)
+    }
+
+    /// Sets the absolute deadline shared by exchanges inside a scientific scope.
+    ///
+    /// The orchestrator clears this deadline before untimed phases. Reusing an
+    /// absolute deadline prevents each exchange from restarting the budget.
+    pub fn set_scientific_deadline(&mut self, deadline: Option<Instant>) {
+        self.scientific_deadline = deadline;
     }
 
     /// Returns the verified handshake metadata.
@@ -323,7 +386,7 @@ impl WorkerSession {
                 break;
             }
             if started.elapsed() >= limit {
-                self.discard();
+                self.discard_after_timeout();
                 return Err(WorkerSessionError::Timeout {
                     phase: WorkerPhase::Shutdown,
                     limit,
@@ -367,6 +430,26 @@ impl WorkerSession {
         Q: WireMessage,
         R: WireResponse,
     {
+        let started = Instant::now();
+        let scientific_remaining = self
+            .scientific_deadline
+            .map(|deadline| deadline.saturating_duration_since(started));
+        let scientific_limited = scientific_remaining.is_some_and(|remaining| remaining <= timeout);
+        let limit = scientific_remaining.map_or(timeout, |remaining| timeout.min(remaining));
+        let timeout_error = || {
+            if scientific_limited {
+                WorkerSessionError::ScientificTimeout { phase }
+            } else {
+                WorkerSessionError::Timeout {
+                    phase,
+                    limit: timeout,
+                }
+            }
+        };
+        if limit.is_zero() {
+            self.discard_after_timeout();
+            return Err(timeout_error());
+        }
         let encoded = match encode_message(request) {
             Ok(encoded) => encoded,
             Err(source) => {
@@ -374,6 +457,10 @@ impl WorkerSession {
                 return Err(WorkerSessionError::Encode { phase, source });
             }
         };
+        if started.elapsed() >= limit {
+            self.discard_after_timeout();
+            return Err(timeout_error());
+        }
         let (reply_sender, reply_receiver) = mpsc::channel();
         let command = ProtocolCommand {
             encoded,
@@ -390,7 +477,7 @@ impl WorkerSession {
             return Err(WorkerSessionError::ProtocolThreadStopped { phase });
         }
 
-        let mut value = match reply_receiver.recv_timeout(timeout) {
+        let mut value = match reply_receiver.recv_timeout(limit.saturating_sub(started.elapsed())) {
             Ok(Ok(Some(value))) => value,
             Ok(Ok(None)) => {
                 self.discard();
@@ -408,11 +495,8 @@ impl WorkerSession {
                 return Err(WorkerSessionError::ProtocolRead { phase, source });
             }
             Err(RecvTimeoutError::Timeout) => {
-                self.discard();
-                return Err(WorkerSessionError::Timeout {
-                    phase,
-                    limit: timeout,
-                });
+                self.discard_after_timeout();
+                return Err(timeout_error());
             }
             Err(RecvTimeoutError::Disconnected) => {
                 self.discard();
@@ -422,7 +506,12 @@ impl WorkerSession {
 
         self.redactor.value(&mut value);
 
-        match decode_operation_response::<R>(value, &mut self.requests) {
+        let decoded = decode_operation_response::<R>(value, &mut self.requests);
+        if started.elapsed() >= limit {
+            self.discard_after_timeout();
+            return Err(timeout_error());
+        }
+        match decoded {
             Ok(OperationResponse::Success(response)) => Ok(response),
             Ok(OperationResponse::Failure(failure)) => {
                 Err(WorkerSessionError::WorkerFailure { phase, failure })
@@ -463,6 +552,14 @@ impl WorkerSession {
         if let Some(protocol_thread) = self.protocol_thread.take() {
             let _ = protocol_thread.join();
         }
+    }
+
+    pub(crate) fn discard_after_timeout(&mut self) {
+        if let Some(process) = &mut self.process {
+            let _ = LocalProcessExecutor::new(Duration::from_millis(100)).terminate(process);
+        }
+        // Forced cleanup remains the fallback if the graceful sequence fails.
+        self.discard();
     }
 
     fn discard(&mut self) {
@@ -618,6 +715,12 @@ pub enum WorkerSessionError {
         phase: WorkerPhase,
         /// Structured worker-owned failure.
         failure: WorkerFailure,
+    },
+    /// The complete selected scientific timing scope exceeded its deadline.
+    #[error("scientific timing scope expired during worker {phase}")]
+    ScientificTimeout {
+        /// Worker phase active when the shared deadline expired.
+        phase: WorkerPhase,
     },
     /// The phase exceeded its fully resolved deadline.
     #[error("worker {phase} exceeded its {limit:?} timeout")]

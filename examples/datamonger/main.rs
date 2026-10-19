@@ -198,6 +198,7 @@ fn compare(
             schemas: &repository.schemas,
             private_root,
             timeouts: deadlines(),
+            timing: metewand_runtime::fixed_dataset_run::ExecutionTimingPolicy::default(),
             log_limits: WorkerLogLimits::new(1024, 1024),
         })?;
         view.verify()?;

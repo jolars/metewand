@@ -34,23 +34,41 @@ measurement repetition in deterministic logical-plan order. It supports fixed
 local datasets, local generators and transformations with pinned HTTP(S) sources,
 the built-in empty unit dataset for dataset-free problems,
 one-shot workers, local environments, dedicated POSIX protocol pipes, fresh
-processes, `prepare_and_execute` wall timing, sequential order, and
+processes, all three contract-authorized wall-timing scopes, sequential order, and
 `best_effort` enforcement. Complete preflight precedes every worker launch and
 creation of the output directory. Overlapping resolved attempt slots across
 experiments are rejected; distinct experiment seeds select independent runs.
 
-Policies requiring CPU, thread, or memory limits, other timing scopes,
-randomized scheduling, reuse, warm-ups, or required enforcement are rejected.
+Policies requiring CPU, thread, or memory limits, randomized scheduling,
+reuse, warm-ups, or required enforcement are rejected. Reuse keys, reset,
+replacement, persistent worker caches, and repeated process-local warm-ups
+belong to the next executor slice. Compatibility checking already rejects
+warm-ups without reuse and cold timing with reuse or warm-ups.
 Provisioning backends, standard-I/O protocol transport,
 symbolic links in copied inputs, locked execution, and resume are also rejected.
 These features belong to later roadmap slices. A rejected selection emits a
 structured diagnostic without launching any worker or creating the destination.
 
-The optional execution-policy `timeout` supplies a separate operational deadline
-for each protocol phase, including hello and shutdown. Gate 1 accepts a positive
-integer followed by `ms`, `s`, `min`, or `h`, with optional intervening whitespace.
-The default is ten seconds per phase. These deadlines do not add a scientific
-budget or change the primary timing boundary.
+The execution policy chooses `cold_end_to_end`, `prepare_and_execute`, or
+`execute_only`; the selected problem contract must allow that scope. Cold
+timing includes implementation launch and startup. Prepare-and-execute starts
+after startup. Execute-only excludes preparation, requires contract-defined
+untimed preparation rules, and labels its provenance as an operation-scope
+comparison. All three include execution and canonical result serialization.
+Shared dataset materialization and independent evaluation remain outside them.
+See [Timing envelopes](fixed-dataset-run.md).
+
+The optional execution-policy `timeout` is one scientific wall-time budget over
+the complete selected scope. It accepts a positive integer followed by `ms`,
+`s`, `min`, or `h`, with optional intervening whitespace. Omitting it adds no
+scientific limit. Separate operational defaults bound each worker phase to ten
+seconds, including materialization, hello, prepare, execute, evaluation, reset,
+and shutdown. A scientific budget does not lengthen or shorten untimed phase
+limits. Runtime API callers can supply custom `PhaseTimeouts`. Scientific
+expiry becomes a typed `scientific_timeout` attempt; operational expiry uses
+`phase_timeout`. A failed measurement never publishes a scientific observation.
+The published context records the selected scope and both kinds of limits,
+including on failed attempts.
 
 Published attempts and observations retain [phase and resource
 measurements](execution-measurements.md), including explicit missing values and

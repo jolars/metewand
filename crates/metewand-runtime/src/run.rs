@@ -237,6 +237,7 @@ fn execute(
             schemas: &repository.schemas,
             private_root,
             timeouts: candidate.timeouts,
+            timing: candidate.timing,
             log_limits: WorkerLogLimits::new(64 * 1024, 64 * 1024),
         },
         &dataset_view,

@@ -256,7 +256,7 @@ artifacts](DESIGN.md#6-environments-execution-and-artifacts).
 - [x] Measure and record materialization, startup, prepare, execute request,
   timed wall, evaluation, CPU, and peak-memory fields with explicit missing
   or partial values.
-- [ ] Implement `cold_end_to_end`, `prepare_and_execute`, and `execute_only`
+- [x] Implement `cold_end_to_end`, `prepare_and_execute`, and `execute_only`
   envelopes, scientific and operational timeouts, and all compatibility
   rules for reuse and warm-ups.
 - [ ] Implement worker reuse keys, reset and replacement behavior, cache policy,

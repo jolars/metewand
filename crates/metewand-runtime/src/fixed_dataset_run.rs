@@ -9,7 +9,8 @@ use std::{
 
 use metewand_core::{
     canonical::CanonicalValue,
-    measurements::{ExecutionMeasurements, Measurement},
+    manifest::TimingScope,
+    measurements::{AccountingScope, ExecutionMeasurements, Measurement},
     public_schemas::PublicSchemaCatalogError,
     records::{AttemptDiagnostic, CompletionStatus, ContentDigest, ResolvedLaunchRecord},
     schema::SchemaCatalog,
@@ -27,6 +28,72 @@ use crate::{
     worker_process::{WorkerLogLimits, WorkerProcessOutput},
     worker_session::{PhaseTimeouts, WorkerSession, WorkerSessionError},
 };
+
+/// Orchestrator timing scope and its independent scientific wall-time limit.
+#[derive(Clone, Copy, Debug)]
+pub struct ExecutionTimingPolicy {
+    /// Scope authorized by the selected problem contract.
+    pub scope: TimingScope,
+    /// Total time allowed across the selected scope; `None` leaves only phase limits.
+    pub timeout: Option<Duration>,
+}
+
+impl Default for ExecutionTimingPolicy {
+    fn default() -> Self {
+        Self {
+            scope: TimingScope::PrepareAndExecute,
+            timeout: None,
+        }
+    }
+}
+
+struct TimingEnvelope {
+    policy: ExecutionTimingPolicy,
+    started: Option<Instant>,
+    deadline: Option<Instant>,
+    finished: bool,
+}
+
+impl TimingEnvelope {
+    fn new(policy: ExecutionTimingPolicy) -> Result<Self, FixedDatasetRunError> {
+        if policy
+            .timeout
+            .is_some_and(|limit| limit.is_zero() || Instant::now().checked_add(limit).is_none())
+        {
+            return Err(FixedDatasetRunError::InvalidScientificTimeout);
+        }
+        Ok(Self {
+            policy,
+            started: None,
+            deadline: None,
+            finished: false,
+        })
+    }
+
+    fn start(&mut self) -> Result<(), FixedDatasetRunError> {
+        let started = Instant::now();
+        self.deadline = self
+            .policy
+            .timeout
+            .map(|limit| {
+                started
+                    .checked_add(limit)
+                    .ok_or(FixedDatasetRunError::InvalidScientificTimeout)
+            })
+            .transpose()?;
+        self.started = Some(started);
+        Ok(())
+    }
+
+    fn finish(&mut self) -> Result<Duration, FixedDatasetRunError> {
+        let finished = Instant::now();
+        if self.deadline.is_some_and(|deadline| finished >= deadline) {
+            return Err(FixedDatasetRunError::ScientificTimeout);
+        }
+        self.finished = true;
+        Ok(finished.duration_since(self.started.expect("the envelope starts before execution")))
+    }
+}
 
 /// Fully resolved inputs for one fixed-dataset, one-shot measurement.
 ///
@@ -63,6 +130,8 @@ pub struct FixedDatasetRun<'a> {
     pub private_root: &'a Path,
     /// Fully resolved operational deadlines for each worker phase.
     pub timeouts: PhaseTimeouts,
+    /// Selected timing scope and scientific deadline, independent of phase limits.
+    pub timing: ExecutionTimingPolicy,
     /// Bounds for diagnostic worker logs.
     pub log_limits: WorkerLogLimits,
 }
@@ -78,7 +147,7 @@ pub struct FixedDatasetResult {
     pub metrics: CanonicalValue,
     /// Problem-owned completion decision for this scientifically valid result.
     pub completion: CompletionStatus,
-    /// Orchestrator time from immediately before `prepare` through `execute`.
+    /// Orchestrator wall time covering the complete selected timing envelope.
     pub timed_wall_time: Duration,
     /// Optional worker-reported time, retained only as a diagnostic.
     pub implementation_time_ns: Option<u64>,
@@ -156,6 +225,8 @@ pub enum FixedDatasetFailureKind {
     ImplementationFailure,
     /// The implementation exited before completing its protocol exchange.
     ImplementationCrash,
+    /// The complete selected scientific timing scope exceeded its deadline.
+    ScientificTimeout,
     /// A worker exceeded its phase deadline.
     PhaseTimeout,
     /// The canonical result failed manifest or schema validation.
@@ -175,6 +246,7 @@ impl FixedDatasetFailureKind {
             Self::DatasetMutation => "dataset_mutation",
             Self::ImplementationFailure => "implementation_failure",
             Self::ImplementationCrash => "implementation_crash",
+            Self::ScientificTimeout => "scientific_timeout",
             Self::PhaseTimeout => "phase_timeout",
             Self::InvalidResult => "invalid_result",
             Self::EvaluatorFailure => "evaluator_failure",
@@ -190,6 +262,8 @@ impl FixedDatasetFailureKind {
 #[must_use]
 pub fn run_fixed_dataset_outcome(request: FixedDatasetRun<'_>) -> FixedDatasetRunOutcome {
     let mut measurements = ExecutionMeasurements::default();
+    let timing = request.timing;
+    let timeouts = request.timeouts;
     match run_checked(request, None, &mut measurements) {
         Ok(result) => FixedDatasetRunOutcome::Validated(Box::new(result)),
         Err(error) => {
@@ -202,6 +276,10 @@ pub fn run_fixed_dataset_outcome(request: FixedDatasetRun<'_>) -> FixedDatasetRu
                     details: Some(
                         CanonicalValue::try_from(serde_json::json!({
                             "measurements": measurements,
+                            "timing_scope": timing.scope.to_string(),
+                            "operation_scope": timing.scope == TimingScope::ExecuteOnly,
+                            "scientific_timeout_ns": timing.timeout.map(|limit| limit.as_nanos().to_string()),
+                            "operational_timeouts_ns": timeouts.provenance(),
                         }))
                         .expect("measurements use canonical safe integers"),
                     ),
@@ -213,9 +291,10 @@ pub fn run_fixed_dataset_outcome(request: FixedDatasetRun<'_>) -> FixedDatasetRu
 
 /// Launches the implementation and independent evaluator, then measures one run.
 ///
-/// Worker launch and handshake happen before timing. The timer starts immediately
-/// before `prepare` and stops after the complete `execute` response, including
-/// dataset integrity checks between those exchanges.
+/// The selected envelope includes launch, preparation, or only execution.
+/// The scientific timeout applies continuously across that envelope. Operational
+/// phase limits also bound worker exchanges outside it. Dataset integrity checks
+/// between timed operations contribute to the continuous duration.
 /// Metewand validates the result and runs and validates the evaluator outside
 /// the measured interval. All output
 /// stays in private temporary directories. Failed runs remove them immediately;
@@ -248,6 +327,7 @@ fn run_checked(
     if !request.dataset_dir.is_absolute() || !request.private_root.is_absolute() {
         return Err(FixedDatasetRunError::NonAbsolutePath);
     }
+    let mut timing = TimingEnvelope::new(request.timing)?;
     let digest = match view {
         Some(view) => view.digest(),
         None => hash_local_tree(request.dataset_dir)
@@ -259,7 +339,12 @@ fn run_checked(
         view,
     };
     integrity.verify("attempt start")?;
-    let result = run_workers(request, &integrity, measurements);
+    let result = run_workers(request, &integrity, measurements, &mut timing);
+    if let Some(started) = timing.started
+        && !timing.finished
+    {
+        measurements.timed_wall_time_ns = Measurement::elapsed(started.elapsed(), false);
+    }
     // Failed exchanges drop and terminate both sessions before this last check.
     let verified = integrity.verify("attempt finalization");
     match result {
@@ -277,7 +362,13 @@ fn run_workers(
     request: FixedDatasetRun<'_>,
     integrity: &DatasetIntegrity<'_>,
     measurements: &mut ExecutionMeasurements,
+    timing: &mut TimingEnvelope,
 ) -> Result<FixedDatasetResult, FixedDatasetRunError> {
+    measurements.cpu_time_scope = match request.timing.scope {
+        TimingScope::ColdEndToEnd => AccountingScope::WorkerLifetimeThroughExecute,
+        TimingScope::PrepareAndExecute => AccountingScope::PrepareAndExecute,
+        TimingScope::ExecuteOnly => AccountingScope::ExecuteOnly,
+    };
     let started_at = SystemTime::now();
     let dataset_dir = path_string(request.dataset_dir)?;
     let validator = WorkerOutputValidator::new(request.schemas)?;
@@ -290,22 +381,83 @@ fn run_workers(
 
     let mut implementation = integrity.operation("implementation hello", || {
         measure(&mut measurements.worker_startup_time_ns, || {
+            if request.timing.scope == TimingScope::ColdEndToEnd {
+                timing.start()?;
+            }
             let implementation_process = launch_trusted_local_worker(
                 request.implementation_launch,
                 request.private_root,
                 request.log_limits,
             )
             .map_err(|source| FixedDatasetRunError::ImplementationLaunch { source })?;
-            WorkerSession::connect(
+            WorkerSession::connect_with_deadline(
                 implementation_process,
                 WorkerRole::Implementation,
                 request.implementation_identity.clone(),
                 &[Capability::OneShot],
                 request.timeouts,
+                timing.deadline,
             )
             .map_err(|source| FixedDatasetRunError::Implementation { source })
         })
     })?;
+
+    let mut baseline = None;
+    integrity.operation("implementation prepare", || {
+        if request.timing.scope == TimingScope::PrepareAndExecute {
+            baseline = Some(implementation.process_usage());
+            timing.start()?;
+        }
+        implementation.set_scientific_deadline(timing.deadline);
+        let prepared = measure(&mut measurements.prepare_time_ns, || {
+            implementation
+                .prepare(
+                    dataset_dir.clone(),
+                    request.problem_contract_id,
+                    request.problem_parameters.clone(),
+                    request.implementation_parameters.clone(),
+                    request.implementation_seed,
+                )
+                .map_err(|source| FixedDatasetRunError::Implementation { source })
+        });
+        if timing.started.is_some() {
+            let (cpu, memory) = implementation.process_usage().since_optional(baseline);
+            measurements.cpu_time_ns = cpu;
+            measurements.peak_rss_bytes = memory;
+        }
+        prepared
+    })?;
+    let (executed, timed_wall_time) = integrity.operation("implementation execute", || {
+        if request.timing.scope == TimingScope::ExecuteOnly {
+            baseline = Some(implementation.process_usage());
+            timing.start()?;
+        }
+        implementation.set_scientific_deadline(timing.deadline);
+        let executed = measure(&mut measurements.execute_request_time_ns, || {
+            implementation
+                .execute(result_path.clone())
+                .map_err(|source| FixedDatasetRunError::Implementation { source })
+        });
+        let elapsed = if executed.is_ok() {
+            match timing.finish() {
+                Ok(elapsed) => Some(elapsed),
+                Err(error) => {
+                    implementation.discard_after_timeout();
+                    return Err(error);
+                }
+            }
+        } else {
+            None
+        };
+        let (cpu, memory) = implementation.process_usage().since_optional(baseline);
+        measurements.cpu_time_ns = cpu;
+        measurements.peak_rss_bytes = memory;
+        let executed = executed?;
+        let elapsed = elapsed.expect("a successful exchange completed the envelope");
+        measurements.timed_wall_time_ns = Measurement::elapsed(elapsed, true);
+        Ok((executed, elapsed))
+    })?;
+    implementation.set_scientific_deadline(None);
 
     let mut evaluator = integrity.operation("evaluator hello", || {
         measure(&mut measurements.evaluator_startup_time_ns, || {
@@ -337,13 +489,13 @@ fn run_workers(
         "problem_parameters": request.problem_parameters,
         "implementation_parameters": request.implementation_parameters,
         "implementation_seed": request.implementation_seed,
-        "timing_scope": "prepare_and_execute",
-        "timing_dataset_integrity": "included_between_prepare_and_execute",
-        "timing_resource_accounting": "included_between_prepare_and_execute",
-        "timing_excluded_phases": [
-            "worker_startup", "result_validation",
-            "evaluation", "metrics_validation", "shutdown",
-        ],
+        "timing_scope": request.timing.scope.to_string(),
+        "operation_scope": request.timing.scope == TimingScope::ExecuteOnly,
+        "scientific_timeout_ns": request.timing.timeout.map(|limit| limit.as_nanos().to_string()),
+        "operational_timeouts_ns": request.timeouts.provenance(),
+        "timing_dataset_integrity": if request.timing.scope == TimingScope::ExecuteOnly { "outside_execute" } else { "included_between_prepare_and_execute" },
+        "timing_resource_accounting": if request.timing.scope == TimingScope::ExecuteOnly { "outside_execute" } else { "included_between_prepare_and_execute" },
+        "timing_excluded_phases": excluded_phases(request.timing.scope),
         "dataset_directory": request.dataset_dir,
         "dataset_tree_sha256": hex_digest(integrity.digest),
         "dataset_immutability": {
@@ -355,40 +507,6 @@ fn run_workers(
         "metric_schema": request.metric_schema,
         "controls": {"network": "unsupported", "filesystem_isolation": "unsupported", "process_tree_accounting": "unsupported"},
     });
-
-    let (started, baseline) = integrity.operation("implementation prepare", || {
-        let baseline = implementation.process_usage();
-        let started = Instant::now();
-        let prepared = measure(&mut measurements.prepare_time_ns, || {
-            implementation
-                .prepare(
-                    dataset_dir.clone(),
-                    request.problem_contract_id,
-                    request.problem_parameters.clone(),
-                    request.implementation_parameters.clone(),
-                    request.implementation_seed,
-                )
-                .map_err(|source| FixedDatasetRunError::Implementation { source })
-        });
-        measurements.timed_wall_time_ns = Measurement::elapsed(started.elapsed(), false);
-        let (cpu, memory) = implementation.process_usage().since(baseline);
-        measurements.cpu_time_ns = cpu;
-        measurements.peak_rss_bytes = memory;
-        prepared.map(|_| (started, baseline))
-    })?;
-    let (executed, timed_wall_time) = integrity.operation("implementation execute", || {
-        let executed = measure(&mut measurements.execute_request_time_ns, || {
-            implementation
-                .execute(result_path.clone())
-                .map_err(|source| FixedDatasetRunError::Implementation { source })
-        });
-        let timed_wall_time = started.elapsed();
-        measurements.timed_wall_time_ns = Measurement::elapsed(timed_wall_time, executed.is_ok());
-        let (cpu, memory) = implementation.process_usage().since(baseline);
-        measurements.cpu_time_ns = cpu;
-        measurements.peak_rss_bytes = memory;
-        executed.map(|executed| (executed, timed_wall_time))
-    })?;
 
     let result = validator
         .validate_execution_result(result_dir.path(), &executed, request.result_schema)
@@ -463,6 +581,24 @@ fn run_workers(
         result_output: result_dir,
         metrics_output: metrics_dir,
     })
+}
+
+fn excluded_phases(scope: TimingScope) -> Vec<&'static str> {
+    let mut excluded = vec![
+        "materialization",
+        "evaluator_startup",
+        "result_validation",
+        "evaluation",
+        "metrics_validation",
+        "shutdown",
+    ];
+    if scope != TimingScope::ColdEndToEnd {
+        excluded.push("worker_startup");
+    }
+    if scope == TimingScope::ExecuteOnly {
+        excluded.push("prepare");
+    }
+    excluded
 }
 
 struct DatasetIntegrity<'a> {
@@ -557,6 +693,12 @@ fn path_string(path: &Path) -> Result<String, FixedDatasetRunError> {
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum FixedDatasetRunError {
+    /// The scientific timeout cannot form a positive monotonic deadline.
+    #[error("scientific timeout must be positive and representable by the monotonic clock")]
+    InvalidScientificTimeout,
+    /// The selected timing envelope expired between worker exchanges.
+    #[error("scientific timeout expired over the selected timing envelope")]
+    ScientificTimeout,
     /// A dataset cannot be verified against its pre-launch content identity.
     #[error("dataset mutation around {operation}: {message}")]
     DatasetMutation {
@@ -650,7 +792,9 @@ impl FixedDatasetRunError {
     pub fn failure_kind(&self) -> FixedDatasetFailureKind {
         match self {
             Self::DatasetMutation { .. } => FixedDatasetFailureKind::DatasetMutation,
-            Self::NonAbsolutePath
+            Self::ScientificTimeout => FixedDatasetFailureKind::ScientificTimeout,
+            Self::InvalidScientificTimeout
+            | Self::NonAbsolutePath
             | Self::NonUtf8Path(_)
             | Self::PrivateDirectory(_)
             | Self::PublicSchemas(_)
@@ -673,6 +817,7 @@ impl FixedDatasetRunError {
 fn classify_session(source: &WorkerSessionError, implementation: bool) -> FixedDatasetFailureKind {
     match source {
         WorkerSessionError::Timeout { .. } => FixedDatasetFailureKind::PhaseTimeout,
+        WorkerSessionError::ScientificTimeout { .. } => FixedDatasetFailureKind::ScientificTimeout,
         WorkerSessionError::ProtocolRead { .. }
         | WorkerSessionError::Response { .. }
         | WorkerSessionError::Handshake { .. }

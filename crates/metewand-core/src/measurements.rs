@@ -5,7 +5,7 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 
 /// Compatibility version of diagnostic measurement provenance.
-pub const MEASUREMENTS_VERSION: u32 = 1;
+pub const MEASUREMENTS_VERSION: u32 = 2;
 
 /// An executor-observed quantity in the unit named by its containing field.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -99,11 +99,13 @@ impl Measurement {
 pub enum AccountingScope {
     /// The continuous implementation prepare/execute envelope.
     PrepareAndExecute,
+    /// The implementation execute exchange, excluding preparation.
+    ExecuteOnly,
     /// The implementation process from launch through receipt of its result.
     WorkerLifetimeThroughExecute,
 }
 
-/// Version-1 diagnostic measurements shared by successful and failed attempts.
+/// Versioned diagnostic measurements shared by successful and failed attempts.
 ///
 /// These values supplement authoritative observation timing. They are retained
 /// in provenance and do not change logical, resolved, or observation identities.

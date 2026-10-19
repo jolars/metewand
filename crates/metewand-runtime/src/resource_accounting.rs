@@ -34,6 +34,13 @@ impl ProcessUsage {
         }
     }
 
+    pub(crate) fn since_optional(self, baseline: Option<Self>) -> (Measurement, Measurement) {
+        match baseline {
+            Some(baseline) => self.since(baseline),
+            None => (partial(self.cpu_time_ns), partial(self.peak_rss_bytes)),
+        }
+    }
+
     pub(crate) fn since(self, baseline: Self) -> (Measurement, Measurement) {
         let cpu = self
             .cpu_time_ns

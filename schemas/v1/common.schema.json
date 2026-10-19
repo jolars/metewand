@@ -242,7 +242,7 @@
       "type": "object",
       "properties": {
         "version": {
-          "const": 1
+          "enum": [1, 2]
         },
         "materialization_time_ns": {
           "$ref": "#/$defs/measurement"
@@ -272,7 +272,7 @@
           "$ref": "#/$defs/measurement"
         },
         "cpu_time_scope": {
-          "const": "prepare_and_execute"
+          "enum": ["prepare_and_execute", "execute_only", "worker_lifetime_through_execute"]
         },
         "peak_rss_scope": {
           "const": "worker_lifetime_through_execute"
@@ -291,6 +291,12 @@
         "peak_rss_bytes",
         "cpu_time_scope",
         "peak_rss_scope"
+      ],
+      "allOf": [
+        {
+          "if": { "properties": { "version": { "const": 1 } } },
+          "then": { "properties": { "cpu_time_scope": { "const": "prepare_and_execute" } } }
+        }
       ],
       "additionalProperties": false
     }

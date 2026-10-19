@@ -72,6 +72,97 @@ fn replace(root: &Path, path: &str, before: &str, after: &str) {
 }
 
 #[test]
+fn run_publishes_each_authorized_timing_scope_with_its_accounting_boundary() {
+    for (scope, cpu_scope) in [
+        ("cold_end_to_end", "worker_lifetime_through_execute"),
+        ("prepare_and_execute", "prepare_and_execute"),
+        ("execute_only", "execute_only"),
+    ] {
+        let root = repository();
+        replace(
+            root.path(),
+            "metewand.toml",
+            "timing_scope = \"prepare_and_execute\"",
+            &format!("timing_scope = {scope:?}"),
+        );
+        replace(
+            root.path(),
+            "problem.toml",
+            "allowed_timing_scopes = [\"prepare_and_execute\"]",
+            &format!("allowed_timing_scopes = [{scope:?}]"),
+        );
+        let output = metewand(
+            root.path(),
+            &["run", "--output-dir", "run", "--output", "jsonl"],
+        );
+        assert!(output.status.success(), "{output:?}");
+        let records = envelopes(&output);
+        let attempt = &records.last().unwrap()["data"]["attempts"][0];
+        let published = document(
+            &root
+                .path()
+                .join("run")
+                .join(attempt["observation_directory"].as_str().unwrap())
+                .join("observation.json"),
+        );
+        let execution = &published["provenance"]["data"]["execution"];
+        assert_eq!(execution["timing_scope"], scope);
+        assert_eq!(execution["operation_scope"], scope == "execute_only");
+        assert_eq!(
+            published["provenance"]["data"]["measurements"]["cpu_time_scope"],
+            cpu_scope
+        );
+        assert_eq!(
+            published["provenance"]["data"]["context"]["timing_scope"],
+            scope
+        );
+        assert_eq!(
+            published["timing"]["timed_wall_time_ns"],
+            published["provenance"]["data"]["measurements"]["timed_wall_time_ns"]["value"]
+        );
+        assert_eq!(execution["scientific_timeout_ns"], Value::Null);
+        assert_eq!(execution["operational_timeouts_ns"]["hello"], "10000000000");
+    }
+}
+
+#[test]
+fn execute_only_scientific_timeout_leaves_untimed_phases_their_operational_limits() {
+    let root = repository();
+    replace(
+        root.path(),
+        "metewand.toml",
+        "timing_scope = \"prepare_and_execute\"",
+        "timing_scope = \"execute_only\"\ntimeout = \"300 ms\"",
+    );
+    replace(
+        root.path(),
+        "problem.toml",
+        "allowed_timing_scopes = [\"prepare_and_execute\"]",
+        "allowed_timing_scopes = [\"execute_only\"]",
+    );
+    for phase in ["prepare", "evaluate"] {
+        replace(
+            root.path(),
+            "worker.py",
+            &format!("elif method == {phase:?}:"),
+            &format!(
+                "elif method == {phase:?}:\n            import time\n            time.sleep(0.5)"
+            ),
+        );
+    }
+    let output = metewand(
+        root.path(),
+        &["run", "--output-dir", "run", "--output", "jsonl"],
+    );
+    assert!(output.status.success(), "{output:?}");
+    let records = envelopes(&output);
+    assert_eq!(
+        records.last().unwrap()["data"]["summary"]["accepted_attempts"],
+        1
+    );
+}
+
+#[test]
 fn run_streams_events_and_publishes_a_self_describing_attempt() {
     let root = repository();
     let source = fs::read(root.path().join("worker.py")).unwrap();
@@ -123,7 +214,7 @@ fn run_streams_events_and_publishes_a_self_describing_attempt() {
     let observation = document(&observation_dir.join("observation.json"));
     let measured = &provenance["provenance"]["data"]["measurements"];
     assert_eq!(*measured, observation["provenance"]["data"]["measurements"]);
-    assert_eq!(measured["version"], 1);
+    assert_eq!(measured["version"], 2);
     assert_eq!(
         measured["materialization_time_ns"]["reason"],
         "provided_dataset"
@@ -457,7 +548,7 @@ fn technical_failures_keep_distinct_codes_and_do_not_publish_observations() {
         (
             "elif method == \"execute\":",
             "elif method == \"execute\":\n            import time\n            time.sleep(2)",
-            "phase_timeout",
+            "scientific_timeout",
             Some("500 ms"),
         ),
     ];

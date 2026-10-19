@@ -117,3 +117,35 @@ fn conformance_cases() -> ConformanceCases {
     assert_eq!(cases.version, PUBLIC_SCHEMA_VERSION);
     cases
 }
+
+#[test]
+fn measurement_scope_versions_preserve_existing_records() {
+    let cases = conformance_cases();
+    let template = cases
+        .valid
+        .into_iter()
+        .find(|case| case.name == "observation-with-explicit-measurement-states")
+        .unwrap()
+        .instance;
+    let vectors: Value = serde_json::from_str(include_str!(
+        "../../../schemas/v1/fixtures/measurement-scopes.json"
+    ))
+    .unwrap();
+    assert_eq!(vectors["version"], 1);
+    let catalog = public_schema_catalog().unwrap();
+    for (kind, valid) in [("valid", true), ("invalid", false)] {
+        for vector in vectors[kind].as_array().unwrap() {
+            let mut instance = template.clone();
+            let measured = &mut instance["provenance"]["data"]["measurements"];
+            measured["version"] = vector["version"].clone();
+            measured["cpu_time_scope"] = vector["cpu_time_scope"].clone();
+            assert_eq!(
+                catalog
+                    .validate(PublicSchema::Observation.repository_path(), &instance)
+                    .is_ok(),
+                valid,
+                "{vector}"
+            );
+        }
+    }
+}

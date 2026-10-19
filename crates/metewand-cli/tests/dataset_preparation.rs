@@ -424,7 +424,7 @@ fn preparation_cannot_bypass_dataset_schemas_or_contract_timing_scopes() {
 }
 
 #[test]
-fn a_contract_permission_does_not_enable_an_unimplemented_timing_scope() {
+fn a_contract_permission_enables_execute_only_timing() {
     let root = repository();
     replace(
         root.path(),
@@ -437,6 +437,12 @@ fn a_contract_permission_does_not_enable_an_unimplemented_timing_scope() {
         "problem.toml",
         "allowed_timing_scopes = [\"prepare_and_execute\"]",
         "allowed_timing_scopes = [\"prepare_and_execute\", \"execute_only\"]",
+    );
+    replace(
+        root.path(),
+        "problem.toml",
+        "allowed_outside_timed_scope = []",
+        "allowed_outside_timed_scope = [\"integer_packing\"]",
     );
     for command in ["check", "plan"] {
         let output = metewand(root.path(), &[command]);
@@ -454,10 +460,10 @@ fn a_contract_permission_does_not_enable_an_unimplemented_timing_scope() {
             "json",
         ],
     );
-    assert_eq!(output.status.code(), Some(2));
-    let diagnostic: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(diagnostic["data"]["code"], "unsupported_operation");
-    assert!(!root.path().join("trace.jsonl").exists());
-    assert!(!root.path().join("run").exists());
-    assert!(!root.path().join("cache").exists());
+    assert!(output.status.success(), "{output:?}");
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["data"]["summary"]["accepted_attempts"], 2);
+    assert!(root.path().join("trace.jsonl").exists());
+    assert!(root.path().join("run").is_dir());
+    assert!(root.path().join("cache").is_dir());
 }

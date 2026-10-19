@@ -7,8 +7,9 @@ use std::{
     os::fd::FromRawFd,
     process::Command,
     str::FromStr,
+    sync::atomic::{AtomicBool, Ordering},
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use metewand_protocol::{
@@ -32,6 +33,8 @@ fn fixture_worker() {
         Ok("evaluator") => run_evaluator_fixture(),
         Ok("failure") => run_failure_fixture(),
         Ok("timeout") => run_timeout_fixture(),
+        Ok("interrupt-timeout") => run_interrupt_timeout_fixture(),
+        Ok("shared-deadline") => run_shared_deadline_fixture(),
         Ok("hello-timeout") => run_hello_timeout_fixture(),
         Ok("shutdown-timeout") => run_shutdown_timeout_fixture(),
         Ok("reserved") => run_reserved_fixture(),
@@ -147,6 +150,183 @@ fn applies_the_timeout_for_the_current_phase_and_discards_the_worker() {
         session.reset(),
         Err(WorkerSessionError::SessionUnusable)
     ));
+}
+
+#[test]
+fn a_scientific_deadline_discards_a_worker_before_the_operational_limit() {
+    let mut session = connect(
+        "timeout",
+        WorkerRole::Implementation,
+        &[Capability::OneShot],
+    );
+    session.set_scientific_deadline(Some(Instant::now() + Duration::from_millis(20)));
+    assert!(matches!(
+        session.execute("/result"),
+        Err(WorkerSessionError::ScientificTimeout {
+            phase: WorkerPhase::Execute
+        })
+    ));
+    assert!(matches!(
+        session.reset(),
+        Err(WorkerSessionError::SessionUnusable)
+    ));
+}
+
+#[test]
+fn an_expired_scientific_deadline_prevents_another_exchange() {
+    let mut session = connect(
+        "implementation",
+        WorkerRole::Implementation,
+        &[Capability::OneShot],
+    );
+    session.set_scientific_deadline(Some(Instant::now()));
+    assert!(matches!(
+        session.prepare("/dataset", "contract", json!({}), json!({}), 0),
+        Err(WorkerSessionError::ScientificTimeout {
+            phase: WorkerPhase::Prepare
+        })
+    ));
+    assert!(matches!(
+        session.reset(),
+        Err(WorkerSessionError::SessionUnusable)
+    ));
+}
+
+#[test]
+fn an_operational_limit_still_bounds_a_longer_scientific_scope() {
+    let mut limits = timeouts();
+    limits.execute = Duration::from_millis(20);
+    let mut session = WorkerSession::connect_with_deadline(
+        spawn_fixture("timeout"),
+        WorkerRole::Implementation,
+        worker_identity(),
+        &[Capability::OneShot],
+        limits,
+        Some(Instant::now() + Duration::from_secs(5)),
+    )
+    .expect("handshake must succeed");
+    assert!(
+        matches!(session.execute("/result"), Err(WorkerSessionError::Timeout {
+        phase: WorkerPhase::Execute, limit,
+    }) if limit == Duration::from_millis(20))
+    );
+}
+
+#[test]
+fn a_scientific_scope_can_end_before_untimed_exchanges() {
+    let mut session = connect(
+        "implementation",
+        WorkerRole::Implementation,
+        &[Capability::OneShot],
+    );
+    session.set_scientific_deadline(Some(Instant::now()));
+    session.set_scientific_deadline(None);
+    session
+        .prepare(
+            "/dataset",
+            "mw1-problem-contract-abc",
+            json!({"lambda": 0.1}),
+            json!({"solver": "fast"}),
+            23,
+        )
+        .expect("clearing the scientific scope restores operational limits");
+    session.execute("/result").unwrap();
+    session.reset().unwrap();
+    session.shutdown().unwrap();
+}
+
+#[test]
+fn a_cold_scope_deadline_also_bounds_the_handshake() {
+    assert!(matches!(
+        WorkerSession::connect_with_deadline(
+            spawn_fixture("hello-timeout"),
+            WorkerRole::Implementation,
+            worker_identity(),
+            &[Capability::OneShot],
+            timeouts(),
+            Some(Instant::now() + Duration::from_millis(20)),
+        ),
+        Err(WorkerSessionError::ScientificTimeout {
+            phase: WorkerPhase::Hello
+        })
+    ));
+}
+
+#[test]
+fn preparation_and_execution_consume_one_shared_deadline() {
+    let mut session = connect(
+        "shared-deadline",
+        WorkerRole::Implementation,
+        &[Capability::OneShot],
+    );
+    session.set_scientific_deadline(Some(Instant::now() + Duration::from_millis(500)));
+    session
+        .prepare("/dataset", "contract", json!({}), json!({}), 0)
+        .unwrap();
+    assert!(matches!(
+        session.execute("/result"),
+        Err(WorkerSessionError::ScientificTimeout {
+            phase: WorkerPhase::Execute,
+        })
+    ));
+}
+
+#[test]
+fn a_zero_operational_limit_is_not_a_scientific_timeout() {
+    let mut limits = timeouts();
+    limits.execute = Duration::ZERO;
+    let mut session = WorkerSession::connect(
+        spawn_fixture("timeout"),
+        WorkerRole::Implementation,
+        worker_identity(),
+        &[Capability::OneShot],
+        limits,
+    )
+    .unwrap();
+    assert!(matches!(
+        session.execute("/result"),
+        Err(WorkerSessionError::Timeout {
+            phase: WorkerPhase::Execute,
+            limit: Duration::ZERO,
+        })
+    ));
+}
+
+#[test]
+fn scientific_and_operational_timeouts_interrupt_before_forcing_exit() {
+    for scientific in [false, true] {
+        let root = tempfile::tempdir().unwrap();
+        let marker = root.path().join("interrupted");
+        let mut command = fixture_command("interrupt-timeout");
+        command.env("METEWAND_INTERRUPT_MARKER", &marker);
+        let process = PosixWorkerProcess::spawn(command, WorkerLogLimits::new(1024, 1024)).unwrap();
+        let mut limits = timeouts();
+        if !scientific {
+            limits.execute = Duration::from_millis(40);
+        }
+        let mut session = WorkerSession::connect(
+            process,
+            WorkerRole::Implementation,
+            worker_identity(),
+            &[Capability::OneShot],
+            limits,
+        )
+        .unwrap();
+        if scientific {
+            session.set_scientific_deadline(Some(Instant::now() + Duration::from_millis(40)));
+        }
+        let error = session.execute("/result").unwrap_err();
+        match error {
+            WorkerSessionError::ScientificTimeout { .. } if scientific => {}
+            WorkerSessionError::Timeout { .. } if !scientific => {}
+            error => panic!("unexpected timeout kind: {error:?}"),
+        }
+        assert_eq!(std::fs::read(&marker).unwrap(), b"interrupted");
+        assert!(matches!(
+            session.reset(),
+            Err(WorkerSessionError::SessionUnusable)
+        ));
+    }
 }
 
 #[test]
@@ -379,6 +559,64 @@ fn run_failure_fixture() {
             },
         }),
     );
+}
+
+fn run_shared_deadline_fixture() {
+    let (mut reader, mut writer) = protocol_streams();
+    accept_hello(
+        &mut reader,
+        &mut writer,
+        "implementation",
+        json!(["one_shot"]),
+    );
+    let prepare = read_message(&mut reader);
+    assert_eq!(prepare["method"], "prepare");
+    thread::sleep(Duration::from_millis(300));
+    write_message(&mut writer, &json!({"id": prepare["id"], "ok": true}));
+    let execute = read_message(&mut reader);
+    assert_eq!(execute["method"], "execute");
+    thread::sleep(Duration::from_millis(300));
+    write_message(
+        &mut writer,
+        &json!({
+            "id": execute["id"], "ok": true, "implementation_time_ns": null,
+            "result": {"manifest": "result.json"}, "statistics": {},
+        }),
+    );
+}
+
+static INTERRUPTED: AtomicBool = AtomicBool::new(false);
+
+extern "C" fn record_interrupt(_: libc::c_int) {
+    INTERRUPTED.store(true, Ordering::Relaxed);
+}
+
+fn run_interrupt_timeout_fixture() {
+    // SAFETY: The handler only stores to a lock-free atomic and lives for the
+    // process lifetime. This fixture runs in its own child process.
+    unsafe {
+        libc::signal(
+            libc::SIGINT,
+            record_interrupt as *const () as libc::sighandler_t,
+        );
+    }
+    let (mut reader, mut writer) = protocol_streams();
+    accept_hello(
+        &mut reader,
+        &mut writer,
+        "implementation",
+        json!(["one_shot"]),
+    );
+    assert_eq!(read_message(&mut reader)["method"], "execute");
+    while !INTERRUPTED.load(Ordering::Relaxed) {
+        thread::sleep(Duration::from_millis(1));
+    }
+    std::fs::write(
+        env::var_os("METEWAND_INTERRUPT_MARKER").unwrap(),
+        b"interrupted",
+    )
+    .unwrap();
+    thread::sleep(Duration::from_secs(5));
 }
 
 fn run_timeout_fixture() {

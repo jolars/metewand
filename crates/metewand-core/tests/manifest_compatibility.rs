@@ -485,3 +485,39 @@ fn validates_the_observation_capability_and_scientific_budget() {
         }) if problem.as_str() == "regression"
     ));
 }
+
+#[test]
+fn timing_reuse_and_warmup_compatibility_covers_every_combination() {
+    for scope in ["cold_end_to_end", "prepare_and_execute", "execute_only"] {
+        for reuse in [false, true] {
+            for warmups in [0, 1] {
+                let source = COMPLETE_MANIFEST
+                    .replace("worker_reuse = false", &format!("worker_reuse = {reuse}"))
+                    .replace("warmup_runs = 0", &format!("warmup_runs = {warmups}"))
+                    .replace(
+                        "timing_scope = \"prepare_and_execute\"",
+                        &format!("timing_scope = {scope:?}"),
+                    );
+                let manifest = parse(&source);
+                let contracts = contracts_for(
+                    &manifest,
+                    "regression",
+                    contract(
+                        false,
+                        "allowed_timing_scopes = [\"cold_end_to_end\", \"prepare_and_execute\", \"execute_only\"]",
+                    ),
+                );
+                let expected = if scope == "cold_end_to_end" {
+                    !reuse && warmups == 0
+                } else {
+                    reuse || warmups == 0
+                };
+                assert_eq!(
+                    validate_manifest_compatibility(&manifest, &contracts).is_ok(),
+                    expected,
+                    "scope={scope}, reuse={reuse}, warmups={warmups}"
+                );
+            }
+        }
+    }
+}

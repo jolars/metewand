@@ -16,7 +16,7 @@ use metewand_core::{
     },
     manifest::{
         DatasetDefinition, Enforcement, EnvironmentDefinition, InterpretedRunner, PrimaryTime,
-        ProtocolTransport, RepositoryPath, RunOrder, TimingScope, WorkerDefinition,
+        ProtocolTransport, RepositoryPath, RunOrder, WorkerDefinition,
     },
     measurements::{Measurement, MissingReason},
     planning::{
@@ -42,6 +42,7 @@ use crate::{
     dataset_materialization::{
         DatasetMaterialization, identify_dataset_derivation, materialize_dataset,
     },
+    fixed_dataset_run::ExecutionTimingPolicy,
     local_tree::hash_local_tree,
     repository::CheckedRepository,
     source_acquisition::HttpAcquirer,
@@ -70,6 +71,7 @@ pub(super) struct ResolvedCandidate {
     pub result_schema: PathBuf,
     pub metric_schema: PathBuf,
     pub timeouts: PhaseTimeouts,
+    pub timing: ExecutionTimingPolicy,
 }
 
 pub(super) struct ResolvedMeasurement {
@@ -221,8 +223,7 @@ pub(super) fn resolve(
 ) -> Result<ResolvedRun, RunError> {
     for experiment in &plan.experiments {
         let policy = &experiment.execution_policy.record;
-        if policy.timing_scope != TimingScope::PrepareAndExecute
-            || policy.primary_time != PrimaryTime::TimedWallTime
+        if policy.primary_time != PrimaryTime::TimedWallTime
             || policy.worker_reuse
             || policy.warmup_runs != 0
             || policy.run_order != RunOrder::Sequential
@@ -232,11 +233,11 @@ pub(super) fn resolve(
             || policy.memory.is_some()
         {
             return Err(unsupported(format!(
-                "execution policy `{}` requires controls outside the Gate-1 trusted local path; use prepare_and_execute wall timing, sequential fresh workers, and best_effort enforcement without resource limits",
+                "execution policy `{}` requires controls outside the Gate-1 trusted local path; use wall timing, sequential fresh workers without warm-ups, and best_effort enforcement without resource limits",
                 policy.name,
             )));
         }
-        phase_timeouts(policy.timeout.as_deref())?;
+        scientific_timeout(policy.timeout.as_deref())?;
     }
     if plan
         .experiments
@@ -266,7 +267,8 @@ pub(super) fn resolve(
     let executor = identify_record(ExecutorDefinitionRecord {
         kind: serde_json::from_value(json!("trusted_local")).expect("static valid name"),
         configuration: canonical(
-            json!({"environment_class": "development", "isolation": "unsupported"}),
+            json!({"environment_class": "development", "isolation": "unsupported",
+                "timeout_termination": {"interrupt": "SIGINT", "grace_ms": 100, "force": "SIGKILL", "exit_wait_ms": 1000}}),
         )?,
     })?;
     // Resolve every launch and fixed dataset before any acquisition or worker runs.
@@ -316,7 +318,12 @@ pub(super) fn resolve(
 
             prepared.push((
                 candidate,
-                phase_timeouts(experiment.execution_policy.record.timeout.as_deref())?,
+                ExecutionTimingPolicy {
+                    scope: experiment.execution_policy.record.timing_scope,
+                    timeout: scientific_timeout(
+                        experiment.execution_policy.record.timeout.as_deref(),
+                    )?,
+                },
                 implementation,
                 evaluator,
                 dataset,
@@ -352,7 +359,8 @@ pub(super) fn resolve(
     let store = ArtifactStore::open(cache_directory)?;
     let mut datasets = BTreeMap::new();
     let mut candidates = Vec::new();
-    for (candidate, timeouts, implementation, evaluator, dataset_plan) in prepared {
+    for (candidate, timing, implementation, evaluator, dataset_plan) in prepared {
+        let timeouts = PhaseTimeouts::default();
         let key = candidate.dataset_configuration.id;
         if let std::collections::btree_map::Entry::Vacant(entry) = datasets.entry(key) {
             let (snapshot, output_schema, provenance) = match dataset_plan {
@@ -449,7 +457,7 @@ pub(super) fn resolve(
             repository,
             candidate,
             executor.id,
-            timeouts,
+            timing,
             implementation,
             evaluator,
             &datasets[&key],
@@ -566,7 +574,7 @@ fn resolve_candidate(
     repository: &CheckedRepository,
     candidate: &LogicalCandidatePlan,
     executor: RecordId<ExecutorDefinitionRecord>,
-    timeouts: PhaseTimeouts,
+    timing: ExecutionTimingPolicy,
     implementation: ResolvedWorker,
     evaluator: ResolvedWorker,
     dataset: &ResolvedDataset,
@@ -621,6 +629,10 @@ fn resolve_candidate(
             })?;
             let provenance = canonical(json!({
                 "manifest_hash": repository.manifest_hash.to_string(),
+                "timing_scope": timing.scope.to_string(),
+                "operation_scope": timing.scope == metewand_core::manifest::TimingScope::ExecuteOnly,
+                "scientific_timeout_ns": timing.timeout.map(|limit| limit.as_nanos().to_string()),
+                "operational_timeouts_ns": PhaseTimeouts::default().provenance(),
                 "logical_candidate_id": candidate.candidate.id,
                 "logical_slot_id": slot.id,
                 "dataset_materialization": dataset_provenance.map(CanonicalValue::as_json),
@@ -668,7 +680,8 @@ fn resolve_candidate(
             .clone(),
         result_schema: contract.result_schema.as_path().to_path_buf(),
         metric_schema: contract.metric_schema.as_path().to_path_buf(),
-        timeouts,
+        timeouts: PhaseTimeouts::default(),
+        timing,
     })
 }
 
@@ -1016,32 +1029,62 @@ fn text_path(path: &Path) -> Result<String, RunError> {
         .ok_or_else(|| unsupported("Gate 1 launch paths must be UTF-8"))
 }
 
-fn phase_timeouts(expression: Option<&str>) -> Result<PhaseTimeouts, RunError> {
-    let duration = if let Some(expression) = expression {
-        let (number, multiplier) = [ ("ms", 1), ("s", 1000), ("min", 60_000), ("h", 3_600_000) ]
-            .into_iter().find_map(|(suffix, multiplier)| expression.trim().strip_suffix(suffix).map(|number| (number.trim(), multiplier)))
-            .ok_or_else(|| unsupported("Gate 1 timeouts require a positive integer followed by `ms`, `s`, `min`, or `h`"))?;
-        let milliseconds = number
-            .parse::<u64>()
-            .ok()
-            .and_then(|number| number.checked_mul(multiplier))
-            .filter(|number| *number > 0)
-            .ok_or_else(|| unsupported("Gate 1 phase timeout is zero, invalid, or too large"))?;
-        Duration::from_millis(milliseconds)
-    } else {
-        Duration::from_secs(10)
+fn scientific_timeout(expression: Option<&str>) -> Result<Option<Duration>, RunError> {
+    let Some(expression) = expression else {
+        return Ok(None);
     };
-    Ok(PhaseTimeouts {
-        hello: duration,
-        materialize: duration,
-        prepare: duration,
-        execute: duration,
-        reset: duration,
-        evaluate: duration,
-        shutdown: duration,
-    })
+    let (number, multiplier) = [("ms", 1), ("s", 1000), ("min", 60_000), ("h", 3_600_000)]
+        .into_iter().find_map(|(suffix, multiplier)| expression.trim().strip_suffix(suffix)
+            .map(|number| (number.trim(), multiplier)))
+        .ok_or_else(|| unsupported("scientific timeouts require a positive integer followed by `ms`, `s`, `min`, or `h`"))?;
+    let milliseconds = number
+        .parse::<u64>()
+        .ok()
+        .and_then(|number| number.checked_mul(multiplier))
+        .filter(|number| *number > 0)
+        .ok_or_else(|| unsupported("scientific timeout is zero, invalid, or too large"))?;
+    let duration = Duration::from_millis(milliseconds);
+    if std::time::Instant::now().checked_add(duration).is_none() {
+        return Err(unsupported(
+            "scientific timeout cannot be represented by the monotonic clock",
+        ));
+    }
+    Ok(Some(duration))
 }
 
 fn unsupported(message: impl Into<String>) -> RunError {
     RunError::Unsupported(message.into())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::scientific_timeout;
+    use std::time::Duration;
+
+    #[test]
+    fn scientific_limits_have_no_implicit_budget_and_parse_checked_units() {
+        assert_eq!(scientific_timeout(None).unwrap(), None);
+        for (text, milliseconds) in [
+            ("1ms", 1),
+            (" 2 s ", 2000),
+            ("3 min", 180_000),
+            ("4h", 14_400_000),
+        ] {
+            assert_eq!(
+                scientific_timeout(Some(text)).unwrap(),
+                Some(Duration::from_millis(milliseconds))
+            );
+        }
+        for text in [
+            "",
+            "0 s",
+            "-1 s",
+            "1.5s",
+            "1",
+            "1 day",
+            "18446744073709551615 h",
+        ] {
+            assert!(scientific_timeout(Some(text)).is_err(), "{text}");
+        }
+    }
 }

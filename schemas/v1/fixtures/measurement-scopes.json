@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "valid": [
+    { "version": 1, "cpu_time_scope": "prepare_and_execute" },
+    { "version": 2, "cpu_time_scope": "prepare_and_execute" },
+    { "version": 2, "cpu_time_scope": "execute_only" },
+    { "version": 2, "cpu_time_scope": "worker_lifetime_through_execute" }
+  ],
+  "invalid": [
+    { "version": 1, "cpu_time_scope": "execute_only" },
+    { "version": 1, "cpu_time_scope": "worker_lifetime_through_execute" },
+    { "version": 2, "cpu_time_scope": "unknown" },
+    { "version": 3, "cpu_time_scope": "prepare_and_execute" }
+  ]
+}

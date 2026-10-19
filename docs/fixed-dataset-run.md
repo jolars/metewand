@@ -5,24 +5,49 @@ already resolved local dataset through a one-shot implementation and the
 problem-owned evaluator. The caller supplies absolute dataset and private-root
 paths, exact resolved launches and worker identities, the problem contract ID,
 parameters and seed, selected result and metric schema paths, an offline schema
-catalog, phase deadlines, and log limits. The checked-in integration test uses
-the fixed dataset in `fixtures/worker-protocol/v1/fixed-dataset` with the raw
-implementation and evaluator workers. Separate delayed implementation startup, evaluator startup, and evaluation
-fixtures verify that each remains outside the returned timed duration. Delayed preparation
-and result writing fixtures verify that both remain inside it.
+catalog, an `ExecutionTimingPolicy`, operational phase deadlines, and log limits.
+The policy selects one of three orchestrator-observed envelopes:
+
+| Scope | Measured interval |
+| --- | --- |
+| `cold_end_to_end` | Immediately before implementation launch through receipt of its complete canonical result. |
+| `prepare_and_execute` | Immediately before prepare through the complete execute response. |
+| `execute_only` | Immediately before execute through its complete response, including canonical result writing. |
+
+The caller must select a scope authorized by the checked problem contract.
+Execute-only comparisons require precise, hashed contract rules for untimed
+preparation. They carry `operation_scope: true` in execution provenance.
+`ExecutionTimingPolicy::default()` selects prepare-and-execute without a
+scientific limit. `timeout: Some(duration)` limits the complete selected
+interval with one absolute monotonic deadline. Preparation and execution never
+restart that budget. Cold timing also charges private worker setup, interpreter
+startup, and hello negotiation to it.
 
 The function creates owner-only result and metrics directories beneath the
-private root. It launches and negotiates both workers through the trusted local
-process path before starting the timer. The orchestrator starts its wall clock
-immediately before `prepare` and stops it when `execute` returns. The protocol
-requires that response to follow complete result writing, so the measured
-interval includes preparation, execution, and canonical result serialization.
-Integrity checks between prepare and execute also contribute to this continuous
-duration. Provenance records this as
-`timing_dataset_integrity: "included_between_prepare_and_execute"`. Checks before
-prepare and after execute remain outside the timer.
-Result validation, independent evaluation, metrics validation, and worker
-shutdown happen outside that interval.
+private root. Dataset integrity checks surround each worker operation. Cold
+and prepare-and-execute timing include checks between their timed operations;
+provenance records `timing_dataset_integrity` as
+`included_between_prepare_and_execute`. Execute-only checks precede and follow
+the measured exchange and use `outside_execute`. Resource accounting follows
+the same boundaries, except that peak memory retains its explicit worker
+lifetime scope. The independent evaluator launches after implementation
+execution, so its startup cannot enter cold timing. Result validation,
+evaluation, metrics validation, and shutdown also remain outside every envelope.
+
+`PhaseTimeouts` separately bounds every worker exchange. Its default is ten
+seconds for each phase; runtime callers can supply other fully resolved values.
+The earlier of the scientific deadline and the current operational limit wins.
+Untimed phases retain their operational limits even when the scientific budget
+is shorter. Scientific expiry produces `scientific_timeout`; operational
+expiry produces `phase_timeout`. Both interrupt the worker process group,
+allow a 100 ms grace period, and force termination before discarding the worker. They retain a partial
+elapsed measurement for a timing envelope that had begun. An untimed failure
+before the selected envelope starts retains `not_started` for that envelope.
+
+The raw fixtures in `fixtures/worker-protocol/v1` test startup, preparation,
+execution, and evaluator delays independently. They verify the three envelope
+boundaries, a shared prepare/execute budget, untimed phases with shorter
+scientific budgets, and failure measurements.
 
 `WorkerOutputValidator` checks the completed result and evaluator metrics
 against Metewand's public envelopes and the selected problem schemas. The
@@ -41,9 +66,9 @@ the private root available while it uses the result for later publication.
 
 `run_fixed_dataset_outcome` retains a private one-shot result as `Validated`
 or a failed outcome with an `AttemptDiagnostic` and stable technical failure
-class. It distinguishes dataset mutation, implementation crashes, phase
-timeouts, invalid results, evaluator failures (including invalid metrics), and
-protocol violations.
+class. It distinguishes dataset mutation, implementation crashes, scientific
+and operational timeouts, invalid results, evaluator failures (including invalid
+metrics), and protocol violations.
 
 The evaluator must return an explicit scientific verdict after writing its
 metrics. `invalid` rejects even a schema-valid result. `reached`, `not_reached`,

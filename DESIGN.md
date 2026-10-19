@@ -1689,8 +1689,10 @@ preparation, while `execute_only` requires precise rules for untimed preparation
 and produces an operation-scope comparison. These rules and the
 [materialization and preparation conformance cases](docs/dataset-materialization.md#materialization-and-implementation-preparation)
 complete existing version-1 semantics without adding a manifest field, wire
-message, schema version, or identity transcript. Other timing scopes remain a
-later executor slice.
+message or identity transcript. All three envelopes are implemented in the
+local runtime; its [timing policy](docs/fixed-dataset-run.md) distinguishes the
+shared scientific deadline from operational phase limits. Diagnostic measurement
+payload version 2 records the corresponding CPU accounting scopes.
 
 The generic source-resolution boundary introduces no new manifest syntax,
 serialized public schema, identity transcript, wire message, or execution timing

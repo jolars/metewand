@@ -153,6 +153,14 @@ marks the session unusable and discards the process. Worker-reported failures
 remain typed; failures other than reset do not by themselves claim that the
 protocol session is corrupt.
 
+`WorkerSession` also accepts an absolute scientific deadline through
+`connect_with_deadline` or `set_scientific_deadline`. Exchanges use the earlier
+of that shared deadline and the current operational phase limit. Expiry returns
+`ScientificTimeout` and discards the worker. The orchestrator can clear the
+scientific deadline before untimed phases without changing their operational
+limits. The fixed-dataset runtime and CLI use this mechanism for all three
+[timing envelopes](fixed-dataset-run.md).
+
 ## Encoding boundary
 
 `encode_message` emits the canonical JSON representation followed by exactly

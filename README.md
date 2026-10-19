@@ -129,7 +129,8 @@ request-correlation abuse case as a selectable fixture mode.
 generators and pinned-source transformations to validated artifacts, construction
 identities, and provenance. Try the [generated dataset example](examples/generated-dataset).
 The [fixed-dataset runtime path](docs/fixed-dataset-run.md) launches a resolved
-implementation and independent evaluator, measures `prepare_and_execute`, and
+implementation and independent evaluator, measures the selected
+[timing envelope](docs/fixed-dataset-run.md), and
 returns validated result and metric values from private temporary output. Its
 [phase and resource measurements](docs/execution-measurements.md) retain explicit
 missing and partial values, including elapsed time from failed exchanges. Its
