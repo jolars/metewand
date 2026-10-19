@@ -116,7 +116,7 @@ pub struct RunReport {
     pub manifest_hash: String,
     /// User-selected artifact destination, retained outside stable identities.
     pub output_directory: String,
-    /// Terminal attempt outcomes in deterministic plan order.
+    /// Terminal attempt outcomes in deterministic execution order.
     pub attempts: Vec<RunAttemptOutput>,
     /// Append-only lifecycle history, also streamed by JSON Lines output.
     pub events: Vec<RunEvent>,

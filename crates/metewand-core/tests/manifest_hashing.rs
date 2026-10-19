@@ -64,6 +64,7 @@ version = 1
 
 [execution_policies.default]
 enforcement = "best_effort"
+max_concurrency = 1
 run_order = "sequential"
 primary_time = "timed_wall_time"
 timing_scope = "prepare_and_execute"
@@ -129,6 +130,7 @@ fn component_ids(manifest: &Manifest) -> Vec<String> {
         .get_key_value("default")
         .unwrap();
     let execution_policy_id = identify_record(ExecutionPolicyRecord {
+        max_concurrency: policy.resolved_max_concurrency(),
         name: name.clone(),
         cpus: policy.cpus,
         threads: policy.threads,
@@ -187,10 +189,39 @@ fn hashes_the_defaulted_typed_manifest_instead_of_toml_spelling() {
 
     let canonical = String::from_utf8(canonical_manifest_bytes(&implicit).unwrap()).unwrap();
     assert!(canonical.contains(
-        r#""default":{"cpus":null,"enforcement":"best_effort","memory":null,"network":false,"primary_time":"timed_wall_time","run_order":"sequential","threads":null,"timeout":null,"timing_scope":"prepare_and_execute","version":1,"warmup_runs":0,"worker_reuse":false}"#
+        r#""default":{"cpus":null,"enforcement":"best_effort","max_concurrency":1,"memory":null,"network":false,"primary_time":"timed_wall_time","run_order":"sequential","threads":null,"timeout":null,"timing_scope":"prepare_and_execute","version":1,"warmup_runs":0,"worker_reuse":false}"#
     ));
     assert!(!canonical.contains("metewand.toml"));
     assert!(!canonical.contains("Formatting"));
+}
+
+#[test]
+fn concurrency_is_an_explicit_default_and_a_manifest_hash_dependency() {
+    let serial = parse("metewand.toml", IMPLICIT_DEFAULTS);
+    let explicit = parse(
+        "metewand.toml",
+        &IMPLICIT_DEFAULTS.replace(
+            "[execution_policies.default]",
+            "[execution_policies.default]\nmax_concurrency = 1",
+        ),
+    );
+    let concurrent = parse(
+        "metewand.toml",
+        &IMPLICIT_DEFAULTS.replace(
+            "[execution_policies.default]",
+            "[execution_policies.default]\nmax_concurrency = 2",
+        ),
+    );
+    assert_eq!(
+        hash_manifest(&serial).unwrap(),
+        hash_manifest(&explicit).unwrap()
+    );
+    assert_ne!(
+        hash_manifest(&serial).unwrap(),
+        hash_manifest(&concurrent).unwrap()
+    );
+    assert_eq!(component_ids(&serial)[0], component_ids(&concurrent)[0]);
+    assert_ne!(component_ids(&serial)[1], component_ids(&concurrent)[1]);
 }
 
 #[test]
@@ -352,6 +383,7 @@ seed = 99
     assert_eq!(component_ids(&original), component_ids(&extended));
 
     let policy = ExecutionPolicyRecord {
+        max_concurrency: 1,
         name: original
             .execution_policies
             .get_key_value("default")

@@ -545,6 +545,7 @@ fn execution_policy_record(
         timing_scope: definition.resolved_timing_scope(),
         primary_time: definition.resolved_primary_time(),
         run_order: definition.resolved_run_order(),
+        max_concurrency: definition.resolved_max_concurrency(),
         enforcement: definition.resolved_enforcement(),
     }
 }

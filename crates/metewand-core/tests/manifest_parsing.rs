@@ -9,6 +9,29 @@ use serde_json::json;
 const COMPLETE_MANIFEST: &str = include_str!("../../../fixtures/manifest/v1/complete.toml");
 
 #[test]
+fn concurrency_is_serial_by_default_and_requires_a_positive_safe_integer() {
+    let source = "version = 1\nname = \"concurrency\"\n[execution_policies.local]\nversion = 1\n";
+    let manifest = parse_manifest(Path::new("metewand.toml"), source).unwrap();
+    assert_eq!(
+        manifest.execution_policies["local"].resolved_max_concurrency(),
+        1
+    );
+    for value in ["1", "2", "9007199254740991"] {
+        let source = format!("{source}max_concurrency = {value}\n");
+        let manifest = parse_manifest(Path::new("metewand.toml"), &source).unwrap();
+        assert_eq!(
+            manifest.execution_policies["local"].resolved_max_concurrency(),
+            value.parse::<u64>().unwrap()
+        );
+    }
+    for value in ["0", "-1", "1.5", "9007199254740992", "\"2\""] {
+        let source = format!("{source}max_concurrency = {value}\n");
+        let error = parse_manifest(Path::new("metewand.toml"), &source).unwrap_err();
+        assert!(error.source_span().is_some(), "{value}");
+    }
+}
+
+#[test]
 fn parses_every_version_one_definition_into_domain_types() {
     let manifest = parse_manifest(Path::new("metewand.toml"), COMPLETE_MANIFEST).unwrap();
 
@@ -68,6 +91,7 @@ fn parses_every_version_one_definition_into_domain_types() {
     let policy = &manifest.execution_policies["controlled"];
     assert_eq!(policy.version, 1);
     assert_eq!(policy.timing_scope, Some(TimingScope::PrepareAndExecute));
+    assert_eq!(policy.max_concurrency, Some(2));
     assert_eq!(manifest.observation_policies["final"].version, 1);
 }
 

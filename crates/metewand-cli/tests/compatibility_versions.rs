@@ -13,14 +13,14 @@ use metewand_runtime::datamonger::DATAMONGER_ADAPTER_VERSION;
 use metewand_runtime::{LOCAL_TREE_HASH_VERSION, SOURCE_RESOLUTION_VERSION};
 
 #[test]
-fn workspace_exposes_initial_compatibility_versions() {
+fn workspace_exposes_current_compatibility_versions() {
     assert_eq!(MANIFEST_VERSION, 1);
     assert_eq!(PUBLIC_SCHEMA_VERSION, 1);
     assert_eq!(WIRE_PROTOCOL_VERSION, 1);
     assert_eq!(IDENTITY_VERSION, 1);
     assert_eq!(SEED_DERIVATION_VERSION, 1);
     assert_eq!(SCHEDULING_POLICY_VERSION, 1);
-    assert_eq!(EXECUTION_SEMANTICS_VERSION, 1);
+    assert_eq!(EXECUTION_SEMANTICS_VERSION, 2);
     assert_eq!(LOCAL_TREE_HASH_VERSION, 1);
     assert_eq!(SOURCE_RESOLUTION_VERSION, 1);
     assert_eq!(DATAMONGER_ADAPTER_VERSION, 1);

@@ -399,6 +399,7 @@
           "type": "string",
           "enum": ["sequential", "randomized"]
         },
+        "max_concurrency": { "$ref": "common.schema.json#/$defs/safe_positive_integer", "default": 1 },
         "enforcement": {
           "type": "string",
           "enum": ["best_effort", "required"]

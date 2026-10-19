@@ -293,6 +293,12 @@ pub struct ExecutionPolicyDefinition {
     pub primary_time: Option<PrimaryTime>,
     /// Deterministic run-order policy.
     pub run_order: Option<RunOrder>,
+    /// Maximum number of attempts that may execute concurrently.
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_safe_positive_integer"
+    )]
+    pub max_concurrency: Option<u64>,
     /// Required control-enforcement level.
     pub enforcement: Option<Enforcement>,
 }
@@ -310,6 +316,8 @@ impl ExecutionPolicyDefinition {
     pub const DEFAULT_PRIMARY_TIME: PrimaryTime = PrimaryTime::TimedWallTime;
     /// Version-1 default scheduling order.
     pub const DEFAULT_RUN_ORDER: RunOrder = RunOrder::Sequential;
+    /// Default attempt limit keeps performance measurements serial.
+    pub const DEFAULT_MAX_CONCURRENCY: u64 = 1;
     /// Version-1 default control-enforcement requirement.
     pub const DEFAULT_ENFORCEMENT: Enforcement = Enforcement::BestEffort;
 
@@ -347,6 +355,13 @@ impl ExecutionPolicyDefinition {
     #[must_use]
     pub fn resolved_run_order(&self) -> RunOrder {
         self.run_order.unwrap_or(Self::DEFAULT_RUN_ORDER)
+    }
+
+    /// Returns the concurrency bound after applying the serial default.
+    #[must_use]
+    pub fn resolved_max_concurrency(&self) -> u64 {
+        self.max_concurrency
+            .unwrap_or(Self::DEFAULT_MAX_CONCURRENCY)
     }
 
     /// Returns the enforcement requirement after applying the version-1 default.

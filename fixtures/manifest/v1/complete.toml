@@ -119,6 +119,7 @@ timeout = "10 min"
 timing_scope = "prepare_and_execute"
 primary_time = "timed_wall_time"
 run_order = "randomized"
+max_concurrency = 2
 enforcement = "best_effort"
 
 [observation_policies.final]

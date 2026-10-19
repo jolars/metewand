@@ -1,0 +1,21 @@
+{
+  "identity_version": 1,
+  "execution_semantics_version": 2,
+  "policies": [
+    {
+      "max_concurrency": 1,
+      "canonical": "{\"cpus\":1,\"enforcement\":\"best_effort\",\"max_concurrency\":1,\"memory\":null,\"name\":\"default\",\"network\":false,\"primary_time\":\"timed_wall_time\",\"run_order\":\"sequential\",\"threads\":null,\"timeout\":null,\"timing_scope\":\"prepare_and_execute\",\"version\":1,\"warmup_runs\":0,\"worker_reuse\":false}",
+      "identity": "mw1-execution-policy-a7cb0d75d97d065c897a3858debfb8cea2769abb7ab7d5cb80eda49eeffbf486"
+    },
+    {
+      "max_concurrency": 2,
+      "canonical": "{\"cpus\":1,\"enforcement\":\"best_effort\",\"max_concurrency\":2,\"memory\":null,\"name\":\"default\",\"network\":false,\"primary_time\":\"timed_wall_time\",\"run_order\":\"sequential\",\"threads\":null,\"timeout\":null,\"timing_scope\":\"prepare_and_execute\",\"version\":1,\"warmup_runs\":0,\"worker_reuse\":false}",
+      "identity": "mw1-execution-policy-4548eab1659cbd41c901ccbbdcd0f95ff1a351d9be110cc58a9044123df6b5fa"
+    },
+    {
+      "max_concurrency": 3,
+      "canonical": "{\"cpus\":1,\"enforcement\":\"best_effort\",\"max_concurrency\":3,\"memory\":null,\"name\":\"default\",\"network\":false,\"primary_time\":\"timed_wall_time\",\"run_order\":\"sequential\",\"threads\":null,\"timeout\":null,\"timing_scope\":\"prepare_and_execute\",\"version\":1,\"warmup_runs\":0,\"worker_reuse\":false}",
+      "identity": "mw1-execution-policy-19227724c9e40e5261e94640c1baa0a3ba3b370106916b42016822d0fea6c3f1"
+    }
+  ]
+}

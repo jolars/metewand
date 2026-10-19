@@ -177,8 +177,9 @@ and garbage collection remain later roadmap slices.
 Their public schemas are `artifact-cache-object`, `dataset-cache-entry`, and
 `artifact-cache-lease`. They join the initial version-1 catalog without changing
 existing records. `LOCAL_TREE_HASH_VERSION`, identity, manifest, wire-protocol,
-execution-semantics, and public-schema compatibility constants remain 1. This
-completes the unreleased version-1 immutability contract: content transcripts,
+and public-schema compatibility constants remain 1. Execution semantics version 2
+adds [bounded concurrency](scheduling.md) without changing these storage formats.
+This completes the unreleased version-1 immutability contract: content transcripts,
 worker requests, and the timing boundary remain unchanged. The continuous timer
 includes integrity verification between prepare and execute, and the new
 diagnostic and provenance use the existing extensible fields. Quarantine adds a private storage location

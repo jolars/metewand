@@ -378,6 +378,7 @@ impl PlanResult {
                 PlanExperiment {
                     name: experiment.name.to_string(),
                     scheduling_seed: experiment.scheduling_seed.value,
+                    max_concurrency: experiment.execution_policy.record.max_concurrency,
                     execution_policy: experiment.execution_policy.id.to_string(),
                     observation_policy: experiment.observation_policy.id.to_string(),
                     candidates,
@@ -471,10 +472,11 @@ impl PlanResult {
         for experiment in &self.experiments {
             writeln!(
                 output,
-                "\nExperiment `{}`\n  scheduling seed: {}\n  execution policy: {}\n  observation policy: {}",
+                "\nExperiment `{}`\n  scheduling seed: {}\n  execution policy: {}\n  max concurrent attempts: {}\n  observation policy: {}",
                 experiment.name,
                 experiment.scheduling_seed,
                 experiment.execution_policy,
+                experiment.max_concurrency,
                 experiment.observation_policy,
             )
             .expect("writing to a string cannot fail");
@@ -778,6 +780,7 @@ struct ControlRequirement {
 struct PlanExperiment {
     name: String,
     scheduling_seed: u64,
+    max_concurrency: u64,
     execution_policy: String,
     observation_policy: String,
     candidates: Vec<PlanCandidate>,
@@ -1009,6 +1012,11 @@ impl CommandError {
             return Self::output_write(error.to_string());
         }
         let (exit_code, code, cause) = match error {
+            RunError::ExecutionThreadPanic => (
+                EXIT_INTERNAL,
+                "run_execution_failed",
+                "execution_thread_panicked",
+            ),
             RunError::Materialization(_) => (
                 EXIT_RUN_FAILED,
                 "dataset_materialization_failed",

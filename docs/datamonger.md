@@ -126,9 +126,9 @@ compatibility version 1. Their positive and negative vectors live beside the
 schemas; canonical standalone vectors and the test registry live in
 [`fixtures/datamonger/v1`](../fixtures/datamonger/v1).
 
-These are new entry points. Existing manifest, source-resolution, identity,
-tree-hash, wire-protocol, execution-semantics, and public-schema compatibility
-versions remain 1; none of their existing representations changes.
+These entry points preserve the version-1 manifest, source-resolution, identity,
+tree-hash, wire-protocol, and public-schema contracts. Execution semantics
+version 2 adds [bounded concurrency](scheduling.md) independently of acquisition.
 
 The ordinary workspace tests exercise the process bridge with a public-API test
 double and run the example's materialization and private-view comparison offline.

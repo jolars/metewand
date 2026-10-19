@@ -11,6 +11,20 @@ use serde_json::Value;
 
 const CONFORMANCE_CASES: &str = include_str!("../../../schemas/v1/fixtures/conformance.json");
 
+#[test]
+fn concurrency_schema_rejects_bounds_outside_the_canonical_integer_domain() {
+    let catalog = public_schema_catalog().unwrap();
+    let instance = serde_json::json!({
+        "version": 1, "name": "concurrency",
+        "execution_policies": {"local": {"version": 1, "max_concurrency": 9_007_199_254_740_992_u64}}
+    });
+    assert!(
+        catalog
+            .validate(PublicSchema::Manifest.repository_path(), &instance)
+            .is_err()
+    );
+}
+
 #[derive(Debug, Deserialize)]
 struct ConformanceCases {
     version: u32,

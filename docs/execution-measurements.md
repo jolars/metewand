@@ -86,10 +86,11 @@ Version-1 records with or without diagnostic measurements remain readable.
 `MEASUREMENTS_VERSION` is now 2 to identify the expanded CPU accounting scope
 vocabulary. The common schema still accepts version-1 payloads with their
 original prepare-and-execute CPU scope and accepts version-2 payloads for all
-three scopes. The public schema, identity, manifest, execution-semantics, and
-wire-protocol versions remain 1: the timing envelopes and compatibility rules
-were already defined by those contracts. The new scope conformance vectors
-verify both payload versions and reject cross-version and unknown scopes.
+three scopes. The public schema, identity, manifest, and wire-protocol versions
+remain 1. Execution semantics version 2 adds [bounded concurrency](scheduling.md)
+while preserving these timing envelopes and accounting scopes. The scope
+conformance vectors verify both payload versions and reject cross-version and
+unknown scopes.
 Conformance cases cover complete, partial, and unavailable states and reject missing fields, negative durations,
 and contradictory state/value combinations. Canonical byte tests cover the
 three measurement forms. Phase-delay fixtures, CPU and memory workloads,

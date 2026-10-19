@@ -132,6 +132,7 @@ fn key(launch: &ResolvedLaunchRecord, reuse: bool, warmups: u64) -> WorkerReuseK
             launch: record_id(launch).unwrap(),
         },
         policy: ExecutionPolicyRecord {
+            max_concurrency: 1,
             name: serde_json::from_value(json!("default")).unwrap(),
             cpus: None,
             threads: None,

@@ -146,6 +146,7 @@ fn separates_logical_records_from_resolved_runtime_dependencies() {
         configuration: id::<ProblemConfigurationRecord>(19),
     };
     let execution_policy = ExecutionPolicyRecord {
+        max_concurrency: 1,
         name: name("controlled"),
         cpus: Some(1),
         threads: Some(1),

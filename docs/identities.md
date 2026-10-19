@@ -168,13 +168,13 @@ The fully defaulted execution policy in the Rust conformance test has these
 exact canonical bytes:
 
 ```json
-{"cpus":1,"enforcement":"best_effort","memory":null,"name":"default","network":false,"primary_time":"timed_wall_time","run_order":"sequential","threads":null,"timeout":null,"timing_scope":"prepare_and_execute","version":1,"warmup_runs":0,"worker_reuse":false}
+{"cpus":1,"enforcement":"best_effort","max_concurrency":1,"memory":null,"name":"default","network":false,"primary_time":"timed_wall_time","run_order":"sequential","threads":null,"timeout":null,"timing_scope":"prepare_and_execute","version":1,"warmup_runs":0,"worker_reuse":false}
 ```
 
 With the `execution-policy` domain separator, its identity is:
 
 ```text
-mw1-execution-policy-79195d67021c7f14bbf4e2d2acd946b76e2e7e8f895842e56c6403fc1fad6e3f
+mw1-execution-policy-a7cb0d75d97d065c897a3858debfb8cea2769abb7ab7d5cb80eda49eeffbf486
 ```
 
 Changing any representation or kind is a compatibility change and requires an
@@ -184,3 +184,8 @@ Dataset construction uses the new `dataset-derivation` kind without changing
 existing transcripts. See [Dataset materialization](dataset-materialization.md)
 for its input fields and exact conformance vector. Output hashes are recorded
 separately and never participate in the construction identity.
+
+The concurrency bound is an explicit execution-policy member, including its
+serial default of `1`. [Scheduling](scheduling.md#compatibility-review) documents
+the expanded policy representation, execution semantics version 2, and the
+review of the compatibility constants.

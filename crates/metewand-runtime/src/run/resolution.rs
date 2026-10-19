@@ -61,7 +61,13 @@ use super::RunError;
 pub(super) struct ResolvedRun {
     pub candidates: Vec<ResolvedCandidate>,
     pub schedule: Vec<(usize, usize)>,
+    pub batches: Vec<ResolvedBatch>,
     pub private_root: TempDir,
+}
+
+pub(super) struct ResolvedBatch {
+    pub slots: std::ops::Range<usize>,
+    pub lane_count: usize,
 }
 
 pub(super) struct ResolvedCandidate {
@@ -231,6 +237,13 @@ pub(super) fn resolve(
 ) -> Result<ResolvedRun, RunError> {
     for experiment in &plan.experiments {
         let policy = &experiment.execution_policy.record;
+        if policy.max_concurrency == 0
+            || policy.max_concurrency > metewand_core::canonical::MAX_SAFE_INTEGER
+        {
+            return Err(unsupported(
+                "max_concurrency must be a positive safe integer",
+            ));
+        }
         if policy.primary_time != PrimaryTime::TimedWallTime {
             return Err(unsupported(format!(
                 "execution policy `{}` requires timing outside the trusted local path; use wall timing",
@@ -464,6 +477,7 @@ pub(super) fn resolve(
         }
     }
     let mut schedule = Vec::new();
+    let mut batches = Vec::new();
     let mut candidate_offset = 0;
     for experiment in &plan.experiments {
         let mut positions = Vec::new();
@@ -479,20 +493,46 @@ pub(super) fn resolve(
                 scheduling_slots.push(measurement.scheduling);
             }
         }
-        schedule.extend(
-            schedule_slots(
-                experiment.execution_policy.record.run_order,
-                &experiment.scheduling_seed,
-                &scheduling_slots,
-            )
-            .into_iter()
-            .map(|index| positions[index]),
-        );
+        let ordered = schedule_slots(
+            experiment.execution_policy.record.run_order,
+            &experiment.scheduling_seed,
+            &scheduling_slots,
+        )
+        .into_iter()
+        .map(|index| positions[index])
+        .collect::<Vec<_>>();
+        if !ordered.is_empty() {
+            // Bound allocation by selected work even when the authored limit is huge.
+            let max_concurrency = experiment.execution_policy.record.max_concurrency;
+            let lane_count = max_concurrency.min(ordered.len() as u64) as usize;
+            for (offset, &(candidate, measurement)) in ordered.iter().enumerate() {
+                let batch_index = offset / lane_count;
+                let batch_size = lane_count.min(ordered.len() - batch_index * lane_count);
+                let provenance = &mut candidates[candidate].measurements[measurement].provenance;
+                let mut value = provenance.as_json().clone();
+                value["concurrency"] = json!({
+                    "max_concurrency": max_concurrency,
+                    "dispatch": "fixed_batches",
+                    "batch_index": batch_index,
+                    "batch_size": batch_size,
+                    "lane_index": offset % lane_count,
+                });
+                *provenance = canonical(value)?;
+            }
+            let start = schedule.len();
+            let end = start + ordered.len();
+            batches.extend((start..end).step_by(lane_count).map(|start| ResolvedBatch {
+                slots: start..(start + lane_count).min(end),
+                lane_count,
+            }));
+        }
+        schedule.extend(ordered);
         candidate_offset += experiment.candidates.len();
     }
     Ok(ResolvedRun {
         candidates,
         schedule,
+        batches,
         private_root,
     })
 }
@@ -686,6 +726,7 @@ fn resolve_candidate(
             })?;
             let provenance = canonical(json!({
                 "controls": metewand_core::controls::local_control_report(&policy),
+                "execution_policy": record_document(&policy)?,
                 "manifest_hash": repository.manifest_hash.to_string(),
                 "timing_scope": timing.scope.to_string(),
                 "operation_scope": timing.scope == metewand_core::manifest::TimingScope::ExecuteOnly,

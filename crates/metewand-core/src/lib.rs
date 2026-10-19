@@ -35,7 +35,7 @@ pub const SEED_DERIVATION_VERSION: u32 = 1;
 pub const SCHEDULING_POLICY_VERSION: u32 = 1;
 
 /// Version of execution behavior that contributes to resolved identities.
-pub const EXECUTION_SEMANTICS_VERSION: u32 = 1;
+pub const EXECUTION_SEMANTICS_VERSION: u32 = 2;
 
 #[cfg(test)]
 mod tests {
@@ -45,12 +45,12 @@ mod tests {
     };
 
     #[test]
-    fn compatibility_versions_start_at_one() {
+    fn compatibility_versions_bind_the_current_contracts() {
         assert_eq!(MANIFEST_VERSION, 1);
         assert_eq!(PUBLIC_SCHEMA_VERSION, 1);
         assert_eq!(IDENTITY_VERSION, 1);
         assert_eq!(SEED_DERIVATION_VERSION, 1);
         assert_eq!(SCHEDULING_POLICY_VERSION, 1);
-        assert_eq!(EXECUTION_SEMANTICS_VERSION, 1);
+        assert_eq!(EXECUTION_SEMANTICS_VERSION, 2);
     }
 }

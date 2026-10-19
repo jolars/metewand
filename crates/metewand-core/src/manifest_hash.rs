@@ -545,6 +545,7 @@ fn execution_policy(policy: &crate::manifest::ExecutionPolicyDefinition) -> Valu
             json!(primary_time(policy.resolved_primary_time())),
         ),
         ("run_order", json!(run_order(policy.resolved_run_order()))),
+        ("max_concurrency", json!(policy.resolved_max_concurrency())),
         (
             "enforcement",
             json!(enforcement(policy.resolved_enforcement())),

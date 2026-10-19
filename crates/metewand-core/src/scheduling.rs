@@ -1,4 +1,4 @@
-//! Pure serial scheduling over resolved one-shot measurement slots.
+//! Pure deterministic ordering over resolved one-shot measurement slots.
 
 use sha2::{Digest, Sha256};
 
@@ -59,7 +59,7 @@ pub fn derive_block_scheduling_priority(
     ContentDigest::new(hasher.finalize().into())
 }
 
-/// Returns input indices in serial execution order for one experiment.
+/// Returns input indices in deterministic dispatch order for one experiment.
 ///
 /// Sequential order retains the caller's deterministic expansion order.
 /// Randomized order sorts by block priority, typed block fields, slot priority,

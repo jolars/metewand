@@ -591,6 +591,7 @@ impl IdentityRecord for ExecutionPolicyRecord {
             ("timing_scope", json!(timing_scope(self.timing_scope))),
             ("primary_time", json!(primary_time(self.primary_time))),
             ("run_order", json!(run_order(self.run_order))),
+            ("max_concurrency", json!(self.max_concurrency)),
             ("enforcement", json!(enforcement(self.enforcement))),
         ])
     }

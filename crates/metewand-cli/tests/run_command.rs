@@ -1932,6 +1932,140 @@ fn attempt_documents(root: &Path, report: &Value) -> Vec<Value> {
 }
 
 #[test]
+fn concurrent_lanes_own_separate_reusable_workers_and_warmups() {
+    let root = reuse_repository();
+    replace(
+        root.path(),
+        "metewand.toml",
+        "warmup_runs = 2",
+        "warmup_runs = 2\nmax_concurrency = 2\nrun_order = \"randomized\"",
+    );
+    replace(
+        root.path(),
+        "metewand.toml",
+        "measurement_repetitions = 3",
+        "measurement_repetitions = 5",
+    );
+    let output = metewand(
+        root.path(),
+        &["run", "--output-dir", "run", "--output", "jsonl"],
+    );
+    assert!(output.status.success(), "{output:?}");
+    let records = envelopes(&output);
+    let report = records.last().unwrap();
+    assert_eq!(report["data"]["summary"]["accepted_attempts"], 5);
+    let attempts = attempt_documents(root.path(), report);
+    let pids = attempts
+        .iter()
+        .map(|attempt| {
+            attempt["provenance"]["data"]["implementation_statistics"]["pid"]
+                .as_u64()
+                .unwrap()
+        })
+        .collect::<Vec<_>>();
+    assert_ne!(pids[0], pids[1]);
+    assert_eq!(pids, [pids[0], pids[1], pids[0], pids[1], pids[0]]);
+    for (index, attempt) in attempts.iter().enumerate() {
+        let data = &attempt["provenance"]["data"];
+        assert_eq!(
+            data["implementation_statistics"]["executions"],
+            index / 2 + 3
+        );
+        assert_eq!(
+            data["context"]["worker_reuse"]["warmups_on_this_attempt"]
+                .as_array()
+                .unwrap()
+                .len(),
+            if index < 2 { 2 } else { 0 }
+        );
+    }
+}
+
+#[test]
+fn concurrency_batches_stop_at_experiment_and_policy_boundaries() {
+    let root = reuse_repository();
+    replace(
+        root.path(),
+        "metewand.toml",
+        "warmup_runs = 2",
+        "warmup_runs = 2\nmax_concurrency = 2",
+    );
+    let path = root.path().join("metewand.toml");
+    let mut manifest = fs::read_to_string(&path).unwrap();
+    manifest.push_str(
+        r#"
+[execution_policies.serial]
+version = 1
+worker_reuse = true
+warmup_runs = 2
+
+[[experiments]]
+name = "serial"
+problem = "sum"
+datasets = ["numbers"]
+implementations = ["reference"]
+execution_policy = "serial"
+observation_policy = "final"
+implementation_repetitions = 1
+measurement_repetitions = 2
+seed = 8
+"#,
+    );
+    fs::write(path, manifest).unwrap();
+    let output = metewand(
+        root.path(),
+        &["run", "--output-dir", "run", "--output", "jsonl"],
+    );
+    assert!(output.status.success(), "{output:?}");
+    let records = envelopes(&output);
+    let report = records.last().unwrap();
+    assert_eq!(report["data"]["summary"]["accepted_attempts"], 5);
+    let attempts = attempt_documents(root.path(), report);
+    for (index, attempt) in attempts.iter().enumerate() {
+        let concurrency = &attempt["provenance"]["data"]["context"]["concurrency"];
+        assert_eq!(
+            concurrency["max_concurrency"],
+            if index < 3 { 2 } else { 1 }
+        );
+        assert_eq!(concurrency["batch_index"], [0, 0, 1, 0, 1][index]);
+        assert_eq!(concurrency["batch_size"], if index < 2 { 2 } else { 1 });
+    }
+    let events = report["data"]["events"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|event| event["event"].as_str().unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        events,
+        [
+            "run_started",
+            "attempt_started",
+            "attempt_started",
+            "attempt_finished",
+            "attempt_finished",
+            "attempt_started",
+            "attempt_finished",
+            "attempt_started",
+            "attempt_finished",
+            "attempt_started",
+            "attempt_finished",
+            "run_finished"
+        ]
+    );
+    let statistics = attempts
+        .iter()
+        .map(|attempt| &attempt["provenance"]["data"]["implementation_statistics"])
+        .collect::<Vec<_>>();
+    assert_eq!(statistics[0]["pid"], statistics[2]["pid"]);
+    assert_ne!(statistics[0]["pid"], statistics[3]["pid"]);
+    assert_ne!(statistics[1]["pid"], statistics[3]["pid"]);
+    assert_eq!(statistics[3]["pid"], statistics[4]["pid"]);
+    assert_eq!(statistics[3]["executions"], 3);
+    assert_eq!(statistics[4]["executions"], 4);
+}
+
+#[test]
 fn reused_workers_warm_once_reset_and_clear_private_caches_between_slots() {
     let root = reuse_repository();
     let output = metewand(

@@ -3,8 +3,8 @@
   "vectors": {
     "attempt": {
       "kind": "attempt",
-      "canonical": "{\"retry_index\":0,\"slot\":\"mw1-resolved-attempt-slot-905e1a633187f217047188ef41529d64841c157e317185baf23af37930495dae\",\"version\":1}",
-      "identity": "mw1-attempt-823bc21442b92e8dd1c7c9c8c474095c0a83b3ed6c80a1da112a7c32c8895806"
+      "canonical": "{\"retry_index\":0,\"slot\":\"mw1-resolved-attempt-slot-316589aac4932018310c96e78d1eabaad06ce7d335957f49d98b15aa32848f15\",\"version\":1}",
+      "identity": "mw1-attempt-587f8390abdb5a4d994016c67b205760f441ac8f98ca963685741c56dda086f8"
     },
     "dataset-artifact": {
       "kind": "artifact",
@@ -33,8 +33,8 @@
     },
     "execution-policy": {
       "kind": "execution-policy",
-      "canonical": "{\"cpus\":1,\"enforcement\":\"best_effort\",\"memory\":\"8 GiB\",\"name\":\"controlled\",\"network\":false,\"primary_time\":\"timed_wall_time\",\"run_order\":\"randomized\",\"threads\":1,\"timeout\":\"10 min\",\"timing_scope\":\"prepare_and_execute\",\"version\":1,\"warmup_runs\":1,\"worker_reuse\":false}",
-      "identity": "mw1-execution-policy-ccb3a46cae389069b14f4b27eedea2bcc249c73b2bff03ac77502b76630956aa"
+      "canonical": "{\"cpus\":1,\"enforcement\":\"best_effort\",\"max_concurrency\":1,\"memory\":\"8 GiB\",\"name\":\"controlled\",\"network\":false,\"primary_time\":\"timed_wall_time\",\"run_order\":\"randomized\",\"threads\":1,\"timeout\":\"10 min\",\"timing_scope\":\"prepare_and_execute\",\"version\":1,\"warmup_runs\":1,\"worker_reuse\":false}",
+      "identity": "mw1-execution-policy-2ea51f4cb6170e0b593c6381960dd020dccd01ae1ead8c87a578241255f36e41"
     },
     "executor-definition": {
       "kind": "executor-definition",
@@ -53,23 +53,23 @@
     },
     "logical-attempt-slot": {
       "kind": "logical-attempt-slot",
-      "canonical": "{\"role\":{\"kind\":\"measured\",\"observation_slot\":\"mw1-logical-observation-slot-e3089eca21f355b4acec8816e84234d71b657f3ecebadfc7421a18b1266ca6c5\"},\"scheduling_priority\":\"4444444444444444444444444444444444444444444444444444444444444444\",\"specification\":\"mw1-logical-specification-fcab30b9931ce7b860db4c983b62dd7809f8fe7cf950749ee45428bc76a61465\",\"version\":1}",
-      "identity": "mw1-logical-attempt-slot-d4471de9082ce64165f31ba9a79436487a938d10cde7ce4d9460a91734b1026c"
+      "canonical": "{\"role\":{\"kind\":\"measured\",\"observation_slot\":\"mw1-logical-observation-slot-6419770b8dbf712b6fedb6e3c8dc75795d3b4f7a3217eebb26a942b74fd9a6e8\"},\"scheduling_priority\":\"4444444444444444444444444444444444444444444444444444444444444444\",\"specification\":\"mw1-logical-specification-77d7215225a885f24b2e6ff18885f66bdd87ffc11e42a31de2346f9d85a7e836\",\"version\":1}",
+      "identity": "mw1-logical-attempt-slot-7b5f4d27d2245425362335f9915562a07197c0c0e37c4caff769a99eb7b107ca"
     },
     "logical-candidate": {
       "kind": "logical-candidate",
-      "canonical": "{\"dataset_configuration\":\"mw1-dataset-configuration-29fde06afe046114fc89a5b659a176e417d972ef54e4765ba2437eb6c74945c9\",\"execution_policy\":\"mw1-execution-policy-ccb3a46cae389069b14f4b27eedea2bcc249c73b2bff03ac77502b76630956aa\",\"implementation_configuration\":\"mw1-implementation-configuration-fdbd23c586bb836ced1b95217a45e4b9fa3d2b575530982a37e85822208eccf5\",\"observation_policy\":\"mw1-observation-policy-7ab610c92432eb64c53468035b88dd50d822ccf28213e385f51164bff0d2ff19\",\"problem_configuration\":\"mw1-problem-configuration-89c56244a9401ff02849e13f3ebea2d513bd3abbadcd14c73cac58e7cb63b19e\",\"version\":1}",
-      "identity": "mw1-logical-candidate-6e392f315a2d34ebc219600e80d859f166d532e0f94e7cc685acba2e1e0e997b"
+      "canonical": "{\"dataset_configuration\":\"mw1-dataset-configuration-29fde06afe046114fc89a5b659a176e417d972ef54e4765ba2437eb6c74945c9\",\"execution_policy\":\"mw1-execution-policy-2ea51f4cb6170e0b593c6381960dd020dccd01ae1ead8c87a578241255f36e41\",\"implementation_configuration\":\"mw1-implementation-configuration-fdbd23c586bb836ced1b95217a45e4b9fa3d2b575530982a37e85822208eccf5\",\"observation_policy\":\"mw1-observation-policy-7ab610c92432eb64c53468035b88dd50d822ccf28213e385f51164bff0d2ff19\",\"problem_configuration\":\"mw1-problem-configuration-89c56244a9401ff02849e13f3ebea2d513bd3abbadcd14c73cac58e7cb63b19e\",\"version\":1}",
+      "identity": "mw1-logical-candidate-f9e352739fa397ee430d5d0c41ba4e055ff1574cebcf8b3da7a13f7175b2259e"
     },
     "logical-observation-slot": {
       "kind": "logical-observation-slot",
-      "canonical": "{\"measurement_index\":0,\"specification\":\"mw1-logical-specification-fcab30b9931ce7b860db4c983b62dd7809f8fe7cf950749ee45428bc76a61465\",\"version\":1}",
-      "identity": "mw1-logical-observation-slot-e3089eca21f355b4acec8816e84234d71b657f3ecebadfc7421a18b1266ca6c5"
+      "canonical": "{\"measurement_index\":0,\"specification\":\"mw1-logical-specification-77d7215225a885f24b2e6ff18885f66bdd87ffc11e42a31de2346f9d85a7e836\",\"version\":1}",
+      "identity": "mw1-logical-observation-slot-6419770b8dbf712b6fedb6e3c8dc75795d3b4f7a3217eebb26a942b74fd9a6e8"
     },
     "logical-specification": {
       "kind": "logical-specification",
-      "canonical": "{\"candidate\":\"mw1-logical-candidate-6e392f315a2d34ebc219600e80d859f166d532e0f94e7cc685acba2e1e0e997b\",\"implementation_repetition\":0,\"implementation_seed\":{\"derivation_digest\":\"4520aebf55e7fb9c1d565c3c93c07a272ee470740f2b435bd2cbb742458e729a\",\"value\":2432213537438975},\"kind\":\"one_shot\",\"scientific_budget\":\"none\",\"version\":1}",
-      "identity": "mw1-logical-specification-fcab30b9931ce7b860db4c983b62dd7809f8fe7cf950749ee45428bc76a61465"
+      "canonical": "{\"candidate\":\"mw1-logical-candidate-f9e352739fa397ee430d5d0c41ba4e055ff1574cebcf8b3da7a13f7175b2259e\",\"implementation_repetition\":0,\"implementation_seed\":{\"derivation_digest\":\"4520aebf55e7fb9c1d565c3c93c07a272ee470740f2b435bd2cbb742458e729a\",\"value\":2432213537438975},\"kind\":\"one_shot\",\"scientific_budget\":\"none\",\"version\":1}",
+      "identity": "mw1-logical-specification-77d7215225a885f24b2e6ff18885f66bdd87ffc11e42a31de2346f9d85a7e836"
     },
     "metrics-artifact": {
       "kind": "artifact",
@@ -78,8 +78,8 @@
     },
     "observation": {
       "kind": "observation",
-      "canonical": "{\"completion\":\"reached\",\"metrics\":{\"id\":\"mw1-artifact-0409205535add9b4f6310dc797f4addcab14cee8b2f84d932ebfd648b0d6acc7\",\"path\":\"metrics.json\",\"sha256\":\"5252525252525252525252525252525252525252525252525252525252525252\"},\"producing_attempt\":\"mw1-attempt-823bc21442b92e8dd1c7c9c8c474095c0a83b3ed6c80a1da112a7c32c8895806\",\"result\":{\"id\":\"mw1-artifact-f92a17cdf5a37fe7d9ea9abb902d3dd0849afdb683e257180c27ab91a6fbec6d\",\"path\":\"result.json\",\"sha256\":\"5151515151515151515151515151515151515151515151515151515151515151\"},\"slot\":\"mw1-resolved-observation-slot-f49bef7dcee66f7dbcc0521fa2cc3c7ec9a72fed9297cdce3f2e79288953600a\",\"timing\":{\"cpu_time\":{\"nanoseconds\":5,\"seconds\":1},\"evaluation_time\":{\"nanoseconds\":4,\"seconds\":0},\"implementation_time\":{\"nanoseconds\":2,\"seconds\":1},\"peak_rss_bytes\":4096,\"primary_time\":\"timed_wall_time\",\"timed_wall_time\":{\"nanoseconds\":3,\"seconds\":2}},\"version\":1}",
-      "identity": "mw1-observation-56c6b4444942e0c7fe3869ffbfb7fa1db6322c1e23d84ddf502c33070d93601a"
+      "canonical": "{\"completion\":\"reached\",\"metrics\":{\"id\":\"mw1-artifact-0409205535add9b4f6310dc797f4addcab14cee8b2f84d932ebfd648b0d6acc7\",\"path\":\"metrics.json\",\"sha256\":\"5252525252525252525252525252525252525252525252525252525252525252\"},\"producing_attempt\":\"mw1-attempt-587f8390abdb5a4d994016c67b205760f441ac8f98ca963685741c56dda086f8\",\"result\":{\"id\":\"mw1-artifact-f92a17cdf5a37fe7d9ea9abb902d3dd0849afdb683e257180c27ab91a6fbec6d\",\"path\":\"result.json\",\"sha256\":\"5151515151515151515151515151515151515151515151515151515151515151\"},\"slot\":\"mw1-resolved-observation-slot-2a470334fab9c8d6f975541acea7bf975cfa4badf0ea298649b4bf85963e4ea6\",\"timing\":{\"cpu_time\":{\"nanoseconds\":5,\"seconds\":1},\"evaluation_time\":{\"nanoseconds\":4,\"seconds\":0},\"implementation_time\":{\"nanoseconds\":2,\"seconds\":1},\"peak_rss_bytes\":4096,\"primary_time\":\"timed_wall_time\",\"timed_wall_time\":{\"nanoseconds\":3,\"seconds\":2}},\"version\":1}",
+      "identity": "mw1-observation-185398d67eba5f24b65dfa063ab0ef6d76f8f6d07389a49906c5958dd42f4d19"
     },
     "observation-policy": {
       "kind": "observation-policy",
@@ -118,8 +118,8 @@
     },
     "resolved-attempt-slot": {
       "kind": "resolved-attempt-slot",
-      "canonical": "{\"logical_slot\":\"mw1-logical-attempt-slot-d4471de9082ce64165f31ba9a79436487a938d10cde7ce4d9460a91734b1026c\",\"specification\":\"mw1-resolved-specification-c6be85b156ec9ce6b5d0a5de8af6ee6ecc4d25f3875105c06abb9bf2521db401\",\"version\":1}",
-      "identity": "mw1-resolved-attempt-slot-905e1a633187f217047188ef41529d64841c157e317185baf23af37930495dae"
+      "canonical": "{\"logical_slot\":\"mw1-logical-attempt-slot-7b5f4d27d2245425362335f9915562a07197c0c0e37c4caff769a99eb7b107ca\",\"specification\":\"mw1-resolved-specification-1ece9e20a43c09348db2dbee38552ed0f0f73530635d3086442855350b7a13d9\",\"version\":1}",
+      "identity": "mw1-resolved-attempt-slot-316589aac4932018310c96e78d1eabaad06ce7d335957f49d98b15aa32848f15"
     },
     "resolved-environment": {
       "kind": "resolved-environment",
@@ -133,13 +133,13 @@
     },
     "resolved-observation-slot": {
       "kind": "resolved-observation-slot",
-      "canonical": "{\"logical_slot\":\"mw1-logical-observation-slot-e3089eca21f355b4acec8816e84234d71b657f3ecebadfc7421a18b1266ca6c5\",\"specification\":\"mw1-resolved-specification-c6be85b156ec9ce6b5d0a5de8af6ee6ecc4d25f3875105c06abb9bf2521db401\",\"version\":1}",
-      "identity": "mw1-resolved-observation-slot-f49bef7dcee66f7dbcc0521fa2cc3c7ec9a72fed9297cdce3f2e79288953600a"
+      "canonical": "{\"logical_slot\":\"mw1-logical-observation-slot-6419770b8dbf712b6fedb6e3c8dc75795d3b4f7a3217eebb26a942b74fd9a6e8\",\"specification\":\"mw1-resolved-specification-1ece9e20a43c09348db2dbee38552ed0f0f73530635d3086442855350b7a13d9\",\"version\":1}",
+      "identity": "mw1-resolved-observation-slot-2a470334fab9c8d6f975541acea7bf975cfa4badf0ea298649b4bf85963e4ea6"
     },
     "resolved-specification": {
       "kind": "resolved-specification",
-      "canonical": "{\"evaluator\":{\"environment\":\"mw1-resolved-environment-1ca398f08be55138d9c2d92e5b223e5368dd2373de310cc54931398073a9b2ce\",\"launch\":\"mw1-resolved-launch-cf51c0b905ed8b4b1aa4b387f3d48c58c72be99111fe558a96e8838e7d305384\",\"source_bundle\":\"mw1-artifact-c8107cb595fcc6a2e8d9f2d250e407e6577314331522ac94899bccae05159874\"},\"execution_semantics_version\":1,\"executor\":\"mw1-executor-definition-2d9cb72237aa04219512c493ec37c3a579000b68f271849aa03a666b5202befe\",\"implementation\":{\"environment\":\"mw1-resolved-environment-1ca398f08be55138d9c2d92e5b223e5368dd2373de310cc54931398073a9b2ce\",\"launch\":\"mw1-resolved-launch-cf51c0b905ed8b4b1aa4b387f3d48c58c72be99111fe558a96e8838e7d305384\",\"source_bundle\":\"mw1-artifact-c8107cb595fcc6a2e8d9f2d250e407e6577314331522ac94899bccae05159874\"},\"kind\":\"one_shot\",\"logical_specification\":\"mw1-logical-specification-fcab30b9931ce7b860db4c983b62dd7809f8fe7cf950749ee45428bc76a61465\",\"problem_instance\":\"mw1-problem-instance-11d2396cac518882abe1cb128c757fd21f39d4cd0d1fa963244e885f540806d5\",\"version\":1,\"wire_protocol_version\":1}",
-      "identity": "mw1-resolved-specification-c6be85b156ec9ce6b5d0a5de8af6ee6ecc4d25f3875105c06abb9bf2521db401"
+      "canonical": "{\"evaluator\":{\"environment\":\"mw1-resolved-environment-1ca398f08be55138d9c2d92e5b223e5368dd2373de310cc54931398073a9b2ce\",\"launch\":\"mw1-resolved-launch-cf51c0b905ed8b4b1aa4b387f3d48c58c72be99111fe558a96e8838e7d305384\",\"source_bundle\":\"mw1-artifact-c8107cb595fcc6a2e8d9f2d250e407e6577314331522ac94899bccae05159874\"},\"execution_semantics_version\":2,\"executor\":\"mw1-executor-definition-2d9cb72237aa04219512c493ec37c3a579000b68f271849aa03a666b5202befe\",\"implementation\":{\"environment\":\"mw1-resolved-environment-1ca398f08be55138d9c2d92e5b223e5368dd2373de310cc54931398073a9b2ce\",\"launch\":\"mw1-resolved-launch-cf51c0b905ed8b4b1aa4b387f3d48c58c72be99111fe558a96e8838e7d305384\",\"source_bundle\":\"mw1-artifact-c8107cb595fcc6a2e8d9f2d250e407e6577314331522ac94899bccae05159874\"},\"kind\":\"one_shot\",\"logical_specification\":\"mw1-logical-specification-77d7215225a885f24b2e6ff18885f66bdd87ffc11e42a31de2346f9d85a7e836\",\"problem_instance\":\"mw1-problem-instance-11d2396cac518882abe1cb128c757fd21f39d4cd0d1fa963244e885f540806d5\",\"version\":1,\"wire_protocol_version\":1}",
+      "identity": "mw1-resolved-specification-1ece9e20a43c09348db2dbee38552ed0f0f73530635d3086442855350b7a13d9"
     },
     "resolved-worker": {
       "kind": "resolved-worker",

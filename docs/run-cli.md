@@ -43,7 +43,11 @@ experiments are rejected; distinct experiment seeds select independent runs.
 The default `run_order = "sequential"` follows logical-plan order. Select
 `run_order = "randomized"` to interleave implementation configurations within
 comparison blocks defined by dataset instance, problem configuration,
-implementation repetition, and measurement index. Both modes execute serially.
+implementation repetition, and measurement index. Both modes execute serially
+by default. Set `max_concurrency = 2` in the execution policy to opt into
+bounded concurrent attempts. The bound is part of the policy and run identities
+and is recorded in every attempt's provenance. Dispatch batches preserve
+deterministic event order and never cross experiment boundaries.
 Events and attempts follow execution order, and attempt provenance retains the
 block fields, seed, and deterministic priorities. See [Scheduling](scheduling.md)
 for the versioned ordering contract and warm-up behavior.

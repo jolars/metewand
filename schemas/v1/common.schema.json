@@ -154,7 +154,7 @@
         },
         "execution_semantics_version": {
           "type": "integer",
-          "const": 1
+          "enum": [1, 2]
         },
         "data": {
           "type": "object",

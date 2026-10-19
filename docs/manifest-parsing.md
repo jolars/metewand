@@ -36,6 +36,10 @@ and the one-shot capability and observation-policy restrictions. Every
 Metewand-owned object rejects unknown fields, including nested workers,
 parameter axes, and experiment cases.
 
+Execution policies accept `max_concurrency` as a positive safe integer. Its
+default is `1`, which keeps performance measurements serial. Zero, negative,
+fractional, string, and out-of-range values fail parsing before execution.
+
 Literal parameter defaults and axis values become `CanonicalValue`s as they are
 parsed. TOML dates, times, and non-finite numbers are rejected because they are
 outside Metewand's language-neutral JSON domain.

@@ -317,6 +317,7 @@ fn graph(mutation: Option<&str>, order: ObjectOrder) -> IdentityGraph {
         &mut vectors,
         "execution-policy",
         ExecutionPolicyRecord {
+            max_concurrency: 1,
             name: name("controlled"),
             cpus: Some(if is_mutated(mutation, "execution-policy") {
                 2
@@ -586,7 +587,7 @@ fn graph(mutation: Option<&str>, order: ObjectOrder) -> IdentityGraph {
             } else {
                 1
             },
-            execution_semantics_version: 1,
+            execution_semantics_version: metewand_core::EXECUTION_SEMANTICS_VERSION,
         },
     );
 
@@ -619,7 +620,7 @@ fn graph(mutation: Option<&str>, order: ObjectOrder) -> IdentityGraph {
     let provenance = ProvenanceRecord {
         tool_version: "0.1.0".to_owned(),
         wire_protocol_version: 1,
-        execution_semantics_version: 1,
+        execution_semantics_version: metewand_core::EXECUTION_SEMANTICS_VERSION,
         data: canonical(r#"{"host":"fixture"}"#),
     };
     let run_attempt = add_record(

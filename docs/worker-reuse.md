@@ -1,6 +1,9 @@
 # Worker reuse lifecycle
 
-The runtime's `worker_reuse` module owns one implementation session at a time.
+A worker owner in the runtime's `worker_reuse` module manages one implementation
+session at a time. Serial execution uses one owner; concurrent execution uses
+one per batch position, or lane. Owners retain eligible workers across batches, and
+each lane applies reset, cleanup, replacement, and warm-up rules independently.
 Its eligibility key compares the protocol role, authored worker definition,
 resolved source bundle, resolved environment, exact launch identity, and complete
 effective execution policy. A changed key replaces the process. A policy with
@@ -40,9 +43,10 @@ Every attempt's provenance includes `context.worker_reuse`, with the cache
 policy, startup measurement for a newly launched process, and
 `warmups_on_this_attempt`. Each warm-up entry records its planned resolved slot,
 index, implementation seed, validation status, measurements, and canonical
-result and metrics, or its typed failure. Replacement entries can refer to the
-same planned warm-up slot in different measured attempts. These are process-local
-preconditions, not duplicate accepted observations. Normal attempt publication
+result and metrics, or its typed failure. Replacement workers and concurrent
+lanes can refer to the same planned warm-up slot in different measured attempts.
+These are process-local preconditions, not duplicate accepted observations.
+Normal attempt publication
 makes this evidence durable before emitting the terminal event.
 
 Fresh workers return fully drained logs after shutdown. Reused workers return
@@ -55,9 +59,10 @@ process when the run ends.
 
 The fixed cache policy is part of the resolved executor configuration and
 therefore its identity. Persistent filesystem caches are not selectable yet;
-adding one requires a named, identity-bearing policy. The public compatibility
-versions stay at 1: this implements existing reset and warm-up semantics without
-changing the wire protocol, canonical identity rules, or public schema shapes.
+adding one requires a named, identity-bearing policy. Execution semantics
+version 2 binds concurrent ownership and dispatch. The wire protocol and reset
+and warm-up operations remain unchanged. See [Scheduling](scheduling.md) for
+the concurrency setting and compatibility review.
 
 The integration tests in `crates/metewand-runtime/tests/worker_reuse.rs` use real
 POSIX workers to check process reuse, filesystem cleanup, process freshness,

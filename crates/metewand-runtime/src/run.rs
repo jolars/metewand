@@ -6,6 +6,7 @@ use std::{
     fs, io,
     os::unix::fs::{DirBuilderExt, PermissionsExt},
     path::{Path, PathBuf},
+    thread,
     time::SystemTime,
 };
 
@@ -43,7 +44,7 @@ use crate::{
 
 use resolution::{ResolvedCandidate, ResolvedMeasurement, canonical};
 
-/// Resolves and executes every supported measurement in deterministic plan order.
+/// Executes the deterministic schedule with policy-bounded concurrency.
 ///
 /// `output_directory` must name a new directory beneath an existing parent.
 /// Preflight validates the complete selection before launching any worker or
@@ -52,9 +53,10 @@ use resolution::{ResolvedCandidate, ResolvedMeasurement, canonical};
 /// while actual host paths remain provenance. Every attempt is published before
 /// its terminal event. A failed attempt does not stop later selected slots.
 ///
-/// The event sink runs synchronously at each transition. JSON Lines consumers
-/// can therefore flush each event before execution advances. Sink failure stops
-/// further execution without changing already published outcomes.
+/// Starts and terminal events follow deterministic dispatch batches. The sink
+/// runs on the calling thread before dispatch and after all attempts in a batch
+/// have finished. Sink failure stops further dispatch; already dispatched
+/// attempts finish and retain their durably published outcomes.
 ///
 /// # Errors
 ///
@@ -127,34 +129,42 @@ pub fn run_repository_with_cache(
         RunEventKind::RunStarted { attempt_slots },
     )?;
     let mut attempts = Vec::new();
-    let mut worker = crate::worker_reuse::ReusableWorker::default();
-    for &(candidate_index, measurement_index) in &resolved.schedule {
-        let candidate = &resolved.candidates[candidate_index];
-        let measurement = &candidate.measurements[measurement_index];
-        emit(
-            &mut events,
-            &mut event_sink,
-            RunEventKind::AttemptStarted {
-                logical_slot_id: measurement.logical_slot,
-                resolved_slot_id: measurement.attempt_slot.id,
-            },
-        )?;
-        let attempt = execute(
+    let mut workers = Vec::new();
+    for batch in &resolved.batches {
+        workers.resize_with(
+            batch.lane_count,
+            crate::worker_reuse::ReusableWorker::default,
+        );
+        let slots = &resolved.schedule[batch.slots.clone()];
+        for &(candidate_index, measurement_index) in slots {
+            let measurement = &resolved.candidates[candidate_index].measurements[measurement_index];
+            emit(
+                &mut events,
+                &mut event_sink,
+                RunEventKind::AttemptStarted {
+                    logical_slot_id: measurement.logical_slot,
+                    resolved_slot_id: measurement.attempt_slot.id,
+                },
+            )?;
+        }
+        let completed = execute_batch(
             repository,
-            candidate,
-            measurement,
+            &resolved.candidates,
+            slots,
             resolved.private_root.path(),
             &output_directory,
-            &mut worker,
+            &mut workers,
         )?;
-        emit(
-            &mut events,
-            &mut event_sink,
-            RunEventKind::AttemptFinished {
-                attempt: Box::new(attempt.clone()),
-            },
-        )?;
-        attempts.push(attempt);
+        for attempt in completed {
+            emit(
+                &mut events,
+                &mut event_sink,
+                RunEventKind::AttemptFinished {
+                    attempt: Box::new(attempt.clone()),
+                },
+            )?;
+            attempts.push(attempt);
+        }
     }
     let accepted_attempts = attempts
         .iter()
@@ -185,6 +195,64 @@ pub fn run_repository_with_cache(
             failed_attempts,
         },
     })
+}
+
+fn execute_batch(
+    repository: &CheckedRepository,
+    candidates: &[ResolvedCandidate],
+    slots: &[(usize, usize)],
+    private_root: &Path,
+    output_root: &Path,
+    workers: &mut [crate::worker_reuse::ReusableWorker],
+) -> Result<Vec<RunAttemptOutput>, RunError> {
+    if let [(candidate, measurement)] = slots {
+        return execute(
+            repository,
+            &candidates[*candidate],
+            &candidates[*candidate].measurements[*measurement],
+            private_root,
+            output_root,
+            &mut workers[0],
+        )
+        .map(|attempt| vec![attempt]);
+    }
+    let results = thread::scope(|scope| {
+        let mut handles = Vec::new();
+        let mut spawn_error = None;
+        for (lane, (&(candidate, measurement), worker)) in slots.iter().zip(workers).enumerate() {
+            let candidate = &candidates[candidate];
+            let measurement = &candidate.measurements[measurement];
+            match thread::Builder::new()
+                .name(format!("metewand-attempt-{lane}"))
+                .spawn_scoped(scope, move || {
+                    execute(
+                        repository,
+                        candidate,
+                        measurement,
+                        private_root,
+                        output_root,
+                        worker,
+                    )
+                }) {
+                Ok(handle) => handles.push(handle),
+                Err(error) => {
+                    spawn_error = Some(error);
+                    break;
+                }
+            }
+        }
+        // Join every dispatched attempt before propagating an error or calling
+        // the sink, so neither a failed peer nor completion order loses work.
+        let results = handles
+            .into_iter()
+            .map(|handle| handle.join().unwrap_or(Err(RunError::ExecutionThreadPanic)))
+            .collect::<Vec<_>>();
+        match spawn_error {
+            Some(error) => Err(RunError::Io(error)),
+            None => Ok(results),
+        }
+    })?;
+    results.into_iter().collect()
 }
 
 fn execute(
@@ -530,6 +598,9 @@ fn destination(path: &Path) -> Result<PathBuf, RunError> {
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum RunError {
+    /// An internal attempt execution thread panicked after dispatch.
+    #[error("an attempt execution thread panicked")]
+    ExecutionThreadPanic,
     /// Artifact storage, construction mapping, or private-view creation failed.
     #[error(transparent)]
     ArtifactStore(#[from] crate::artifact_store::ArtifactStoreError),

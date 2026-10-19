@@ -277,7 +277,7 @@ artifacts](DESIGN.md#6-environments-execution-and-artifacts).
   repetition, and measurement index.
 - [x] Preserve stable relative ordering when unrelated slots are added, and
   verify the exact `A x M` slot count and specified seed sharing.
-- [ ] Add opt-in bounded concurrency as execution-policy identity and
+- [x] Add opt-in bounded concurrency as execution-policy identity and
   provenance; keep performance execution serial by default.
 - [ ] Implement selected-ID and bounded execution, explicit retries, immutable
   retry attempts, superseded concurrent candidates, and `run --resume`

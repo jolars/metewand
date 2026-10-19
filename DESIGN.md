@@ -237,6 +237,7 @@ timeout = "10 min"
 timing_scope = "prepare_and_execute"
 primary_time = "timed_wall_time"
 run_order = "randomized"
+max_concurrency = 1
 enforcement = "best_effort"
 
 [observation_policies.final]
@@ -832,8 +833,8 @@ is a runtime boundary, not another experiment axis: an evaluator is owned by
 exactly one problem definition and cannot be selected independently.
 
 Every experiment also selects a versioned execution policy. The policy specifies
-worker reuse, permitted caching, warm-up runs, run ordering, timeouts, resource
-requirements, and one timing scope:
+worker reuse, permitted caching, warm-up runs, run ordering, concurrency,
+timeouts, resource requirements, and one timing scope:
 
 - `cold_end_to_end`: time from immediately before worker launch through receipt
   of the complete canonical result;
@@ -1628,6 +1629,25 @@ observations are not interleaved with another implementation. A sequential order
 remains available when explicitly requested. Concurrent execution is opt-in and
 becomes part of the run identity and provenance because contention changes the
 comparison conditions.
+
+The execution policy's `max_concurrency` is a positive safe integer with default
+`1`. It is an explicit member of the canonical policy even when omitted in the
+manifest. Execution semantics version 2 divides each experiment's selected
+schedule into consecutive batches of at most that many attempts. A batch
+finishes, including durable publication, before the next batch begins. Batches
+never cross experiment boundaries. Each position within a batch has its own
+worker owner, which may retain an eligible implementation process across
+batches. A smaller subsequent policy drops excess retained workers.
+
+The orchestrator emits each batch's start events in schedule order before
+dispatch and its terminal events in that same order after every dispatched
+attempt finishes. It calls the event sink on the orchestrating thread. A sink
+failure stops further dispatch while preserving already published attempts.
+Every attempt, including a failed attempt, records the effective policy and
+the configured bound, batch index, batch size, and lane index in provenance.
+Concurrency bounds attempts, including their warm-ups and evaluators; worker
+resource requests remain per worker. Dataset construction and launch resolution
+still precede measured dispatch.
 
 ### Source acquisition and dataset materialization
 

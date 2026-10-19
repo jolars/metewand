@@ -291,12 +291,72 @@ fn expands_repetitions_into_identified_one_shot_records() {
             "mw1-dataset-configuration-63dacca29102e59c87cb42f66e9adfa353d5dc2bc0445e3dfecf35a9c4791556",
             "mw1-problem-configuration-2adda94616ec04811ceb238ed626c643936159588362aa0378ca1e7cf727677c",
             "mw1-implementation-configuration-f26c4511d148fbd79ae9d0230728c343b55eaf28cbbcde34ace2afd80413cb00",
-            "mw1-logical-candidate-920758e9aa960f4ac9858fd3c28dea0599bdcc1c9815270d4fb5deba593b716b",
-            "mw1-logical-specification-bfba247e61d3b2444296a379d08f947c4664a41d9172a240b79b762cc06eed3e",
-            "mw1-logical-observation-slot-e6f837544e5c8d0b28a4e2d87d1f2cc7470e688c4617dfa17c50f8949c2a2f72",
-            "mw1-logical-attempt-slot-d568ee1f86ac3d7a0a5e54789c59e232350c493abeaaaa3ddba71a9a87393340",
-            "mw1-logical-attempt-slot-cd99b53afcb7937265885ce5c8361356148690375e5e12694c5c83610b0acb17",
+            "mw1-logical-candidate-d00b8333a7a13b19535a406986f05222cb431e9978b27610398a85a373a68875",
+            "mw1-logical-specification-f84ad430ec72ae97710ecbc4ecc208dd10f8186467a7fe24f6a4b600f5932e33",
+            "mw1-logical-observation-slot-9bad8a54c8103f6c7f0f9b727f4e7c439fad859dd634456bf90855cc7fdb05cf",
+            "mw1-logical-attempt-slot-9bfa93af33b020f6a9cad40a626132cfa77490c5ac996804aa937181a32481dd",
+            "mw1-logical-attempt-slot-a387bde5dae47ec3b7e04f8e3a92d6f884af1846626f5ebfdc11e36e3b5e5568",
         ]
+    );
+}
+
+#[test]
+fn concurrency_binds_run_identities_without_changing_scientific_seeds() {
+    let plans = [None, Some(1), Some(2), Some(3)].map(|max_concurrency| {
+        let mut manifest = manifest(MANIFEST);
+        manifest
+            .execution_policies
+            .get_mut(&name("reused"))
+            .unwrap()
+            .max_concurrency = max_concurrency;
+        expand_manifest_logical_plan(&manifest, &contracts(&manifest), &schemas(), &catalog())
+            .unwrap()
+    });
+    assert_eq!(plans[0], plans[1]);
+    let baseline = &plans[0].experiments[0];
+    assert_eq!(baseline.execution_policy.record.max_concurrency, 1);
+    for (index, plan) in plans[2..].iter().enumerate() {
+        let experiment = &plan.experiments[0];
+        assert_eq!(
+            experiment.execution_policy.record.max_concurrency,
+            index as u64 + 2
+        );
+        assert_ne!(experiment.execution_policy.id, baseline.execution_policy.id);
+        assert_eq!(experiment.scheduling_seed, baseline.scheduling_seed);
+        for (before, after) in baseline.candidates.iter().zip(&experiment.candidates) {
+            assert_eq!(before.dataset_configuration, after.dataset_configuration);
+            assert_eq!(before.problem_configuration, after.problem_configuration);
+            assert_eq!(
+                before.implementation_configuration,
+                after.implementation_configuration
+            );
+            assert_ne!(before.candidate.id, after.candidate.id);
+            for (before, after) in before.specifications.iter().zip(&after.specifications) {
+                assert_eq!(
+                    before.specification.record.implementation_seed,
+                    after.specification.record.implementation_seed
+                );
+                assert_ne!(before.specification.id, after.specification.id);
+                assert!(
+                    before
+                        .attempt_slots
+                        .iter()
+                        .zip(&after.attempt_slots)
+                        .all(|(before, after)| before.id != after.id)
+                );
+                assert!(
+                    before
+                        .observation_slots
+                        .iter()
+                        .zip(&after.observation_slots)
+                        .all(|(before, after)| before.id != after.id)
+                );
+            }
+        }
+    }
+    assert_ne!(
+        plans[2].experiments[0].execution_policy.id,
+        plans[3].experiments[0].execution_policy.id
     );
 }
 

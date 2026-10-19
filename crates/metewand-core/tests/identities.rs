@@ -77,6 +77,7 @@ fn every_gate_one_record_and_resource_has_a_stable_kind() {
 #[test]
 fn hashes_the_typed_versioned_canonical_representation() {
     let record = ExecutionPolicyRecord {
+        max_concurrency: 1,
         name: name("default"),
         cpus: Some(1),
         threads: None,
@@ -93,12 +94,51 @@ fn hashes_the_typed_versioned_canonical_representation() {
 
     assert_eq!(
         canonical_identity_bytes(&record).unwrap(),
-        br#"{"cpus":1,"enforcement":"best_effort","memory":null,"name":"default","network":false,"primary_time":"timed_wall_time","run_order":"sequential","threads":null,"timeout":null,"timing_scope":"prepare_and_execute","version":1,"warmup_runs":0,"worker_reuse":false}"#
+        br#"{"cpus":1,"enforcement":"best_effort","max_concurrency":1,"memory":null,"name":"default","network":false,"primary_time":"timed_wall_time","run_order":"sequential","threads":null,"timeout":null,"timing_scope":"prepare_and_execute","version":1,"warmup_runs":0,"worker_reuse":false}"#
     );
     assert_eq!(
         identify_record(record).unwrap().id.to_string(),
-        "mw1-execution-policy-79195d67021c7f14bbf4e2d2acd946b76e2e7e8f895842e56c6403fc1fad6e3f"
+        "mw1-execution-policy-a7cb0d75d97d065c897a3858debfb8cea2769abb7ab7d5cb80eda49eeffbf486"
     );
+}
+
+#[test]
+fn concurrency_policy_identities_match_reviewed_version_one_vectors() {
+    let fixture: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../fixtures/identities/concurrency-v1.json"
+    ))
+    .unwrap();
+    assert_eq!(fixture["identity_version"], metewand_core::IDENTITY_VERSION);
+    assert_eq!(
+        fixture["execution_semantics_version"],
+        metewand_core::EXECUTION_SEMANTICS_VERSION
+    );
+    let mut policy = ExecutionPolicyRecord {
+        name: name("default"),
+        max_concurrency: 1,
+        cpus: Some(1),
+        threads: None,
+        memory: None,
+        network: false,
+        worker_reuse: false,
+        warmup_runs: 0,
+        timeout: None,
+        timing_scope: TimingScope::PrepareAndExecute,
+        primary_time: PrimaryTime::TimedWallTime,
+        run_order: RunOrder::Sequential,
+        enforcement: Enforcement::BestEffort,
+    };
+    for vector in fixture["policies"].as_array().unwrap() {
+        policy.max_concurrency = vector["max_concurrency"].as_u64().unwrap();
+        assert_eq!(
+            canonical_identity_bytes(&policy).unwrap(),
+            vector["canonical"].as_str().unwrap().as_bytes()
+        );
+        assert_eq!(
+            identify_record(policy.clone()).unwrap().id.to_string(),
+            vector["identity"].as_str().unwrap()
+        );
+    }
 }
 
 #[test]
@@ -165,6 +205,7 @@ fn dependency_identity_changes_invalidate_parent_identities() {
 #[test]
 fn rejects_record_fields_outside_the_canonical_domain() {
     let record = ExecutionPolicyRecord {
+        max_concurrency: 1,
         name: name("invalid"),
         cpus: Some(MAX_SAFE_INTEGER + 1),
         threads: None,

@@ -4,7 +4,7 @@
   "data": {
     "command": "plan",
     "benchmark": "read-only-fixture",
-    "manifest_hash": "83d0ea0875cc1deba4d41e9e232fe14a9ea44eff77d4e98aac2e3a6cb2ddec6d",
+    "manifest_hash": "df24121cfe01b93baf27c26174ffc802277c8a2bc515dd83bb3c7abe53eada47",
     "definitions": {
       "environments": [
         {
@@ -112,11 +112,12 @@
       {
         "name": "main",
         "scheduling_seed": 2389870828410754,
-        "execution_policy": "mw1-execution-policy-5ddc57a3e9666207a0d822f44528c6f123958c99e98f09859413942bc2e8dba9",
+        "max_concurrency": 1,
+        "execution_policy": "mw1-execution-policy-5b589a57ec1470abcace11c56a258f07333c351b843f29c03323ee8591768c75",
         "observation_policy": "mw1-observation-policy-7ab610c92432eb64c53468035b88dd50d822ccf28213e385f51164bff0d2ff19",
         "candidates": [
           {
-            "id": "mw1-logical-candidate-05db78ed07f6129102696823b9cd78e1e75ce73fcf114a2bb87ec01c093e6308",
+            "id": "mw1-logical-candidate-07caf014a4464f5bd7162e709b5553604a82126cfbd62068013ab77b25807605",
             "source": {
               "kind": "experiment"
             },
@@ -131,14 +132,14 @@
             ],
             "specifications": [
               {
-                "id": "mw1-logical-specification-6529724b326b06c3735679f100fbbc6ab9836e9060d2a245f088f4f629649f1a",
+                "id": "mw1-logical-specification-8058e70660f876f9f23312435196c8b7beb2c56948b9044a0ed60b6ac8da5474",
                 "observation_slots": [
-                  "mw1-logical-observation-slot-39423e8c526811e8f4250dba012dca0695892735b879d6d7a938abbbd23c3506",
-                  "mw1-logical-observation-slot-224b8af45496f96277fc0d2b718051ae1f009d4e56713bb61422bf413e7a8bbc"
+                  "mw1-logical-observation-slot-b4032e3892d03bd68b937f5dcb38ec57eac5edb4354ba175ad4b992798e5cf99",
+                  "mw1-logical-observation-slot-baa4564363cecdb8a1d405e429886c88106199f2832b7a3fe4248bcf8f565135"
                 ],
                 "attempt_slots": [
-                  "mw1-logical-attempt-slot-ee9565bed7568914ce0ec3daf90e66cff1f16cb036662efd419534b4fbb1da43",
-                  "mw1-logical-attempt-slot-b14bc39507511f3171a89eb7bb49f617f366dd4f53455e95401085e798e6221b"
+                  "mw1-logical-attempt-slot-bb1a778a6c345e7173ab619e51b50f71fd57f1c8efe512a3d9d41d55eb31d0b3",
+                  "mw1-logical-attempt-slot-5e282893f91fab3ef368329907b83efa1655d963c5fdbd817a04dceb3850d062"
                 ]
               }
             ]

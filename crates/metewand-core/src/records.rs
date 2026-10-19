@@ -405,6 +405,8 @@ pub struct ExecutionPolicyRecord {
     pub primary_time: PrimaryTime,
     /// Deterministic schedule policy.
     pub run_order: RunOrder,
+    /// Maximum number of concurrently executing attempts.
+    pub max_concurrency: u64,
     /// Required control-enforcement level.
     pub enforcement: Enforcement,
 }
