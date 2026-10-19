@@ -30,15 +30,23 @@ expected result is `{"answer":8}` and the metrics are `{"absolute_error":0}`.
 ## Supported selection
 
 The command executes every selected candidate, implementation repetition, and
-measurement repetition in deterministic logical-plan order. It supports fixed
+measurement repetition. It supports fixed
 local datasets, local generators and transformations with pinned HTTP(S) sources,
 the built-in empty unit dataset for dataset-free problems,
 one-shot workers, local environments, dedicated POSIX protocol pipes, fresh
 or reused implementation processes, process-local warm-ups, all three
-contract-authorized wall-timing scopes, sequential order, and
+contract-authorized wall-timing scopes, sequential or block-randomized order, and
 `best_effort` enforcement. Complete preflight precedes every worker launch and
 creation of the output directory. Overlapping resolved attempt slots across
 experiments are rejected; distinct experiment seeds select independent runs.
+
+The default `run_order = "sequential"` follows logical-plan order. Select
+`run_order = "randomized"` to interleave implementation configurations within
+comparison blocks defined by dataset instance, problem configuration,
+implementation repetition, and measurement index. Both modes execute serially.
+Events and attempts follow execution order, and attempt provenance retains the
+block fields, seed, and deterministic priorities. See [Scheduling](scheduling.md)
+for the versioned ordering contract and warm-up behavior.
 
 Set `worker_reuse = true` to retain an eligible implementation process across
 measurement and implementation repetitions. Set `warmup_runs` to a nonnegative
@@ -54,7 +62,7 @@ CPU, thread, and memory requests execute in best-effort mode and are recorded
 as unsupported by the local backend. Required enforcement fails logical
 planning because the local backend cannot guarantee lifetime isolation.
 See [Execution controls](execution-controls.md) for the complete report and
-runtime failure behavior. Randomized scheduling is rejected.
+runtime failure behavior.
 Provisioning backends, standard-I/O protocol transport,
 symbolic links in copied inputs, locked execution, and resume are also rejected.
 These features belong to later roadmap slices. A rejected selection emits a

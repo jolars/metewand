@@ -95,6 +95,10 @@ observation slots, and measurement attempt slots without runtime side effects.
 Its capability reports distinguish declarations from current and previously
 recorded runtime verification; this side-effect-free stage reports declarations
 only.
+The serial [scheduler](docs/scheduling.md) preserves logical-plan order by
+default. An execution policy can select deterministic block randomization to
+interleave comparable implementations by dataset instance, problem configuration,
+implementation repetition, and measurement index.
 The [read-only command-line workflow](docs/read-only-cli.md) composes these
 layers into `metewand schema`, `metewand check`, and `metewand plan`. Repository
 checks load contracts and transitive schema references offline, source contents

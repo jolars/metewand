@@ -15,6 +15,7 @@ pub mod public_schemas;
 pub mod records;
 pub mod run_documents;
 pub mod run_output;
+pub mod scheduling;
 pub mod schema;
 pub mod seed;
 

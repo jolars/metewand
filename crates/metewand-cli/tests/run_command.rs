@@ -488,6 +488,136 @@ fn grids_and_repetitions_execute_in_the_same_order_as_the_logical_plan() {
 }
 
 #[test]
+fn randomized_runs_interleave_comparable_implementations_and_record_the_schedule() {
+    use std::collections::BTreeSet;
+
+    let mut orders = Vec::new();
+    for _ in 0..2 {
+        let root = reuse_repository();
+        let path = root.path().join("metewand.toml");
+        let manifest = fs::read_to_string(&path).unwrap();
+        let implementation = manifest
+            .split_once("[implementations.reference]")
+            .unwrap()
+            .1
+            .split_once("[environments.local]")
+            .unwrap()
+            .0;
+        fs::write(&path, format!("{manifest}\n[implementations.alternative]{implementation}\n[datasets.other]\noutput_schema = \"schemas/dataset.json\"\nsources = [\"data.json\"]\n")).unwrap();
+        for (before, after) in [
+            (
+                "implementations = [\"reference\"]",
+                "implementations = [\"reference\", \"alternative\"]",
+            ),
+            (
+                "datasets = [\"numbers\"]",
+                "datasets = [\"numbers\", \"other\"]",
+            ),
+            (
+                "implementation_repetitions = 1",
+                "implementation_repetitions = 2",
+            ),
+            ("measurement_repetitions = 3", "measurement_repetitions = 2"),
+            (
+                "seed = 7",
+                "seed = 7\n\n[experiments.problem_parameters]\noffset = { grid = [2, 3] }",
+            ),
+            (
+                "version = 1\nworker_reuse",
+                "version = 1\nrun_order = \"randomized\"\nworker_reuse",
+            ),
+        ] {
+            replace(root.path(), "metewand.toml", before, after);
+        }
+        let output = metewand(
+            root.path(),
+            &["run", "--output-dir", "run", "--output", "jsonl"],
+        );
+        assert!(output.status.success(), "{output:?}");
+        let records = envelopes(&output);
+        let report = records.last().unwrap();
+        assert_eq!(report["data"]["summary"]["accepted_attempts"], 32);
+        let attempts = attempt_documents(root.path(), report);
+        let mut blocks = BTreeSet::new();
+        let mut previous_priority = None;
+        for pair in attempts.as_chunks::<2>().0 {
+            let contexts = pair
+                .iter()
+                .map(|attempt| &attempt["provenance"]["data"]["context"])
+                .collect::<Vec<_>>();
+            let first = &contexts[0]["scheduling"];
+            let second = &contexts[1]["scheduling"];
+            assert_eq!(first["run_order"], "randomized");
+            assert_eq!(first["policy_version"], 1);
+            assert_eq!(first["comparison_block"], second["comparison_block"]);
+            assert!(blocks.insert(first["comparison_block"].to_string()));
+            let priority = first["block_priority"].as_str().unwrap();
+            if let Some(previous) = previous_priority {
+                assert!(previous < priority);
+            }
+            previous_priority = Some(priority);
+            assert!(first["slot_priority"].as_str() < second["slot_priority"].as_str());
+            assert_eq!(
+                contexts[0]["implementation_seed"],
+                contexts[1]["implementation_seed"]
+            );
+            assert_ne!(
+                contexts[0]["logical_candidate_id"],
+                contexts[1]["logical_candidate_id"]
+            );
+            for context in contexts {
+                assert_eq!(
+                    context["scheduling"]["comparison_block"]["dataset_instance"],
+                    context["problem_instance"]["dataset"]
+                );
+                assert_eq!(
+                    context["scheduling"]["comparison_block"]["problem_configuration"],
+                    context["problem_instance"]["configuration"]
+                );
+            }
+        }
+        assert_eq!(blocks.len(), 16);
+        let mut previous_specification = None;
+        for attempt in &attempts {
+            let data = &attempt["provenance"]["data"];
+            let warmups = data["context"]["worker_reuse"]["warmups_on_this_attempt"]
+                .as_array()
+                .unwrap();
+            let specification = &data["context"]["resolved_specification"]["logical_specification"];
+            assert_eq!(
+                warmups.len(),
+                if previous_specification == Some(specification) {
+                    0
+                } else {
+                    2
+                }
+            );
+            for (index, warmup) in warmups.iter().enumerate() {
+                assert_eq!(warmup["index"], index);
+            }
+            assert!(warmups.iter().all(|warmup| warmup["status"] == "validated"));
+            previous_specification = Some(specification);
+        }
+        let order = report["data"]["attempts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|attempt| attempt["resolved_slot_id"].clone())
+            .collect::<Vec<_>>();
+        let started = report["data"]["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|event| event["event"] == "attempt_started")
+            .map(|event| event["resolved_slot_id"].clone())
+            .collect::<Vec<_>>();
+        assert_eq!(started, order);
+        orders.push(order);
+    }
+    assert_eq!(orders[0], orders[1]);
+}
+
+#[test]
 fn scientific_completion_failure_keeps_its_valid_observation() {
     let root = repository();
     replace(

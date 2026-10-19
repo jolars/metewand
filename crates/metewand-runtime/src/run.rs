@@ -119,11 +119,7 @@ pub fn run_repository_with_cache(
         .create(&output_directory)?;
     fs::set_permissions(&output_directory, fs::Permissions::from_mode(0o700))?;
     fs::File::open(output_directory.parent().expect("destination has a parent"))?.sync_all()?;
-    let attempt_slots = resolved
-        .candidates
-        .iter()
-        .map(|candidate| candidate.measurements.len())
-        .sum();
+    let attempt_slots = resolved.schedule.len();
     let mut events = Vec::new();
     emit(
         &mut events,
@@ -132,33 +128,33 @@ pub fn run_repository_with_cache(
     )?;
     let mut attempts = Vec::new();
     let mut worker = crate::worker_reuse::ReusableWorker::default();
-    for candidate in &resolved.candidates {
-        for measurement in &candidate.measurements {
-            emit(
-                &mut events,
-                &mut event_sink,
-                RunEventKind::AttemptStarted {
-                    logical_slot_id: measurement.logical_slot,
-                    resolved_slot_id: measurement.attempt_slot.id,
-                },
-            )?;
-            let attempt = execute(
-                repository,
-                candidate,
-                measurement,
-                resolved.private_root.path(),
-                &output_directory,
-                &mut worker,
-            )?;
-            emit(
-                &mut events,
-                &mut event_sink,
-                RunEventKind::AttemptFinished {
-                    attempt: Box::new(attempt.clone()),
-                },
-            )?;
-            attempts.push(attempt);
-        }
+    for &(candidate_index, measurement_index) in &resolved.schedule {
+        let candidate = &resolved.candidates[candidate_index];
+        let measurement = &candidate.measurements[measurement_index];
+        emit(
+            &mut events,
+            &mut event_sink,
+            RunEventKind::AttemptStarted {
+                logical_slot_id: measurement.logical_slot,
+                resolved_slot_id: measurement.attempt_slot.id,
+            },
+        )?;
+        let attempt = execute(
+            repository,
+            candidate,
+            measurement,
+            resolved.private_root.path(),
+            &output_directory,
+            &mut worker,
+        )?;
+        emit(
+            &mut events,
+            &mut event_sink,
+            RunEventKind::AttemptFinished {
+                attempt: Box::new(attempt.clone()),
+            },
+        )?;
+        attempts.push(attempt);
     }
     let accepted_attempts = attempts
         .iter()

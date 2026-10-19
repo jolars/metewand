@@ -50,7 +50,8 @@ not alter the candidate, specification, or implementation seed.
 
 The returned vectors retain deterministic expansion order. This stage attaches
 scheduling priorities but does not apply sequential or block-randomized runtime
-scheduling.
+scheduling. The subsequent [scheduling pass](scheduling.md) applies the selected
+order after runtime resolution binds the dataset instances.
 
 ## Stable identities and priorities
 

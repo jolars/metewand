@@ -8,7 +8,7 @@ use std::{
 };
 
 use metewand_core::{
-    EXECUTION_SEMANTICS_VERSION,
+    EXECUTION_SEMANTICS_VERSION, SCHEDULING_POLICY_VERSION,
     canonical::CanonicalValue,
     identity::{
         CanonicalResource, IdentityRecord, canonical_identity_bytes, identify_canonical,
@@ -20,16 +20,18 @@ use metewand_core::{
     },
     measurements::{Measurement, MissingReason},
     planning::{
-        DatasetConfigurationDefinition, LogicalCandidatePlan, LogicalPlan,
+        DatasetConfigurationDefinition, LogicalCandidatePlan, LogicalExperimentPlan, LogicalPlan,
         identify_builtin_unit_dataset_definition,
     },
     records::{
         AttemptSlotRole, ContentDigest, DatasetArtifact, DatasetInstanceRecord,
-        ExecutionPolicyRecord, ExecutorDefinitionRecord, IdentifiedRecord,
-        LogicalAttemptSlotRecord, ProblemInstanceRecord, RecordId, ResolvedAttemptSlotRecord,
-        ResolvedEnvironmentRecord, ResolvedLaunchRecord, ResolvedObservationSlotRecord,
-        ResolvedOneShotSpecificationRecord, ResolvedWorkerRecord, SourceBundleArtifact,
-        SourceBundleResource, WorkerWorkingDirectory,
+        ExecutorDefinitionRecord, IdentifiedRecord, LogicalAttemptSlotRecord,
+        ProblemInstanceRecord, RecordId, ResolvedAttemptSlotRecord, ResolvedEnvironmentRecord,
+        ResolvedLaunchRecord, ResolvedObservationSlotRecord, ResolvedOneShotSpecificationRecord,
+        ResolvedWorkerRecord, SourceBundleArtifact, SourceBundleResource, WorkerWorkingDirectory,
+    },
+    scheduling::{
+        ComparisonBlock, SchedulingSlot, derive_block_scheduling_priority, schedule_slots,
     },
 };
 use metewand_protocol::{MaterializeResponse, WorkerIdentity};
@@ -58,6 +60,7 @@ use super::RunError;
 
 pub(super) struct ResolvedRun {
     pub candidates: Vec<ResolvedCandidate>,
+    pub schedule: Vec<(usize, usize)>,
     pub private_root: TempDir,
 }
 
@@ -78,6 +81,7 @@ pub(super) struct ResolvedCandidate {
 
 #[derive(Clone)]
 pub(super) struct ResolvedMeasurement {
+    pub scheduling: SchedulingSlot,
     pub warmups: Vec<(u64, RecordId<ResolvedAttemptSlotRecord>)>,
     pub logical_slot: RecordId<LogicalAttemptSlotRecord>,
     pub attempt_slot: IdentifiedRecord<ResolvedAttemptSlotRecord>,
@@ -227,11 +231,9 @@ pub(super) fn resolve(
 ) -> Result<ResolvedRun, RunError> {
     for experiment in &plan.experiments {
         let policy = &experiment.execution_policy.record;
-        if policy.primary_time != PrimaryTime::TimedWallTime
-            || policy.run_order != RunOrder::Sequential
-        {
+        if policy.primary_time != PrimaryTime::TimedWallTime {
             return Err(unsupported(format!(
-                "execution policy `{}` requires timing or scheduling outside the trusted local path; use wall timing and sequential workers",
+                "execution policy `{}` requires timing outside the trusted local path; use wall timing",
                 policy.name,
             )));
         }
@@ -315,13 +317,7 @@ pub(super) fn resolve(
                 }
             }
 
-            prepared.push((
-                candidate,
-                experiment.execution_policy.record.clone(),
-                implementation,
-                evaluator,
-                dataset,
-            ));
+            prepared.push((candidate, experiment, implementation, evaluator, dataset));
         }
     }
     let temporary_cache = private_root.path().join("artifacts");
@@ -353,7 +349,7 @@ pub(super) fn resolve(
     let store = ArtifactStore::open(cache_directory)?;
     let mut datasets = BTreeMap::new();
     let mut candidates = Vec::new();
-    for (candidate, policy, implementation, evaluator, dataset_plan) in prepared {
+    for (candidate, experiment, implementation, evaluator, dataset_plan) in prepared {
         let timeouts = PhaseTimeouts::default();
         let key = candidate.dataset_configuration.id;
         if let std::collections::btree_map::Entry::Vacant(entry) = datasets.entry(key) {
@@ -450,7 +446,7 @@ pub(super) fn resolve(
         candidates.push(resolve_candidate(
             repository,
             candidate,
-            policy,
+            experiment,
             executor.id,
             implementation,
             evaluator,
@@ -467,8 +463,36 @@ pub(super) fn resolve(
             }
         }
     }
+    let mut schedule = Vec::new();
+    let mut candidate_offset = 0;
+    for experiment in &plan.experiments {
+        let mut positions = Vec::new();
+        let mut scheduling_slots = Vec::new();
+        for (candidate_index, candidate) in candidates
+            .iter()
+            .enumerate()
+            .skip(candidate_offset)
+            .take(experiment.candidates.len())
+        {
+            for (measurement_index, measurement) in candidate.measurements.iter().enumerate() {
+                positions.push((candidate_index, measurement_index));
+                scheduling_slots.push(measurement.scheduling);
+            }
+        }
+        schedule.extend(
+            schedule_slots(
+                experiment.execution_policy.record.run_order,
+                &experiment.scheduling_seed,
+                &scheduling_slots,
+            )
+            .into_iter()
+            .map(|index| positions[index]),
+        );
+        candidate_offset += experiment.candidates.len();
+    }
     Ok(ResolvedRun {
         candidates,
+        schedule,
         private_root,
     })
 }
@@ -567,12 +591,13 @@ struct ResolvedDataset {
 fn resolve_candidate(
     repository: &CheckedRepository,
     candidate: &LogicalCandidatePlan,
-    policy: ExecutionPolicyRecord,
+    experiment: &LogicalExperimentPlan,
     executor: RecordId<ExecutorDefinitionRecord>,
     implementation: ResolvedWorker,
     evaluator: ResolvedWorker,
     dataset: &ResolvedDataset,
 ) -> Result<ResolvedCandidate, RunError> {
+    let policy = experiment.execution_policy.record.clone();
     let timing = ExecutionTimingPolicy {
         scope: policy.timing_scope,
         timeout: scientific_timeout(policy.timeout.as_deref())?,
@@ -628,10 +653,29 @@ fn resolve_candidate(
                 }
             })
             .collect::<Result<Vec<_>, _>>()?;
-        for slot in &specification.attempt_slots {
+        for (slot, logical_observation) in specification
+            .attempt_slots
+            .iter()
+            .filter(|slot| matches!(slot.record.role, AttemptSlotRole::Measured { .. }))
+            .zip(&specification.observation_slots)
+        {
             let AttemptSlotRole::Measured { observation_slot } = slot.record.role else {
-                continue;
+                unreachable!("only measured slots were selected");
             };
+            let scheduling = SchedulingSlot {
+                logical_slot: slot.id,
+                comparison_block: ComparisonBlock {
+                    dataset_instance: dataset_instance.id,
+                    problem_configuration: candidate.problem_configuration.id,
+                    implementation_repetition: specification
+                        .specification
+                        .record
+                        .implementation_repetition,
+                    measurement_index: logical_observation.record.measurement_index,
+                },
+                scheduling_priority: slot.record.scheduling_priority,
+            };
+            let block = &scheduling.comparison_block;
             let attempt_slot = identify_record(ResolvedAttemptSlotRecord {
                 logical_slot: slot.id,
                 specification: resolved.id,
@@ -649,6 +693,24 @@ fn resolve_candidate(
                 "operational_timeouts_ns": PhaseTimeouts::default().provenance(),
                 "logical_candidate_id": candidate.candidate.id,
                 "logical_slot_id": slot.id,
+                "implementation_seed": specification.specification.record.implementation_seed.value,
+                "scheduling": {
+                    "run_order": match policy.run_order {
+                        RunOrder::Sequential => "sequential",
+                        RunOrder::Randomized => "randomized",
+                    },
+                    "policy_version": SCHEDULING_POLICY_VERSION,
+                    "seed": experiment.scheduling_seed.value,
+                    "seed_digest": hex(experiment.scheduling_seed.derivation_digest.bytes()),
+                    "comparison_block": {
+                        "dataset_instance": block.dataset_instance,
+                        "problem_configuration": block.problem_configuration,
+                        "implementation_repetition": block.implementation_repetition,
+                        "measurement_index": block.measurement_index,
+                    },
+                    "block_priority": hex(derive_block_scheduling_priority(&experiment.scheduling_seed, block).bytes()),
+                    "slot_priority": hex(scheduling.scheduling_priority.bytes()),
+                },
                 "dataset_materialization": dataset_provenance.map(CanonicalValue::as_json),
                 "dataset_immutability": {
                     "view": "copy", "enforcement": "best_effort",
@@ -666,6 +728,7 @@ fn resolve_candidate(
                 "language_runtime": null, "blas": null, "thread_settings": null,
             }))?;
             measurements.push(ResolvedMeasurement {
+                scheduling,
                 warmups: warmups.clone(),
                 logical_slot: slot.id,
                 attempt_slot,

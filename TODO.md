@@ -272,7 +272,7 @@ identities](DESIGN.md#schemas-canonical-values-and-identities) and
 [Environments, execution, and
 artifacts](DESIGN.md#6-environments-execution-and-artifacts).
 
-- [ ] Implement sequential scheduling first, then deterministic block-randomized
+- [x] Implement sequential scheduling first, then deterministic block-randomized
   scheduling by dataset instance, problem configuration, implementation
   repetition, and measurement index.
 - [ ] Preserve stable relative ordering when unrelated slots are added, and

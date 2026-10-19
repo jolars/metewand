@@ -1,0 +1,41 @@
+{
+  "scheduling_policy_version": 1,
+  "scheduling_seed_digest": "1111111111111111111111111111111111111111111111111111111111111111",
+  "blocks": [
+    {
+      "dataset_instance": "mw1-dataset-instance-0101010101010101010101010101010101010101010101010101010101010101",
+      "problem_configuration": "mw1-problem-configuration-0202020202020202020202020202020202020202020202020202020202020202",
+      "implementation_repetition": 0,
+      "measurement_index": 0,
+      "priority": "911cf8799ed2989676b03f650e0c8f0198aa03e5a68fc85267fad778566853cb"
+    },
+    {
+      "dataset_instance": "mw1-dataset-instance-0101010101010101010101010101010101010101010101010101010101010101",
+      "problem_configuration": "mw1-problem-configuration-0202020202020202020202020202020202020202020202020202020202020202",
+      "implementation_repetition": 1,
+      "measurement_index": 0,
+      "priority": "af022c3b38ee2884ffcd3daf97f480a9e8bf0582702d313474288834730e73c2"
+    },
+    {
+      "dataset_instance": "mw1-dataset-instance-0101010101010101010101010101010101010101010101010101010101010101",
+      "problem_configuration": "mw1-problem-configuration-0202020202020202020202020202020202020202020202020202020202020202",
+      "implementation_repetition": 0,
+      "measurement_index": 1,
+      "priority": "2b9e372d49304e927abf0e93fb51187820ee781702c8feba46755198f02fe65d"
+    },
+    {
+      "dataset_instance": "mw1-dataset-instance-0303030303030303030303030303030303030303030303030303030303030303",
+      "problem_configuration": "mw1-problem-configuration-0202020202020202020202020202020202020202020202020202020202020202",
+      "implementation_repetition": 0,
+      "measurement_index": 0,
+      "priority": "3bba5f5b67a9d8bda50ca2e045971a35510d713e38013abd2ab2eab4ced244cc"
+    },
+    {
+      "dataset_instance": "mw1-dataset-instance-0101010101010101010101010101010101010101010101010101010101010101",
+      "problem_configuration": "mw1-problem-configuration-0303030303030303030303030303030303030303030303030303030303030303",
+      "implementation_repetition": 0,
+      "measurement_index": 0,
+      "priority": "453c6cdc9638134bd500d63df4a6d25ef0fe1e314b50e1546ee9ceacb7cec3e2"
+    }
+  ]
+}

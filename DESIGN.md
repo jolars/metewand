@@ -581,6 +581,18 @@ index as an eight-byte big-endian integer. The role is exactly `measured` or
 `warmup`. This priority is attached during logical planning; later scheduling
 composes it with the comparison-block priority.
 
+The version-1 comparison-block priority uses the same transcript with role
+`block`. Its anchor concatenates the complete typed dataset-instance identity,
+`NUL`, the complete typed problem-configuration identity, `NUL`, the
+implementation-repetition index, `NUL`, and the measurement index. Both indices
+use eight-byte big-endian encoding. The scheduler sorts by block priority, then
+the typed block fields in that order, then attempt-slot priority, then logical
+attempt-slot identity, all in ascending byte or numeric order. The identity
+tie-breakers make equal priorities independent of expansion order. Experiments
+retain their declared order. Sequential scheduling retains logical expansion
+order, and worker-lifecycle warm-ups run immediately before the measurement
+that requires them rather than participating in the comparison sort.
+
 ## 3. Core architecture
 
 Metewand is a Rust workspace with one distributable executable and small
