@@ -117,6 +117,7 @@ pub struct WorkerProcessOutput {
 #[derive(Debug)]
 pub struct PosixWorkerProcess {
     child: Child,
+    group: ProcessGroup,
     private_working_directory: Option<TempDir>,
     protocol_reader: Option<FrameReader<File>>,
     protocol_writer: Option<File>,
@@ -150,6 +151,8 @@ impl PosixWorkerProcess {
         command
             .env(PROTOCOL_READ_FD_ENV, worker_read_fd.to_string())
             .env(PROTOCOL_WRITE_FD_ENV, worker_write_fd.to_string())
+            .process_group(0)
+            .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
 
@@ -206,7 +209,9 @@ impl PosixWorkerProcess {
                 }
             };
 
+        let group = ProcessGroup(child.id() as libc::pid_t);
         Ok(Self {
+            group,
             child,
             private_working_directory: None,
             protocol_reader: Some(FrameReader::new(File::from(parent_response_reader))),
@@ -270,16 +275,27 @@ impl PosixWorkerProcess {
         self.child.try_wait().map_err(WorkerProcessError::Observe)
     }
 
-    /// Requests immediate termination of the worker process.
-    ///
-    /// Process-tree containment and the interrupt/grace/force sequence belong
-    /// to the executor layer built on this transport.
+    /// Interrupts the worker's process group, including ordinary descendants.
     ///
     /// # Errors
+    /// Returns an error if the signal cannot be sent.
+    pub fn interrupt(&mut self) -> Result<(), WorkerProcessError> {
+        self.group
+            .signal(libc::SIGINT)
+            .map_err(WorkerProcessError::Kill)
+    }
+
+    /// Forces termination of the worker's process group.
     ///
-    /// Returns an error if the termination signal cannot be sent.
+    /// Descendants that deliberately create a new session can escape this
+    /// reproducibility control; it is not a security boundary.
+    ///
+    /// # Errors
+    /// Returns an error if the signal cannot be sent.
     pub fn kill(&mut self) -> Result<(), WorkerProcessError> {
-        self.child.kill().map_err(WorkerProcessError::Kill)
+        self.group
+            .signal(libc::SIGKILL)
+            .map_err(WorkerProcessError::Kill)
     }
 
     /// Closes the protocol pipes, waits for exit, and joins both log drains.
@@ -291,6 +307,7 @@ impl PosixWorkerProcess {
     pub fn wait(self) -> Result<WorkerProcessOutput, WorkerProcessError> {
         let Self {
             mut child,
+            group,
             private_working_directory: _private_working_directory,
             protocol_reader,
             protocol_writer,
@@ -309,6 +326,9 @@ impl PosixWorkerProcess {
                 return Err(WorkerProcessError::Wait(source));
             }
         };
+        group
+            .signal(libc::SIGKILL)
+            .map_err(WorkerProcessError::Kill)?;
         let stdout = join_log_drain(WorkerLogStream::Stdout, stdout_drain);
         let stderr = join_log_drain(WorkerLogStream::Stderr, stderr_drain);
 
@@ -506,6 +526,32 @@ fn duplicate_cloexec(descriptor: &OwnedFd) -> io::Result<OwnedFd> {
 }
 
 fn abort_spawn(child: &mut Child) {
-    let _ = child.kill();
+    let _ = ProcessGroup(child.id() as libc::pid_t).signal(libc::SIGKILL);
     let _ = child.wait();
+}
+
+// Retaining the group until log drains finish prevents ordinary descendants
+// from keeping the pipes open after the group leader exits.
+#[derive(Debug)]
+struct ProcessGroup(libc::pid_t);
+
+impl ProcessGroup {
+    fn signal(&self, signal: libc::c_int) -> io::Result<()> {
+        // SAFETY: A negative process ID addresses the private worker group.
+        if unsafe { libc::kill(-self.0, signal) } == 0 {
+            return Ok(());
+        }
+        let error = io::Error::last_os_error();
+        if error.raw_os_error() == Some(libc::ESRCH) {
+            Ok(())
+        } else {
+            Err(error)
+        }
+    }
+}
+
+impl Drop for ProcessGroup {
+    fn drop(&mut self) {
+        let _ = self.signal(libc::SIGKILL);
+    }
 }

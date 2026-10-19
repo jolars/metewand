@@ -247,7 +247,7 @@ See [Problem and fairness contracts](DESIGN.md#problem-and-fairness-contracts)
 and [Environments, execution, and
 artifacts](DESIGN.md#6-environments-execution-and-artifacts).
 
-- [ ] Implement the reusable executor interface and a POSIX local-process
+- [x] Implement the reusable executor interface and a POSIX local-process
   executor with process-group containment, bounded termination, isolated
   directories, and explicit capability preflight.
 - [ ] Build minimal, allowlisted worker environments with fixed locale,

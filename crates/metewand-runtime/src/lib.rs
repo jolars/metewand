@@ -36,3 +36,6 @@ pub mod worker_output;
 pub mod worker_process;
 #[cfg(unix)]
 pub mod worker_session;
+
+#[cfg(unix)]
+pub mod executor;

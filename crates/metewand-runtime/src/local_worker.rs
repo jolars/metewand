@@ -1,4 +1,4 @@
-//! Minimal trusted local-worker launch support for the conformance kernel.
+//! Trusted local-worker launch and private working-directory allocation.
 
 use std::{
     fs::{self, Permissions},
@@ -21,8 +21,8 @@ use crate::worker_process::{PosixWorkerProcess, WorkerLogLimits, WorkerProcessEr
 /// lifetime of the process handle.
 ///
 /// This Gate-1 launch path is a reproducibility boundary, not a sandbox for
-/// hostile code. Process-tree controls and the complete worker environment
-/// policy belong to the reusable local executor.
+/// hostile code. The transport creates a private process group. Capability
+/// requirements and bounded termination belong to the reusable local executor.
 ///
 /// # Errors
 ///

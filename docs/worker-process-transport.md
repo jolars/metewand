@@ -46,9 +46,10 @@ Callers that need a final protocol exchange must complete it before calling
 `wait()`. `WorkerSession::shutdown` performs that exchange, closes the protocol
 endpoints, requires clean process exit within the shutdown deadline, and then
 returns the same output record. The runtime also exposes nonblocking status
-observation and immediate single-process termination; executor-defined
-process-tree containment and the interrupt, grace, and forced-termination
-sequence are later execution layers.
+observation, process-group interruption, and forced process-group termination.
+Each worker starts a new process group with disconnected standard input. After
+the leader exits, `wait()` kills remaining group members before joining log
+drains. Dropping the handle also kills the group.
 
 The integration tests run an actual inherited-descriptor exchange and flood
 both standard streams beyond the operating-system pipe capacity. They verify
@@ -74,7 +75,7 @@ No variable is implicitly copied from the orchestrator. In particular, an
 entrypoint using `/usr/bin/env` needs an explicitly allowlisted `PATH`. This
 minimal Gate-1 path expects its resolved environment map to contain every value
 the trusted fixture needs. Fixed locale, timezone, umask, private home and cache
-templates, process-tree containment, and resource-control preflight belong to
+templates and resource controls belong to
 the later reusable executor and do not become accidental implicit behavior
 here.
 
@@ -86,3 +87,35 @@ not a sandbox for hostile workers.
 
 This transport implements the POSIX mechanism already specified by wire
 protocol version 1. It does not change the wire-protocol compatibility version.
+
+
+## Reusable local executor
+
+`executor::Executor` separates capability preflight, launch, and termination
+from environment resolution and protocol requests. Its associated process type
+allows another backend to provide its own handle. `LocalProcessExecutor`
+returns the existing `PosixWorkerProcess`, so callers can pass it directly to
+`WorkerSession::connect`.
+
+Call `preflight` during planning and pass the same requirements to `spawn`,
+which repeats the check before allocating a directory or starting a worker.
+The capability report explicitly identifies private working directories and
+process groups as supported, and complete process-tree containment as
+unsupported. A requirement for complete containment fails with
+`UnsupportedCompleteProcessTree`. POSIX descendants can escape their group by
+creating a new session, so this backend cannot satisfy that requirement.
+Private directories isolate working files but do not restrict filesystem access.
+
+`terminate` sends SIGINT to the group, waits the configured grace period, and
+sends SIGKILL to the group even if the leader already exited. It polls the
+leader for up to one additional second and returns `TerminationDeadline` if
+the kernel has not reported exit. Callers retain the handle after an error and
+can retry cleanup. Call `wait` after successful termination to collect logs and
+release the private directory. Escaped descendants can keep inherited pipes
+open; bounded log completion requires workers to respect group containment or
+a backend with stronger containment.
+
+This adds the local lifecycle implementation of execution semantics version 1;
+it does not change wire types, identities, or canonical record encodings. The
+local executor tests cover preflight rejection and forced cleanup of ordinary
+descendants that ignore interruption.

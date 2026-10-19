@@ -444,9 +444,7 @@ impl WorkerSession {
             return;
         }
         self.usable = false;
-        if let Some(process) = self.process.as_mut()
-            && process.try_wait().ok().flatten().is_none()
-        {
+        if let Some(process) = self.process.as_mut() {
             let _ = process.kill();
         }
         self.stop_protocol_io();
