@@ -35,6 +35,13 @@ after spawn. `CapturedWorkerLog` retains only the prefix within its configured
 limit, records the total number of bytes drained, and marks the capture as
 truncated when it discards any bytes.
 
+`log_snapshot()` reads bounded process-lifetime prefixes while a worker remains
+alive. A `WorkerLogSnapshot` marks these asynchronous captures incomplete and
+withholds a suffix long enough to avoid exposing a secret split across reads.
+Converting a final `WorkerProcessOutput` to a snapshot marks it complete.
+Reused execution publishes these snapshots with explicit lifetime scope, as
+explained in [worker reuse](worker-reuse.md).
+
 Reaching a limit changes only retention. The drain continues to EOF, so a
 worker that writes more than the retained limit cannot block on a full standard
 stream pipe. Logs remain raw bytes because arbitrary worker output need not be

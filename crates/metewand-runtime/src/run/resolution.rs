@@ -25,10 +25,11 @@ use metewand_core::{
     },
     records::{
         AttemptSlotRole, ContentDigest, DatasetArtifact, DatasetInstanceRecord,
-        ExecutorDefinitionRecord, IdentifiedRecord, LogicalAttemptSlotRecord,
-        ProblemInstanceRecord, RecordId, ResolvedAttemptSlotRecord, ResolvedEnvironmentRecord,
-        ResolvedLaunchRecord, ResolvedObservationSlotRecord, ResolvedOneShotSpecificationRecord,
-        ResolvedWorkerRecord, SourceBundleArtifact, SourceBundleResource, WorkerWorkingDirectory,
+        ExecutionPolicyRecord, ExecutorDefinitionRecord, IdentifiedRecord,
+        LogicalAttemptSlotRecord, ProblemInstanceRecord, RecordId, ResolvedAttemptSlotRecord,
+        ResolvedEnvironmentRecord, ResolvedLaunchRecord, ResolvedObservationSlotRecord,
+        ResolvedOneShotSpecificationRecord, ResolvedWorkerRecord, SourceBundleArtifact,
+        SourceBundleResource, WorkerWorkingDirectory,
     },
 };
 use metewand_protocol::{MaterializeResponse, WorkerIdentity};
@@ -72,9 +73,12 @@ pub(super) struct ResolvedCandidate {
     pub metric_schema: PathBuf,
     pub timeouts: PhaseTimeouts,
     pub timing: ExecutionTimingPolicy,
+    pub reuse_key: crate::worker_reuse::WorkerReuseKey,
 }
 
+#[derive(Clone)]
 pub(super) struct ResolvedMeasurement {
+    pub warmups: Vec<(u64, RecordId<ResolvedAttemptSlotRecord>)>,
     pub logical_slot: RecordId<LogicalAttemptSlotRecord>,
     pub attempt_slot: IdentifiedRecord<ResolvedAttemptSlotRecord>,
     pub observation_slot: IdentifiedRecord<ResolvedObservationSlotRecord>,
@@ -224,8 +228,6 @@ pub(super) fn resolve(
     for experiment in &plan.experiments {
         let policy = &experiment.execution_policy.record;
         if policy.primary_time != PrimaryTime::TimedWallTime
-            || policy.worker_reuse
-            || policy.warmup_runs != 0
             || policy.run_order != RunOrder::Sequential
             || policy.enforcement != Enforcement::BestEffort
             || policy.cpus.is_some()
@@ -233,7 +235,7 @@ pub(super) fn resolve(
             || policy.memory.is_some()
         {
             return Err(unsupported(format!(
-                "execution policy `{}` requires controls outside the Gate-1 trusted local path; use wall timing, sequential fresh workers without warm-ups, and best_effort enforcement without resource limits",
+                "execution policy `{}` requires controls outside the Gate-1 trusted local path; use wall timing, sequential workers, and best_effort enforcement without resource limits",
                 policy.name,
             )));
         }
@@ -268,6 +270,7 @@ pub(super) fn resolve(
         kind: serde_json::from_value(json!("trusted_local")).expect("static valid name"),
         configuration: canonical(
             json!({"environment_class": "development", "isolation": "unsupported",
+                "worker_cache": {"policy": "clear_all_between_slots"},
                 "timeout_termination": {"interrupt": "SIGINT", "grace_ms": 100, "force": "SIGKILL", "exit_wait_ms": 1000}}),
         )?,
     })?;
@@ -318,12 +321,7 @@ pub(super) fn resolve(
 
             prepared.push((
                 candidate,
-                ExecutionTimingPolicy {
-                    scope: experiment.execution_policy.record.timing_scope,
-                    timeout: scientific_timeout(
-                        experiment.execution_policy.record.timeout.as_deref(),
-                    )?,
-                },
+                experiment.execution_policy.record.clone(),
                 implementation,
                 evaluator,
                 dataset,
@@ -359,7 +357,7 @@ pub(super) fn resolve(
     let store = ArtifactStore::open(cache_directory)?;
     let mut datasets = BTreeMap::new();
     let mut candidates = Vec::new();
-    for (candidate, timing, implementation, evaluator, dataset_plan) in prepared {
+    for (candidate, policy, implementation, evaluator, dataset_plan) in prepared {
         let timeouts = PhaseTimeouts::default();
         let key = candidate.dataset_configuration.id;
         if let std::collections::btree_map::Entry::Vacant(entry) = datasets.entry(key) {
@@ -456,8 +454,8 @@ pub(super) fn resolve(
         candidates.push(resolve_candidate(
             repository,
             candidate,
+            policy,
             executor.id,
-            timing,
             implementation,
             evaluator,
             &datasets[&key],
@@ -573,12 +571,16 @@ struct ResolvedDataset {
 fn resolve_candidate(
     repository: &CheckedRepository,
     candidate: &LogicalCandidatePlan,
+    policy: ExecutionPolicyRecord,
     executor: RecordId<ExecutorDefinitionRecord>,
-    timing: ExecutionTimingPolicy,
     implementation: ResolvedWorker,
     evaluator: ResolvedWorker,
     dataset: &ResolvedDataset,
 ) -> Result<ResolvedCandidate, RunError> {
+    let timing = ExecutionTimingPolicy {
+        scope: policy.timing_scope,
+        timeout: scientific_timeout(policy.timeout.as_deref())?,
+    };
     let output_schema = dataset.output_schema;
     let dataset_provenance = dataset.provenance.as_ref();
     let dataset = Arc::clone(&dataset.snapshot);
@@ -613,11 +615,26 @@ fn resolve_candidate(
             wire_protocol_version: metewand_protocol::WIRE_PROTOCOL_VERSION,
             execution_semantics_version: EXECUTION_SEMANTICS_VERSION,
         })?;
+        let warmups = specification
+            .attempt_slots
+            .iter()
+            .filter_map(|slot| {
+                if let AttemptSlotRole::Warmup { warmup_index } = slot.record.role {
+                    Some(
+                        identify_record(ResolvedAttemptSlotRecord {
+                            logical_slot: slot.id,
+                            specification: resolved.id,
+                        })
+                        .map(|resolved| (warmup_index, resolved.id)),
+                    )
+                } else {
+                    None
+                }
+            })
+            .collect::<Result<Vec<_>, _>>()?;
         for slot in &specification.attempt_slots {
             let AttemptSlotRole::Measured { observation_slot } = slot.record.role else {
-                return Err(unsupported(
-                    "warm-up execution is not implemented in Gate 1",
-                ));
+                continue;
             };
             let attempt_slot = identify_record(ResolvedAttemptSlotRecord {
                 logical_slot: slot.id,
@@ -652,6 +669,7 @@ fn resolve_candidate(
                 "language_runtime": null, "blas": null, "thread_settings": null,
             }))?;
             measurements.push(ResolvedMeasurement {
+                warmups: warmups.clone(),
                 logical_slot: slot.id,
                 attempt_slot,
                 observation_slot,
@@ -660,7 +678,14 @@ fn resolve_candidate(
             });
         }
     }
+    let reuse_key = crate::worker_reuse::WorkerReuseKey {
+        role: metewand_protocol::WorkerRole::Implementation,
+        definition: candidate.implementation_configuration.record.definition,
+        resolved: implementation.record.clone(),
+        policy,
+    };
     Ok(ResolvedCandidate {
+        reuse_key,
         dataset,
         implementation,
         evaluator,

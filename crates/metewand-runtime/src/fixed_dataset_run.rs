@@ -25,7 +25,7 @@ use crate::{
     local_tree::{LocalTreeHashError, hash_local_tree},
     local_worker::{LocalWorkerLaunchError, launch_trusted_local_worker},
     worker_output::{ValidatedMetrics, ValidatedResult, WorkerOutputError, WorkerOutputValidator},
-    worker_process::{WorkerLogLimits, WorkerProcessOutput},
+    worker_process::{WorkerLogLimits, WorkerLogSnapshot},
     worker_session::{PhaseTimeouts, WorkerSession, WorkerSessionError},
 };
 
@@ -159,10 +159,10 @@ pub struct FixedDatasetResult {
     pub started_at: SystemTime,
     /// Wall-clock time when the private validated run finished.
     pub finished_at: SystemTime,
-    /// Drained implementation logs, scoped to this execution.
-    pub implementation_output: WorkerProcessOutput,
-    /// Drained evaluator logs, scoped to this execution.
-    pub evaluator_output: WorkerProcessOutput,
+    /// Bounded process-lifetime logs; retained workers return incomplete snapshots.
+    pub implementation_output: WorkerLogSnapshot,
+    /// Completely drained evaluator logs for this execution.
+    pub evaluator_output: WorkerLogSnapshot,
     pub(crate) result_tree_hash: ContentDigest,
     pub(crate) metrics_bytes: Vec<u8>,
     pub(crate) execution_provenance: Value,
@@ -264,7 +264,7 @@ pub fn run_fixed_dataset_outcome(request: FixedDatasetRun<'_>) -> FixedDatasetRu
     let mut measurements = ExecutionMeasurements::default();
     let timing = request.timing;
     let timeouts = request.timeouts;
-    match run_checked(request, None, &mut measurements) {
+    match run_checked(request, None, &mut measurements, None) {
         Ok(result) => FixedDatasetRunOutcome::Validated(Box::new(result)),
         Err(error) => {
             let kind = error.failure_kind();
@@ -308,7 +308,7 @@ pub fn run_fixed_dataset_outcome(request: FixedDatasetRun<'_>) -> FixedDatasetRu
 pub fn run_fixed_dataset(
     request: FixedDatasetRun<'_>,
 ) -> Result<FixedDatasetResult, FixedDatasetRunError> {
-    run_checked(request, None, &mut ExecutionMeasurements::default())
+    run_checked(request, None, &mut ExecutionMeasurements::default(), None)
 }
 
 pub(crate) fn run_fixed_dataset_in_view(
@@ -316,13 +316,23 @@ pub(crate) fn run_fixed_dataset_in_view(
     view: &DatasetView,
     measurements: &mut ExecutionMeasurements,
 ) -> Result<FixedDatasetResult, FixedDatasetRunError> {
-    run_checked(request, Some(view), measurements)
+    run_checked(request, Some(view), measurements, None)
+}
+
+pub(crate) fn run_fixed_dataset_with_session(
+    request: FixedDatasetRun<'_>,
+    view: &DatasetView,
+    measurements: &mut ExecutionMeasurements,
+    session: &mut WorkerSession,
+) -> Result<FixedDatasetResult, FixedDatasetRunError> {
+    run_checked(request, Some(view), measurements, Some(session))
 }
 
 fn run_checked(
     request: FixedDatasetRun<'_>,
     view: Option<&DatasetView>,
     measurements: &mut ExecutionMeasurements,
+    session: Option<&mut WorkerSession>,
 ) -> Result<FixedDatasetResult, FixedDatasetRunError> {
     if !request.dataset_dir.is_absolute() || !request.private_root.is_absolute() {
         return Err(FixedDatasetRunError::NonAbsolutePath);
@@ -339,13 +349,14 @@ fn run_checked(
         view,
     };
     integrity.verify("attempt start")?;
-    let result = run_workers(request, &integrity, measurements, &mut timing);
+    let result = run_workers(request, &integrity, measurements, &mut timing, session);
     if let Some(started) = timing.started
         && !timing.finished
     {
         measurements.timed_wall_time_ns = Measurement::elapsed(started.elapsed(), false);
     }
-    // Failed exchanges drop and terminate both sessions before this last check.
+    // Owned sessions have stopped here; failures on a borrowed session cause
+    // its lifecycle owner to discard it after this final integrity check.
     let verified = integrity.verify("attempt finalization");
     match result {
         Err(error) if error.failure_kind() == FixedDatasetFailureKind::DatasetMutation => {
@@ -363,6 +374,7 @@ fn run_workers(
     integrity: &DatasetIntegrity<'_>,
     measurements: &mut ExecutionMeasurements,
     timing: &mut TimingEnvelope,
+    session: Option<&mut WorkerSession>,
 ) -> Result<FixedDatasetResult, FixedDatasetRunError> {
     measurements.cpu_time_scope = match request.timing.scope {
         TimingScope::ColdEndToEnd => AccountingScope::WorkerLifetimeThroughExecute,
@@ -379,28 +391,39 @@ fn run_workers(
     let metrics_path = metrics_dir.path().join("metrics.json");
     let metrics_path_string = path_string(&metrics_path)?;
 
-    let mut implementation = integrity.operation("implementation hello", || {
-        measure(&mut measurements.worker_startup_time_ns, || {
-            if request.timing.scope == TimingScope::ColdEndToEnd {
-                timing.start()?;
-            }
-            let implementation_process = launch_trusted_local_worker(
-                request.implementation_launch,
-                request.private_root,
-                request.log_limits,
-            )
-            .map_err(|source| FixedDatasetRunError::ImplementationLaunch { source })?;
-            WorkerSession::connect_with_deadline(
-                implementation_process,
-                WorkerRole::Implementation,
-                request.implementation_identity.clone(),
-                &[Capability::OneShot],
-                request.timeouts,
-                timing.deadline,
-            )
-            .map_err(|source| FixedDatasetRunError::Implementation { source })
-        })
-    })?;
+    let mut owned_implementation = if session.is_none() {
+        Some(integrity.operation("implementation hello", || {
+            measure(&mut measurements.worker_startup_time_ns, || {
+                if request.timing.scope == TimingScope::ColdEndToEnd {
+                    timing.start()?;
+                }
+                let implementation_process = launch_trusted_local_worker(
+                    request.implementation_launch,
+                    request.private_root,
+                    request.log_limits,
+                )
+                .map_err(|source| FixedDatasetRunError::ImplementationLaunch { source })?;
+                WorkerSession::connect_with_deadline(
+                    implementation_process,
+                    WorkerRole::Implementation,
+                    request.implementation_identity.clone(),
+                    &[Capability::OneShot],
+                    request.timeouts,
+                    timing.deadline,
+                )
+                .map_err(|source| FixedDatasetRunError::Implementation { source })
+            })
+        })?)
+    } else {
+        measurements.worker_startup_time_ns = Measurement::elapsed(Duration::ZERO, true);
+        None
+    };
+    let implementation = match session {
+        Some(session) => session,
+        None => owned_implementation
+            .as_mut()
+            .expect("a fresh execution owns its session"),
+    };
 
     let mut baseline = None;
     integrity.operation("implementation prepare", || {
@@ -483,7 +506,7 @@ fn run_workers(
         "executor": "trusted_local",
         "architecture": std::env::consts::ARCH,
         "os": std::env::consts::OS,
-        "implementation": worker_provenance(request.implementation_launch, &implementation),
+        "implementation": worker_provenance(request.implementation_launch, implementation),
         "evaluator": worker_provenance(request.evaluator_launch, &evaluator),
         "problem_contract_id": request.problem_contract_id,
         "problem_parameters": request.problem_parameters,
@@ -538,14 +561,20 @@ fn run_workers(
         .map_err(|source| FixedDatasetRunError::InvalidMetrics { source })?;
 
     let metrics_bytes = fs::read(&metrics_path).map_err(FixedDatasetRunError::PrivateDirectory)?;
-    let implementation_output = integrity.operation("implementation shutdown", || {
-        implementation
-            .shutdown()
-            .map_err(|source| FixedDatasetRunError::Implementation { source })
-    })?;
+    let implementation_snapshot = implementation.log_snapshot();
+    let implementation_output = match owned_implementation.take() {
+        Some(implementation) => integrity.operation("implementation shutdown", || {
+            implementation
+                .shutdown()
+                .map(WorkerLogSnapshot::from)
+                .map_err(|source| FixedDatasetRunError::Implementation { source })
+        })?,
+        None => implementation_snapshot,
+    };
     let evaluator_output = integrity.operation("evaluator shutdown", || {
         evaluator
             .shutdown()
+            .map(WorkerLogSnapshot::from)
             .map_err(|source| FixedDatasetRunError::Evaluator { source })
     })?;
     verify_result_tree(result_dir.path(), result_tree_hash)?;

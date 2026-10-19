@@ -26,7 +26,10 @@ use serde_json::json;
 use thiserror::Error;
 
 use crate::{
-    fixed_dataset_run::{FixedDatasetRun, FixedDatasetRunError, run_fixed_dataset_in_view},
+    fixed_dataset_run::{
+        FixedDatasetRun, FixedDatasetRunError, run_fixed_dataset_in_view,
+        run_fixed_dataset_with_session,
+    },
     local_tree::LocalTreeHashError,
     publication::{
         PublicationError, PublicationRequest, finalize_failed_attempt, finalize_fixed_dataset,
@@ -128,6 +131,7 @@ pub fn run_repository_with_cache(
         RunEventKind::RunStarted { attempt_slots },
     )?;
     let mut attempts = Vec::new();
+    let mut worker = crate::worker_reuse::ReusableWorker::default();
     for candidate in &resolved.candidates {
         for measurement in &candidate.measurements {
             emit(
@@ -144,6 +148,7 @@ pub fn run_repository_with_cache(
                 measurement,
                 resolved.private_root.path(),
                 &output_directory,
+                &mut worker,
             )?;
             emit(
                 &mut events,
@@ -192,6 +197,7 @@ fn execute(
     measurement: &ResolvedMeasurement,
     private_root: &Path,
     output_root: &Path,
+    worker: &mut crate::worker_reuse::ReusableWorker,
 ) -> Result<RunAttemptOutput, RunError> {
     let started_at = SystemTime::now();
     let mut measurements = ExecutionMeasurements {
@@ -199,6 +205,7 @@ fn execute(
         ..ExecutionMeasurements::default()
     };
     if let Err(error) = candidate.verify() {
+        worker.discard();
         return failed_attempt(
             measurement,
             output_root,
@@ -221,32 +228,112 @@ fn execute(
             );
         }
     };
-    let result = run_fixed_dataset_in_view(
-        FixedDatasetRun {
-            dataset_dir: dataset_view.directory(),
-            problem_contract_id: &candidate.contract_id,
-            problem_parameters: &candidate.problem_parameters,
-            implementation_parameters: &candidate.implementation_parameters,
-            implementation_seed: measurement.seed,
-            implementation_launch: &candidate.implementation.launch,
-            implementation_identity: &candidate.implementation.identity,
-            evaluator_launch: &candidate.evaluator.launch,
-            evaluator_identity: &candidate.evaluator.identity,
-            result_schema: &candidate.result_schema,
-            metric_schema: &candidate.metric_schema,
-            schemas: &repository.schemas,
-            private_root,
-            timeouts: candidate.timeouts,
-            timing: candidate.timing,
-            log_limits: WorkerLogLimits::new(64 * 1024, 64 * 1024),
-        },
-        &dataset_view,
-        &mut measurements,
-    );
+    let request = || FixedDatasetRun {
+        dataset_dir: dataset_view.directory(),
+        problem_contract_id: &candidate.contract_id,
+        problem_parameters: &candidate.problem_parameters,
+        implementation_parameters: &candidate.implementation_parameters,
+        implementation_seed: measurement.seed,
+        implementation_launch: &candidate.implementation.launch,
+        implementation_identity: &candidate.implementation.identity,
+        evaluator_launch: &candidate.evaluator.launch,
+        evaluator_identity: &candidate.evaluator.identity,
+        result_schema: &candidate.result_schema,
+        metric_schema: &candidate.metric_schema,
+        schemas: &repository.schemas,
+        private_root,
+        timeouts: candidate.timeouts,
+        timing: candidate.timing,
+        log_limits: WorkerLogLimits::new(64 * 1024, 64 * 1024),
+    };
+    let mut warmups = Vec::new();
+    let startup = std::cell::Cell::new(None);
+    let result = if candidate.reuse_key.policy.worker_reuse {
+        use crate::worker_reuse::WorkerReuseError;
+        let result = worker.run_slot_for_specification(
+            candidate.reuse_key.clone(),
+            measurement.attempt_slot.record.specification,
+            || {
+                let started = std::time::Instant::now();
+                let launched = (|| {
+                    let process = crate::local_worker::launch_trusted_local_worker(
+                        &candidate.implementation.launch,
+                        private_root,
+                        request().log_limits,
+                    )
+                    .map_err(|source| FixedDatasetRunError::ImplementationLaunch { source })?;
+                    crate::worker_session::WorkerSession::connect(
+                        process,
+                        metewand_protocol::WorkerRole::Implementation,
+                        candidate.implementation.identity.clone(),
+                        &[metewand_protocol::Capability::OneShot],
+                        candidate.timeouts,
+                    )
+                    .map_err(|source| FixedDatasetRunError::Implementation { source })
+                })();
+                startup.set(Some(metewand_core::measurements::Measurement::elapsed(
+                    started.elapsed(),
+                    launched.is_ok(),
+                )));
+                launched
+            },
+            |session, index| {
+                let mut measurements = ExecutionMeasurements::default();
+                let result = run_fixed_dataset_with_session(
+                    request(),
+                    &dataset_view,
+                    &mut measurements,
+                    session,
+                );
+                match &result {
+                    Ok(result) => warmups.push(json!({
+                        "index": index,
+                        "resolved_slot_id": measurement.warmups[index as usize].1,
+                        "implementation_seed": measurement.seed,
+                        "status": "validated",
+                        "result": result.result.as_json(), "metrics": result.metrics.as_json(),
+                        "measurements": result.measurements,
+                    })),
+                    Err(error) => warmups.push(json!({
+                        "index": index,
+                        "resolved_slot_id": measurement.warmups[index as usize].1,
+                        "implementation_seed": measurement.seed,
+                        "status": "failed", "code": error.failure_kind().code(),
+                        "message": error.to_string(), "measurements": measurements,
+                    })),
+                }
+                result.map(|_| ())
+            },
+            |session| {
+                run_fixed_dataset_with_session(request(), &dataset_view, &mut measurements, session)
+            },
+        );
+        result.map_err(|error| match error {
+            WorkerReuseError::Launch { source }
+            | WorkerReuseError::Slot { source }
+            | WorkerReuseError::Warmup { source, .. } => source,
+            WorkerReuseError::Session(source) => FixedDatasetRunError::Implementation { source },
+            WorkerReuseError::Cleanup(source) => FixedDatasetRunError::PrivateDirectory(source),
+            error => FixedDatasetRunError::PrivateDirectory(io::Error::other(error.to_string())),
+        })
+    } else {
+        run_fixed_dataset_in_view(request(), &dataset_view, &mut measurements)
+    };
+    let mut measurement = measurement.clone();
+    let mut context = measurement.provenance.as_json().clone();
+    context["worker_reuse"] = json!({
+        "enabled": candidate.reuse_key.policy.worker_reuse,
+        "worker_startup_time_ns": startup.get(),
+        "filesystem_cache": "clear_all_between_slots",
+        "warmups_on_this_attempt": warmups,
+    });
+    measurement.provenance = canonical(context)?;
+    let measurement = &measurement;
     let inputs_verified = candidate.verify();
     if let Err(error) = inputs_verified
         && !matches!(&result, Err(FixedDatasetRunError::DatasetMutation { .. }))
     {
+        worker.discard();
         return failed_attempt(
             measurement,
             output_root,
@@ -259,6 +346,7 @@ fn execute(
     let result = match result {
         Ok(result) => result,
         Err(error) => {
+            worker.discard();
             return failed_attempt(
                 measurement,
                 output_root,

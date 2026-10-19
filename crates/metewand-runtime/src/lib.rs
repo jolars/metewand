@@ -45,3 +45,6 @@ pub mod worker_session;
 
 #[cfg(unix)]
 pub mod executor;
+
+#[cfg(unix)]
+pub mod worker_reuse;

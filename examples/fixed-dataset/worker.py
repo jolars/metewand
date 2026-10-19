@@ -53,6 +53,9 @@ def main():
                 implementation_time_ns=None,
                 statistics={},
             )
+        elif method == "reset":
+            assert role == "implementation"
+            prepared = None
         elif method == "evaluate":
             assert role == "problem_evaluator"
             values = read_json(Path(request["dataset_dir"]) / "data.json")["values"]

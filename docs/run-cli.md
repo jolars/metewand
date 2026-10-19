@@ -34,16 +34,24 @@ measurement repetition in deterministic logical-plan order. It supports fixed
 local datasets, local generators and transformations with pinned HTTP(S) sources,
 the built-in empty unit dataset for dataset-free problems,
 one-shot workers, local environments, dedicated POSIX protocol pipes, fresh
-processes, all three contract-authorized wall-timing scopes, sequential order, and
+or reused implementation processes, process-local warm-ups, all three
+contract-authorized wall-timing scopes, sequential order, and
 `best_effort` enforcement. Complete preflight precedes every worker launch and
 creation of the output directory. Overlapping resolved attempt slots across
 experiments are rejected; distinct experiment seeds select independent runs.
 
+Set `worker_reuse = true` to retain an eligible implementation process across
+measurement and implementation repetitions. Set `warmup_runs` to a nonnegative
+count to run validated, untimed warm-ups on that process first. Every boundary
+calls `reset` and clears private writable directories, including filesystem
+caches. A replacement repeats its warm-ups. Warm-up results and failures are
+recorded in the enclosing attempt's provenance and do not increase the measured
+observation count. See [worker reuse](worker-reuse.md) for lifecycle details.
+Compatibility checking rejects warm-ups without reuse and cold timing with reuse
+or warm-ups.
+
 Policies requiring CPU, thread, or memory limits, randomized scheduling,
-reuse, warm-ups, or required enforcement are rejected. Reuse keys, reset,
-replacement, persistent worker caches, and repeated process-local warm-ups
-belong to the next executor slice. Compatibility checking already rejects
-warm-ups without reuse and cold timing with reuse or warm-ups.
+or required enforcement are rejected.
 Provisioning backends, standard-I/O protocol transport,
 symbolic links in copied inputs, locked execution, and resume are also rejected.
 These features belong to later roadmap slices. A rejected selection emits a

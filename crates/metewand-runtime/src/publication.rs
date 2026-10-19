@@ -33,7 +33,7 @@ use crate::{
     LOCAL_TREE_HASH_VERSION,
     fixed_dataset_run::{FixedDatasetResult, hex_digest},
     local_tree::{LocalTreeHashError, hash_local_tree},
-    worker_process::{CapturedWorkerLog, WorkerProcessOutput},
+    worker_process::{CapturedWorkerLog, WorkerLogSnapshot},
 };
 
 /// Resolved identities and contextual provenance for one durable publication.
@@ -312,18 +312,14 @@ fn copy_result(result: &FixedDatasetResult, destination: &Path) -> Result<(), Pu
     Ok(())
 }
 
-fn log_metadata(output: &WorkerProcessOutput) -> serde_json::Value {
+fn log_metadata(output: &WorkerLogSnapshot) -> serde_json::Value {
     fn stream(log: &CapturedWorkerLog) -> serde_json::Value {
         json!({"retained_bytes": log.bytes().len(), "total_bytes": log.total_bytes(), "truncated": log.truncated()})
     }
-    json!({"stdout": stream(&output.stdout), "stderr": stream(&output.stderr)})
+    json!({"stdout": stream(&output.stdout), "stderr": stream(&output.stderr), "complete": output.complete, "scope": if output.complete { "worker_lifetime" } else { "worker_lifetime_to_snapshot" }})
 }
 
-fn write_logs(
-    root: &Path,
-    role: &str,
-    output: &WorkerProcessOutput,
-) -> Result<(), PublicationError> {
+fn write_logs(root: &Path, role: &str, output: &WorkerLogSnapshot) -> Result<(), PublicationError> {
     let directory = root.join("logs").join(role);
     fs::create_dir_all(&directory)?;
     write_file(&directory.join("stdout.log"), output.stdout.bytes())?;

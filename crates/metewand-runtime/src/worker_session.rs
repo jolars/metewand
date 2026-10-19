@@ -225,6 +225,25 @@ impl WorkerSession {
             .and_then(PosixWorkerProcess::environment)
     }
 
+    /// Captures the worker's bounded process-lifetime log prefixes.
+    #[must_use]
+    pub fn log_snapshot(&self) -> crate::worker_process::WorkerLogSnapshot {
+        self.process
+            .as_ref()
+            .expect("a usable session owns its worker process")
+            .log_snapshot()
+    }
+
+    pub(crate) fn is_usable(&self) -> bool {
+        self.usable
+    }
+
+    pub(crate) fn private_working_directory(&self) -> Option<&std::path::Path> {
+        self.process
+            .as_ref()
+            .and_then(PosixWorkerProcess::private_working_directory)
+    }
+
     pub(crate) fn process_usage(&self) -> crate::resource_accounting::ProcessUsage {
         self.process.as_ref().map_or_else(
             crate::resource_accounting::ProcessUsage::default,

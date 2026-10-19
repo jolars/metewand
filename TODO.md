@@ -259,7 +259,7 @@ artifacts](DESIGN.md#6-environments-execution-and-artifacts).
 - [x] Implement `cold_end_to_end`, `prepare_and_execute`, and `execute_only`
   envelopes, scientific and operational timeouts, and all compatibility
   rules for reuse and warm-ups.
-- [ ] Implement worker reuse keys, reset and replacement behavior, cache policy,
+- [x] Implement worker reuse keys, reset and replacement behavior, cache policy,
   and repeated warm-ups after worker replacement.
 - [ ] Record every requested control as enforced, best-effort, or unsupported;
   fail known-insufficient required controls during planning and runtime

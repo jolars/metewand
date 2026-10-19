@@ -741,8 +741,8 @@ fn dataset_mutations_stop_at_each_operation_before_later_restoration() {
         replace(
             root.path(),
             "worker.py",
-            "prepared = None",
-            "prepared = None\n    dataset_path = None\n    original_dataset = None",
+            "    prepared = None\n    for line",
+            "    prepared = None\n    dataset_path = None\n    original_dataset = None\n    for line",
         );
         replace(
             root.path(),
@@ -1467,4 +1467,313 @@ fn materialization_failure_reports_a_diagnostic_before_attempts_exist() {
     assert_eq!(diagnostic["kind"], "diagnostic");
     assert_eq!(diagnostic["data"]["code"], "dataset_materialization_failed");
     assert!(!root.path().join("run").exists());
+}
+
+fn reuse_repository() -> TempDir {
+    let root = repository();
+    replace(
+        root.path(),
+        "metewand.toml",
+        "version = 1\ntiming_scope",
+        "version = 1\nworker_reuse = true\nwarmup_runs = 2\ntiming_scope",
+    );
+    replace(
+        root.path(),
+        "metewand.toml",
+        "measurement_repetitions = 1",
+        "measurement_repetitions = 3",
+    );
+    replace(
+        root.path(),
+        "worker.py",
+        "    prepared = None\n    for line",
+        "    prepared = None\n    executions = 0\n    for line",
+    );
+    replace(
+        root.path(),
+        "worker.py",
+        "        elif method == \"prepare\":",
+        r#"        elif method == "prepare":
+            assert not Path("dirty").exists()
+            assert not Path(os.environ["XDG_CACHE_HOME"]).joinpath("dirty").exists()"#,
+    );
+    replace(
+        root.path(),
+        "worker.py",
+        "            write_json(\n                Path(request[\"result_dir\"])",
+        r#"            executions += 1
+            Path("dirty").write_text("slot state")
+            Path(os.environ["XDG_CACHE_HOME"]).joinpath("dirty").write_text("cache state")
+            write_json(
+                Path(request["result_dir"])"#,
+    );
+    replace(
+        root.path(),
+        "worker.py",
+        "statistics={},",
+        "statistics={\"pid\": os.getpid(), \"executions\": executions},",
+    );
+    root
+}
+
+fn attempt_documents(root: &Path, report: &Value) -> Vec<Value> {
+    report["data"]["attempts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|attempt| {
+            let directory = root
+                .join("run")
+                .join(attempt["attempt_directory"].as_str().unwrap());
+            verify_finalized_directory(&directory).unwrap();
+            document(&directory.join("attempt.json"))
+        })
+        .collect()
+}
+
+#[test]
+fn reused_workers_warm_once_reset_and_clear_private_caches_between_slots() {
+    let root = reuse_repository();
+    let output = metewand(
+        root.path(),
+        &["run", "--output-dir", "run", "--output", "jsonl"],
+    );
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let records = envelopes(&output);
+    let report = records.last().unwrap();
+    assert_eq!(report["data"]["summary"]["accepted_attempts"], 3);
+    let attempts = attempt_documents(root.path(), report);
+    let pid = &attempts[0]["provenance"]["data"]["implementation_statistics"]["pid"];
+    for (index, attempt) in attempts.iter().enumerate() {
+        let data = &attempt["provenance"]["data"];
+        assert_eq!(&data["implementation_statistics"]["pid"], pid);
+        assert_eq!(data["implementation_statistics"]["executions"], index + 3);
+        let warmups = data["context"]["worker_reuse"]["warmups_on_this_attempt"]
+            .as_array()
+            .unwrap();
+        assert_eq!(warmups.len(), if index == 0 { 2 } else { 0 });
+        for warmup in warmups {
+            assert_eq!(warmup["status"], "validated");
+        }
+        assert_eq!(data["logs"]["implementation"]["complete"], false);
+    }
+}
+
+#[test]
+fn worker_crash_repeats_warmups_before_the_next_measurement() {
+    for failure_at in [1, 3] {
+        let root = reuse_repository();
+        let marker = serde_json::to_string(&root.path().join("crashed").to_str().unwrap()).unwrap();
+        replace(
+            root.path(),
+            "worker.py",
+            "            executions += 1",
+            &format!(
+                r#"            executions += 1
+            marker = Path({marker})
+            if executions == {failure_at} and not marker.exists():
+                marker.write_text("crashed")
+                os._exit(9)"#
+            ),
+        );
+        let output = metewand(
+            root.path(),
+            &["run", "--output-dir", "run", "--output", "jsonl"],
+        );
+        assert_eq!(
+            output.status.code(),
+            Some(5),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let records = envelopes(&output);
+        let report = records.last().unwrap();
+        assert_eq!(report["data"]["summary"]["failed_attempts"], 1);
+        assert_eq!(report["data"]["summary"]["accepted_attempts"], 2);
+        let attempts = attempt_documents(root.path(), report);
+        for (index, attempt) in attempts.iter().enumerate() {
+            let data = &attempt["provenance"]["data"];
+            let warmups = data["context"]["worker_reuse"]["warmups_on_this_attempt"]
+                .as_array()
+                .unwrap();
+            assert_eq!(
+                warmups.len(),
+                if index == 0 && failure_at == 1 {
+                    1
+                } else if index < 2 {
+                    2
+                } else {
+                    0
+                }
+            );
+            if index == 0 && failure_at == 1 {
+                assert_eq!(warmups[0]["status"], "failed");
+            }
+        }
+        assert_eq!(
+            attempts[1]["provenance"]["data"]["implementation_statistics"]["executions"],
+            3
+        );
+        assert_eq!(
+            attempts[2]["provenance"]["data"]["implementation_statistics"]["executions"],
+            4
+        );
+    }
+}
+
+#[test]
+fn reset_failure_discards_the_worker_and_the_replacement_warms_again() {
+    let root = reuse_repository();
+    let marker =
+        serde_json::to_string(&root.path().join("reset-failed").to_str().unwrap()).unwrap();
+    replace(
+        root.path(),
+        "worker.py",
+        "        elif method == \"reset\":",
+        &format!(
+            r#"        elif method == "reset":
+            marker = Path({marker})
+            if executions == 3 and not marker.exists():
+                marker.write_text("failed")
+                response.update(ok=False, error={{"code": "operation_failed", "message": "reset failed", "details": {{}}}})"#
+        ),
+    );
+    let output = metewand(
+        root.path(),
+        &["run", "--output-dir", "run", "--output", "jsonl"],
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(5),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let records = envelopes(&output);
+    let report = records.last().unwrap();
+    assert_eq!(report["data"]["summary"]["failed_attempts"], 1);
+    assert_eq!(report["data"]["summary"]["accepted_attempts"], 2);
+    let attempts = attempt_documents(root.path(), report);
+    let first = &attempts[0]["provenance"]["data"];
+    let last = &attempts[2]["provenance"]["data"];
+    assert_ne!(
+        first["implementation_statistics"]["pid"],
+        last["implementation_statistics"]["pid"]
+    );
+    assert_eq!(last["implementation_statistics"]["executions"], 3);
+    assert_eq!(
+        last["context"]["worker_reuse"]["warmups_on_this_attempt"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    assert_eq!(
+        attempts[1]["outcome"]["diagnostic"]["code"],
+        "implementation_failure"
+    );
+}
+
+#[test]
+fn timeout_and_protocol_failures_replace_workers_and_repeat_warmups() {
+    for (fault, code) in [
+        ("timeout", "scientific_timeout"),
+        ("protocol", "protocol_error"),
+    ] {
+        let root = reuse_repository();
+        let marker = serde_json::to_string(&root.path().join("faulted").to_str().unwrap()).unwrap();
+        let action = if fault == "timeout" {
+            replace(
+                root.path(),
+                "metewand.toml",
+                "warmup_runs = 2",
+                "warmup_runs = 2\ntimeout = \"3 s\"",
+            );
+            "import time; time.sleep(5)"
+        } else {
+            "response[\"id\"] = \"wrong-id\""
+        };
+        replace(
+            root.path(),
+            "worker.py",
+            "            executions += 1",
+            &format!(
+                r#"            executions += 1
+            marker = Path({marker})
+            if executions == 3 and not marker.exists():
+                marker.write_text("faulted")
+                {action}"#
+            ),
+        );
+        let output = metewand(
+            root.path(),
+            &["run", "--output-dir", "run", "--output", "jsonl"],
+        );
+        assert_eq!(
+            output.status.code(),
+            Some(5),
+            "{fault}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let records = envelopes(&output);
+        let report = records.last().unwrap();
+        assert_eq!(report["data"]["summary"]["failed_attempts"], 1);
+        assert_eq!(report["data"]["summary"]["accepted_attempts"], 2);
+        let attempts = attempt_documents(root.path(), report);
+        assert_eq!(attempts[0]["outcome"]["diagnostic"]["code"], code);
+        let replacement = &attempts[1]["provenance"]["data"];
+        assert_eq!(replacement["implementation_statistics"]["executions"], 3);
+        assert_eq!(
+            replacement["context"]["worker_reuse"]["warmups_on_this_attempt"]
+                .as_array()
+                .unwrap()
+                .len(),
+            2
+        );
+    }
+}
+
+#[test]
+fn every_implementation_repetition_runs_its_own_planned_warmups() {
+    let root = reuse_repository();
+    replace(
+        root.path(),
+        "metewand.toml",
+        "implementation_repetitions = 1",
+        "implementation_repetitions = 2",
+    );
+    let output = metewand(
+        root.path(),
+        &["run", "--output-dir", "run", "--output", "jsonl"],
+    );
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let records = envelopes(&output);
+    let report = records.last().unwrap();
+    assert_eq!(report["data"]["summary"]["accepted_attempts"], 6);
+    let attempts = attempt_documents(root.path(), report);
+    for (index, attempt) in attempts.iter().enumerate() {
+        let data = &attempt["provenance"]["data"];
+        assert_eq!(
+            data["implementation_statistics"]["executions"],
+            index + 3 + if index >= 3 { 2 } else { 0 }
+        );
+        assert_eq!(
+            data["context"]["worker_reuse"]["warmups_on_this_attempt"]
+                .as_array()
+                .unwrap()
+                .len(),
+            if index % 3 == 0 { 2 } else { 0 }
+        );
+    }
+    assert_eq!(
+        attempts[0]["provenance"]["data"]["implementation_statistics"]["pid"],
+        attempts[3]["provenance"]["data"]["implementation_statistics"]["pid"]
+    );
 }

@@ -9,6 +9,7 @@ use std::{
     },
     path::Path,
     process::{Child, Command, ExitStatus, Stdio},
+    sync::{Arc, Mutex},
     thread::{self, JoinHandle},
 };
 
@@ -112,6 +113,58 @@ pub struct WorkerProcessOutput {
     pub stderr: CapturedWorkerLog,
 }
 
+/// Bounded logs available at an execution boundary, without implying process exit.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WorkerLogSnapshot {
+    /// Standard output drained by the snapshot boundary.
+    pub stdout: CapturedWorkerLog,
+    /// Standard error drained by the snapshot boundary.
+    pub stderr: CapturedWorkerLog,
+    /// Whether both streams reached EOF and were completely drained.
+    pub complete: bool,
+}
+
+impl From<WorkerProcessOutput> for WorkerLogSnapshot {
+    fn from(output: WorkerProcessOutput) -> Self {
+        Self {
+            stdout: output.stdout,
+            stderr: output.stderr,
+            complete: true,
+        }
+    }
+}
+
+#[derive(Default)]
+struct LiveLog {
+    bytes: Vec<u8>,
+    total_bytes: u64,
+}
+
+impl std::fmt::Debug for LiveLog {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("LiveLog")
+            .field("retained_bytes", &self.bytes.len())
+            .field("total_bytes", &self.total_bytes)
+            .finish_non_exhaustive()
+    }
+}
+
+impl LiveLog {
+    fn snapshot(&self, limit: usize, redactor: &Redactor) -> CapturedWorkerLog {
+        // Keep a possible secret suffix private until enough following bytes
+        // arrive to determine whether it participates in a complete match.
+        let visible = self.bytes.len().saturating_sub(redactor.lookahead());
+        let mut bytes = redactor.prefix(&self.bytes, visible.min(limit));
+        bytes.truncate(limit);
+        CapturedWorkerLog {
+            bytes,
+            total_bytes: self.total_bytes,
+            truncated: self.total_bytes > visible.min(limit) as u64,
+        }
+    }
+}
+
 /// A spawned worker using dedicated version-1 POSIX protocol pipes.
 ///
 /// Standard output and standard error are reserved for logs and begin draining
@@ -129,6 +182,9 @@ pub struct PosixWorkerProcess {
     protocol_writer: Option<File>,
     stdout_drain: JoinHandle<io::Result<CapturedWorkerLog>>,
     stderr_drain: JoinHandle<io::Result<CapturedWorkerLog>>,
+    stdout_live: Arc<Mutex<LiveLog>>,
+    stderr_live: Arc<Mutex<LiveLog>>,
+    log_limits: WorkerLogLimits,
 }
 
 impl PosixWorkerProcess {
@@ -199,11 +255,14 @@ impl PosixWorkerProcess {
             });
         };
 
+        let stdout_live = Arc::new(Mutex::new(LiveLog::default()));
+        let stderr_live = Arc::new(Mutex::new(LiveLog::default()));
         let stdout_drain = match start_log_drain(
             WorkerLogStream::Stdout,
             stdout,
             log_limits.stdout_bytes,
             redactor.clone(),
+            Arc::clone(&stdout_live),
         ) {
             Ok(drain) => drain,
             Err(source) => {
@@ -219,6 +278,7 @@ impl PosixWorkerProcess {
             stderr,
             log_limits.stderr_bytes,
             redactor.clone(),
+            Arc::clone(&stderr_live),
         ) {
             Ok(drain) => drain,
             Err(source) => {
@@ -242,7 +302,30 @@ impl PosixWorkerProcess {
             protocol_writer: Some(File::from(parent_request_writer)),
             stdout_drain,
             stderr_drain,
+            stdout_live,
+            stderr_live,
+            log_limits,
         })
+    }
+
+    /// Captures a bounded process-lifetime log prefix without stopping the worker.
+    ///
+    /// Streams are asynchronous, so this snapshot explicitly remains incomplete.
+    #[must_use]
+    pub fn log_snapshot(&self) -> WorkerLogSnapshot {
+        WorkerLogSnapshot {
+            stdout: self
+                .stdout_live
+                .lock()
+                .expect("log capture mutex poisoned")
+                .snapshot(self.log_limits.stdout_bytes, &self.redactor),
+            stderr: self
+                .stderr_live
+                .lock()
+                .expect("log capture mutex poisoned")
+                .snapshot(self.log_limits.stderr_bytes, &self.redactor),
+            complete: false,
+        }
     }
 
     /// Returns the bounded protocol response reader.
@@ -467,16 +550,27 @@ fn start_log_drain(
     reader: impl Read + Send + 'static,
     limit: usize,
     redactor: Redactor,
+    live: Arc<Mutex<LiveLog>>,
 ) -> io::Result<JoinHandle<io::Result<CapturedWorkerLog>>> {
     thread::Builder::new()
         .name(format!("metewand-worker-{stream}"))
-        .spawn(move || drain_log(reader, limit, &redactor))
+        .spawn(move || drain_log_shared(reader, limit, &redactor, Some(&live)))
 }
 
+#[cfg(test)]
 fn drain_log(
+    reader: impl Read,
+    limit: usize,
+    redactor: &Redactor,
+) -> io::Result<CapturedWorkerLog> {
+    drain_log_shared(reader, limit, redactor, None)
+}
+
+fn drain_log_shared(
     mut reader: impl Read,
     limit: usize,
     redactor: &Redactor,
+    live: Option<&Mutex<LiveLog>>,
 ) -> io::Result<CapturedWorkerLog> {
     let mut bytes = Vec::with_capacity(limit.min(8192));
     let mut total_bytes = 0_u64;
@@ -496,6 +590,11 @@ fn drain_log(
         let retained = read.min(retained_limit.saturating_sub(bytes.len()));
         bytes.extend_from_slice(&buffer[..retained]);
         truncated |= retained < read;
+        if let Some(live) = live {
+            let mut live = live.lock().expect("log capture mutex poisoned");
+            live.bytes.clone_from(&bytes);
+            live.total_bytes = total_bytes;
+        }
     }
 
     // Lookahead determines whether the original prefix ends inside a secret;
@@ -616,6 +715,29 @@ mod redaction_tests {
     use super::*;
     use crate::worker_environment::WorkerSecrets;
     use std::collections::BTreeMap;
+
+    #[test]
+    fn live_snapshots_withhold_fragmented_secret_suffixes_and_stay_bounded() {
+        let secrets =
+            WorkerSecrets::new(BTreeMap::from([("TOKEN".into(), "abcdef".into())])).unwrap();
+        let redactor = Redactor::new(&secrets);
+        for length in 0..=14 {
+            let bytes = &b"xxabcdef tail!"[..length];
+            let live = LiveLog {
+                bytes: bytes.to_vec(),
+                total_bytes: length as u64,
+            };
+            assert!(!format!("{live:?}").contains("abcdef"));
+            let snapshot = live.snapshot(8, &redactor);
+            assert!(snapshot.bytes().len() <= 8);
+            if length < 8 {
+                assert!(!snapshot.bytes().contains(&b'a'));
+            } else {
+                assert!(!snapshot.bytes().windows(2).any(|bytes| bytes == b"ab"));
+            }
+            assert_eq!(snapshot.total_bytes(), length as u64);
+        }
+    }
 
     struct Fragmented<'a>(&'a [u8]);
 
