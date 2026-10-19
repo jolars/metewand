@@ -13,6 +13,7 @@ use metewand_core::{
     canonical::{CanonicalJsonError, CanonicalValue},
     identity::{IdentityError, canonical_identity_bytes, identify_record, record_id},
     materialization::{DatasetDerivationRecord, VerifiedSourceRecord, hex},
+    measurements::Measurement,
     public_schemas::PublicSchemaCatalogError,
     records::{
         ContentDigest, DatasetConfigurationRecord, IdentifiedRecord, ProblemContractResource,
@@ -64,6 +65,8 @@ pub struct DatasetMaterialization<'a> {
 /// A private dataset whose output hash is recorded separately from its recipe.
 #[derive(Debug)]
 pub struct MaterializedDataset {
+    /// Complete generation or transformation request, excluding worker startup.
+    pub materialization_time_ns: Measurement,
     directory: TempDir,
     pub derivation: IdentifiedRecord<DatasetDerivationRecord>,
     pub output_digest: ContentDigest,
@@ -208,12 +211,14 @@ pub fn materialize_dataset(
         .negotiated()
         .sdk()
         .map(|sdk| json!({"name": sdk.name(), "version": sdk.version()}));
+    let started = Instant::now();
     let response = session.materialize(
         text(source_dir)?,
         input.configuration.parameters.as_json().clone(),
         input.configuration.seed.value,
         text(directory.path())?,
     )?;
+    let materialization_time_ns = Measurement::elapsed(started.elapsed(), true);
     let materializer_output = session.shutdown()?;
     if hash_local_tree(source_dir)? != source_digest {
         return Err(MaterializationError::ChangedInput);
@@ -260,6 +265,7 @@ pub fn materialize_dataset(
     }
     let provenance = CanonicalValue::try_from(json!({
         "version":1,
+        "materialization_time_ns": materialization_time_ns,
         "derivation_id": derivation.id,
         "derivation": serde_json::from_slice::<serde_json::Value>(&canonical_identity_bytes(&derivation.record)?).expect("canonical identity JSON"),
         "output": {"tree_hash_version": LOCAL_TREE_HASH_VERSION,"sha256":hex(output_digest)},
@@ -274,6 +280,7 @@ pub fn materialize_dataset(
         "binary_validation": input.validator.as_ref().map(|hook| json!({"command_version":DATASET_VALIDATION_COMMAND_VERSION,"contract":hook.contract,"worker":record_id(hook.worker).expect("validated identity"),"status":"accepted"})),
     }))?;
     Ok(MaterializedDataset {
+        materialization_time_ns,
         directory,
         derivation,
         output_digest,

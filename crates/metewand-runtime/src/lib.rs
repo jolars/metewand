@@ -28,6 +28,8 @@ pub mod publication;
 mod redaction;
 pub mod repository;
 #[cfg(unix)]
+mod resource_accounting;
+#[cfg(unix)]
 pub mod run;
 pub mod run_store;
 pub mod source_acquisition;

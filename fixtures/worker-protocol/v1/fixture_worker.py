@@ -265,6 +265,24 @@ def _execute(
     answer = sum(values) + offset
     answer += int(os.environ.get("METEWAND_TEST_ANSWER_OFFSET", "0"))
 
+    resource_work = os.environ.get("METEWAND_TEST_RESOURCE_WORK")
+    if resource_work:
+        work = """
+import time
+payload = bytearray(16 * 1024 * 1024)
+for index in range(0, len(payload), 4096):
+    payload[index] = 1
+deadline = time.process_time() + 0.12
+while time.process_time() < deadline:
+    pass
+"""
+        if resource_work == "child":
+            import subprocess
+
+            subprocess.run([sys.executable, "-c", work], check=True)
+        else:
+            exec(work, {})
+
     result_dir = Path(_string(request["result_dir"], "result_dir"))
     result_dir.mkdir(parents=True, exist_ok=True)
     answer_value: int | str = answer

@@ -156,13 +156,141 @@
           "type": "integer",
           "const": 1
         },
-        "data": { "type": "object" }
+        "data": {
+          "type": "object",
+          "properties": {
+            "measurements": { "$ref": "#/$defs/execution_measurements" }
+          }
+        }
       },
       "required": [
         "tool_version",
         "wire_protocol_version",
         "execution_semantics_version",
         "data"
+      ],
+      "additionalProperties": false
+    },
+    "measurement": {
+      "description": "Executor-observed nanoseconds or bytes; partial values never claim complete accounting.",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "status": {
+              "const": "complete"
+            },
+            "value": {
+              "$ref": "#/$defs/safe_nonnegative_integer"
+            }
+          },
+          "required": [
+            "status",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "status": {
+              "const": "partial"
+            },
+            "value": {
+              "$ref": "#/$defs/safe_nonnegative_integer"
+            },
+            "reason": {
+              "enum": [
+                "interrupted",
+                "process_only"
+              ]
+            }
+          },
+          "required": [
+            "status",
+            "value",
+            "reason"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "status": {
+              "const": "unavailable"
+            },
+            "reason": {
+              "enum": [
+                "not_started",
+                "provided_dataset",
+                "cache_hit",
+                "unsupported",
+                "accounting_unavailable",
+                "out_of_range"
+              ]
+            }
+          },
+          "required": [
+            "status",
+            "reason"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "execution_measurements": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "materialization_time_ns": {
+          "$ref": "#/$defs/measurement"
+        },
+        "worker_startup_time_ns": {
+          "$ref": "#/$defs/measurement"
+        },
+        "evaluator_startup_time_ns": {
+          "$ref": "#/$defs/measurement"
+        },
+        "prepare_time_ns": {
+          "$ref": "#/$defs/measurement"
+        },
+        "execute_request_time_ns": {
+          "$ref": "#/$defs/measurement"
+        },
+        "timed_wall_time_ns": {
+          "$ref": "#/$defs/measurement"
+        },
+        "evaluation_time_ns": {
+          "$ref": "#/$defs/measurement"
+        },
+        "cpu_time_ns": {
+          "$ref": "#/$defs/measurement"
+        },
+        "peak_rss_bytes": {
+          "$ref": "#/$defs/measurement"
+        },
+        "cpu_time_scope": {
+          "const": "prepare_and_execute"
+        },
+        "peak_rss_scope": {
+          "const": "worker_lifetime_through_execute"
+        }
+      },
+      "required": [
+        "version",
+        "materialization_time_ns",
+        "worker_startup_time_ns",
+        "evaluator_startup_time_ns",
+        "prepare_time_ns",
+        "execute_request_time_ns",
+        "timed_wall_time_ns",
+        "evaluation_time_ns",
+        "cpu_time_ns",
+        "peak_rss_bytes",
+        "cpu_time_scope",
+        "peak_rss_scope"
       ],
       "additionalProperties": false
     }

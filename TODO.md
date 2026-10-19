@@ -253,7 +253,7 @@ artifacts](DESIGN.md#6-environments-execution-and-artifacts).
 - [x] Build minimal, allowlisted worker environments with fixed locale,
   timezone, umask, working directory, private home/temp/cache locations, and
   redacted secret channels.
-- [ ] Measure and record materialization, startup, prepare, execute request,
+- [x] Measure and record materialization, startup, prepare, execute request,
   timed wall, evaluation, CPU, and peak-memory fields with explicit missing
   or partial values.
 - [ ] Implement `cold_end_to_end`, `prepare_and_execute`, and `execute_only`

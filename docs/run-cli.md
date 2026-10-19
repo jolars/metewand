@@ -52,6 +52,12 @@ integer followed by `ms`, `s`, `min`, or `h`, with optional intervening whitespa
 The default is ten seconds per phase. These deadlines do not add a scientific
 budget or change the primary timing boundary.
 
+Published attempts and observations retain [phase and resource
+measurements](execution-measurements.md), including explicit missing values and
+partial elapsed time on failure. Linux CPU and peak-memory measurements cover
+the implementation process and are marked partial because they exclude its
+descendants.
+
 Generated datasets execute the materializer protocol before any measurements.
 Each dataset configuration is constructed once per run or recovered from a
 verified persistent cache mapping, validated against its output schema, and

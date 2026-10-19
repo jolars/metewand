@@ -784,6 +784,88 @@
       },
       "name": "datamonger-artifact-only",
       "schema": "datamonger-acquisition-response"
+    },
+    {
+      "name": "observation-with-explicit-measurement-states",
+      "schema": "observation",
+      "instance": {
+        "schema_version": 1,
+        "id": "mw1-observation-cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "slot_id": "mw1-observation-slot-dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "attempt_id": "mw1-attempt-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "result": {
+          "id": "mw1-artifact-ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+          "path": "result/result.json",
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        "metrics": {
+          "id": "mw1-artifact-1111111111111111111111111111111111111111111111111111111111111111",
+          "path": "metrics.json",
+          "sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+        },
+        "timing": {
+          "primary_time": "timed_wall_time",
+          "timed_wall_time_ns": 18342011,
+          "implementation_time_ns": 17000000,
+          "evaluation_time_ns": 150000,
+          "cpu_time_ns": null,
+          "peak_rss_bytes": null
+        },
+        "validity": {
+          "valid": true,
+          "completion": "reached"
+        },
+        "provenance": {
+          "tool_version": "0.1.0",
+          "wire_protocol_version": 1,
+          "execution_semantics_version": 1,
+          "data": {
+            "executor": "local",
+            "measurements": {
+              "version": 1,
+              "materialization_time_ns": {
+                "status": "unavailable",
+                "reason": "cache_hit"
+              },
+              "worker_startup_time_ns": {
+                "status": "complete",
+                "value": 42
+              },
+              "evaluator_startup_time_ns": {
+                "status": "complete",
+                "value": 42
+              },
+              "prepare_time_ns": {
+                "status": "complete",
+                "value": 42
+              },
+              "execute_request_time_ns": {
+                "status": "complete",
+                "value": 42
+              },
+              "timed_wall_time_ns": {
+                "status": "complete",
+                "value": 18342011
+              },
+              "evaluation_time_ns": {
+                "status": "complete",
+                "value": 150000
+              },
+              "cpu_time_ns": {
+                "status": "partial",
+                "reason": "process_only",
+                "value": 12
+              },
+              "peak_rss_bytes": {
+                "status": "unavailable",
+                "reason": "unsupported"
+              },
+              "cpu_time_scope": "prepare_and_execute",
+              "peak_rss_scope": "worker_lifetime_through_execute"
+            }
+          }
+        }
+      }
     }
   ],
   "invalid": [
@@ -1562,6 +1644,413 @@
       },
       "name": "artifact-claims-canonical-digest",
       "schema": "datamonger-acquisition-response"
+    },
+    {
+      "name": "partial-measurement-without-reason",
+      "schema": "observation",
+      "instance": {
+        "schema_version": 1,
+        "id": "mw1-observation-cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "slot_id": "mw1-observation-slot-dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "attempt_id": "mw1-attempt-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "result": {
+          "id": "mw1-artifact-ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+          "path": "result/result.json",
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        "metrics": {
+          "id": "mw1-artifact-1111111111111111111111111111111111111111111111111111111111111111",
+          "path": "metrics.json",
+          "sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+        },
+        "timing": {
+          "primary_time": "timed_wall_time",
+          "timed_wall_time_ns": 18342011,
+          "implementation_time_ns": 17000000,
+          "evaluation_time_ns": 150000,
+          "cpu_time_ns": null,
+          "peak_rss_bytes": null
+        },
+        "validity": {
+          "valid": true,
+          "completion": "reached"
+        },
+        "provenance": {
+          "tool_version": "0.1.0",
+          "wire_protocol_version": 1,
+          "execution_semantics_version": 1,
+          "data": {
+            "executor": "local",
+            "measurements": {
+              "version": 1,
+              "materialization_time_ns": {
+                "status": "unavailable",
+                "reason": "cache_hit"
+              },
+              "worker_startup_time_ns": {
+                "status": "complete",
+                "value": 42
+              },
+              "evaluator_startup_time_ns": {
+                "status": "complete",
+                "value": 42
+              },
+              "prepare_time_ns": {
+                "status": "complete",
+                "value": 42
+              },
+              "execute_request_time_ns": {
+                "status": "complete",
+                "value": 42
+              },
+              "timed_wall_time_ns": {
+                "status": "complete",
+                "value": 18342011
+              },
+              "evaluation_time_ns": {
+                "status": "complete",
+                "value": 150000
+              },
+              "cpu_time_ns": {
+                "status": "partial",
+                "value": 12
+              },
+              "peak_rss_bytes": {
+                "status": "unavailable",
+                "reason": "unsupported"
+              },
+              "cpu_time_scope": "prepare_and_execute",
+              "peak_rss_scope": "worker_lifetime_through_execute"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "missing-measurement-with-invented-value",
+      "schema": "observation",
+      "instance": {
+        "schema_version": 1,
+        "id": "mw1-observation-cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "slot_id": "mw1-observation-slot-dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "attempt_id": "mw1-attempt-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "result": {
+          "id": "mw1-artifact-ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+          "path": "result/result.json",
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        "metrics": {
+          "id": "mw1-artifact-1111111111111111111111111111111111111111111111111111111111111111",
+          "path": "metrics.json",
+          "sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+        },
+        "timing": {
+          "primary_time": "timed_wall_time",
+          "timed_wall_time_ns": 18342011,
+          "implementation_time_ns": 17000000,
+          "evaluation_time_ns": 150000,
+          "cpu_time_ns": null,
+          "peak_rss_bytes": null
+        },
+        "validity": {
+          "valid": true,
+          "completion": "reached"
+        },
+        "provenance": {
+          "tool_version": "0.1.0",
+          "wire_protocol_version": 1,
+          "execution_semantics_version": 1,
+          "data": {
+            "executor": "local",
+            "measurements": {
+              "version": 1,
+              "materialization_time_ns": {
+                "status": "unavailable",
+                "reason": "cache_hit",
+                "value": 0
+              },
+              "worker_startup_time_ns": {
+                "status": "complete",
+                "value": 42
+              },
+              "evaluator_startup_time_ns": {
+                "status": "complete",
+                "value": 42
+              },
+              "prepare_time_ns": {
+                "status": "complete",
+                "value": 42
+              },
+              "execute_request_time_ns": {
+                "status": "complete",
+                "value": 42
+              },
+              "timed_wall_time_ns": {
+                "status": "complete",
+                "value": 18342011
+              },
+              "evaluation_time_ns": {
+                "status": "complete",
+                "value": 150000
+              },
+              "cpu_time_ns": {
+                "status": "partial",
+                "reason": "process_only",
+                "value": 12
+              },
+              "peak_rss_bytes": {
+                "status": "unavailable",
+                "reason": "unsupported"
+              },
+              "cpu_time_scope": "prepare_and_execute",
+              "peak_rss_scope": "worker_lifetime_through_execute"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "measurement-with-negative-duration",
+      "schema": "observation",
+      "instance": {
+        "schema_version": 1,
+        "id": "mw1-observation-cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "slot_id": "mw1-observation-slot-dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "attempt_id": "mw1-attempt-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "result": {
+          "id": "mw1-artifact-ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+          "path": "result/result.json",
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        "metrics": {
+          "id": "mw1-artifact-1111111111111111111111111111111111111111111111111111111111111111",
+          "path": "metrics.json",
+          "sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+        },
+        "timing": {
+          "primary_time": "timed_wall_time",
+          "timed_wall_time_ns": 18342011,
+          "implementation_time_ns": 17000000,
+          "evaluation_time_ns": 150000,
+          "cpu_time_ns": null,
+          "peak_rss_bytes": null
+        },
+        "validity": {
+          "valid": true,
+          "completion": "reached"
+        },
+        "provenance": {
+          "tool_version": "0.1.0",
+          "wire_protocol_version": 1,
+          "execution_semantics_version": 1,
+          "data": {
+            "executor": "local",
+            "measurements": {
+              "version": 1,
+              "materialization_time_ns": {
+                "status": "unavailable",
+                "reason": "cache_hit"
+              },
+              "worker_startup_time_ns": {
+                "status": "complete",
+                "value": 42
+              },
+              "evaluator_startup_time_ns": {
+                "status": "complete",
+                "value": 42
+              },
+              "prepare_time_ns": {
+                "status": "complete",
+                "value": -1
+              },
+              "execute_request_time_ns": {
+                "status": "complete",
+                "value": 42
+              },
+              "timed_wall_time_ns": {
+                "status": "complete",
+                "value": 18342011
+              },
+              "evaluation_time_ns": {
+                "status": "complete",
+                "value": 150000
+              },
+              "cpu_time_ns": {
+                "status": "partial",
+                "reason": "process_only",
+                "value": 12
+              },
+              "peak_rss_bytes": {
+                "status": "unavailable",
+                "reason": "unsupported"
+              },
+              "cpu_time_scope": "prepare_and_execute",
+              "peak_rss_scope": "worker_lifetime_through_execute"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "complete-measurement-with-partial-reason",
+      "schema": "observation",
+      "instance": {
+        "schema_version": 1,
+        "id": "mw1-observation-cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "slot_id": "mw1-observation-slot-dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "attempt_id": "mw1-attempt-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "result": {
+          "id": "mw1-artifact-ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+          "path": "result/result.json",
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        "metrics": {
+          "id": "mw1-artifact-1111111111111111111111111111111111111111111111111111111111111111",
+          "path": "metrics.json",
+          "sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+        },
+        "timing": {
+          "primary_time": "timed_wall_time",
+          "timed_wall_time_ns": 18342011,
+          "implementation_time_ns": 17000000,
+          "evaluation_time_ns": 150000,
+          "cpu_time_ns": null,
+          "peak_rss_bytes": null
+        },
+        "validity": {
+          "valid": true,
+          "completion": "reached"
+        },
+        "provenance": {
+          "tool_version": "0.1.0",
+          "wire_protocol_version": 1,
+          "execution_semantics_version": 1,
+          "data": {
+            "executor": "local",
+            "measurements": {
+              "version": 1,
+              "materialization_time_ns": {
+                "status": "unavailable",
+                "reason": "cache_hit"
+              },
+              "worker_startup_time_ns": {
+                "status": "complete",
+                "value": 42
+              },
+              "evaluator_startup_time_ns": {
+                "status": "complete",
+                "value": 42
+              },
+              "prepare_time_ns": {
+                "status": "complete",
+                "value": 42,
+                "reason": "process_only"
+              },
+              "execute_request_time_ns": {
+                "status": "complete",
+                "value": 42
+              },
+              "timed_wall_time_ns": {
+                "status": "complete",
+                "value": 18342011
+              },
+              "evaluation_time_ns": {
+                "status": "complete",
+                "value": 150000
+              },
+              "cpu_time_ns": {
+                "status": "partial",
+                "reason": "process_only",
+                "value": 12
+              },
+              "peak_rss_bytes": {
+                "status": "unavailable",
+                "reason": "unsupported"
+              },
+              "cpu_time_scope": "prepare_and_execute",
+              "peak_rss_scope": "worker_lifetime_through_execute"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "measurements-with-missing-phase",
+      "schema": "observation",
+      "instance": {
+        "schema_version": 1,
+        "id": "mw1-observation-cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "slot_id": "mw1-observation-slot-dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "attempt_id": "mw1-attempt-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "result": {
+          "id": "mw1-artifact-ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+          "path": "result/result.json",
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        "metrics": {
+          "id": "mw1-artifact-1111111111111111111111111111111111111111111111111111111111111111",
+          "path": "metrics.json",
+          "sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+        },
+        "timing": {
+          "primary_time": "timed_wall_time",
+          "timed_wall_time_ns": 18342011,
+          "implementation_time_ns": 17000000,
+          "evaluation_time_ns": 150000,
+          "cpu_time_ns": null,
+          "peak_rss_bytes": null
+        },
+        "validity": {
+          "valid": true,
+          "completion": "reached"
+        },
+        "provenance": {
+          "tool_version": "0.1.0",
+          "wire_protocol_version": 1,
+          "execution_semantics_version": 1,
+          "data": {
+            "executor": "local",
+            "measurements": {
+              "version": 1,
+              "materialization_time_ns": {
+                "status": "unavailable",
+                "reason": "cache_hit"
+              },
+              "worker_startup_time_ns": {
+                "status": "complete",
+                "value": 42
+              },
+              "evaluator_startup_time_ns": {
+                "status": "complete",
+                "value": 42
+              },
+              "prepare_time_ns": {
+                "status": "complete",
+                "value": 42
+              },
+              "execute_request_time_ns": {
+                "status": "complete",
+                "value": 42
+              },
+              "timed_wall_time_ns": {
+                "status": "complete",
+                "value": 18342011
+              },
+              "cpu_time_ns": {
+                "status": "partial",
+                "reason": "process_only",
+                "value": 12
+              },
+              "peak_rss_bytes": {
+                "status": "unavailable",
+                "reason": "unsupported"
+              },
+              "cpu_time_scope": "prepare_and_execute",
+              "peak_rss_scope": "worker_lifetime_through_execute"
+            }
+          }
+        }
+      }
     }
   ]
 }

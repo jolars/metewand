@@ -135,6 +135,7 @@ pub fn finalize_fixed_dataset(
         execution_semantics_version: EXECUTION_SEMANTICS_VERSION,
         data: CanonicalValue::try_from(json!({
             "context": request.provenance_data.as_json(),
+            "measurements": result.measurements,
             "execution": result.execution_provenance,
             "result_manifest": Path::new("result").join(result.validated_result().manifest_path()),
             "implementation_statistics": result.statistics,
@@ -205,8 +206,12 @@ pub fn finalize_fixed_dataset(
             timed_wall_time: result.timed_wall_time,
             implementation_time: result.implementation_time_ns.map(Duration::from_nanos),
             evaluation_time: result.evaluation_time,
-            cpu_time: None,
-            peak_rss_bytes: None,
+            cpu_time: result
+                .measurements
+                .cpu_time_ns
+                .complete_value()
+                .map(Duration::from_nanos),
+            peak_rss_bytes: result.measurements.peak_rss_bytes.complete_value(),
         },
         completion: result.completion,
         provenance,

@@ -9,6 +9,7 @@ use std::{
 
 use metewand_core::{
     canonical::CanonicalValue,
+    measurements::{ExecutionMeasurements, Measurement},
     public_schemas::PublicSchemaCatalogError,
     records::{AttemptDiagnostic, CompletionStatus, ContentDigest, ResolvedLaunchRecord},
     schema::SchemaCatalog,
@@ -69,6 +70,8 @@ pub struct FixedDatasetRun<'a> {
 /// Validated values and timing from a run that has not been durably accepted.
 #[derive(Debug)]
 pub struct FixedDatasetResult {
+    /// Complete, partial, or unavailable phase and resource observations.
+    pub measurements: ExecutionMeasurements,
     /// Canonical result data validated against the selected problem schema.
     pub result: CanonicalValue,
     /// Independent evaluator metrics validated against the metric schema.
@@ -186,7 +189,8 @@ impl FixedDatasetFailureKind {
 /// not become `RunAttemptOutcome::Accepted` until durable publication succeeds.
 #[must_use]
 pub fn run_fixed_dataset_outcome(request: FixedDatasetRun<'_>) -> FixedDatasetRunOutcome {
-    match run_fixed_dataset(request) {
+    let mut measurements = ExecutionMeasurements::default();
+    match run_checked(request, None, &mut measurements) {
         Ok(result) => FixedDatasetRunOutcome::Validated(Box::new(result)),
         Err(error) => {
             let kind = error.failure_kind();
@@ -195,7 +199,12 @@ pub fn run_fixed_dataset_outcome(request: FixedDatasetRun<'_>) -> FixedDatasetRu
                 diagnostic: AttemptDiagnostic {
                     code: kind.code().to_owned(),
                     message: error.to_string(),
-                    details: None,
+                    details: Some(
+                        CanonicalValue::try_from(serde_json::json!({
+                            "measurements": measurements,
+                        }))
+                        .expect("measurements use canonical safe integers"),
+                    ),
                 },
             }
         }
@@ -220,19 +229,21 @@ pub fn run_fixed_dataset_outcome(request: FixedDatasetRun<'_>) -> FixedDatasetRu
 pub fn run_fixed_dataset(
     request: FixedDatasetRun<'_>,
 ) -> Result<FixedDatasetResult, FixedDatasetRunError> {
-    run_checked(request, None)
+    run_checked(request, None, &mut ExecutionMeasurements::default())
 }
 
 pub(crate) fn run_fixed_dataset_in_view(
     request: FixedDatasetRun<'_>,
     view: &DatasetView,
+    measurements: &mut ExecutionMeasurements,
 ) -> Result<FixedDatasetResult, FixedDatasetRunError> {
-    run_checked(request, Some(view))
+    run_checked(request, Some(view), measurements)
 }
 
 fn run_checked(
     request: FixedDatasetRun<'_>,
     view: Option<&DatasetView>,
+    measurements: &mut ExecutionMeasurements,
 ) -> Result<FixedDatasetResult, FixedDatasetRunError> {
     if !request.dataset_dir.is_absolute() || !request.private_root.is_absolute() {
         return Err(FixedDatasetRunError::NonAbsolutePath);
@@ -248,7 +259,7 @@ fn run_checked(
         view,
     };
     integrity.verify("attempt start")?;
-    let result = run_workers(request, &integrity);
+    let result = run_workers(request, &integrity, measurements);
     // Failed exchanges drop and terminate both sessions before this last check.
     let verified = integrity.verify("attempt finalization");
     match result {
@@ -265,6 +276,7 @@ fn run_checked(
 fn run_workers(
     request: FixedDatasetRun<'_>,
     integrity: &DatasetIntegrity<'_>,
+    measurements: &mut ExecutionMeasurements,
 ) -> Result<FixedDatasetResult, FixedDatasetRunError> {
     let started_at = SystemTime::now();
     let dataset_dir = path_string(request.dataset_dir)?;
@@ -277,37 +289,41 @@ fn run_workers(
     let metrics_path_string = path_string(&metrics_path)?;
 
     let mut implementation = integrity.operation("implementation hello", || {
-        let implementation_process = launch_trusted_local_worker(
-            request.implementation_launch,
-            request.private_root,
-            request.log_limits,
-        )
-        .map_err(|source| FixedDatasetRunError::ImplementationLaunch { source })?;
-        WorkerSession::connect(
-            implementation_process,
-            WorkerRole::Implementation,
-            request.implementation_identity.clone(),
-            &[Capability::OneShot],
-            request.timeouts,
-        )
-        .map_err(|source| FixedDatasetRunError::Implementation { source })
+        measure(&mut measurements.worker_startup_time_ns, || {
+            let implementation_process = launch_trusted_local_worker(
+                request.implementation_launch,
+                request.private_root,
+                request.log_limits,
+            )
+            .map_err(|source| FixedDatasetRunError::ImplementationLaunch { source })?;
+            WorkerSession::connect(
+                implementation_process,
+                WorkerRole::Implementation,
+                request.implementation_identity.clone(),
+                &[Capability::OneShot],
+                request.timeouts,
+            )
+            .map_err(|source| FixedDatasetRunError::Implementation { source })
+        })
     })?;
 
     let mut evaluator = integrity.operation("evaluator hello", || {
-        let evaluator_process = launch_trusted_local_worker(
-            request.evaluator_launch,
-            request.private_root,
-            request.log_limits,
-        )
-        .map_err(|source| FixedDatasetRunError::EvaluatorLaunch { source })?;
-        WorkerSession::connect(
-            evaluator_process,
-            WorkerRole::ProblemEvaluator,
-            request.evaluator_identity.clone(),
-            &[],
-            request.timeouts,
-        )
-        .map_err(|source| FixedDatasetRunError::Evaluator { source })
+        measure(&mut measurements.evaluator_startup_time_ns, || {
+            let evaluator_process = launch_trusted_local_worker(
+                request.evaluator_launch,
+                request.private_root,
+                request.log_limits,
+            )
+            .map_err(|source| FixedDatasetRunError::EvaluatorLaunch { source })?;
+            WorkerSession::connect(
+                evaluator_process,
+                WorkerRole::ProblemEvaluator,
+                request.evaluator_identity.clone(),
+                &[],
+                request.timeouts,
+            )
+            .map_err(|source| FixedDatasetRunError::Evaluator { source })
+        })
     })?;
 
     let execution_provenance = serde_json::json!({
@@ -323,6 +339,7 @@ fn run_workers(
         "implementation_seed": request.implementation_seed,
         "timing_scope": "prepare_and_execute",
         "timing_dataset_integrity": "included_between_prepare_and_execute",
+        "timing_resource_accounting": "included_between_prepare_and_execute",
         "timing_excluded_phases": [
             "worker_startup", "result_validation",
             "evaluation", "metrics_validation", "shutdown",
@@ -339,24 +356,37 @@ fn run_workers(
         "controls": {"network": "unsupported", "filesystem_isolation": "unsupported", "process_tree_accounting": "unsupported"},
     });
 
-    let started = integrity.operation("implementation prepare", || {
+    let (started, baseline) = integrity.operation("implementation prepare", || {
+        let baseline = implementation.process_usage();
         let started = Instant::now();
-        implementation
-            .prepare(
-                dataset_dir.clone(),
-                request.problem_contract_id,
-                request.problem_parameters.clone(),
-                request.implementation_parameters.clone(),
-                request.implementation_seed,
-            )
-            .map(|_| started)
-            .map_err(|source| FixedDatasetRunError::Implementation { source })
+        let prepared = measure(&mut measurements.prepare_time_ns, || {
+            implementation
+                .prepare(
+                    dataset_dir.clone(),
+                    request.problem_contract_id,
+                    request.problem_parameters.clone(),
+                    request.implementation_parameters.clone(),
+                    request.implementation_seed,
+                )
+                .map_err(|source| FixedDatasetRunError::Implementation { source })
+        });
+        measurements.timed_wall_time_ns = Measurement::elapsed(started.elapsed(), false);
+        let (cpu, memory) = implementation.process_usage().since(baseline);
+        measurements.cpu_time_ns = cpu;
+        measurements.peak_rss_bytes = memory;
+        prepared.map(|_| (started, baseline))
     })?;
     let (executed, timed_wall_time) = integrity.operation("implementation execute", || {
-        let executed = implementation
-            .execute(result_path.clone())
-            .map_err(|source| FixedDatasetRunError::Implementation { source });
+        let executed = measure(&mut measurements.execute_request_time_ns, || {
+            implementation
+                .execute(result_path.clone())
+                .map_err(|source| FixedDatasetRunError::Implementation { source })
+        });
         let timed_wall_time = started.elapsed();
+        measurements.timed_wall_time_ns = Measurement::elapsed(timed_wall_time, executed.is_ok());
+        let (cpu, memory) = implementation.process_usage().since(baseline);
+        measurements.cpu_time_ns = cpu;
+        measurements.peak_rss_bytes = memory;
         executed.map(|executed| (executed, timed_wall_time))
     })?;
 
@@ -365,8 +395,9 @@ fn run_workers(
         .map_err(|source| FixedDatasetRunError::InvalidResult { source })?;
     let result_tree_hash = hash_local_tree(result_dir.path())
         .map_err(|source| FixedDatasetRunError::ResultTreeHash { source })?;
-    let (evaluated, evaluation_time) = integrity.timed_operation("evaluator evaluate", || {
-        evaluator
+    let (evaluated, evaluation_time) = integrity.operation("evaluator evaluate", || {
+        let started = Instant::now();
+        let evaluated = evaluator
             .evaluate(
                 dataset_dir,
                 request.problem_contract_id,
@@ -374,7 +405,10 @@ fn run_workers(
                 result_path,
                 metrics_path_string,
             )
-            .map_err(|source| FixedDatasetRunError::Evaluator { source })
+            .map_err(|source| FixedDatasetRunError::Evaluator { source });
+        let elapsed = started.elapsed();
+        measurements.evaluation_time_ns = Measurement::elapsed(elapsed, evaluated.is_ok());
+        evaluated.map(|evaluated| (evaluated, elapsed))
     })?;
     verify_result_tree(result_dir.path(), result_tree_hash)?;
     let metrics = validator
@@ -409,6 +443,7 @@ fn run_workers(
     };
 
     Ok(FixedDatasetResult {
+        measurements: measurements.clone(),
         result: result.data().clone(),
         metrics: metrics.data().clone(),
         completion,
@@ -459,19 +494,16 @@ impl DatasetIntegrity<'_> {
         self.verify(operation)?;
         result
     }
+}
 
-    fn timed_operation<T>(
-        &self,
-        operation: &'static str,
-        action: impl FnOnce() -> Result<T, FixedDatasetRunError>,
-    ) -> Result<(T, Duration), FixedDatasetRunError> {
-        self.operation(operation, || {
-            let started = Instant::now();
-            let result = action();
-            let elapsed = started.elapsed();
-            result.map(|value| (value, elapsed))
-        })
-    }
+fn measure<T, E>(
+    measurement: &mut Measurement,
+    action: impl FnOnce() -> Result<T, E>,
+) -> Result<T, E> {
+    let started = Instant::now();
+    let result = action();
+    *measurement = Measurement::elapsed(started.elapsed(), result.is_ok());
+    result
 }
 
 fn worker_provenance(launch: &ResolvedLaunchRecord, session: &WorkerSession) -> Value {

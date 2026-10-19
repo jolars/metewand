@@ -5,6 +5,7 @@
   "title": "Dataset construction receipt",
   "type": "object",
   "properties": {
+    "materialization_time_ns": { "$ref": "common.schema.json#/$defs/measurement" },
     "version": {
       "const": 1
     },

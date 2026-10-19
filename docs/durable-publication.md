@@ -67,6 +67,8 @@ a trailing newline and are checked against the embedded public schemas before
 publication. Timing preserves executor-observed wall time, optional worker
 implementation time, and independent evaluator time as separate nanosecond
 fields. Unavailable process-tree CPU time and peak RSS are explicit nulls.
+Partial local resource values and individual phase durations are retained in
+`provenance.data.measurements`; see [Execution measurements](execution-measurements.md).
 Wall-clock attempt timestamps use UTC RFC 3339 with nanosecond precision and do
 not contribute to attempt identity.
 
@@ -86,6 +88,8 @@ Their provenance data contains:
   implementation seed, dataset path and tree digest, selected result and metric
   schema paths, timing scope, and unsupported isolation and accounting controls;
 - `context`: caller-observed repository, build, environment, and host evidence;
+- `measurements`: typed phase durations and resource values with complete,
+  partial, or unavailable states;
 - `result_manifest` and `implementation_statistics`: the original result manifest
   location and worker-reported diagnostic statistics; and
 - `logs`: retained byte counts, total drained byte counts, and truncation flags

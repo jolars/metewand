@@ -30,8 +30,10 @@ runtime hashes the complete result tree after validation and checks the hash
 again after evaluation and worker shutdown. A change fails the run as an
 invalid result, so returned metrics cannot silently describe changed result
 files. The function returns those canonical values, the orchestrator's timed
-wall duration, and implementation diagnostics. Role-specific launch and session
-errors and separate result and metric validation errors identify a failed
+wall duration, and implementation diagnostics. It also returns typed phase and
+resource measurements with explicit completeness and missing reasons; see
+[Execution measurements](execution-measurements.md). Role-specific launch and
+session errors and separate result and metric validation errors identify a failed
 boundary. Failed runs remove temporary output immediately. A successful result
 owns its private result and metric directories, including the validated result
 manifest and declared files, until the caller drops it. The caller must keep

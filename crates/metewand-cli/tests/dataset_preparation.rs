@@ -149,6 +149,18 @@ fn shared_materialization_and_private_conversions_have_distinct_timing_boundarie
         let record = document(&directory.join("attempt.json"));
         let context = &record["provenance"]["data"]["context"];
         let execution = &record["provenance"]["data"]["execution"];
+        let measurements = &record["provenance"]["data"]["measurements"];
+        assert_eq!(
+            measurements["materialization_time_ns"]["status"],
+            "complete"
+        );
+        assert!(
+            Duration::from_nanos(
+                measurements["materialization_time_ns"]["value"]
+                    .as_u64()
+                    .unwrap()
+            ) >= duration(construction)
+        );
         assert!(context["dataset_instance"]["artifact"].is_string());
         assert!(context["problem_instance"]["dataset"].is_string());
         assert_eq!(
@@ -204,6 +216,21 @@ fn shared_materialization_and_private_conversions_have_distinct_timing_boundarie
             observation["timing"]["timed_wall_time_ns"]
                 .as_u64()
                 .unwrap(),
+        );
+        for (field, event) in [
+            ("prepare_time_ns", prepare),
+            ("execute_request_time_ns", execute),
+            ("evaluation_time_ns", evaluation),
+        ] {
+            assert_eq!(measurements[field]["status"], "complete");
+            assert!(
+                Duration::from_nanos(measurements[field]["value"].as_u64().unwrap())
+                    >= duration(event)
+            );
+        }
+        assert_eq!(
+            measurements["timed_wall_time_ns"]["value"],
+            observation["timing"]["timed_wall_time_ns"]
         );
         assert!(
             timed >= duration(prepare) + duration(execute),

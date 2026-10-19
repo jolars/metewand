@@ -131,6 +131,8 @@ identities, and provenance. Try the [generated dataset example](examples/generat
 The [fixed-dataset runtime path](docs/fixed-dataset-run.md) launches a resolved
 implementation and independent evaluator, measures `prepare_and_execute`, and
 returns validated result and metric values from private temporary output. Its
+[phase and resource measurements](docs/execution-measurements.md) retain explicit
+missing and partial values, including elapsed time from failed exchanges. Its
 [durable publication path](docs/durable-publication.md) finalizes a
 self-describing observation before the enclosing attempt, retaining provenance,
 scoped logs, and hash-complete completion manifests in separate directories.

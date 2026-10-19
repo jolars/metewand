@@ -13,6 +13,7 @@ use metewand_core::{
     EXECUTION_SEMANTICS_VERSION,
     canonical::CanonicalJsonError,
     identity::IdentityError,
+    measurements::ExecutionMeasurements,
     planning::LogicalPlan,
     public_schemas::PublicSchemaCatalogError,
     records::{AttemptDiagnostic, ProvenanceRecord, RunAttemptOutcome, RunAttemptRecord},
@@ -193,6 +194,10 @@ fn execute(
     output_root: &Path,
 ) -> Result<RunAttemptOutput, RunError> {
     let started_at = SystemTime::now();
+    let mut measurements = ExecutionMeasurements {
+        materialization_time_ns: candidate.dataset.materialization_time_ns,
+        ..ExecutionMeasurements::default()
+    };
     if let Err(error) = candidate.verify() {
         return failed_attempt(
             measurement,
@@ -200,6 +205,7 @@ fn execute(
             started_at,
             input_change_code(&error),
             error.to_string(),
+            &measurements,
         );
     }
     let dataset_view = match candidate.dataset.artifact.private_view(private_root) {
@@ -211,6 +217,7 @@ fn execute(
                 started_at,
                 "dataset_mutation",
                 error.to_string(),
+                &measurements,
             );
         }
     };
@@ -233,6 +240,7 @@ fn execute(
             log_limits: WorkerLogLimits::new(64 * 1024, 64 * 1024),
         },
         &dataset_view,
+        &mut measurements,
     );
     let inputs_verified = candidate.verify();
     if let Err(error) = inputs_verified
@@ -244,6 +252,7 @@ fn execute(
             started_at,
             input_change_code(&error),
             error.to_string(),
+            &measurements,
         );
     }
     let result = match result {
@@ -255,6 +264,7 @@ fn execute(
                 started_at,
                 error.failure_kind().code(),
                 error.to_string(),
+                &measurements,
             );
         }
     };
@@ -305,6 +315,7 @@ fn failed_attempt(
     started_at: SystemTime,
     code: &str,
     message: String,
+    measurements: &ExecutionMeasurements,
 ) -> Result<RunAttemptOutput, RunError> {
     let diagnostic = RunDiagnostic {
         code: code.to_owned(),
@@ -330,7 +341,7 @@ fn failed_attempt(
                 wire_protocol_version: metewand_protocol::WIRE_PROTOCOL_VERSION,
                 execution_semantics_version: EXECUTION_SEMANTICS_VERSION,
                 data: canonical(
-                    json!({"context": measurement.provenance.as_json(), "logs_available": false}),
+                    json!({"context": measurement.provenance.as_json(), "logs_available": false, "measurements": measurements}),
                 )?,
             },
         },

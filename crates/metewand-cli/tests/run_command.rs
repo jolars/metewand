@@ -120,6 +120,35 @@ fn run_streams_events_and_publishes_a_self_describing_attempt() {
     verify_finalized_directory(&attempt_dir).unwrap();
     verify_finalized_directory(&observation_dir).unwrap();
     let provenance = document(&attempt_dir.join("attempt.json"));
+    let observation = document(&observation_dir.join("observation.json"));
+    let measured = &provenance["provenance"]["data"]["measurements"];
+    assert_eq!(*measured, observation["provenance"]["data"]["measurements"]);
+    assert_eq!(measured["version"], 1);
+    assert_eq!(
+        measured["materialization_time_ns"]["reason"],
+        "provided_dataset"
+    );
+    for phase in [
+        "worker_startup_time_ns",
+        "evaluator_startup_time_ns",
+        "prepare_time_ns",
+        "execute_request_time_ns",
+        "timed_wall_time_ns",
+        "evaluation_time_ns",
+    ] {
+        assert_eq!(measured[phase]["status"], "complete");
+        assert!(measured[phase]["value"].as_u64().unwrap() > 0);
+    }
+    assert_eq!(
+        measured["timed_wall_time_ns"]["value"],
+        observation["timing"]["timed_wall_time_ns"]
+    );
+    assert_eq!(
+        measured["evaluation_time_ns"]["value"],
+        observation["timing"]["evaluation_time_ns"]
+    );
+    assert!(observation["timing"]["cpu_time_ns"].is_null());
+    assert!(observation["timing"]["peak_rss_bytes"].is_null());
     for role in ["implementation", "evaluator"] {
         let realized = &provenance["provenance"]["data"]["execution"][role]["worker_environment"];
         public_schema_catalog()
@@ -269,6 +298,13 @@ fn worker_crashes_remain_typed_failed_attempts_and_exit_unsuccessfully() {
         document(&path.join("attempt.json"))["outcome"]["diagnostic"]["code"],
         "implementation_crash"
     );
+    let record = document(&path.join("attempt.json"));
+    let measured = &record["provenance"]["data"]["measurements"];
+    assert_eq!(measured["worker_startup_time_ns"]["status"], "complete");
+    assert_eq!(measured["prepare_time_ns"]["status"], "complete");
+    assert_eq!(measured["execute_request_time_ns"]["status"], "partial");
+    assert_eq!(measured["timed_wall_time_ns"]["status"], "partial");
+    assert_eq!(measured["evaluation_time_ns"]["reason"], "not_started");
     assert!(!root.path().join("run/observations").exists());
 }
 
@@ -974,6 +1010,9 @@ fn generated_datasets_record_derivation_and_share_materialization() {
         let provenance = document(&path.join("attempt.json"));
         let materialization =
             &provenance["provenance"]["data"]["context"]["dataset_materialization"];
+        let measured = &provenance["provenance"]["data"]["measurements"]["materialization_time_ns"];
+        assert_eq!(measured["status"], "complete");
+        assert_eq!(*measured, materialization["materialization_time_ns"]);
         assert!(
             materialization["derivation_id"]
                 .as_str()
@@ -1058,6 +1097,15 @@ fn persistent_cache_reuses_constructions_and_assigns_a_private_view_to_each_atte
             artifacts.push(
                 record["provenance"]["data"]["context"]["dataset_instance"]["artifact"].clone(),
             );
+            let measured = &record["provenance"]["data"]["measurements"]["materialization_time_ns"];
+            if destination == "first" {
+                assert_eq!(measured["status"], "complete");
+            } else {
+                assert_eq!(
+                    measured,
+                    &serde_json::json!({"status": "unavailable", "reason": "cache_hit"})
+                );
+            }
         }
     }
     assert_eq!(fs::read_to_string(&builds).unwrap(), "1");

@@ -18,6 +18,7 @@ use metewand_core::{
         DatasetDefinition, Enforcement, EnvironmentDefinition, InterpretedRunner, PrimaryTime,
         ProtocolTransport, RepositoryPath, RunOrder, TimingScope, WorkerDefinition,
     },
+    measurements::{Measurement, MissingReason},
     planning::{
         DatasetConfigurationDefinition, LogicalCandidatePlan, LogicalPlan,
         identify_builtin_unit_dataset_definition,
@@ -96,6 +97,7 @@ pub(super) struct Snapshot {
 }
 
 pub(super) struct DatasetSnapshot {
+    pub materialization_time_ns: Measurement,
     pub artifact: StoredArtifact,
     original: Option<Snapshot>,
 }
@@ -359,6 +361,9 @@ pub(super) fn resolve(
                     let artifact = store.import_tree(snapshot.directory.path(), snapshot.digest)?;
                     (
                         Arc::new(DatasetSnapshot {
+                            materialization_time_ns: Measurement::unavailable(
+                                MissingReason::ProvidedDataset,
+                            ),
                             artifact,
                             original: Some(snapshot),
                         }),
@@ -386,7 +391,7 @@ pub(super) fn resolve(
                         source.as_ref(),
                         &materializer.record,
                     )?;
-                    let (artifact, provenance) =
+                    let (artifact, provenance, materialization_time_ns) =
                         if let Some(cached) = store.lookup_dataset(&derivation)? {
                             WorkerOutputValidator::new(&repository.schemas)?
                                 .validate_materialized_dataset(
@@ -397,7 +402,11 @@ pub(super) fn resolve(
                                     ),
                                     definition.output_schema.as_path(),
                                 )?;
-                            (cached.artifact, cached.provenance)
+                            (
+                                cached.artifact,
+                                cached.provenance,
+                                Measurement::unavailable(MissingReason::CacheHit),
+                            )
                         } else {
                             let materialized = materialize_dataset(DatasetMaterialization {
                                 configuration: &candidate.dataset_configuration.record,
@@ -412,11 +421,16 @@ pub(super) fn resolve(
                                 log_limits: WorkerLogLimits::new(64 * 1024, 64 * 1024),
                             })?;
                             let artifact = store.publish_dataset(&materialized)?;
-                            (artifact, materialized.provenance.clone())
+                            (
+                                artifact,
+                                materialized.provenance.clone(),
+                                materialized.materialization_time_ns,
+                            )
                         };
                     materializer.verify()?;
                     (
                         Arc::new(DatasetSnapshot {
+                            materialization_time_ns,
                             artifact,
                             original: None,
                         }),

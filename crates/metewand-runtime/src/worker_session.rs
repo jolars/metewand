@@ -162,6 +162,13 @@ impl WorkerSession {
             .and_then(PosixWorkerProcess::environment)
     }
 
+    pub(crate) fn process_usage(&self) -> crate::resource_accounting::ProcessUsage {
+        self.process.as_ref().map_or_else(
+            crate::resource_accounting::ProcessUsage::default,
+            |process| crate::resource_accounting::ProcessUsage::observe(process.id()),
+        )
+    }
+
     /// Requests one dataset artifact from a materializer worker.
     ///
     /// # Errors

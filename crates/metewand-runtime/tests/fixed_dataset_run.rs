@@ -33,6 +33,168 @@ const WORKER_ID: &str =
     "mw1-resolved-worker-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
 #[test]
+fn phase_measurements_keep_distinct_boundaries_and_missing_values() {
+    use metewand_core::measurements::{Measurement, MissingReason};
+    let (_private, outcome) = run_case(
+        Some(("METEWAND_TEST_TIMING_DELAY_MS", "80")),
+        Some(("METEWAND_TEST_EVALUATE_DELAY_MS", "120")),
+        timeouts(),
+    );
+    let FixedDatasetRunOutcome::Validated(result) = outcome else {
+        panic!("expected a validated result");
+    };
+    let measured = &result.measurements;
+    assert_eq!(
+        measured.materialization_time_ns,
+        Measurement::Unavailable {
+            reason: MissingReason::ProvidedDataset
+        }
+    );
+    assert!(measured.worker_startup_time_ns.complete_value().unwrap() > 0);
+    assert!(measured.evaluator_startup_time_ns.complete_value().unwrap() > 0);
+    let prepare = measured.prepare_time_ns.complete_value().unwrap();
+    let execute = measured.execute_request_time_ns.complete_value().unwrap();
+    assert!(prepare >= 80_000_000);
+    assert!(execute >= 80_000_000);
+    assert!(result.timed_wall_time.as_nanos() >= u128::from(prepare + execute));
+    assert_eq!(
+        measured.timed_wall_time_ns.complete_value().unwrap(),
+        result.timed_wall_time.as_nanos() as u64
+    );
+    assert!(measured.evaluation_time_ns.complete_value().unwrap() >= 120_000_000);
+    assert_eq!(
+        measured.evaluation_time_ns.complete_value().unwrap(),
+        result.evaluation_time.as_nanos() as u64
+    );
+}
+
+#[test]
+fn timeout_retains_partial_elapsed_time_and_unstarted_phases() {
+    let (_private, outcome) = run_case(
+        Some(("METEWAND_TEST_EXECUTE_MODE", "timeout")),
+        None,
+        PhaseTimeouts {
+            execute: Duration::from_millis(40),
+            ..timeouts()
+        },
+    );
+    let FixedDatasetRunOutcome::Failed { diagnostic, .. } = outcome else {
+        panic!("expected a timeout");
+    };
+    let value = diagnostic.details.unwrap();
+    let measured = &value.as_json()["measurements"];
+    assert_eq!(measured["prepare_time_ns"]["status"], "complete");
+    assert_eq!(measured["execute_request_time_ns"]["status"], "partial");
+    assert!(
+        measured["execute_request_time_ns"]["value"]
+            .as_u64()
+            .unwrap()
+            >= 40_000_000
+    );
+    assert_eq!(measured["timed_wall_time_ns"]["status"], "partial");
+    assert_eq!(measured["evaluation_time_ns"]["reason"], "not_started");
+}
+
+#[test]
+fn resource_work_is_observed_without_claiming_complete_tree_accounting() {
+    use metewand_core::measurements::{AccountingScope, Measurement, MissingReason, PartialReason};
+    for mode in ["process", "child"] {
+        let (_private, outcome) = run_case(
+            Some(("METEWAND_TEST_RESOURCE_WORK", mode)),
+            None,
+            timeouts(),
+        );
+        let FixedDatasetRunOutcome::Validated(result) = outcome else {
+            panic!("resource worker should succeed");
+        };
+        let measured = &result.measurements;
+        assert_eq!(measured.cpu_time_scope, AccountingScope::PrepareAndExecute);
+        assert_eq!(
+            measured.peak_rss_scope,
+            AccountingScope::WorkerLifetimeThroughExecute
+        );
+        if cfg!(target_os = "linux") {
+            let Measurement::Partial {
+                value: cpu,
+                reason: PartialReason::ProcessOnly,
+            } = measured.cpu_time_ns
+            else {
+                panic!("local CPU accounting must be explicitly partial: {measured:?}");
+            };
+            let Measurement::Partial {
+                value: memory,
+                reason: PartialReason::ProcessOnly,
+            } = measured.peak_rss_bytes
+            else {
+                panic!("local memory accounting must be explicitly partial");
+            };
+            if mode == "process" {
+                assert!(cpu >= 80_000_000, "CPU work must be recorded: {cpu}");
+                assert!(
+                    memory >= 16 * 1024 * 1024,
+                    "allocated memory must be recorded: {memory}"
+                );
+            }
+        } else {
+            assert_eq!(
+                measured.cpu_time_ns,
+                Measurement::unavailable(MissingReason::Unsupported)
+            );
+            assert_eq!(
+                measured.peak_rss_bytes,
+                Measurement::unavailable(MissingReason::Unsupported)
+            );
+        }
+    }
+}
+
+#[test]
+fn startup_prepare_and_evaluation_failures_preserve_the_reached_boundary() {
+    for (implementation, evaluator, deadlines, field, next) in [
+        (
+            Some(("METEWAND_TEST_STARTUP_DELAY_MS", "100")),
+            None,
+            PhaseTimeouts {
+                hello: Duration::from_millis(30),
+                ..timeouts()
+            },
+            "worker_startup_time_ns",
+            "prepare_time_ns",
+        ),
+        (
+            Some(("METEWAND_TEST_TIMING_DELAY_MS", "100")),
+            None,
+            PhaseTimeouts {
+                prepare: Duration::from_millis(30),
+                ..timeouts()
+            },
+            "prepare_time_ns",
+            "execute_request_time_ns",
+        ),
+        (
+            None,
+            Some(("METEWAND_TEST_EVALUATE_DELAY_MS", "100")),
+            PhaseTimeouts {
+                evaluate: Duration::from_millis(30),
+                ..timeouts()
+            },
+            "evaluation_time_ns",
+            "materialization_time_ns",
+        ),
+    ] {
+        let (_private, outcome) = run_case(implementation, evaluator, deadlines);
+        let FixedDatasetRunOutcome::Failed { diagnostic, .. } = outcome else {
+            panic!("expected phase timeout at {field}");
+        };
+        let value = diagnostic.details.unwrap();
+        let measured = &value.as_json()["measurements"];
+        assert_eq!(measured[field]["status"], "partial", "{measured}");
+        assert!(measured[field]["value"].as_u64().unwrap() >= 30_000_000);
+        assert_eq!(measured[next]["status"], "unavailable");
+    }
+}
+
+#[test]
 fn fixed_dataset_runs_through_implementation_and_independent_evaluator() {
     let private_root = TempDir::new().unwrap();
     let schemas = fixture_schema_catalog();
