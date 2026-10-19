@@ -34,12 +34,41 @@ Its input contains only typed comparison fields, logical slot identities, and
 priorities. It returns input indices in execution order and performs no I/O.
 Sequential order preserves the supplied order, including for empty selections.
 
+## Slot counts and seed sharing
+
+For one dataset and problem configuration, `A` implementation configurations
+and `M` measurement repetitions create exactly `A × M` measured attempt slots
+and observation slots when `implementation_repetitions = 1`. `A` counts expanded
+configurations: two parameter choices for one implementation and a parameterless
+second implementation contribute three configurations. An implementation's grid
+does not multiply the configurations of another implementation.
+
+With `I` implementation repetitions, the count becomes `A × I × M`. Independent
+dataset and problem configurations multiply that count. For `W` warm-ups, the
+logical plan also reserves `A × I × W` warm-up slots per dataset and problem
+configuration. Those slots produce no measured observations. Worker replacement
+can repeat warm-ups during execution without adding measured slots.
+
+The seed dependencies distinguish scientific replication from measurement:
+
+| Seed | Shared across | Changes with |
+| --- | --- | --- |
+| Dataset | Problem and implementation configurations, implementation repetitions, and measurements | Experiment seed, dataset definition, or dataset parameters |
+| Implementation | Implementation definitions and parameter configurations, measurements, and warm-ups in the same replication block | Experiment seed, dataset configuration, problem configuration, or implementation-repetition index |
+| Scheduling | Every slot in one experiment | Experiment seed, benchmark name, experiment name, or scheduling-policy version |
+
+Measurement repetitions keep the same logical specification and implementation
+seed while receiving distinct observation and attempt-slot identities. Different
+seed inputs produce separate derivations; the worker-visible 53-bit values can
+coincide by chance. See [Seed derivation](seeds.md) for the complete transcripts
+and recorded digests.
+
 ## Version-1 priorities
 
-`SCHEDULING_POLICY_VERSION` remains `1`: this is the first runtime implementation
-of the existing version-1 scheduling contract. [Seed derivation](seeds.md) and
+`SCHEDULING_POLICY_VERSION` and `SEED_DERIVATION_VERSION` are both `1`.
+[Seed derivation](seeds.md) and
 [logical slot priorities](logical-planning.md#stable-identities-and-priorities)
-retain their original transcripts and identities.
+use their original transcripts and identities.
 
 The block priority is SHA-256 over this concatenation:
 
@@ -60,6 +89,20 @@ therefore preserves the relative randomized order of existing slots.
 The conformance vectors in [fixtures/scheduling/v1.json](../fixtures/scheduling/v1.json)
 pin the block transcript. Existing attempt-slot vectors continue to pin
 within-block priorities.
+
+The relative-order guarantee also covers additional implementation parameter
+choices, dataset and problem configurations, implementation and measurement
+repetitions, and unrelated experiments. New slots may appear between existing
+slots. Removing the new slots from the expanded randomized schedule recovers
+the original order with the same identities, priorities, and seeds. Sequential
+order continues to follow the authored selections and grid order.
+
+The CLI conformance test exercises each addition independently through `plan`
+and `run`, checks the exact measured slot and observation sets, and compares the
+seed received by each worker with the derivation for its planned configuration.
+The core matrix test also checks dataset parameters, implementation parameter
+grids, implementation replication, and warm-ups against the counts above.
+These checks preserve the version-1 identity, seed, and scheduling contracts.
 
 ## Warm-ups, events, and provenance
 

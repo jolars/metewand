@@ -1,4 +1,7 @@
-use std::{collections::BTreeMap, path::Path};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    path::Path,
+};
 
 use metewand_core::{
     manifest::{ImplementationCapability, Manifest, Name, parse_manifest},
@@ -295,6 +298,171 @@ fn expands_repetitions_into_identified_one_shot_records() {
             "mw1-logical-attempt-slot-cd99b53afcb7937265885ce5c8361356148690375e5e12694c5c83610b0acb17",
         ]
     );
+}
+
+#[test]
+fn parameterized_matrices_have_exact_slot_counts_and_seed_sharing() {
+    let source = MANIFEST
+        .replace(
+            "[datasets.fixed]",
+            r#"[datasets.generated]
+parameter_schema = "schemas/parameters.json"
+output_schema = "schemas/dataset.json"
+runner = "command"
+program = "generate"
+environment = "local"
+
+[datasets.fixed]"#,
+        )
+        .replace(
+            "[implementations.alpha]",
+            "[implementations.alpha]\nparameter_schema = \"schemas/parameters.json\"",
+        )
+        .replace(
+            "datasets = [\"fixed\"]",
+            "datasets = [\"fixed\", \"generated\"]",
+        )
+        .replace(
+            "seed = 17",
+            r#"seed = 17
+
+[experiments.dataset_parameters.generated]
+replicate = { grid = [0, 1] }
+[experiments.problem_parameters]
+lambda = { grid = [0.1, 0.2] }
+[experiments.implementation_parameters.alpha]
+method = { grid = ["fast", "accurate"] }"#,
+        );
+    let mut catalog = catalog();
+    catalog.dataset_definitions.insert(
+        DatasetConfigurationDefinition::Named(name("generated")),
+        id(6),
+    );
+    let mut dataset_seeds = BTreeMap::new();
+    let mut implementation_seeds = BTreeMap::new();
+
+    for seed in [17, 18] {
+        for (implementation_repetitions, measurements, warmups) in
+            [(1, 1, 0), (1, 3, 2), (2, 1, 2), (2, 3, 0)]
+        {
+            let mut manifest = manifest(&source);
+            let experiment = &mut manifest.experiments[0];
+            experiment.seed = seed;
+            experiment.implementation_repetitions = implementation_repetitions;
+            experiment.measurement_repetitions = measurements;
+            manifest
+                .execution_policies
+                .get_mut(&name("reused"))
+                .unwrap()
+                .warmup_runs = Some(warmups);
+            let plan = expand_manifest_logical_plan(
+                &manifest,
+                &contracts(&manifest),
+                &schemas(),
+                &catalog,
+            )
+            .unwrap();
+            let experiment = &plan.experiments[0];
+            // Alpha contributes two configurations; beta contributes one.
+            let candidates = 3 * 2 * 3;
+            assert_eq!(experiment.candidates.len(), candidates);
+            let mut observations = BTreeSet::new();
+            let mut measured_slots = BTreeSet::new();
+            let mut warmup_slots = BTreeSet::new();
+            let mut seed_blocks = BTreeMap::<_, BTreeSet<_>>::new();
+
+            for candidate in &experiment.candidates {
+                let dataset = &candidate.dataset_configuration;
+                let dataset_key = (
+                    seed,
+                    dataset.record.definition,
+                    dataset.record.parameters.to_canonical_bytes().unwrap(),
+                );
+                if let Some(previous) = dataset_seeds.insert(dataset_key, dataset.record.seed) {
+                    assert_eq!(previous, dataset.record.seed);
+                }
+                assert_eq!(
+                    candidate.specifications.len() as u64,
+                    implementation_repetitions
+                );
+                for specification in &candidate.specifications {
+                    let record = &specification.specification.record;
+                    let block = (
+                        seed,
+                        dataset.id,
+                        candidate.problem_configuration.id,
+                        record.implementation_repetition,
+                    );
+                    if let Some(previous) =
+                        implementation_seeds.insert(block, record.implementation_seed)
+                    {
+                        assert_eq!(previous, record.implementation_seed);
+                    }
+                    assert!(
+                        seed_blocks
+                            .entry(block)
+                            .or_default()
+                            .insert(candidate.implementation_configuration.id)
+                    );
+                    assert_eq!(specification.observation_slots.len() as u64, measurements);
+                    for observation in &specification.observation_slots {
+                        assert!(observations.insert(observation.id));
+                    }
+                    for attempt in &specification.attempt_slots {
+                        match attempt.record.role {
+                            AttemptSlotRole::Measured { observation_slot } => {
+                                assert!(measured_slots.insert(attempt.id));
+                                assert!(
+                                    specification
+                                        .observation_slots
+                                        .iter()
+                                        .any(|observation| observation.id == observation_slot)
+                                );
+                            }
+                            AttemptSlotRole::Warmup { .. } => {
+                                assert!(warmup_slots.insert(attempt.id));
+                            }
+                        }
+                    }
+                }
+            }
+            let specifications = candidates as u64 * implementation_repetitions;
+            assert_eq!(observations.len() as u64, specifications * measurements);
+            assert_eq!(measured_slots.len(), observations.len());
+            assert_eq!(warmup_slots.len() as u64, specifications * warmups);
+            assert_eq!(seed_blocks.len() as u64, 3 * 2 * implementation_repetitions);
+            assert!(
+                seed_blocks
+                    .values()
+                    .all(|implementations| implementations.len() == 3)
+            );
+        }
+    }
+
+    assert_eq!(dataset_seeds.len(), 2 * 3);
+    assert_eq!(implementation_seeds.len(), 2 * 3 * 2 * 2);
+    // These fixture inputs must distinguish every seed block, including its full digest.
+    for seeds in [
+        dataset_seeds.values().collect::<Vec<_>>(),
+        implementation_seeds.values().collect(),
+    ] {
+        assert_eq!(
+            seeds
+                .iter()
+                .map(|seed| seed.value)
+                .collect::<BTreeSet<_>>()
+                .len(),
+            seeds.len()
+        );
+        assert_eq!(
+            seeds
+                .iter()
+                .map(|seed| seed.derivation_digest)
+                .collect::<BTreeSet<_>>()
+                .len(),
+            seeds.len()
+        );
+    }
 }
 
 #[test]

@@ -275,7 +275,7 @@ artifacts](DESIGN.md#6-environments-execution-and-artifacts).
 - [x] Implement sequential scheduling first, then deterministic block-randomized
   scheduling by dataset instance, problem configuration, implementation
   repetition, and measurement index.
-- [ ] Preserve stable relative ordering when unrelated slots are added, and
+- [x] Preserve stable relative ordering when unrelated slots are added, and
   verify the exact `A x M` slot count and specified seed sharing.
 - [ ] Add opt-in bounded concurrency as execution-policy identity and
   provenance; keep performance execution serial by default.

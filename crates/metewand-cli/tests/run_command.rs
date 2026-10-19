@@ -617,6 +617,276 @@ fn randomized_runs_interleave_comparable_implementations_and_record_the_schedule
     assert_eq!(orders[0], orders[1]);
 }
 
+fn scheduling_contract_repository() -> TempDir {
+    let root = repository();
+    let path = root.path().join("metewand.toml");
+    let manifest = fs::read_to_string(&path).unwrap();
+    let implementation = manifest
+        .split_once("[implementations.reference]")
+        .unwrap()
+        .1
+        .split_once("[environments.local]")
+        .unwrap()
+        .0;
+    fs::write(
+        &path,
+        format!("{manifest}\n[implementations.alternative]{implementation}"),
+    )
+    .unwrap();
+    for (before, after) in [
+        (
+            "[implementations.reference]",
+            "[implementations.reference]\nparameter_schema = \"schemas/implementation-parameters.json\"\nparameter_defaults = { method = 0 }",
+        ),
+        (
+            "implementations = [\"reference\"]",
+            "implementations = [\"reference\", \"alternative\"]",
+        ),
+        ("measurement_repetitions = 1", "measurement_repetitions = 2"),
+        (
+            "version = 1\ntiming_scope",
+            "version = 1\nrun_order = \"randomized\"\ntiming_scope",
+        ),
+    ] {
+        replace(root.path(), "metewand.toml", before, after);
+    }
+    fs::write(
+        root.path().join("schemas/implementation-parameters.json"),
+        r#"{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object",
+            "properties":{"method":{"type":"integer"}},"required":["method"],
+            "additionalProperties":false}"#,
+    )
+    .unwrap();
+    replace(
+        root.path(),
+        "worker.py",
+        "prepared = sum(values) + request[\"problem_parameters\"][\"offset\"]",
+        "prepared = sum(values) + request[\"problem_parameters\"][\"offset\"]\n            prepared_seed = request[\"implementation_seed\"]",
+    );
+    replace(
+        root.path(),
+        "worker.py",
+        "statistics={},",
+        "statistics={\"received_seed\": prepared_seed},",
+    );
+    root
+}
+
+fn scheduled_slot_snapshots(root: &Path, expected_count: usize) -> Vec<(String, Value)> {
+    use std::collections::{BTreeMap, BTreeSet};
+
+    use metewand_core::seed::derive_implementation_seed;
+
+    let output = metewand(root, &["plan", "--output", "json"]);
+    assert!(output.status.success(), "{output:?}");
+    let plan: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(plan["data"]["summary"]["attempt_slots"], expected_count);
+    assert_eq!(plan["data"]["summary"]["observation_slots"], expected_count);
+    let mut planned = BTreeMap::new();
+    for experiment in plan["data"]["experiments"].as_array().unwrap() {
+        let seed = match experiment["name"].as_str().unwrap() {
+            "main" => 7,
+            "unrelated" => 8,
+            name => panic!("unexpected experiment: {name}"),
+        };
+        for candidate in experiment["candidates"].as_array().unwrap() {
+            for (repetition, specification) in candidate["specifications"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .enumerate()
+            {
+                let seed = derive_implementation_seed(
+                    seed,
+                    candidate["dataset_configuration"]
+                        .as_str()
+                        .unwrap()
+                        .parse()
+                        .unwrap(),
+                    candidate["problem_configuration"]
+                        .as_str()
+                        .unwrap()
+                        .parse()
+                        .unwrap(),
+                    repetition as u64,
+                )
+                .unwrap();
+                let slots = specification["attempt_slots"].as_array().unwrap();
+                let observations = specification["observation_slots"].as_array().unwrap();
+                assert_eq!(slots.len(), observations.len());
+                for (slot, observation) in slots.iter().zip(observations) {
+                    assert!(
+                        planned
+                            .insert(
+                                slot.as_str().unwrap().to_owned(),
+                                (seed.value, observation.as_str().unwrap().to_owned()),
+                            )
+                            .is_none()
+                    );
+                }
+            }
+        }
+    }
+    assert_eq!(planned.len(), expected_count);
+
+    let output = metewand(root, &["run", "--output-dir", "run", "--output", "jsonl"]);
+    assert!(output.status.success(), "{output:?}");
+    let records = envelopes(&output);
+    let report = records.last().unwrap();
+    assert_eq!(report["data"]["summary"]["attempt_slots"], expected_count);
+    assert_eq!(
+        report["data"]["summary"]["accepted_attempts"],
+        expected_count
+    );
+    assert_eq!(report["data"]["summary"]["failed_attempts"], 0);
+    let attempts = report["data"]["attempts"].as_array().unwrap();
+    assert_eq!(attempts.len(), expected_count);
+    let actual = attempts
+        .iter()
+        .map(|attempt| attempt["logical_slot_id"].as_str().unwrap())
+        .collect::<BTreeSet<_>>();
+    assert_eq!(actual, planned.keys().map(String::as_str).collect());
+    let observations = attempts
+        .iter()
+        .map(|attempt| attempt["observation_id"].as_str().unwrap())
+        .collect::<BTreeSet<_>>();
+    assert_eq!(observations.len(), expected_count);
+    let started = records
+        .iter()
+        .filter(|record| record["data"]["event"] == "attempt_started")
+        .map(|record| record["data"]["logical_slot_id"].clone())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        started,
+        attempts
+            .iter()
+            .map(|attempt| attempt["logical_slot_id"].clone())
+            .collect::<Vec<_>>()
+    );
+
+    attempt_documents(root, report)
+        .iter()
+        .map(|attempt| {
+            let data = &attempt["provenance"]["data"];
+            let context = &data["context"];
+            let slot = context["logical_slot_id"].as_str().unwrap();
+            let (seed, observation) = &planned[slot];
+            assert_eq!(context["implementation_seed"], *seed);
+            assert_eq!(data["implementation_statistics"]["received_seed"], *seed);
+            assert_eq!(
+                context["resolved_observation_slot"]["logical_slot"],
+                observation.as_str()
+            );
+            (
+                slot.to_owned(),
+                serde_json::json!({
+                    "seed": seed,
+                    "scheduling": context["scheduling"],
+                    "dataset_instance": context["dataset_instance"],
+                    "problem_instance": context["problem_instance"],
+                    "specification": context["resolved_specification"],
+                    "attempt_slot": context["resolved_attempt_slot"],
+                    "observation_slot": context["resolved_observation_slot"],
+                }),
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn unrelated_slots_preserve_existing_relative_execution_order_and_seeds() {
+    use std::collections::BTreeSet;
+
+    let root = scheduling_contract_repository();
+    let baseline = scheduled_slot_snapshots(root.path(), 2 * 2);
+    let existing = baseline.iter().map(|(id, _)| id).collect::<BTreeSet<_>>();
+    for (addition, expected_count) in [
+        ("implementation configurations", 4 * 2),
+        ("dataset", 2 * 2 * 2),
+        ("problem configuration", 2 * 2 * 2),
+        ("implementation repetition", 2 * 2 * 2),
+        ("measurement repetition", 2 * 3),
+        ("experiment", 2 * 2 + 2 * 2),
+    ] {
+        let root = scheduling_contract_repository();
+        let (before, after) = match addition {
+            "implementation configurations" => {
+                replace(
+                    root.path(),
+                    "metewand.toml",
+                    "[implementations.alternative]",
+                    r#"[implementations.third]
+runner = "command"
+program = "python3"
+args = ["{sources}/worker.py", "implementation"]
+sources = ["worker.py"]
+environment = "local"
+problem_contracts = ["sum"]
+capabilities = ["one_shot"]
+
+[implementations.alternative]"#,
+                );
+                replace(
+                    root.path(),
+                    "metewand.toml",
+                    "seed = 7",
+                    "seed = 7\n\n[experiments.implementation_parameters.reference]\nmethod = { grid = [1, 0] }",
+                );
+                (
+                    "implementations = [\"reference\", \"alternative\"]",
+                    "implementations = [\"alternative\", \"third\", \"reference\"]",
+                )
+            }
+            "dataset" => {
+                replace(
+                    root.path(),
+                    "metewand.toml",
+                    "[datasets.numbers]",
+                    "[datasets.other]\noutput_schema = \"schemas/dataset.json\"\nsources = [\"data.json\"]\n\n[datasets.numbers]",
+                );
+                (
+                    "datasets = [\"numbers\"]",
+                    "datasets = [\"other\", \"numbers\"]",
+                )
+            }
+            "problem configuration" => (
+                "seed = 7",
+                "seed = 7\n\n[experiments.problem_parameters]\noffset = { grid = [3, 2] }",
+            ),
+            "implementation repetition" => (
+                "implementation_repetitions = 1",
+                "implementation_repetitions = 2",
+            ),
+            "measurement repetition" => {
+                ("measurement_repetitions = 2", "measurement_repetitions = 3")
+            }
+            "experiment" => (
+                "[[experiments]]",
+                r#"[[experiments]]
+name = "unrelated"
+problem = "sum"
+datasets = ["numbers"]
+implementations = ["alternative", "reference"]
+execution_policy = "local"
+observation_policy = "final"
+implementation_repetitions = 1
+measurement_repetitions = 2
+seed = 8
+
+[[experiments]]"#,
+            ),
+            _ => unreachable!(),
+        };
+        replace(root.path(), "metewand.toml", before, after);
+        let expanded = scheduled_slot_snapshots(root.path(), expected_count);
+        let retained = expanded
+            .into_iter()
+            .filter(|(id, _)| existing.contains(id))
+            .collect::<Vec<_>>();
+        assert_eq!(retained, baseline, "adding {addition}");
+    }
+}
+
 #[test]
 fn scientific_completion_failure_keeps_its_valid_observation() {
     let root = repository();
