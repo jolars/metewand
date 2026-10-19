@@ -328,10 +328,10 @@ fn run_rejects_unsupported_policies_before_writing_output() {
         root.path(),
         &["run", "--output-dir", "run", "--output", "jsonl"],
     );
-    assert_eq!(output.status.code(), Some(2));
+    assert_eq!(output.status.code(), Some(3));
     assert_eq!(
-        envelopes(&output)[0]["data"]["code"],
-        "unsupported_operation"
+        envelopes(&output)[0]["data"]["causes"][0]["code"],
+        "required_control_unsupported"
     );
     assert!(!root.path().join("run").exists());
 }
@@ -1775,5 +1775,133 @@ fn every_implementation_repetition_runs_its_own_planned_warmups() {
     assert_eq!(
         attempts[0]["provenance"]["data"]["implementation_statistics"]["pid"],
         attempts[3]["provenance"]["data"]["implementation_statistics"]["pid"]
+    );
+}
+
+#[test]
+fn best_effort_runs_publish_every_requested_resource_control() {
+    let root = repository();
+    replace(
+        root.path(),
+        "metewand.toml",
+        "version = 1\ntiming_scope",
+        "version = 1\ncpus = 2\nthreads = 4\nmemory = \"8 GiB\"\nnetwork = true\ntiming_scope",
+    );
+    let output = metewand(
+        root.path(),
+        &["run", "--output-dir", "run", "--output", "jsonl"],
+    );
+    assert!(output.status.success(), "{output:?}");
+    let records = envelopes(&output);
+    let attempt = &records.last().unwrap()["data"]["attempts"][0];
+    let record = document(
+        &root
+            .path()
+            .join("run")
+            .join(attempt["attempt_directory"].as_str().unwrap())
+            .join("attempt.json"),
+    );
+    let data = &record["provenance"]["data"];
+    let controls = data["context"]["controls"].as_array().unwrap();
+    assert_eq!(controls.len(), 9);
+    assert_eq!(data["execution"]["controls"], data["context"]["controls"]);
+    for (name, value, status) in [
+        ("cpus", serde_json::json!(2), "unsupported"),
+        ("threads", serde_json::json!(4), "unsupported"),
+        ("memory", serde_json::json!("8 GiB"), "unsupported"),
+        ("network", serde_json::json!(true), "enforced"),
+        ("process_tree", serde_json::json!(true), "best_effort"),
+    ] {
+        let control = controls
+            .iter()
+            .find(|control| control["name"] == name)
+            .unwrap();
+        assert_eq!(control["requested"], value);
+        assert_eq!(control["status"], status);
+        assert_eq!(control["required"], false);
+        assert_eq!(control["scope"], "worker_lifetime");
+    }
+}
+
+#[test]
+fn control_loss_publishes_a_failed_attempt_with_observed_evidence() {
+    for phase in ["hello", "prepare", "execute", "evaluate", "shutdown"] {
+        let root = repository();
+        let branch = if matches!(phase, "hello" | "shutdown") {
+            "if"
+        } else {
+            "elif"
+        };
+        replace(
+            root.path(),
+            "worker.py",
+            &format!("{branch} method == {phase:?}:"),
+            &format!("{branch} method == {phase:?}:\n            os.chmod('.', 0o777)"),
+        );
+        let output = metewand(
+            root.path(),
+            &["run", "--output-dir", "run", "--output", "jsonl"],
+        );
+        assert_eq!(output.status.code(), Some(5), "{phase}: {output:?}");
+        let records = envelopes(&output);
+        let attempt = &records.last().unwrap()["data"]["attempts"][0];
+        assert_eq!(attempt["diagnostic"]["code"], "control_enforcement_lost");
+        assert!(attempt["observation_id"].is_null());
+        let directory = root
+            .path()
+            .join("run")
+            .join(attempt["attempt_directory"].as_str().unwrap());
+        verify_finalized_directory(&directory).unwrap();
+        let record = document(&directory.join("attempt.json"));
+        let context = &record["provenance"]["data"]["context"];
+        assert_eq!(
+            context["control_failure"]["control"],
+            "private_working_directory"
+        );
+        assert_eq!(
+            context["controls"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|control| control["name"] == "private_working_directory")
+                .unwrap()["status"],
+            "unsupported"
+        );
+        assert!(!root.path().join("run/observations").exists());
+    }
+}
+
+#[test]
+fn reset_control_loss_replaces_the_worker_and_repeats_warmups() {
+    let root = reuse_repository();
+    replace(
+        root.path(),
+        "worker.py",
+        "elif method == \"reset\":",
+        "elif method == \"reset\":\n            if executions == 3:\n                os.chmod('.', 0o777)",
+    );
+    let output = metewand(
+        root.path(),
+        &["run", "--output-dir", "run", "--output", "jsonl"],
+    );
+    assert_eq!(output.status.code(), Some(5), "{output:?}");
+    let records = envelopes(&output);
+    let attempts = attempt_documents(root.path(), records.last().unwrap());
+    assert_eq!(attempts[0]["outcome"]["kind"], "accepted");
+    assert_eq!(
+        attempts[1]["outcome"]["diagnostic"]["code"],
+        "control_enforcement_lost"
+    );
+    assert_eq!(attempts[2]["outcome"]["kind"], "accepted");
+    assert_eq!(
+        attempts[2]["provenance"]["data"]["context"]["worker_reuse"]["warmups_on_this_attempt"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    assert_ne!(
+        attempts[0]["provenance"]["data"]["implementation_statistics"]["pid"],
+        attempts[2]["provenance"]["data"]["implementation_statistics"]["pid"]
     );
 }

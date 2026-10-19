@@ -83,6 +83,19 @@ impl LocalProcessExecutor {
         Self { grace }
     }
 
+    /// Checks the effective policy against the backend's current guarantees.
+    ///
+    /// # Errors
+    /// Returns the first insufficient required control.
+    pub fn preflight_policy(
+        &self,
+        policy: &metewand_core::records::ExecutionPolicyRecord,
+    ) -> Result<Vec<metewand_core::controls::ControlRecord>, ExecutorError> {
+        let controls = metewand_core::controls::local_control_report(policy);
+        metewand_core::controls::validate_required_controls(&controls)?;
+        Ok(controls)
+    }
+
     /// Launches with ephemeral values for declared secret environment channels.
     ///
     /// # Errors
@@ -162,6 +175,9 @@ impl Executor for LocalProcessExecutor {
 /// Typed launch, preflight, and termination failures.
 #[derive(Debug, Error)]
 pub enum ExecutorError {
+    /// The effective policy requires a control the backend cannot enforce.
+    #[error(transparent)]
+    Control(#[from] metewand_core::controls::ControlFailure),
     /// POSIX process groups cannot contain descendants that create new sessions.
     #[error("local process executor cannot enforce complete process-tree containment")]
     UnsupportedCompleteProcessTree,

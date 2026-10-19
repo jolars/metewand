@@ -1217,3 +1217,18 @@ fn publication_retains_role_scoped_log_prefixes_and_truncation_provenance() {
         WORKER_ID
     );
 }
+
+#[test]
+fn lost_private_directory_control_is_a_typed_runtime_failure() {
+    let (_root, outcome) = run_case(
+        Some(("METEWAND_TEST_EXECUTE_MODE", "control_loss")),
+        None,
+        timeouts(),
+    );
+    let FixedDatasetRunOutcome::Failed { kind, diagnostic } = outcome else {
+        panic!("control loss must prevent acceptance");
+    };
+    assert_eq!(kind, FixedDatasetFailureKind::ControlEnforcementLost);
+    assert_eq!(diagnostic.code, "control_enforcement_lost");
+    assert!(diagnostic.message.contains("private_working_directory"));
+}

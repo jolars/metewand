@@ -1081,6 +1081,9 @@ impl CommandError {
 
     pub fn planning(command: &'static str, error: &LogicalPlanningError) -> Self {
         let cause = match error {
+            LogicalPlanningError::Control(_) => {
+                Diagnostic::new("required_control_unsupported", error.to_string())
+            }
             LogicalPlanningError::Configuration(_) => {
                 Diagnostic::new("invalid_configuration", error.to_string()).with_remediation(
                     "Correct the experiment configuration and run the plan again.",

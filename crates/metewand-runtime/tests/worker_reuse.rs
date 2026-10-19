@@ -86,7 +86,7 @@ fn fixture_worker() {
                 if let Some(path) = env::var_os("CUSTOM_PRIVATE") {
                     fs::write(Path::new(&path).join("dirty"), b"private").unwrap();
                     symlink(env::var_os("OUTSIDE").unwrap(), "outside-link").unwrap();
-                    fs::set_permissions(".", fs::Permissions::from_mode(0o777)).unwrap();
+                    fs::set_permissions("cache", fs::Permissions::from_mode(0o777)).unwrap();
                 }
                 executed += 1;
                 response["result"] = json!({"manifest": "result.json"});

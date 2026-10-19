@@ -15,7 +15,7 @@ use metewand_core::{
         identify_record,
     },
     manifest::{
-        DatasetDefinition, Enforcement, EnvironmentDefinition, InterpretedRunner, PrimaryTime,
+        DatasetDefinition, EnvironmentDefinition, InterpretedRunner, PrimaryTime,
         ProtocolTransport, RepositoryPath, RunOrder, WorkerDefinition,
     },
     measurements::{Measurement, MissingReason},
@@ -229,13 +229,9 @@ pub(super) fn resolve(
         let policy = &experiment.execution_policy.record;
         if policy.primary_time != PrimaryTime::TimedWallTime
             || policy.run_order != RunOrder::Sequential
-            || policy.enforcement != Enforcement::BestEffort
-            || policy.cpus.is_some()
-            || policy.threads.is_some()
-            || policy.memory.is_some()
         {
             return Err(unsupported(format!(
-                "execution policy `{}` requires controls outside the Gate-1 trusted local path; use wall timing, sequential workers, and best_effort enforcement without resource limits",
+                "execution policy `{}` requires timing or scheduling outside the trusted local path; use wall timing and sequential workers",
                 policy.name,
             )));
         }
@@ -645,6 +641,7 @@ fn resolve_candidate(
                 specification: resolved.id,
             })?;
             let provenance = canonical(json!({
+                "controls": metewand_core::controls::local_control_report(&policy),
                 "manifest_hash": repository.manifest_hash.to_string(),
                 "timing_scope": timing.scope.to_string(),
                 "operation_scope": timing.scope == metewand_core::manifest::TimingScope::ExecuteOnly,

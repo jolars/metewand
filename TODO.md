@@ -261,7 +261,7 @@ artifacts](DESIGN.md#6-environments-execution-and-artifacts).
   rules for reuse and warm-ups.
 - [x] Implement worker reuse keys, reset and replacement behavior, cache policy,
   and repeated warm-ups after worker replacement.
-- [ ] Record every requested control as enforced, best-effort, or unsupported;
+- [x] Record every requested control as enforced, best-effort, or unsupported;
   fail known-insufficient required controls during planning and runtime
   enforcement loss as a typed attempt.
 

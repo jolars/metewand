@@ -133,7 +133,10 @@ implementation and independent evaluator, measures the selected
 [timing envelope](docs/fixed-dataset-run.md), and
 returns validated result and metric values from private temporary output. Its
 [phase and resource measurements](docs/execution-measurements.md) retain explicit
-missing and partial values, including elapsed time from failed exchanges. Its
+missing and partial values, including elapsed time from failed exchanges.
+[Execution controls](docs/execution-controls.md) retain requested values and
+explicit enforcement guarantees, with planning rejection for insufficient
+required controls and typed failures when runtime controls are lost. Its
 [durable publication path](docs/durable-publication.md) finalizes a
 self-describing observation before the enclosing attempt, retaining provenance,
 scoped logs, and hash-complete completion manifests in separate directories.

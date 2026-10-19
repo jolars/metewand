@@ -217,6 +217,8 @@ pub enum FixedDatasetRunOutcome {
 /// Technical failure classes retained before an attempt can be published.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum FixedDatasetFailureKind {
+    /// A runtime control ceased to hold over the worker lifetime.
+    ControlEnforcementLost,
     /// Inputs or local setup prevented execution.
     SetupFailure,
     /// A worker changed its dataset view or the canonical cache object.
@@ -242,6 +244,7 @@ impl FixedDatasetFailureKind {
     #[must_use]
     pub const fn code(self) -> &'static str {
         match self {
+            Self::ControlEnforcementLost => "control_enforcement_lost",
             Self::SetupFailure => "setup_failure",
             Self::DatasetMutation => "dataset_mutation",
             Self::ImplementationFailure => "implementation_failure",
@@ -528,7 +531,7 @@ fn run_workers(
         },
         "result_schema": request.result_schema,
         "metric_schema": request.metric_schema,
-        "controls": {"network": "unsupported", "filesystem_isolation": "unsupported", "process_tree_accounting": "unsupported"},
+        "controls": metewand_core::controls::default_local_control_report(),
     });
 
     let result = validator
@@ -845,6 +848,9 @@ impl FixedDatasetRunError {
 
 fn classify_session(source: &WorkerSessionError, implementation: bool) -> FixedDatasetFailureKind {
     match source {
+        WorkerSessionError::ControlEnforcementLost { .. } => {
+            FixedDatasetFailureKind::ControlEnforcementLost
+        }
         WorkerSessionError::Timeout { .. } => FixedDatasetFailureKind::PhaseTimeout,
         WorkerSessionError::ScientificTimeout { .. } => FixedDatasetFailureKind::ScientificTimeout,
         WorkerSessionError::ProtocolRead { .. }

@@ -262,6 +262,10 @@ pub fn derive_attempt_scheduling_priority(
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum LogicalPlanningError {
+    /// The selected local executor cannot enforce a required control.
+    #[error(transparent)]
+    Control(#[from] crate::controls::ControlFailure),
+
     /// Configuration expansion or its pure validation failed.
     #[error(transparent)]
     Configuration(Box<ConfigurationExpansionError>),
@@ -305,6 +309,9 @@ fn plan_experiment(
     let execution_policy = identify_record(execution_policy_record(
         experiment.execution_policy.clone(),
         execution_policy_definition,
+    ))?;
+    crate::controls::validate_required_controls(&crate::controls::local_control_report(
+        &execution_policy.record,
     ))?;
     let observation_policy_definition = manifest
         .observation_policies

@@ -414,6 +414,7 @@ impl WorkerSession {
             thread::sleep(Duration::from_millis(1));
         }
 
+        self.verify_controls()?;
         let output = self
             .process
             .take()
@@ -449,6 +450,7 @@ impl WorkerSession {
         Q: WireMessage,
         R: WireResponse,
     {
+        self.verify_controls()?;
         let started = Instant::now();
         let scientific_remaining = self
             .scientific_deadline
@@ -530,6 +532,7 @@ impl WorkerSession {
             self.discard_after_timeout();
             return Err(timeout_error());
         }
+        self.verify_controls()?;
         match decoded {
             Ok(OperationResponse::Success(response)) => Ok(response),
             Ok(OperationResponse::Failure(failure)) => {
@@ -540,6 +543,22 @@ impl WorkerSession {
                 Err(WorkerSessionError::Response { phase, source })
             }
         }
+    }
+
+    fn verify_controls(&mut self) -> Result<(), WorkerSessionError> {
+        use std::os::unix::fs::PermissionsExt;
+        if let Some(directory) = self.private_working_directory() {
+            let private = std::fs::symlink_metadata(directory).is_ok_and(|metadata| {
+                metadata.is_dir() && metadata.permissions().mode() & 0o777 == 0o700
+            });
+            if !private {
+                self.discard();
+                return Err(WorkerSessionError::ControlEnforcementLost {
+                    control: "private_working_directory".to_owned(),
+                });
+            }
+        }
+        Ok(())
     }
 
     fn require_role(
@@ -650,6 +669,13 @@ fn run_protocol_io(
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum WorkerSessionError {
+    /// A previously applied lifetime control no longer holds.
+    #[error("worker control enforcement lost: {control}")]
+    ControlEnforcementLost {
+        /// Stable name of the violated control.
+        control: String,
+    },
+
     /// Secret-bearing sessions omit raw framing diagnostics that can quote input.
     #[error("worker {phase} protocol read failed (secret-bearing diagnostic redacted)")]
     RedactedProtocolRead {

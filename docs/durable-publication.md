@@ -86,7 +86,7 @@ Their provenance data contains:
   architecture and OS, exact allowlisted launches and worker identities, SDK
   metadata and reported capabilities, problem and implementation parameters,
   implementation seed, dataset path and tree digest, selected result and metric
-  schema paths, timing scope, and unsupported isolation and accounting controls;
+  schema paths, timing scope, and [control enforcement reports](execution-controls.md);
 - `context`: caller-observed repository, build, environment, and host evidence;
 - `measurements`: typed phase durations and resource values with complete,
   partial, or unavailable states;

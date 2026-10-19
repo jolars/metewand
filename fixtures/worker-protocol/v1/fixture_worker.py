@@ -263,6 +263,8 @@ def _execute(
     if not isinstance(values, list):
         raise RequestError("prepared fixture state is invalid")
     answer = sum(values) + offset
+    if os.environ.get("METEWAND_TEST_EXECUTE_MODE") == "control_loss":
+        os.chmod(".", 0o777)
     answer += int(os.environ.get("METEWAND_TEST_ANSWER_OFFSET", "0"))
 
     resource_work = os.environ.get("METEWAND_TEST_RESOURCE_WORK")

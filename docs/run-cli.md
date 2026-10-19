@@ -50,8 +50,11 @@ observation count. See [worker reuse](worker-reuse.md) for lifecycle details.
 Compatibility checking rejects warm-ups without reuse and cold timing with reuse
 or warm-ups.
 
-Policies requiring CPU, thread, or memory limits, randomized scheduling,
-or required enforcement are rejected.
+CPU, thread, and memory requests execute in best-effort mode and are recorded
+as unsupported by the local backend. Required enforcement fails logical
+planning because the local backend cannot guarantee lifetime isolation.
+See [Execution controls](execution-controls.md) for the complete report and
+runtime failure behavior. Randomized scheduling is rejected.
 Provisioning backends, standard-I/O protocol transport,
 symbolic links in copied inputs, locked execution, and resume are also rejected.
 These features belong to later roadmap slices. A rejected selection emits a

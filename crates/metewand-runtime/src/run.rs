@@ -204,6 +204,19 @@ fn execute(
         materialization_time_ns: candidate.dataset.materialization_time_ns,
         ..ExecutionMeasurements::default()
     };
+    let executor =
+        crate::executor::LocalProcessExecutor::new(std::time::Duration::from_millis(100));
+    if let Err(error) = executor.preflight_policy(&candidate.reuse_key.policy) {
+        worker.discard();
+        return failed_attempt(
+            measurement,
+            output_root,
+            started_at,
+            "control_preflight_failed",
+            error.to_string(),
+            &measurements,
+        );
+    }
     if let Err(error) = candidate.verify() {
         worker.discard();
         return failed_attempt(
@@ -327,6 +340,25 @@ fn execute(
         "filesystem_cache": "clear_all_between_slots",
         "warmups_on_this_attempt": warmups,
     });
+    if let Err(
+        FixedDatasetRunError::Implementation {
+            source: crate::worker_session::WorkerSessionError::ControlEnforcementLost { control },
+        }
+        | FixedDatasetRunError::Evaluator {
+            source: crate::worker_session::WorkerSessionError::ControlEnforcementLost { control },
+        },
+    ) = &result
+    {
+        if let Some(controls) = context["controls"].as_array_mut() {
+            for record in controls {
+                if record["name"].as_str() == Some(control) {
+                    record["status"] = json!("unsupported");
+                }
+            }
+        }
+        context["control_failure"] =
+            json!({"control": control, "code": "control_enforcement_lost"});
+    }
     measurement.provenance = canonical(context)?;
     let measurement = &measurement;
     let inputs_verified = candidate.verify();
@@ -343,7 +375,7 @@ fn execute(
             &measurements,
         );
     }
-    let result = match result {
+    let mut result = match result {
         Ok(result) => result,
         Err(error) => {
             worker.discard();
@@ -357,6 +389,9 @@ fn execute(
             );
         }
     };
+    result.execution_provenance["controls"] = json!(metewand_core::controls::local_control_report(
+        &candidate.reuse_key.policy
+    ));
     let published = finalize_fixed_dataset(
         &result,
         PublicationRequest {

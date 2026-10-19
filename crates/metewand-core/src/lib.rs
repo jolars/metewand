@@ -2,6 +2,7 @@
 
 pub mod canonical;
 pub mod compatibility;
+pub mod controls;
 pub mod identity;
 pub mod manifest;
 pub mod manifest_hash;

@@ -423,3 +423,41 @@ fn reports_a_missing_typed_definition_identity() {
         "logical planning has no implementation-definition identity for `beta`"
     );
 }
+
+#[test]
+fn required_local_controls_fail_during_logical_planning() {
+    let manifest = manifest(&MANIFEST.replace(
+        "worker_reuse = true",
+        "worker_reuse = true\nenforcement = \"required\"",
+    ));
+    let error =
+        expand_manifest_logical_plan(&manifest, &contracts(&manifest), &schemas(), &catalog())
+            .unwrap_err();
+    assert!(matches!(
+        error,
+        metewand_core::planning::LogicalPlanningError::Control(_)
+    ));
+    assert!(error.to_string().contains("network"));
+}
+
+#[test]
+fn best_effort_resource_requests_survive_planning_and_are_reported() {
+    let manifest = manifest(&MANIFEST.replace(
+        "worker_reuse = true",
+        "worker_reuse = true\ncpus = 2\nthreads = 4\nmemory = \"8 GiB\"",
+    ));
+    let plan =
+        expand_manifest_logical_plan(&manifest, &contracts(&manifest), &schemas(), &catalog())
+            .unwrap();
+    let report =
+        metewand_core::controls::local_control_report(&plan.experiments[0].execution_policy.record);
+    assert_eq!(report.len(), 9);
+    assert_eq!(
+        serde_json::to_value(&report[6]).unwrap(),
+        serde_json::json!({
+            "name": "cpus", "requested": 2, "required": false, "status": "unsupported", "scope": "worker_lifetime"
+        })
+    );
+    assert_eq!(report[7].requested, serde_json::json!(4));
+    assert_eq!(report[8].requested, serde_json::json!("8 GiB"));
+}
