@@ -8,6 +8,8 @@
 mod attempts;
 #[cfg(unix)]
 mod durable;
+#[cfg(all(test, unix))]
+mod fault_tests;
 #[cfg(unix)]
 mod publisher;
 #[cfg(unix)]

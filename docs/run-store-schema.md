@@ -350,8 +350,9 @@ already accepted attempt or selected observation must respect the same unique
 constraints. Recovery must never infer success from the presence of a staging
 directory, a completion marker alone, an artifact row, or a claim. Replay uses
 the same reservation and transition constraints, preserving every recovered
-retry identity. The explicit recovery API below implements this handoff;
-exhaustive boundary fault injection remains a later slice.
+retry identity. The explicit recovery API below implements this handoff, and
+the [crash conformance tests](#crash-conformance) exercise its durability
+boundaries.
 
 ## Transactional publication
 
@@ -477,8 +478,7 @@ rename may leave a fully verified orphan. Neither state implies acceptance.
 After commit, staging cleanup is best effort; a leftover released stage cannot
 revoke completion. Reopening the store imports neither stages nor orphans.
 The explicit recovery API below handles these leftovers. Automatic observation
-selection, CLI integration, and exhaustive boundary fault injection remain
-subsequent slices.
+selection and CLI integration remain subsequent slices.
 
 Publication tests cover exact outcome bytes, current epoch nanoseconds, backward
 clock adjustments, live-stage renewal, same-filesystem placement, kernel locks,
@@ -585,6 +585,53 @@ unregistered and complete staging directories, independent orphans, all terminal
 outcomes, corrupted dependencies, changed metadata, missing claims, ambiguous
 outcomes, preserved observations, concurrent recoverers, and transaction rollback
 followed by import of the same immutable orphan.
+
+## Crash conformance
+
+The runtime's private test build traces each SQLite statement before execution
+and after completion, including initialization, transaction begin, commit,
+rollback, and the individual writes inside a transaction. Shared helpers expose
+crash points before and after every explicit file and directory synchronization
+and no-replace rename in run-store initialization, publication, cleanup, and
+recovery. Additional points surround finalization, outcome construction, and
+terminal projection. These hooks have no production configuration or public
+API. The SQLite trace dependency is enabled only for test builds.
+
+Each subprocess campaign prepares one closed store fixture, records a successful
+execution, then repeats it in a fresh copy for every numbered boundary. Copies
+preserve staging lease names and their quarantine order. Each child writes its
+boundary trace and exits immediately at that point without running Rust
+destructors or rolling back SQLite explicitly. The parent checks the exact trace
+prefix, so a changed execution path cannot silently count as a tested crash point.
+Campaigns cover initialization, all terminal outcomes, execution transitions,
+lease renewal, identical-content reuse, observation registration and selection,
+expired reservations and claims, independent completed orphans, accepted
+outcome import, recovery failure publication, and staging quarantine. Recovery
+itself is interrupted and repeated through the same campaign.
+
+After every crash, the tests reopen and recover the store. They require each
+verified, claimed published success to survive, reject acceptance without that
+evidence, check terminal documents against database identities and digests,
+preserve existing selections, resolve claims and leases, and verify SQLite
+integrity and foreign keys. A second recovery must add no terminal records or
+artifacts. An explicit authorized retry fills an unsatisfied slot while a
+satisfied slot refuses another reservation. At most one attempt becomes
+accepted for the slot. Separate synchronized subprocesses publish identical
+content and must converge on one complete object with both lease roots. The
+same race also kills the winning publisher immediately after its successful
+rename and before parent synchronization; the survivor must finish verification
+and publication, and recovery must retain its bytes.
+
+Run these tests directly with:
+
+```sh
+cargo test -p metewand-runtime --lib --locked run_store::fault_tests -- --nocapture
+```
+
+They also run in the workspace suite and `devenv test`. The campaign models
+abrupt process death around application and SQLite statement boundaries; it
+does not simulate a storage device losing power. The schema, identities,
+canonical bytes, and public compatibility constants remain at version 1.
 
 ## Artifact references and retention
 

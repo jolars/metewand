@@ -237,7 +237,7 @@ workflows](DESIGN.md#automation-and-agentic-workflows).
 - [x] Recover expired reservations, interrupted staging directories, completed
   orphans, and finalization claims without manufacturing success or
   duplicating an accepted slot.
-- [ ] Add fault injection at every database, synchronization, rename, and
+- [x] Add fault injection at every database, synchronization, rename, and
   finalization boundary, plus concurrent-publication tests for identical
   content.
 

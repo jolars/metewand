@@ -164,13 +164,13 @@ fn acquire_lock(file: File, check: &Check<'_>) -> Result<File, RunStoreError> {
 
 fn sync_file(file: &File, check: &Check<'_>) -> Result<(), RunStoreError> {
     check(Operation::FileSync)?;
-    file.sync_all()?;
+    crate::durability::sync_all(file)?;
     Ok(())
 }
 
 fn sync_directory(file: &File, check: &Check<'_>) -> Result<(), RunStoreError> {
     check(Operation::DirectorySync)?;
-    file.sync_all()?;
+    crate::durability::sync_all(file)?;
     Ok(())
 }
 
@@ -361,6 +361,8 @@ fn reject_network_filesystem(file: &File) -> Result<(), RunStoreError> {
 }
 
 fn open_database(path: &Path) -> Result<Connection, RunStoreError> {
+    #[cfg(test)]
+    crate::fault_injection::hit("database.open.before");
     // Exclude URI interpretation and VFS overrides that can disable locking.
     let connection = Connection::open_with_flags(
         path,
@@ -369,6 +371,10 @@ fn open_database(path: &Path) -> Result<Connection, RunStoreError> {
             | OpenFlags::SQLITE_OPEN_NO_MUTEX
             | OpenFlags::SQLITE_OPEN_NOFOLLOW,
     )?;
+    #[cfg(test)]
+    crate::fault_injection::hit("database.open.after");
+    #[cfg(test)]
+    crate::fault_injection::trace_database(&connection);
     connection.busy_timeout(BUSY_TIMEOUT)?;
     Ok(connection)
 }

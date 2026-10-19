@@ -329,7 +329,7 @@ fn write_logs(
 fn durable_child(parent: &Path, name: &str) -> Result<PathBuf, PublicationError> {
     let path = parent.join(name);
     match fs::create_dir(&path) {
-        Ok(()) => File::open(parent)?.sync_all()?,
+        Ok(()) => crate::durability::sync_all(&File::open(parent)?)?,
         Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
             if !fs::symlink_metadata(&path)?.is_dir() {
                 return Err(PublicationError::UnsafeEntry(path));
@@ -347,7 +347,7 @@ fn staging(parent: &Path) -> Result<TempDir, PublicationError> {
 pub(crate) fn write_file(path: &Path, bytes: &[u8]) -> Result<(), PublicationError> {
     let mut file = OpenOptions::new().create_new(true).write(true).open(path)?;
     file.write_all(bytes)?;
-    file.sync_all()?;
+    crate::durability::sync_all(&file)?;
     Ok(())
 }
 
@@ -374,7 +374,7 @@ pub(crate) fn prepare_directory(stage: &Path) -> Result<(), PublicationError> {
         return Err(PublicationError::Conflict(stage.join("manifest.json")));
     }
     for entry in files.values() {
-        File::open(stage.join(&entry.path))?.sync_all()?;
+        crate::durability::sync_all(&File::open(stage.join(&entry.path))?)?;
     }
     sync_directories(stage)?;
     let marker = CanonicalValue::try_from(json!({
@@ -388,7 +388,7 @@ pub(crate) fn prepare_directory(stage: &Path) -> Result<(), PublicationError> {
         PublicSchema::ArtifactManifest,
         &marker,
     )?;
-    File::open(stage)?.sync_all()?;
+    crate::durability::sync_all(&File::open(stage)?)?;
     verify_finalized_directory(stage)
 }
 
@@ -407,21 +407,22 @@ pub(crate) fn publish_prepared_directory(
             // A competing writer may not yet have synchronized the destination
             // parent, so this writer independently completes the durability work.
             for entry in inventory(destination)?.values() {
-                File::open(destination.join(&entry.path))?.sync_all()?;
+                crate::durability::sync_all(&File::open(destination.join(&entry.path))?)?;
             }
             sync_directories(destination)?;
             fs::remove_dir_all(stage)?;
         }
         Err(error) => return Err(error.into()),
     }
-    File::open(
+    crate::durability::sync_all(&File::open(
         destination
             .parent()
             .expect("published directory has a parent"),
-    )?
-    .sync_all()?;
+    )?)?;
     if stage.parent() != destination.parent() {
-        File::open(stage.parent().expect("staging directory has a parent"))?.sync_all()?;
+        crate::durability::sync_all(&File::open(
+            stage.parent().expect("staging directory has a parent"),
+        )?)?;
     }
     Ok(())
 }
@@ -433,14 +434,19 @@ pub(crate) fn publish_prepared_directory(
     target_os = "redox"
 ))]
 pub(crate) fn rename_no_replace(source: &Path, destination: &Path) -> io::Result<()> {
-    rustix::fs::renameat_with(
+    #[cfg(test)]
+    crate::fault_injection::hit("rename.before");
+    let result = rustix::fs::renameat_with(
         rustix::fs::CWD,
         source,
         rustix::fs::CWD,
         destination,
         rustix::fs::RenameFlags::NOREPLACE,
     )
-    .map_err(Into::into)
+    .map_err(Into::into);
+    #[cfg(test)]
+    crate::fault_injection::hit("rename.after");
+    result
 }
 
 #[cfg(not(any(
@@ -457,13 +463,14 @@ pub(crate) fn rename_no_replace(_source: &Path, _destination: &Path) -> io::Resu
 }
 
 pub(crate) fn sync_directories(root: &Path) -> io::Result<()> {
-    for entry in fs::read_dir(root)? {
-        let entry = entry?;
+    let mut entries = fs::read_dir(root)?.collect::<Result<Vec<_>, _>>()?;
+    entries.sort_by_key(|entry| entry.file_name());
+    for entry in entries {
         if entry.file_type()?.is_dir() {
             sync_directories(&entry.path())?;
         }
     }
-    File::open(root)?.sync_all()
+    crate::durability::sync_all(&File::open(root)?)
 }
 
 #[derive(Debug, Deserialize)]

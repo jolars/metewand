@@ -7,6 +7,11 @@ pub const LOCAL_TREE_HASH_VERSION: u32 = 1;
 pub const SOURCE_RESOLUTION_VERSION: u32 = 1;
 
 #[cfg(unix)]
+mod durability;
+#[cfg(all(test, unix))]
+mod fault_injection;
+
+#[cfg(unix)]
 pub mod artifact_store;
 #[cfg(unix)]
 pub mod datamonger;

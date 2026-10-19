@@ -99,7 +99,7 @@ impl RunStore {
             .to_owned();
         let objects = root.join("artifacts");
         ensure_directory(&objects)?;
-        File::open(&root)?.sync_all()?;
+        crate::durability::sync_all(&File::open(&root)?)?;
         let mut report = RecoveryReport::default();
         let (stages, busy_attempts) = self.lock_stages(&root, &objects, &mut report)?;
         let orphans = self.find_orphans(&root, &objects, now, &mut report)?;
@@ -155,7 +155,7 @@ impl RunStore {
                     sync_tree(&safe_path(&root, &artifact.artifact.relative_path)?)?;
                 }
                 sync_tree(&root.join(&orphan.artifact.relative_path))?;
-                File::open(&objects)?.sync_all()?;
+                crate::durability::sync_all(&File::open(&objects)?)?;
                 let tx = self
                     .connection
                     .transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -209,22 +209,22 @@ impl RunStore {
             if source.try_exists()? {
                 let quarantine = objects.join(".quarantine");
                 ensure_directory(&quarantine)?;
-                File::open(&objects)?.sync_all()?;
+                crate::durability::sync_all(&File::open(&objects)?)?;
                 let target = quarantine.join(source.file_name().expect("stage has a name"));
                 rename_no_replace(&source, &target)?;
-                File::open(&objects)?.sync_all()?;
-                File::open(&quarantine)?.sync_all()?;
+                crate::durability::sync_all(&File::open(&objects)?)?;
+                crate::durability::sync_all(&File::open(&quarantine)?)?;
                 report
                     .quarantined_stages
                     .push(target.strip_prefix(&root).expect("inside store").to_owned());
             }
-            File::open(&objects)?.sync_all()?;
+            crate::durability::sync_all(&File::open(&objects)?)?;
             let quarantine = objects.join(".quarantine");
             if quarantine.try_exists()? {
                 if !fs::symlink_metadata(&quarantine)?.is_dir() {
                     return Err(RunStoreError::UnsafePath(quarantine));
                 }
-                File::open(quarantine)?.sync_all()?;
+                crate::durability::sync_all(&File::open(quarantine)?)?;
             }
             if let Some(id) = &stage.lease_id {
                 tx.execute("UPDATE leases SET released_at_ns = max(?2, acquired_at_ns) WHERE id = ?1 AND released_at_ns IS NULL", params![id, checked])?;
@@ -395,7 +395,7 @@ impl RunStore {
                 }
             } else {
                 sync_tree(&path)?;
-                File::open(objects)?.sync_all()?;
+                crate::durability::sync_all(&File::open(objects)?)?;
                 let tx = self
                     .connection
                     .transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -513,8 +513,8 @@ pub(super) fn coordination_lock(store: &RunStore, shared: bool) -> Result<File, 
         Err(TryLockError::WouldBlock) => return Err(RunStoreError::Busy),
         Err(TryLockError::Error(error)) => return Err(error.into()),
     }
-    file.sync_all()?;
-    File::open(root)?.sync_all()?;
+    crate::durability::sync_all(&file)?;
+    crate::durability::sync_all(&File::open(root)?)?;
     Ok(file)
 }
 
@@ -805,13 +805,15 @@ fn verify_registered(root: &Path, stored: &StoredArtifact) -> Result<(), RunStor
 fn sync_tree(path: &Path) -> Result<(), RunStoreError> {
     let metadata = fs::symlink_metadata(path)?;
     if metadata.is_dir() {
-        for entry in fs::read_dir(path)? {
-            sync_tree(&entry?.path())?;
+        let mut entries = fs::read_dir(path)?.collect::<Result<Vec<_>, _>>()?;
+        entries.sort_by_key(|entry| entry.file_name());
+        for entry in entries {
+            sync_tree(&entry.path())?;
         }
     } else if !metadata.is_file() {
         return Err(RunStoreError::UnsafePath(path.to_owned()));
     }
-    File::open(path)?.sync_all()?;
+    crate::durability::sync_all(&File::open(path)?)?;
     Ok(())
 }
 

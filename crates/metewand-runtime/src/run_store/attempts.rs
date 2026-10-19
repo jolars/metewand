@@ -436,6 +436,8 @@ pub(super) fn commit_terminal_in(
 ) -> Result<TerminalAttempt, RunStoreError> {
     let now = timestamp(now_ns)?.max(timestamp(attempt.updated_at_ns)?);
     let checked = timestamp(checked_at_ns)?.max(now);
+    #[cfg(test)]
+    crate::fault_injection::hit("finalization.projection.before");
     let verified = timestamp(artifact.verified_at_ns)?;
     if artifact.id.is_empty() || verified > checked {
         return Err(invalid("invalid finalized artifact metadata"));
@@ -484,6 +486,8 @@ pub(super) fn commit_terminal_in(
         "UPDATE leases SET released_at_ns = ?2 WHERE attempt_id = ?1 AND released_at_ns IS NULL",
         params![attempt.id.to_string(), checked],
     )?;
+    #[cfg(test)]
+    crate::fault_injection::hit("finalization.projection.after");
     Ok(TerminalAttempt {
         id: attempt.id,
         outcome,

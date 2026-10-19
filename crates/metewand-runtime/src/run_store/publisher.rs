@@ -149,10 +149,14 @@ impl RunStore {
         populate: impl FnOnce(&Path) -> io::Result<()>,
         mut clock: impl FnMut() -> u64,
     ) -> Result<PublishedFinalization, RunStoreError> {
+        #[cfg(test)]
+        crate::fault_injection::hit("finalization.before");
         outcome.details()?;
         let stage = self.stage(attempt, clock())?;
         populate(&stage.object)?;
         let finished = clock().max(stage.acquired_at_ns);
+        #[cfg(test)]
+        crate::fault_injection::hit("finalization.outcome.before");
         let document = self.outcome_document(attempt, &outcome, references, finished, &stage)?;
         write_file(
             &stage.object.join("outcome.json"),
@@ -181,6 +185,8 @@ impl RunStore {
         )?;
         tx.commit()?;
         stage.cleanup();
+        #[cfg(test)]
+        crate::fault_injection::hit("finalization.after");
         Ok(PublishedFinalization { artifact, terminal })
     }
 
@@ -203,7 +209,7 @@ impl RunStore {
         }
         // Synchronize even an existing parent: another creator may not yet have
         // completed its own parent synchronization.
-        File::open(&root)?.sync_all()?;
+        crate::durability::sync_all(&File::open(&root)?)?;
         let directory = tempfile::Builder::new()
             .prefix(".staging-")
             .tempdir_in(&objects)?;
@@ -213,11 +219,11 @@ impl RunStore {
             .create_new(true)
             .open(directory.path().join("lock"))?;
         lock.lock()?;
-        lock.sync_all()?;
+        crate::durability::sync_all(&lock)?;
         let object = directory.path().join("object");
         fs::create_dir(&object)?;
-        File::open(directory.path())?.sync_all()?;
-        File::open(&objects)?.sync_all()?;
+        crate::durability::sync_all(&File::open(directory.path())?)?;
+        crate::durability::sync_all(&File::open(&objects)?)?;
         let relative = directory
             .path()
             .strip_prefix(&root)
@@ -292,6 +298,8 @@ impl RunStore {
         validate_finalization(&tx, attempt, outcome, now)?;
         let document = build_outcome_document(&tx, attempt, outcome, references, finished)?;
         tx.commit()?;
+        #[cfg(test)]
+        crate::fault_injection::hit("finalization.outcome.after");
         Ok(document)
     }
 }
@@ -378,7 +386,7 @@ impl Stage {
         // directories carry no accepted identity and can be removed by recovery.
         if fs::remove_dir_all(&self.directory).is_ok() {
             let _ = File::open(self.directory.parent().expect("stage has a parent"))
-                .and_then(|parent| parent.sync_all());
+                .and_then(|parent| crate::durability::sync_all(&parent));
         }
     }
 }

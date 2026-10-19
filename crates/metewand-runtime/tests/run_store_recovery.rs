@@ -1,6 +1,10 @@
 #![cfg(unix)]
 
-use std::{fs, io, path::Path};
+use std::{
+    fs, io,
+    path::Path,
+    sync::{Mutex, MutexGuard, PoisonError},
+};
 
 use metewand_core::records::{RecordId, ResolvedAttemptSlotRecord};
 use metewand_runtime::run_store::{
@@ -9,6 +13,18 @@ use metewand_runtime::run_store::{
 };
 use rusqlite::Connection;
 use tempfile::TempDir;
+
+static PROBE_ISOLATION: Mutex<()> = Mutex::new(());
+
+fn isolate_probes() -> MutexGuard<'static, ()> {
+    // Preflight forks briefly inherit every live file descriptor in this
+    // process. Isolate unrelated cases so those children cannot retain another
+    // case's coordination or staging locks. Concurrent-owner cases still
+    // create their own competing threads while holding this guard.
+    PROBE_ISOLATION
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+}
 
 fn slot() -> RecordId<ResolvedAttemptSlotRecord> {
     RecordId::from_digest([1; 32])
@@ -81,6 +97,7 @@ fn orphan(store: &mut RunStore, attempt: &OwnedAttempt, outcome: TerminalOutcome
 
 #[test]
 fn expired_reservations_fail_durably_and_require_an_explicit_new_retry() {
+    let _isolation = isolate_probes();
     let (root, mut store, db, attempt) = setup();
     assert!(store.recover(|| 99).unwrap().terminals.is_empty());
     assert_eq!(state(&db), "reserved");
@@ -138,6 +155,7 @@ fn expired_reservations_fail_durably_and_require_an_explicit_new_retry() {
 
 #[test]
 fn a_completed_claimed_orphan_is_imported_once_and_satisfies_its_slot() {
+    let _isolation = isolate_probes();
     let (root, mut store, db, attempt) = setup();
     let attempt = store
         .begin_finalization(&attempt, lease("claim", 100), 11)
@@ -174,6 +192,7 @@ fn a_completed_claimed_orphan_is_imported_once_and_satisfies_its_slot() {
 
 #[test]
 fn abandoned_stages_are_quarantined_but_complete_staging_never_implies_success() {
+    let _isolation = isolate_probes();
     let (root, mut store, db, attempt) = setup();
     let attempt = store
         .begin_finalization(&attempt, lease("claim", 100), 11)
@@ -208,6 +227,7 @@ fn abandoned_stages_are_quarantined_but_complete_staging_never_implies_success()
 
 #[test]
 fn recovery_skips_locked_stages_even_when_their_owner_has_expired() {
+    let _isolation = isolate_probes();
     let (root, mut store, db, attempt) = setup();
     let mut recovery = RunStore::open(root.path()).unwrap();
     assert!(
@@ -233,6 +253,7 @@ fn recovery_skips_locked_stages_even_when_their_owner_has_expired() {
 
 #[test]
 fn an_expired_claim_is_resolved_even_while_its_reservation_is_live() {
+    let _isolation = isolate_probes();
     let (_root, mut store, db, attempt) = setup();
     store
         .begin_finalization(&attempt, lease("claim", 30), 11)
@@ -245,6 +266,7 @@ fn an_expired_claim_is_resolved_even_while_its_reservation_is_live() {
 
 #[test]
 fn corrupted_orphan_is_rejected_without_manufacturing_acceptance() {
+    let _isolation = isolate_probes();
     let (root, mut store, db, attempt) = setup();
     let attempt = store
         .begin_finalization(&attempt, lease("claim", 100), 11)
@@ -271,6 +293,7 @@ fn corrupted_orphan_is_rejected_without_manufacturing_acceptance() {
 
 #[test]
 fn independent_orphans_register_bytes_without_selecting_observations() {
+    let _isolation = isolate_probes();
     let (root, mut store, db, attempt) = setup();
     let mut times = [20, 100].into_iter();
     assert!(
@@ -362,6 +385,7 @@ fn variant(root: &Path, change: impl FnOnce(&mut serde_json::Value)) -> std::pat
 
 #[test]
 fn complete_unpublished_stages_are_quarantined_without_importing_their_outcome() {
+    let _isolation = isolate_probes();
     let (root, mut store, db, attempt) = setup();
     let attempt = store
         .begin_finalization(&attempt, lease("claim", 100), 11)
@@ -394,6 +418,7 @@ fn complete_unpublished_stages_are_quarantined_without_importing_their_outcome()
 
 #[test]
 fn recovery_quarantines_unregistered_stages_even_before_lock_creation() {
+    let _isolation = isolate_probes();
     let (root, mut store, db, _attempt) = setup();
     let path = root.path().join("artifacts");
     fs::create_dir(&path).unwrap();
@@ -415,6 +440,7 @@ fn recovery_quarantines_unregistered_stages_even_before_lock_creation() {
 
 #[test]
 fn expired_staging_can_be_quarantined_after_reservation_renewal() {
+    let _isolation = isolate_probes();
     let (root, mut store, db, attempt) = setup();
     assert!(
         store
@@ -445,6 +471,7 @@ fn expired_staging_can_be_quarantined_after_reservation_renewal() {
 
 #[test]
 fn altered_coordination_records_versions_identities_and_times_cannot_establish_success() {
+    let _isolation = isolate_probes();
     for field in [
         "attempt_id",
         "slot_id",
@@ -485,6 +512,7 @@ fn altered_coordination_records_versions_identities_and_times_cannot_establish_s
 
 #[test]
 fn a_complete_acceptance_without_a_claim_is_rejected() {
+    let _isolation = isolate_probes();
     let (root, mut store, db, attempt) = setup();
     let attempt = store
         .advance(&attempt, AttemptPhase::Finalizing, 11)
@@ -501,6 +529,7 @@ fn a_complete_acceptance_without_a_claim_is_rejected() {
 
 #[test]
 fn ambiguous_completed_outcomes_fail_instead_of_choosing_a_success() {
+    let _isolation = isolate_probes();
     let (root, mut store, db, attempt) = setup();
     let attempt = store
         .begin_finalization(&attempt, lease("claim", 100), 11)
@@ -523,6 +552,7 @@ fn ambiguous_completed_outcomes_fail_instead_of_choosing_a_success() {
 
 #[test]
 fn recovery_preserves_valid_selected_observations_even_when_a_dependency_changed() {
+    let _isolation = isolate_probes();
     for corrupt in [false, true] {
         let (root, mut store, db, attempt) = setup_role("measurement");
         db.execute(
@@ -575,6 +605,7 @@ fn recovery_preserves_valid_selected_observations_even_when_a_dependency_changed
 
 #[test]
 fn recovery_rolls_back_the_terminal_transaction_and_reimports_the_same_orphan() {
+    let _isolation = isolate_probes();
     let (_root, mut store, db, attempt) = setup();
     let attempt = store
         .begin_finalization(&attempt, lease("claim", 100), 11)
@@ -598,6 +629,7 @@ fn recovery_rolls_back_the_terminal_transaction_and_reimports_the_same_orphan() 
 
 #[test]
 fn concurrent_recoverers_cannot_duplicate_an_accepted_slot_or_terminal_event() {
+    let _isolation = isolate_probes();
     use std::sync::{Arc, Barrier};
     let (root, mut store, db, attempt) = setup();
     let attempt = store
@@ -635,6 +667,7 @@ fn concurrent_recoverers_cannot_duplicate_an_accepted_slot_or_terminal_event() {
 
 #[test]
 fn failure_publication_is_recoverable_after_a_late_database_error() {
+    let _isolation = isolate_probes();
     let (root, mut store, db, _attempt) = setup();
     db.execute_batch("CREATE TRIGGER injected_failure BEFORE UPDATE OF released_at_ns ON leases BEGIN SELECT RAISE(ABORT, 'injected release failure'); END;").unwrap();
     assert!(store.recover(|| 100).is_err());
@@ -651,6 +684,7 @@ fn failure_publication_is_recoverable_after_a_late_database_error() {
 
 #[test]
 fn recovering_non_success_orphans_preserves_their_original_outcomes_and_roots() {
+    let _isolation = isolate_probes();
     use metewand_core::canonical::CanonicalValue;
     for outcome in [
         TerminalOutcome::Superseded,
@@ -704,6 +738,7 @@ fn recovering_non_success_orphans_preserves_their_original_outcomes_and_roots() 
 
 #[test]
 fn live_unlocked_stages_are_preserved_until_expiration() {
+    let _isolation = isolate_probes();
     let (root, mut store, db, attempt) = setup();
     assert!(
         store
@@ -735,6 +770,7 @@ fn live_unlocked_stages_are_preserved_until_expiration() {
 
 #[test]
 fn unsafe_staging_and_dependency_symlinks_never_cross_the_recovery_boundary() {
+    let _isolation = isolate_probes();
     for kind in ["stage", "dependency"] {
         let (root, mut store, db, attempt) = setup();
         if kind == "stage" {
@@ -782,6 +818,7 @@ fn unsafe_staging_and_dependency_symlinks_never_cross_the_recovery_boundary() {
 
 #[test]
 fn released_stages_and_missing_stages_do_not_revoke_completed_artifacts() {
+    let _isolation = isolate_probes();
     let (root, mut store, db, attempt) = setup();
     let artifact = store
         .publish_artifact(&attempt, ArtifactKind::Dataset, payload, || 20)
@@ -838,6 +875,7 @@ fn released_stages_and_missing_stages_do_not_revoke_completed_artifacts() {
 
 #[test]
 fn a_completed_claim_can_be_recovered_before_reservation_expiration() {
+    let _isolation = isolate_probes();
     let (_root, mut store, db, attempt) = setup();
     let attempt = store
         .begin_finalization(&attempt, lease("claim", 30), 11)
@@ -859,6 +897,7 @@ fn a_completed_claim_can_be_recovered_before_reservation_expiration() {
 
 #[test]
 fn a_crash_between_quarantine_rename_and_lease_release_is_repeatable() {
+    let _isolation = isolate_probes();
     let (root, mut store, db, attempt) = setup();
     assert!(
         store
@@ -919,6 +958,7 @@ fn a_crash_between_quarantine_rename_and_lease_release_is_repeatable() {
 
 #[test]
 fn interruption_in_every_execution_phase_produces_a_typed_failure() {
+    let _isolation = isolate_probes();
     let phases = [
         AttemptPhase::Materializing,
         AttemptPhase::Starting,
@@ -944,6 +984,7 @@ fn interruption_in_every_execution_phase_produces_a_typed_failure() {
 
 #[test]
 fn recovery_retains_exact_current_epoch_finish_timestamps() {
+    let _isolation = isolate_probes();
     let (_root, mut store, db, attempt) = setup();
     let now = 1_792_349_520_000_000_123;
     store.renew(&attempt, now + 100, 20).unwrap();
