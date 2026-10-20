@@ -172,7 +172,7 @@ pre-commit hooks:
 devenv shell
 ```
 
-Run the complete local CI suite with:
+Run the normal local CI checks with:
 
 ```sh
 devenv test
@@ -185,6 +185,22 @@ cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 cargo test --workspace --all-targets --locked
 ```
+
+Normal tests include focused crash and recovery coverage. The exhaustive
+durability campaign is opt-in because it repeats each scenario at every traced
+crash boundary. Run it when changing durability, publication, recovery, or the
+run-store schema:
+
+```sh
+cargo test -p metewand-runtime --lib --locked \
+  run_store::fault_tests::every_durability_boundary_survives_process_death_and_resume \
+  -- --exact --ignored --nocapture
+```
+
+Separate [durability CI](.github/workflows/durability.yml) runs this campaign
+weekly, on demand, and for pull requests that change durability code,
+dependencies, or release metadata. See
+[Crash conformance](docs/run-store-schema.md#crash-conformance) for its coverage.
 
 ## License
 

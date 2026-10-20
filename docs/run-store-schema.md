@@ -635,16 +635,33 @@ same race also kills the winning publisher immediately after its successful
 rename and before parent synchronization; the survivor must finish verification
 and publication, and recovery must retain its bytes.
 
-Run these tests directly with:
+The workspace suite and `devenv test` include the representative concurrent
+publisher crash test and focused recovery tests. Run the fault-test module
+directly with:
 
 ```sh
 cargo test -p metewand-runtime --lib --locked run_store::fault_tests -- --nocapture
 ```
 
-They also run in the workspace suite and `devenv test`. The campaign models
-abrupt process death around application and SQLite statement boundaries; it
-does not simulate a storage device losing power. The schema, identities,
-canonical bytes, and public compatibility constants retain their current versions.
+The exhaustive campaign is ignored by default. Run it explicitly when changing
+durability, publication, recovery, or the run-store schema:
+
+```sh
+cargo test -p metewand-runtime --lib --locked \
+  run_store::fault_tests::every_durability_boundary_survives_process_death_and_resume \
+  -- --exact --ignored --nocapture
+```
+
+The separate [durability workflow](../.github/workflows/durability.yml) runs this
+campaign weekly and on manual dispatch. It also runs for pull requests that
+change the durability implementation, workspace dependencies or toolchain, or
+release metadata. Release PRs change the workspace version in `Cargo.toml`, so
+they exercise the exhaustive campaign separately from normal CI.
+
+The campaign models abrupt process death around application and SQLite
+statement boundaries; it does not simulate a storage device losing power. The
+schema, identities, canonical bytes, and public compatibility constants retain
+their current versions.
 
 ## Artifact references and retention
 

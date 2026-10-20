@@ -1,0 +1,42 @@
+name: Durability
+
+on:
+  schedule:
+    - cron: '17 3 * * 0'
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/durability.yml
+      - Cargo.toml
+      - Cargo.lock
+      - rust-toolchain.toml
+      - crates/metewand-runtime/Cargo.toml
+      - crates/metewand-runtime/src/artifact_store.rs
+      - crates/metewand-runtime/src/durability.rs
+      - crates/metewand-runtime/src/fault_injection.rs
+      - crates/metewand-runtime/src/local_tree.rs
+      - crates/metewand-runtime/src/publication.rs
+      - crates/metewand-runtime/src/run_store.rs
+      - crates/metewand-runtime/src/run_store/**
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  crash-campaign:
+    name: Exhaustive crash campaign
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - uses: Swatinem/rust-cache@v2
+      - name: Exercise every durability boundary
+        run: >-
+          cargo test -p metewand-runtime --lib --locked
+          run_store::fault_tests::every_durability_boundary_survives_process_death_and_resume
+          -- --exact --ignored --nocapture

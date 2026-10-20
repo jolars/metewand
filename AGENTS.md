@@ -69,12 +69,19 @@ that describes the behavior before implementing it. Keep fixtures deterministic
 and assert exact machine-readable bytes where the design defines a canonical
 representation.
 
-Run focused tests while developing, then run the complete suite:
+Run focused tests while developing, then run the normal local CI checks once
+with `devenv test` or the equivalent commands:
 
 - `cargo fmt --all -- --check`
 - `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`
 - `cargo test --workspace --all-targets --locked`
-- `devenv test` for the local equivalent of GitHub CI
+
+The exhaustive crash campaign is ignored by default. Run it explicitly when
+changing durability, publication, recovery, or the run-store schema, or when
+requested. Ordinary CLI, planning, and documentation changes do not require it.
+See [Crash conformance](docs/run-store-schema.md#crash-conformance) for the command
+and separate CI coverage. Keep the representative crash tests in the normal
+suite.
 
 Use Rust 1.98.0 and edition 2024. Keep `Cargo.lock` current and use `--locked`
 in verification. Comments should explain why a choice exists rather than
