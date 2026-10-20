@@ -665,6 +665,13 @@ their current versions.
 
 ## Artifact references and retention
 
+[`status` and `explain`](inspection-cli.md) use a separate inspection reader.
+It copies a stable main database and WAL to private temporary storage, validates
+the exact supported schema, and reads committed records without opening SQLite
+on the source files. It never invokes initialization, recovery, or artifact
+quarantine. This adds no tables, triggers, or persisted fields and retains
+`RUN_STORE_SCHEMA_VERSION = 1`.
+
 Artifact rows describe completed, verified content, never staging. Paths are
 normalized relative to the store root, reject traversal and absolute paths,
 and identify exact objects. Content digests and directory manifest digests are

@@ -456,7 +456,7 @@ fn check_and_plan_do_not_acquire_selected_remote_sources_or_launch_materializers
                 }
             }
         });
-        let outputs = ["check", "plan"]
+        let outputs = ["check", "plan", "status"]
             .map(|command| metewand(repository.path(), [command, "--output", "json"]));
         stop.store(true, Ordering::Relaxed);
         outputs
@@ -479,7 +479,7 @@ fn check_and_plan_accept_an_explicit_manifest_path() {
     let parent = repository.path().parent().unwrap();
     let manifest = repository.path().join("metewand.toml");
 
-    for command in ["check", "plan"] {
+    for command in ["check", "plan", "status"] {
         let output = metewand(parent, [command, "--manifest", manifest.to_str().unwrap()]);
         assert!(output.status.success(), "{}", stderr(&output));
     }

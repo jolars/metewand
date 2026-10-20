@@ -17,6 +17,7 @@ than infer it from the Metewand release that produced the record.
 | --- | --- |
 | `machine-output` | Outer envelope for command events, results, and structured diagnostics. |
 | `run-output` | Sequenced execution events, finalized attempt summaries, and terminal run reports. |
+| `inspection-output` | Read-only slot coverage, complete attempt history, selected observations, diagnostics, and stable identity explanations. |
 | `manifest` | Initial benchmark manifest, including definitions, environments, experiments, and policies. |
 | `problem-contract` | Problem-owned schemas, timing scopes, semantics, and reference cases. |
 | `one-shot-observation-policy` | One result without a scientific budget. |

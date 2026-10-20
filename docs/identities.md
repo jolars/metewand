@@ -85,9 +85,18 @@ identical artifact contents have one content address.
 | `resolved-attempt-slot` | `ResolvedAttemptSlotRecord` |
 | `observation` | `RunObservationRecord` |
 | `attempt` | `RunAttemptRecord` |
+| `diagnostic` | `inspection::DiagnosticResource` |
 
 Parsing an identity through `RecordId<T>` verifies the kind associated with
 `T`; a schema ID therefore cannot be parsed as an environment-definition ID.
+
+Persisted failure diagnostics use the canonical resource value
+`{"code":...,"message":...,"details":...}`; missing details are null. Attempt
+IDs, paths to stored records, and navigation links are excluded. The
+[diagnostic vectors](../fixtures/identities/diagnostics-v1.json) define exact
+canonical bytes and IDs. This additive kind retains `IDENTITY_VERSION = 1` and
+does not change existing identity transcripts. See [inspection](inspection-cli.md)
+for lookup and evidence availability.
 
 ## Representation rules
 

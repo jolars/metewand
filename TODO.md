@@ -282,7 +282,7 @@ artifacts](DESIGN.md#6-environments-execution-and-artifacts).
 - [x] Implement selected-ID and bounded execution, explicit retries, immutable
   retry attempts, superseded concurrent candidates, and `run --resume`
   without repeating accepted slots.
-- [ ] Implement `metewand status` and `metewand explain <id>` over stable
+- [x] Implement `metewand status` and `metewand explain <id>` over stable
   definition, run, slot, attempt, artifact, and diagnostic identities.
 
 ### 2.5 SDKs and conformance suites

@@ -749,6 +749,17 @@ model, send source or results to an external service, generate scientific
 conclusions, or grant an agent authority beyond the invoked command. All
 operations remain usable and auditable as ordinary local CLI calls.
 
+The read-only `status` and `explain <id>` commands inspect checked logical plans,
+committed run-store history, or both through explicit `--manifest` and
+`--output-dir` selection. Status retains every retry, superseded attempt, and
+selected observation, distinguishes pending work from expired reservations,
+and labels historical slots absent from the current plan. Explanation follows
+exact stable identities across definitions, runs, slots, attempts, artifacts,
+and persisted failure diagnostics. The inspection reader uses a private SQLite
+snapshot without initializing or recovering the source store. Human and machine
+output share core inspection records and the version-1 `inspection-output`
+schema. See [Status and identity explanations](docs/inspection-cli.md).
+
 ### Main domain types
 
 ```text

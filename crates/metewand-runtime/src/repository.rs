@@ -8,7 +8,10 @@ use std::{
 
 use metewand_core::{
     canonical::{CanonicalJsonError, CanonicalValue},
-    identity::{IdentityError, identify_canonical, identify_record},
+    identity::{
+        IdentityError, canonical_resource_identity_bytes, identify_canonical, identify_record,
+    },
+    inspection::InspectionRecord,
     manifest::{
         DatasetDefinition, EnvironmentDefinition, Manifest, ManifestParseError, Name,
         RepositoryPath, Sha256Digest, WorkerDefinition, parse_manifest,
@@ -34,7 +37,9 @@ use metewand_core::{
 use serde_json::{Value, json};
 use thiserror::Error;
 
-use crate::source_bundle::{SourceBundleIdentityError, identify_source_bundle};
+use crate::source_bundle::{
+    SourceBundleIdentityError, identify_source_bundle, source_bundle_identity_value,
+};
 
 /// A benchmark repository that has passed every side-effect-free validation pass.
 pub struct CheckedRepository {
@@ -62,6 +67,8 @@ pub struct CheckedRepository {
 
 /// Content identities for the repository resources admitted by a check.
 pub struct RepositoryResources {
+    /// Canonical checked definitions and resources available for explanation.
+    pub records: BTreeMap<String, InspectionRecord>,
     /// Reachable schemas keyed by logical repository path.
     pub schemas: BTreeMap<PathBuf, RecordId<SchemaResource>>,
     /// Validated contracts keyed by manifest-local problem name.
@@ -368,26 +375,46 @@ fn hex_nibble(byte: u8) -> Option<u8> {
     }
 }
 
+#[derive(Default)]
+struct SourceBundleCatalog {
+    ids: BTreeMap<Vec<PathBuf>, RecordId<SourceBundleResource>>,
+    records: BTreeMap<String, InspectionRecord>,
+}
+
 fn build_planning_catalog(
     root: &Path,
     manifest: &Manifest,
     contracts: &BTreeMap<Name, ProblemContract>,
     schema_documents: &BTreeMap<PathBuf, CanonicalValue>,
 ) -> Result<(LogicalPlanningCatalog, RepositoryResources), RepositoryCheckError> {
+    let mut records = BTreeMap::new();
     let mut schema_ids = BTreeMap::new();
     for path in schema_documents.keys() {
         let value = schema_identity_value(path, schema_documents)?;
-        schema_ids.insert(path.clone(), identify_canonical(&value)?);
+        let id = identify_canonical(&value)?;
+        let mut record = InspectionRecord::new(
+            id.to_string(),
+            "schema",
+            serde_json::from_slice(&canonical_resource_identity_bytes(&value)?)
+                .expect("identity bytes are JSON"),
+        );
+        record.paths.push(path.to_string_lossy().into_owned());
+        records.insert(record.id.clone(), record);
+        schema_ids.insert(path.clone(), id);
     }
     let environment_definitions = manifest
         .environments
         .iter()
         .map(|(name, definition)| {
             let record = environment_record(name.clone(), definition);
-            Ok((name.clone(), identify_record(record)?.id))
+            let identified = identify_record(record)?;
+            let mut record = InspectionRecord::identified(&identified)?;
+            record.label = Some(name.to_string());
+            records.insert(record.id.clone(), record);
+            Ok((name.clone(), identified.id))
         })
         .collect::<Result<BTreeMap<_, _>, RepositoryCheckError>>()?;
-    let mut source_bundles = BTreeMap::new();
+    let mut source_bundles = SourceBundleCatalog::default();
 
     let mut dataset_definitions = BTreeMap::new();
     if manifest
@@ -396,6 +423,7 @@ fn build_planning_catalog(
         .any(|experiment| experiment.datasets.is_empty())
     {
         let unit = identify_builtin_unit_dataset_definition()?;
+        records.insert(unit.id.to_string(), InspectionRecord::identified(&unit)?);
         dataset_definitions.insert(DatasetConfigurationDefinition::Unit, unit.id);
     }
     for (name, definition) in &manifest.datasets {
@@ -442,6 +470,9 @@ fn build_planning_catalog(
             output_schema,
             kind,
         })?;
+        let mut record = InspectionRecord::identified(&identified)?;
+        record.label = Some(name.to_string());
+        records.insert(record.id.clone(), record);
         dataset_definitions.insert(
             DatasetConfigurationDefinition::Named(name.clone()),
             identified.id,
@@ -452,7 +483,23 @@ fn build_planning_catalog(
         .iter()
         .map(|(name, contract)| {
             let value = contract_identity_value(root, contract, &schema_ids)?;
-            Ok((name.clone(), identify_canonical(&value)?))
+            let id = identify_canonical(&value)?;
+            let mut record = InspectionRecord::new(
+                id.to_string(),
+                "problem-contract",
+                serde_json::from_slice(&canonical_resource_identity_bytes(&value)?)
+                    .expect("identity bytes are JSON"),
+            );
+            record.label = Some(name.to_string());
+            record.paths.push(
+                manifest.problems[name]
+                    .contract
+                    .as_path()
+                    .to_string_lossy()
+                    .into_owned(),
+            );
+            records.insert(record.id.clone(), record);
+            Ok((name.clone(), id))
         })
         .collect::<Result<BTreeMap<Name, RecordId<ProblemContractResource>>, RepositoryCheckError>>(
         )?;
@@ -470,6 +517,9 @@ fn build_planning_catalog(
             parameter_defaults: definition.parameter_defaults.clone(),
             evaluator,
         })?;
+        let mut record = InspectionRecord::identified(&identified)?;
+        record.label = Some(name.to_string());
+        records.insert(record.id.clone(), record);
         problem_definitions.insert(name.clone(), identified.id);
     }
 
@@ -498,9 +548,13 @@ fn build_planning_catalog(
             parameter_defaults: definition.parameter_defaults.clone(),
             capabilities: definition.capabilities.clone(),
         })?;
+        let mut record = InspectionRecord::identified(&identified)?;
+        record.label = Some(name.to_string());
+        records.insert(record.id.clone(), record);
         implementation_definitions.insert(name.clone(), identified.id);
     }
 
+    records.extend(source_bundles.records);
     Ok((
         LogicalPlanningCatalog {
             dataset_definitions,
@@ -509,9 +563,10 @@ fn build_planning_catalog(
             environment_definitions,
         },
         RepositoryResources {
+            records,
             schemas: schema_ids,
             problem_contracts: contract_ids,
-            source_bundles,
+            source_bundles: source_bundles.ids,
         },
     ))
 }
@@ -566,7 +621,7 @@ fn worker_record(
     root: &Path,
     definition: &WorkerDefinition,
     environments: &BTreeMap<Name, RecordId<EnvironmentDefinitionRecord>>,
-    source_bundles: &mut BTreeMap<Vec<PathBuf>, RecordId<SourceBundleResource>>,
+    source_bundles: &mut SourceBundleCatalog,
 ) -> Result<WorkerDefinitionRecord, RepositoryCheckError> {
     let (launch, args, environment, protocol_transport) = match definition {
         WorkerDefinition::Interpreted(worker) => (
@@ -604,7 +659,7 @@ fn worker_record(
 fn cached_source_bundle(
     root: &Path,
     sources: &[RepositoryPath],
-    cache: &mut BTreeMap<Vec<PathBuf>, RecordId<SourceBundleResource>>,
+    cache: &mut SourceBundleCatalog,
 ) -> Result<RecordId<SourceBundleResource>, RepositoryCheckError> {
     let mut key = sources
         .iter()
@@ -612,11 +667,30 @@ fn cached_source_bundle(
         .collect::<Vec<_>>();
     key.sort();
     key.dedup();
-    if let Some(id) = cache.get(&key) {
+    if let Some(id) = cache.ids.get(&key) {
         return Ok(*id);
     }
-    let id = identify_source_bundle(root, sources)?;
-    cache.insert(key, id);
+    let value = source_bundle_identity_value(root, sources)?;
+    let id = identify_canonical(&value)?;
+    let mut record = InspectionRecord::new(
+        id.to_string(),
+        "source-bundle",
+        serde_json::from_slice(&canonical_resource_identity_bytes(&value)?)
+            .expect("identity bytes are JSON"),
+    );
+    record.paths = value.as_json()["entries"]
+        .as_array()
+        .expect("source inventory entries")
+        .iter()
+        .map(|entry| {
+            entry["path"]
+                .as_str()
+                .expect("source inventory path")
+                .to_owned()
+        })
+        .collect();
+    cache.records.insert(record.id.clone(), record);
+    cache.ids.insert(key, id);
     Ok(id)
 }
 

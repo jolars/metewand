@@ -17,6 +17,8 @@ mod fault_tests;
 #[cfg(unix)]
 mod publisher;
 #[cfg(unix)]
+pub(crate) mod reader;
+#[cfg(unix)]
 mod recovery;
 #[cfg(unix)]
 pub use attempts::{

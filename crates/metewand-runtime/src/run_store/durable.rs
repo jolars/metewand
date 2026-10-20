@@ -427,7 +427,7 @@ fn schema_objects(connection: &Connection) -> rusqlite::Result<Vec<SchemaObject>
     )?.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?.collect()
 }
 
-fn verify_schema(connection: &Connection) -> Result<(), RunStoreError> {
+pub(super) fn verify_schema(connection: &Connection) -> Result<(), RunStoreError> {
     let version = connection.pragma_query_value(None, "user_version", |r| r.get(0))?;
     let objects = schema_objects(connection)?;
     if version == 0 && objects.is_empty() {

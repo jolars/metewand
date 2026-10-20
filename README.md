@@ -163,6 +163,12 @@ publication to terminal commits, and explicit recovery resolves expired attempts
 completed orphans, and abandoned stages. The CLI uses this store for selected and bounded execution, explicit
 retries, and resume without repeating accepted slots.
 
+The read-only [`status` and `explain` commands](docs/inspection-cli.md) inspect
+current plans and durable history by stable identity. Status retains pending
+slots, live and expired attempts, retries, selected observations, and failures;
+explanations connect definitions, runs, slots, attempts, artifacts, and diagnostics
+without launching workers or recovering the store.
+
 ## Development
 
 The development environment pins Rust 1.98.0 and includes rustfmt, Clippy, and

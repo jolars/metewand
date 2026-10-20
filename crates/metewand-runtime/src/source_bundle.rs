@@ -134,6 +134,14 @@ pub fn identify_source_bundle(
     repository_root: &Path,
     patterns: &[RepositoryPath],
 ) -> Result<RecordId<SourceBundleResource>, SourceBundleIdentityError> {
+    identify_canonical(&source_bundle_identity_value(repository_root, patterns)?)
+        .map_err(SourceBundleIdentityError::Identity)
+}
+
+pub(crate) fn source_bundle_identity_value(
+    repository_root: &Path,
+    patterns: &[RepositoryPath],
+) -> Result<CanonicalValue, SourceBundleIdentityError> {
     let expanded = expand_source_bundle(repository_root, patterns)?;
     let root = fs::canonicalize(repository_root).map_err(|source| {
         SourceBundleIdentityError::RepositoryRoot {
@@ -146,8 +154,8 @@ pub fn identify_source_bundle(
         .iter()
         .map(|path| source_entry(&root, path))
         .collect::<Result<Vec<_>, SourceBundleIdentityError>>()?;
-    let value = CanonicalValue::try_from(json!({"entries": entries}))?;
-    identify_canonical(&value).map_err(SourceBundleIdentityError::Identity)
+    CanonicalValue::try_from(json!({"entries": entries}))
+        .map_err(SourceBundleIdentityError::Canonical)
 }
 
 fn source_entry(root: &Path, path: &Path) -> Result<Value, SourceBundleIdentityError> {

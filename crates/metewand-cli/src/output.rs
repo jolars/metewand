@@ -2,6 +2,7 @@ use std::{collections::BTreeMap, fmt::Write as _, path::Path};
 
 use metewand_core::{
     PUBLIC_SCHEMA_VERSION,
+    inspection::{Explanation, StatusReport},
     manifest::{
         DatasetDefinition, Enforcement, EnvironmentDefinition, ImplementationCapability,
         InterpretedRunner, PrimaryTime, RunOrder, SourceSpan, WorkerDefinition,
@@ -55,6 +56,8 @@ pub enum CommandResult {
     Check(CheckResult),
     Plan(Box<PlanResult>),
     Run(Box<RunReport>),
+    Status(Box<StatusReport>),
+    Explain(Box<Explanation>),
 }
 
 impl CommandResult {
@@ -123,6 +126,8 @@ impl CommandResult {
             Self::Check(result) => result.render_human(),
             Self::Plan(result) => result.render_human(),
             Self::Run(result) => render_run_report(result),
+            Self::Status(result) => render_status(result),
+            Self::Explain(result) => render_explanation(result),
         }
     }
 
@@ -171,8 +176,95 @@ impl Serialize for CommandResult {
             Self::Check(result) => result.serialize(serializer),
             Self::Plan(result) => result.serialize(serializer),
             Self::Run(result) => result.serialize(serializer),
+            Self::Status(result) => result.serialize(serializer),
+            Self::Explain(result) => result.serialize(serializer),
         }
     }
+}
+
+fn render_status(report: &StatusReport) -> String {
+    let summary = &report.summary;
+    let mut output = String::from("Benchmark status\n");
+    if let Some(benchmark) = &report.benchmark {
+        writeln!(output, "Benchmark: {benchmark}").expect("string write");
+    }
+    if let Some(path) = &report.output_directory {
+        writeln!(output, "Run directory: {path}").expect("string write");
+    }
+    writeln!(output, "Slots: {} total, {} satisfied, {} pending, {} active, {} require retry, {} require recovery.", summary.attempt_slots, summary.satisfied_slots, summary.pending_slots, summary.active_slots, summary.retry_required_slots, summary.recovery_required_slots).expect("string write");
+    writeln!(output, "Attempts: {} accepted, {} failed, {} superseded, {} censored, {} active.\nSelected observations: {}", summary.accepted_attempts, summary.failed_attempts, summary.superseded_attempts, summary.censored_attempts, summary.active_attempts, summary.selected_observations).expect("string write");
+    for slot in &report.slots {
+        let state = serde_json::to_value(slot.state).expect("slot state serializes");
+        writeln!(
+            output,
+            "  {}: {}",
+            slot.resolved_slot_id
+                .as_ref()
+                .unwrap_or(&slot.logical_slot_id),
+            state.as_str().expect("state string")
+        )
+        .expect("string write");
+        if slot.in_current_plan == Some(false) {
+            writeln!(output, "    absent from the current logical plan").expect("string write");
+        }
+    }
+    for attempt in &report.attempts {
+        writeln!(
+            output,
+            "  attempt {}: {} (retry {})",
+            attempt.id, attempt.state, attempt.retry_index
+        )
+        .expect("string write");
+        if let Some(diagnostic) = &attempt.diagnostic_id {
+            writeln!(output, "    diagnostic: {diagnostic}").expect("string write");
+        }
+        if attempt.recovery_required {
+            writeln!(
+                output,
+                "    reservation lease expired; explicit resume must recover this attempt"
+            )
+            .expect("string write");
+        }
+    }
+    for diagnostic in &report.diagnostics {
+        writeln!(
+            output,
+            "  diagnostic {} [{}]: {}",
+            diagnostic.id,
+            diagnostic.record["code"].as_str().unwrap_or("unknown"),
+            diagnostic.record["message"].as_str().unwrap_or("")
+        )
+        .expect("string write");
+    }
+    if summary.retry_required_slots > 0 || summary.recovery_required_slots > 0 {
+        writeln!(
+            output,
+            "Use `run --resume --retry --output-dir PATH` to authorize another immutable attempt."
+        )
+        .expect("string write");
+    }
+    output
+}
+
+fn render_explanation(explanation: &Explanation) -> String {
+    let subject = &explanation.subject;
+    let mut output = format!("{} {}\n", subject.kind, subject.id);
+    if let Some(label) = &subject.label {
+        writeln!(output, "Name: {label}").expect("string write");
+    }
+    for path in &subject.paths {
+        writeln!(output, "Path: {path}").expect("string write");
+    }
+    writeln!(
+        output,
+        "{}",
+        serde_json::to_string_pretty(&subject.record).expect("JSON value serializes")
+    )
+    .expect("string write");
+    for id in &subject.related_ids {
+        writeln!(output, "Related: {id}").expect("string write");
+    }
+    output
 }
 
 #[derive(Debug, Serialize)]
@@ -990,6 +1082,26 @@ pub struct CommandError {
 }
 
 impl CommandError {
+    #[cfg(unix)]
+    pub fn inspection(error: &metewand_runtime::inspection::InspectionError) -> Self {
+        use metewand_runtime::{
+            inspection::InspectionError, publication::PublicationError, run_store::RunStoreError,
+        };
+        let (exit_code, code) = match error {
+            InspectionError::UnknownIdentity(_) => {
+                (EXIT_INPUT_UNAVAILABLE, "inspection_id_not_found")
+            }
+            InspectionError::Io(_)
+            | InspectionError::Store(RunStoreError::Io(_))
+            | InspectionError::Publication(PublicationError::Io(_)) => {
+                (EXIT_INPUT_UNAVAILABLE, "inspection_input_unavailable")
+            }
+            InspectionError::Store(RunStoreError::Busy) => (EXIT_IO, "inspection_store_busy"),
+            _ => (EXIT_INVALID_REPOSITORY, "invalid_inspection_evidence"),
+        };
+        Self { exit_code, diagnostic: Box::new(Diagnostic::new(code, error.to_string()).with_remediation("Select an existing run with `--output-dir PATH`, a checked repository with `--manifest PATH`, or both.")) }
+    }
+
     #[cfg(unix)]
     pub fn execution(error: &metewand_runtime::run::RunError) -> Self {
         use metewand_runtime::run::RunError;

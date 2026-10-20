@@ -3,7 +3,7 @@
 Metewand's first command-line workflow exposes public schemas, validates a
 benchmark repository, and prints its unresolved logical plan. These commands
 are noninteractive and perform no downloads, environment builds, worker
-launches, or filesystem writes.
+launches, or repository or run-directory writes.
 
 ```sh
 metewand schema
@@ -12,6 +12,8 @@ metewand check
 metewand plan
 metewand --output json check
 metewand plan --output jsonl
+metewand status
+metewand status --output-dir results --output json
 ```
 
 `check` and `plan` use `metewand.toml` in the current directory by default. An
@@ -21,6 +23,12 @@ explicit manifest establishes its parent directory as the repository root:
 metewand check --manifest benchmarks/example/metewand.toml
 metewand plan --manifest benchmarks/example/metewand.toml
 ```
+
+[`status` and `explain <id>`](inspection-cli.md) also inspect checked logical
+plans. An explicit `--output-dir PATH` selects durable run history independently
+of the repository; add `--manifest PATH` to compare both. These commands never
+initialize or recover a run store. Store inspection uses a private temporary
+snapshot without writing to the source database or run directory.
 
 All manifest paths remain repository-relative. The loader resolves declared
 files beneath that root and rejects a path or symbolic link that escapes it.
@@ -33,9 +41,11 @@ exact checked-in JSON Schema document embedded in the executable. For example,
 `metewand schema manifest` writes the same bytes as
 `schemas/v1/manifest.schema.json`.
 
-The stable names are `machine-output`, `manifest`, `problem-contract`,
-`one-shot-observation-policy`, `artifact-manifest`, `result-manifest`,
-`observation`, `attempt`, `metrics`, and `worker-protocol-message`.
+Stable names include `machine-output`, `run-output`, `inspection-output`,
+`manifest`, `problem-contract`, `one-shot-observation-policy`,
+`artifact-manifest`, `result-manifest`, `observation`, `attempt`, `metrics`,
+and `worker-protocol-message`. The complete catalog appears in
+[Public schemas](public-schemas.md).
 
 ## Repository checks
 

@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "vectors": [
+    {
+      "diagnostic": {
+        "code": "implementation_crash",
+        "message": "Worker exited with code 9."
+      },
+      "canonical": "{\"value\":{\"code\":\"implementation_crash\",\"details\":null,\"message\":\"Worker exited with code 9.\"},\"version\":1}",
+      "id": "mw1-diagnostic-1635384881c5cccf8f1c809f8e8eaf1d1fbad7ba3e921d10f5ac6c8fcfd19b3c"
+    },
+    {
+      "diagnostic": {
+        "code": "invalid_result",
+        "message": "Result failed validation.",
+        "details": {
+          "field": "answer",
+          "expected": 3
+        }
+      },
+      "canonical": "{\"value\":{\"code\":\"invalid_result\",\"details\":{\"expected\":3,\"field\":\"answer\"},\"message\":\"Result failed validation.\"},\"version\":1}",
+      "id": "mw1-diagnostic-6c8ee18fd96324fc8c71ec3ed30253a844916a427b4f12f99b7dbd07b0fc8673"
+    }
+  ]
+}

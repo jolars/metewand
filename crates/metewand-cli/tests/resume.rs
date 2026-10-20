@@ -242,6 +242,51 @@ fn a_live_worker_renews_its_lease_and_records_its_current_phase() {
 }
 
 #[test]
+fn status_and_explain_observe_a_live_execution_without_recovering_it() {
+    let root = gated_repository();
+    let process = spawn_run(root.path(), &[]);
+    wait_for_workers(root.path(), 1);
+    let output = Command::new(env!("CARGO_BIN_EXE_metewand"))
+        .current_dir(root.path())
+        .args(["status", "--output-dir", "run", "--output", "json"])
+        .output()
+        .unwrap();
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let explanation = report["data"]["attempts"][0]["id"].as_str().map(|id| {
+        Command::new(env!("CARGO_BIN_EXE_metewand"))
+            .current_dir(root.path())
+            .args(["explain", id, "--output-dir", "run", "--output", "json"])
+            .output()
+            .unwrap()
+    });
+    fs::write(root.path().join("release"), "release").unwrap();
+    let completed = process.wait_with_output().unwrap();
+    assert!(completed.status.success(), "{completed:?}");
+    assert!(output.status.success(), "{output:?}");
+    public_schema_catalog()
+        .unwrap()
+        .validate(PublicSchema::InspectionOutput.repository_path(), &report)
+        .unwrap();
+    assert_eq!(report["data"]["summary"]["active_slots"], 1);
+    assert_eq!(report["data"]["summary"]["pending_slots"], 2);
+    assert_eq!(report["data"]["attempts"][0]["state"], "executing");
+    assert_eq!(report["data"]["attempts"][0]["recovery_required"], false);
+    let explanation = explanation.unwrap();
+    assert!(explanation.status.success(), "{explanation:?}");
+    let explanation: Value = serde_json::from_slice(&explanation.stdout).unwrap();
+    assert_eq!(
+        explanation["data"]["subject"]["record"]["state"],
+        "executing"
+    );
+    assert!(
+        !explanation["data"]["subject"]["record"]["events"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[test]
 fn selected_logical_slot_executes_only_that_slot() {
     let root = repository();
     let output = Command::new(env!("CARGO_BIN_EXE_metewand"))
@@ -444,6 +489,17 @@ fn concurrent_retry_candidates_publish_one_acceptance_and_one_superseded_outcome
     statuses.sort();
     assert_eq!(statuses, ["accepted", "superseded"]);
     assert_ne!(ids[0], ids[1]);
+    let output = Command::new(env!("CARGO_BIN_EXE_metewand"))
+        .current_dir(root.path())
+        .args(["status", "--output-dir", "run", "--output", "json"])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    let status: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(status["data"]["summary"]["accepted_attempts"], 1);
+    assert_eq!(status["data"]["summary"]["superseded_attempts"], 1);
+    assert_eq!(status["data"]["summary"]["selected_observations"], 1);
+    assert_eq!(status["data"]["observations"].as_array().unwrap().len(), 2);
 }
 
 #[test]

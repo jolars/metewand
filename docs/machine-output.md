@@ -35,6 +35,10 @@ in JSON Lines mode; its JSON result includes the same history in `data.events`.
 The `run-output` schema defines those events and final reports. Consumers must
 select behavior from `schema_version`, not from the package version.
 
+[`status` and `explain`](inspection-cli.md) emit one terminal result conforming
+to `inspection-output`. Status includes all recorded attempts, so a successful
+inspection exits with `0` even when the inspected benchmark has failures.
+
 The command-owned `data` object retains deterministic ordering. A plan result
 contains the same definitions, resource identities, requirements, experiments,
 candidate and slot identities, capability evidence, counts, and side-effect
@@ -110,9 +114,9 @@ The CLI emits these stable codes:
 | `unexpected_argument` | A command or option received an extra argument. |
 | `empty_manifest_path` | The selected manifest path is empty. |
 | `missing_manifest_path` | `--manifest` has no path argument. |
-| `duplicate_manifest_path` | `run --manifest` was supplied more than once. |
-| `missing_output_directory` | `run` lacks a required `--output-dir PATH`. |
-| `empty_output_directory` | The run destination is empty. |
+| `duplicate_manifest_path` | `--manifest` was supplied more than once. |
+| `missing_output_directory` | `--output-dir` has no path, or `run` lacks its required destination. |
+| `empty_output_directory` | The selected run-directory path is empty. |
 | `duplicate_output_directory` | `--output-dir` was supplied more than once. |
 | `unsupported_operation` | The requested operation is deliberately unavailable. |
 | `repository_check_failed` | The repository-validation operation failed; `causes` identifies why. |
@@ -144,6 +148,12 @@ The CLI emits these stable codes:
 | `missing_run_selection` | A selection or attempt bound lacks a value. |
 | `duplicate_run_flag` | A resume or retry flag was supplied more than once. |
 | `run_store_failed` | Durable run coordination or recovery failed. |
+| `missing_inspection_id` | `explain` lacks its required stable identity. |
+| `invalid_inspection_id` | The explanation target is not a complete supported identity. |
+| `inspection_id_not_found` | The exact ID is absent from the selected plan and store. |
+| `inspection_input_unavailable` | A required run-store or artifact input could not be read. |
+| `inspection_store_busy` | A changing store prevented a stable private snapshot within five seconds. |
+| `invalid_inspection_evidence` | The store schema, committed records, or artifact contents are invalid or incompatible. |
 | `coordination_failed` | The nested run-store diagnostic explains the failure. |
 | `run_setup_failed` | Execution resolution or destination setup failed. |
 | `execution_input_unavailable` | A required executable or run path is unavailable. |

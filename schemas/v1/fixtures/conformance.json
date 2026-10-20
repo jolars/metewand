@@ -2,6 +2,59 @@
   "version": 1,
   "valid": [
     {
+      "name": "identity explanation",
+      "schema": "inspection-output",
+      "instance": {
+        "schema_version": 1,
+        "kind": "result",
+        "data": {
+          "command": "explain",
+          "subject": {
+            "id": "mw1-attempt-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "kind": "attempt",
+            "label": null,
+            "record": {
+              "state": "reserved"
+            },
+            "related_ids": [],
+            "paths": []
+          }
+        }
+      }
+    },
+    {
+      "name": "empty durable status",
+      "schema": "inspection-output",
+      "instance": {
+        "schema_version": 1,
+        "kind": "result",
+        "data": {
+          "command": "status",
+          "benchmark": null,
+          "manifest_hash": null,
+          "output_directory": "/tmp/run",
+          "slots": [],
+          "attempts": [],
+          "observations": [],
+          "diagnostics": [],
+          "summary": {
+            "attempt_slots": 0,
+            "pending_slots": 0,
+            "active_slots": 0,
+            "satisfied_slots": 0,
+            "retry_required_slots": 0,
+            "recovery_required_slots": 0,
+            "accepted_attempts": 0,
+            "failed_attempts": 0,
+            "superseded_attempts": 0,
+            "censored_attempts": 0,
+            "active_attempts": 0,
+            "selected_observations": 0
+          }
+        }
+      }
+    },
+    {
       "name": "superseded one-shot retry retains its valid observation",
       "schema": "attempt",
       "instance": {
@@ -1000,6 +1053,27 @@
     }
   ],
   "invalid": [
+    {
+      "name": "inspection rejects an unstable identity",
+      "schema": "inspection-output",
+      "instance": {
+        "schema_version": 1,
+        "kind": "result",
+        "data": {
+          "command": "explain",
+          "subject": {
+            "id": "attempt",
+            "kind": "attempt",
+            "label": null,
+            "record": {
+              "state": "reserved"
+            },
+            "related_ids": [],
+            "paths": []
+          }
+        }
+      }
+    },
     {
       "name": "superseded is not an accepted outcome alias",
       "schema": "attempt",

@@ -1,0 +1,463 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "metewand://schemas/v1/inspection-output.schema.json",
+  "x-metewand-compatibility-version": 1,
+  "title": "Metewand read-only inspection output",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "$ref": "common.schema.json#/$defs/schema_version"
+    },
+    "kind": {
+      "const": "result"
+    },
+    "data": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/status"
+        },
+        {
+          "$ref": "#/$defs/explain"
+        }
+      ]
+    }
+  },
+  "required": [
+    "schema_version",
+    "kind",
+    "data"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "inspection_id": {
+      "anyOf": [
+        {
+          "$ref": "common.schema.json#/$defs/identity"
+        },
+        {
+          "type": "string",
+          "pattern": "^run-store-v1:((attempt|observation|result|metrics|dataset|source|environment|other)-[0-9a-f]{64}|unconditional:mw1-logical-candidate-[0-9a-f]{64})$"
+        }
+      ]
+    },
+    "record": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/inspection_id"
+        },
+        "kind": {
+          "type": "string",
+          "minLength": 1
+        },
+        "label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "record": {
+          "type": "object"
+        },
+        "related_ids": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/inspection_id"
+          },
+          "uniqueItems": true
+        },
+        "paths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "label",
+        "record",
+        "related_ids",
+        "paths"
+      ],
+      "additionalProperties": false
+    },
+    "slot": {
+      "type": "object",
+      "properties": {
+        "logical_slot_id": {
+          "$ref": "common.schema.json#/$defs/identity"
+        },
+        "resolved_slot_id": {
+          "anyOf": [
+            {
+              "$ref": "common.schema.json#/$defs/identity"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "logical_run_id": {
+          "$ref": "common.schema.json#/$defs/identity"
+        },
+        "resolved_run_id": {
+          "anyOf": [
+            {
+              "$ref": "common.schema.json#/$defs/identity"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "candidate_id": {
+          "$ref": "common.schema.json#/$defs/identity"
+        },
+        "in_current_plan": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "state": {
+          "enum": [
+            "pending",
+            "active",
+            "satisfied",
+            "retry_required",
+            "recovery_required"
+          ]
+        },
+        "attempt_ids": {
+          "type": "array",
+          "items": {
+            "$ref": "common.schema.json#/$defs/identity"
+          },
+          "uniqueItems": true
+        },
+        "selected_observation_ids": {
+          "type": "array",
+          "items": {
+            "$ref": "common.schema.json#/$defs/identity"
+          },
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "logical_slot_id",
+        "resolved_slot_id",
+        "logical_run_id",
+        "resolved_run_id",
+        "candidate_id",
+        "in_current_plan",
+        "state",
+        "attempt_ids",
+        "selected_observation_ids"
+      ],
+      "additionalProperties": false
+    },
+    "attempt": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "common.schema.json#/$defs/identity"
+        },
+        "slot_id": {
+          "$ref": "common.schema.json#/$defs/identity"
+        },
+        "retry_index": {
+          "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
+        },
+        "state": {
+          "enum": [
+            "reserved",
+            "materializing",
+            "starting",
+            "preparing",
+            "executing",
+            "checkpointing",
+            "validating",
+            "evaluating",
+            "finalizing",
+            "accepted",
+            "censored",
+            "superseded",
+            "failed"
+          ]
+        },
+        "revision": {
+          "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
+        },
+        "started_at_ns": {
+          "type": "string",
+          "pattern": "^[0-9]+$"
+        },
+        "updated_at_ns": {
+          "type": "string",
+          "pattern": "^[0-9]+$"
+        },
+        "finished_at_ns": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lease_expires_at_ns": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recovery_required": {
+          "type": "boolean"
+        },
+        "artifact_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/inspection_id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "diagnostic_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^mw1-diagnostic-[0-9a-f]{64}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "slot_id",
+        "retry_index",
+        "state",
+        "revision",
+        "started_at_ns",
+        "updated_at_ns",
+        "finished_at_ns",
+        "lease_expires_at_ns",
+        "recovery_required",
+        "artifact_id",
+        "diagnostic_id"
+      ],
+      "additionalProperties": false
+    },
+    "observation": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "common.schema.json#/$defs/identity"
+        },
+        "slot_id": {
+          "$ref": "common.schema.json#/$defs/identity"
+        },
+        "attempt_id": {
+          "$ref": "common.schema.json#/$defs/identity"
+        },
+        "artifact_id": {
+          "$ref": "#/$defs/inspection_id"
+        },
+        "valid": {
+          "type": "boolean"
+        },
+        "completion": {
+          "enum": [
+            "not_required",
+            "reached",
+            "not_reached"
+          ]
+        },
+        "selected": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "slot_id",
+        "attempt_id",
+        "artifact_id",
+        "valid",
+        "completion",
+        "selected"
+      ],
+      "additionalProperties": false
+    },
+    "summary": {
+      "type": "object",
+      "properties": {
+        "attempt_slots": {
+          "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
+        },
+        "pending_slots": {
+          "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
+        },
+        "active_slots": {
+          "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
+        },
+        "satisfied_slots": {
+          "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
+        },
+        "retry_required_slots": {
+          "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
+        },
+        "recovery_required_slots": {
+          "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
+        },
+        "accepted_attempts": {
+          "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
+        },
+        "failed_attempts": {
+          "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
+        },
+        "superseded_attempts": {
+          "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
+        },
+        "censored_attempts": {
+          "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
+        },
+        "active_attempts": {
+          "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
+        },
+        "selected_observations": {
+          "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
+        }
+      },
+      "required": [
+        "attempt_slots",
+        "pending_slots",
+        "active_slots",
+        "satisfied_slots",
+        "retry_required_slots",
+        "recovery_required_slots",
+        "accepted_attempts",
+        "failed_attempts",
+        "superseded_attempts",
+        "censored_attempts",
+        "active_attempts",
+        "selected_observations"
+      ],
+      "additionalProperties": false
+    },
+    "status": {
+      "type": "object",
+      "properties": {
+        "command": {
+          "const": "status"
+        },
+        "benchmark": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "manifest_hash": {
+          "anyOf": [
+            {
+              "$ref": "common.schema.json#/$defs/sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "output_directory": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "slots": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/slot"
+          }
+        },
+        "attempts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/attempt"
+          }
+        },
+        "observations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/observation"
+          }
+        },
+        "diagnostics": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/record"
+          }
+        },
+        "summary": {
+          "$ref": "#/$defs/summary"
+        }
+      },
+      "required": [
+        "command",
+        "benchmark",
+        "manifest_hash",
+        "output_directory",
+        "slots",
+        "attempts",
+        "observations",
+        "diagnostics",
+        "summary"
+      ],
+      "additionalProperties": false
+    },
+    "explain": {
+      "type": "object",
+      "properties": {
+        "command": {
+          "const": "explain"
+        },
+        "subject": {
+          "$ref": "#/$defs/record"
+        }
+      },
+      "required": [
+        "command",
+        "subject"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

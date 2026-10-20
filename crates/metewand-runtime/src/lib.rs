@@ -19,6 +19,8 @@ pub mod datamonger;
 pub mod dataset_materialization;
 #[cfg(unix)]
 pub mod fixed_dataset_run;
+#[cfg(unix)]
+pub mod inspection;
 pub mod local_tree;
 #[cfg(unix)]
 pub mod local_worker;

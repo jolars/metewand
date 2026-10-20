@@ -1,4 +1,5 @@
 mod execution;
+mod inspection;
 mod output;
 
 use std::{env, ffi::OsString, io, io::Write as _, path::PathBuf, process::ExitCode};
@@ -18,12 +19,16 @@ Usage:
   metewand [--output FORMAT] check [--manifest PATH]
   metewand [--output FORMAT] plan [--manifest PATH]
   metewand [--output FORMAT] run [--manifest PATH] --output-dir PATH
+  metewand [--output FORMAT] status [--manifest PATH] [--output-dir PATH]
+  metewand [--output FORMAT] explain <id> [--manifest PATH] [--output-dir PATH]
 
 Commands:
   schema  List public schemas, or print one exact versioned document.
   check   Validate a benchmark repository without launching workers.
   plan    Print the expanded logical plan without side effects.
   run     Execute trusted local workers and publish validated outcomes.
+  status  Inspect planned slots, durable attempts, and resumable state.
+  explain Explain a stable identity and its recorded relationships.
 
 Options:
   --output FORMAT  Write human, json, or jsonl output (default: human).
@@ -169,6 +174,8 @@ fn run(arguments: &[OsString], output_format: OutputFormat) -> Result<CommandRes
         "check" => check_command(&arguments[1..]),
         "plan" => plan_command(&arguments[1..]),
         "run" => execution::command(&arguments[1..], output_format),
+        "status" => inspection::command("status", &arguments[1..]),
+        "explain" => inspection::command("explain", &arguments[1..]),
         _ => Err(CommandError::usage(
             "unknown_command",
             format!("unknown command `{command}`"),
