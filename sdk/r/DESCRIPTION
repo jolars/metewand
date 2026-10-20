@@ -1,0 +1,14 @@
+Package: metewand
+Title: Worker Helpers for Metewand Benchmarks
+Version: 0.1.0
+Authors@R: person("Johan", "Larsson", email = "johan@jolars.co", role = c("aut", "cre"))
+Description: Small implementation, dataset materializer, and independent evaluator
+    helpers for the version-1 Metewand worker protocol. Provides strict canonical
+    JSON, explicit artifact inventories, and callback dispatch over dedicated pipes.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Depends: R (>= 4.2.0)
+Imports: digest, stats, utils
+SystemRequirements: POSIX, C++17 with floating-point std::to_chars
+NeedsCompilation: yes
+URL: https://github.com/jolars/metewand

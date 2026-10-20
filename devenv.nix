@@ -1,6 +1,9 @@
 { pkgs, ... }:
 {
-  packages = [ pkgs.python3 ];
+  packages = [
+    pkgs.python3
+    (pkgs.rWrapper.override { packages = [ pkgs.rPackages.digest ]; })
+  ];
 
   languages.rust = {
     enable = true;

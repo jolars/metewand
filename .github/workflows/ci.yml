@@ -35,6 +35,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      - name: Install R SDK dependencies
+        run: sudo apt-get update && sudo apt-get install -y r-base-dev r-cran-digest
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --workspace --all-targets --locked
 

@@ -18,3 +18,7 @@ __pycache__/
 *.egg-info/
 /sdk/python/build/
 /sdk/python/dist/
+
+# R
+/sdk/r/src/*.o
+/sdk/r/src/*.so

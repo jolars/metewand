@@ -174,6 +174,10 @@ dataset materializers, and independent evaluators over the existing one-shot
 protocol. Its [runnable example](examples/python-sdk) uses all three roles and
 publishes two observations with process reuse.
 
+The equivalent [R SDK](docs/r-sdk.md) provides the same roles, canonical JSON
+restrictions, and structured errors. Its [example](examples/r-sdk) also exercises
+all three roles and publishes two observations with process reuse.
+
 ## Development
 
 The development environment pins Rust 1.98.0 and includes rustfmt, Clippy, and
