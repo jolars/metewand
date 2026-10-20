@@ -71,6 +71,7 @@ pub(super) struct ResolvedBatch {
 }
 
 pub(super) struct ResolvedCandidate {
+    pub experiment: String,
     pub dataset: Arc<DatasetSnapshot>,
     pub implementation: ResolvedWorker,
     pub evaluator: ResolvedWorker,
@@ -87,6 +88,9 @@ pub(super) struct ResolvedCandidate {
 
 #[derive(Clone)]
 pub(super) struct ResolvedMeasurement {
+    pub candidate: RecordId<metewand_core::records::LogicalCandidateRecord>,
+    pub specification: IdentifiedRecord<ResolvedOneShotSpecificationRecord>,
+    pub selection_ids: Vec<String>,
     pub scheduling: SchedulingSlot,
     pub warmups: Vec<(u64, RecordId<ResolvedAttemptSlotRecord>)>,
     pub logical_slot: RecordId<LogicalAttemptSlotRecord>,
@@ -769,6 +773,18 @@ fn resolve_candidate(
                 "language_runtime": null, "blas": null, "thread_settings": null,
             }))?;
             measurements.push(ResolvedMeasurement {
+                candidate: candidate.candidate.id,
+                specification: resolved.clone(),
+                selection_ids: vec![
+                    candidate.candidate.id.to_string(),
+                    specification.specification.id.to_string(),
+                    resolved.id.to_string(),
+                    slot.id.to_string(),
+                    attempt_slot.id.to_string(),
+                    logical_observation.id.to_string(),
+                    observation_slot.id.to_string(),
+                    format!("run-store-v1:unconditional:{}", candidate.candidate.id),
+                ],
                 scheduling,
                 warmups: warmups.clone(),
                 logical_slot: slot.id,
@@ -786,6 +802,7 @@ fn resolve_candidate(
         policy,
     };
     Ok(ResolvedCandidate {
+        experiment: experiment.name.to_string(),
         reuse_key,
         dataset,
         implementation,

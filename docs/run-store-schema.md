@@ -4,15 +4,17 @@ The runtime embeds an executable SQLite design in
 [`src/run_store/v1.sql`](../crates/metewand-runtime/src/run_store/v1.sql).
 `metewand_runtime::run_store::RUN_STORE_SCHEMA_SQL` exposes the same bytes, and
 `RUN_STORE_SCHEMA_VERSION = 1` matches SQLite's `user_version`. This is the
-coordination schema for the durable-attempt roadmap. The current `run` command
-still uses the [filesystem publisher](durable-publication.md); it does not open
-this database or provide transactional resume yet.
+coordination schema used by [`run`, explicit retries, and resume](run-cli.md).
+The command registers its resolved one-shot slots, reserves leased attempts,
+publishes observations and terminal outcomes, and recovers expired owners through
+this store.
 
 ## Compatibility and connection requirements
 
 The database layout has its own compatibility version. It does not change the
 manifest, public JSON Schemas, identities, execution semantics, wire protocol,
-or artifact-store compatibility constants, which remain at version 1. Profile
+or artifact-store compatibility constants. Execution semantics are at version 2;
+the other contracts remain at version 1. Profile
 states and slot kinds in this layout reserve the semantics described in
 [DESIGN.md](../DESIGN.md#automation-and-agentic-workflows); they do not add profile
 support to the current one-shot domain records or CLI. The writer uses these
@@ -111,8 +113,8 @@ error after the schema commits can leave an initialized database, which a retry
 checks and reopens. Interrupted probe directories do not establish any attempt
 state. The writer API below adds transactional attempt transitions and final
 artifact registration. The publisher API below connects durable filesystem publication to these
-transactions. Explicit recovery is described below; CLI integration remains a
-later slice. Executing the schema SQL alone
+transactions. Explicit recovery is described below; `run --resume` invokes it
+before allocating new attempts. Executing the schema SQL alone
 does not perform any of these durability checks.
 
 ## Rows and relationships
@@ -191,20 +193,27 @@ belong in its event payload and immutable attempt document.
 
 On Unix, `RunStore` provides the following transactional writer API. These are
 coordination operations for the trusted orchestrator. They require resolved
-slots and applicability records already registered by the planner. This slice
-does not connect the existing CLI planner to SQLite. The transactional
+slots and applicability records already registered by the planner. The CLI
+registers its checked one-shot records through `register_one_shot` before
+reserving attempts. The transactional
 publisher below uses the same fencing and finalization operations. The connection
 remains private.
 
 | Operation | Committed effect |
 | --- | --- |
+| `register_one_shot(candidate, run, attempt_slot, observation_slot)` | Registers immutable resolved one-shot records and their membership, rejecting conflicting identities. |
 | `reserve(slot, authorization, lease, now_ns)` | Allocates the next retry, derives its existing version-1 attempt ID, and inserts the attempt, reservation lease, event, and revision-zero transition together. |
 | `advance(&attempt, phase, now_ns)` | Checks ownership and revision, appends one legal transition and event, and advances the projection. |
 | `renew(&attempt, expires_at_ns, now_ns)` | Renews the reservation, any owned finalization lease, and live staging leases together, without shortening expiration. |
 | `begin_finalization(&attempt, lease, now_ns)` | Enters `finalizing` and records either acquisition of a success claim or a `superseded` decision in the same transaction. |
+| `register_observation(&attempt, observation, artifact, select, now_ns)` | Registers validated, published observation bytes and optionally selects them under the attempt's success claim, preserving any earlier selection. |
 | `commit_finalization(&attempt, outcome, artifact, references, now_ns)` | Registers the published attempt artifact and dependency references, appends the terminal event and transition, updates the projection, deletes its resolved claim, and releases its leases together. |
 
 `RetryAuthorization::FirstAttempt` permits only retry zero.
+`RetryAuthorization::Next { retry }` atomically allocates the next index: `false`
+permits only a first attempt, and `true` explicitly authorizes another candidate.
+The CLI uses this form with its invocation attempt bound, so concurrent writers
+do not need to predict the next index before taking the database lock.
 `RetryAuthorization::Retry { next_index, max_index }` authorizes exactly the
 next retry and imposes an inclusive limit. Both values are checked while holding
 the write lock, so competing requests cannot silently allocate extra retries.
@@ -358,8 +367,8 @@ boundaries.
 
 On Unix, `RunStore::publish_artifact` and `RunStore::publish_finalization` own the
 filesystem-to-database boundary. These methods mutate the explicitly opened
-store. They do not change the current CLI execution path. Recovery is an
-explicit operation described below.
+store and implement the CLI publication boundary. Recovery is an explicit
+operation described below, authorized by `run --resume`.
 
 `publish_artifact(&attempt, kind, populate, clock)` publishes an independent
 artifact. `ArtifactKind` covers observation, result, metrics, dataset, source,
@@ -453,13 +462,16 @@ uses `run_store_version: 1` and binds:
 - snapshots of the applicable decision, resolved run, execution slot, observation
   slots, produced observations, and selected observations used by that slot.
 
+Accepted and censored snapshots include selected observations used by the slot.
+Failed and superseded snapshots retain their own produced observations; another
+attempt selecting its result cannot change their completion evidence.
 The snapshot retains canonical domain records alongside their indexed columns.
 It contains no owner tokens, lease IDs, or staging paths. The internal
 [conformance vector](../crates/metewand-runtime/src/run_store/fixtures/outcome-v1.json)
 pins its exact canonical bytes. This internal coordination record supplements
 public one-shot documents; it does not extend their schemas with profile
-outcomes. The SQLite layout and all existing public compatibility constants
-remain at version 1.
+outcomes. The SQLite layout remains at version 1. Public contracts remain at version 1
+except for execution semantics, which are at version 2.
 
 The publisher takes an additional clock sample before writing the outcome to
 fix its finish timestamp. After durable publication, the final transaction uses
@@ -477,8 +489,9 @@ Registered stages survive errors with their lock released, and a failure after
 rename may leave a fully verified orphan. Neither state implies acceptance.
 After commit, staging cleanup is best effort; a leftover released stage cannot
 revoke completion. Reopening the store imports neither stages nor orphans.
-The explicit recovery API below handles these leftovers. Automatic observation
-selection and CLI integration remain subsequent slices.
+The explicit recovery API below handles these leftovers. The CLI registers and
+selects validated one-shot observations under its finalization claim, preserving
+any existing selection.
 
 Publication tests cover exact outcome bytes, current epoch nanoseconds, backward
 clock adjustments, live-stage renewal, same-filesystem placement, kernel locks,
@@ -553,8 +566,8 @@ kernel lock for their lifetime. A crash after publishing this failure but before
 commit leaves another recoverable orphan. The
 [recovered-failure conformance vector](../crates/metewand-runtime/src/run_store/fixtures/recovered-failure-v1.json)
 pins the canonical bytes for an expired reservation. The schema and public
-compatibility constants remain at version 1; recovery reuses their existing
-representations and constraints.
+compatibility constants retain their current versions; recovery reuses their
+existing representations and constraints.
 
 Recovery atomically moves abandoned stages intact to
 `artifacts/.quarantine/<original-stage-name>` and synchronizes both parents before
@@ -631,7 +644,7 @@ cargo test -p metewand-runtime --lib --locked run_store::fault_tests -- --nocapt
 They also run in the workspace suite and `devenv test`. The campaign models
 abrupt process death around application and SQLite statement boundaries; it
 does not simulate a storage device losing power. The schema, identities,
-canonical bytes, and public compatibility constants remain at version 1.
+canonical bytes, and public compatibility constants retain their current versions.
 
 ## Artifact references and retention
 

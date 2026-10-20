@@ -279,7 +279,7 @@ artifacts](DESIGN.md#6-environments-execution-and-artifacts).
   verify the exact `A x M` slot count and specified seed sharing.
 - [x] Add opt-in bounded concurrency as execution-policy identity and
   provenance; keep performance execution serial by default.
-- [ ] Implement selected-ID and bounded execution, explicit retries, immutable
+- [x] Implement selected-ID and bounded execution, explicit retries, immutable
   retry attempts, superseded concurrent candidates, and `run --resume`
   without repeating accepted slots.
 - [ ] Implement `metewand status` and `metewand explain <id>` over stable

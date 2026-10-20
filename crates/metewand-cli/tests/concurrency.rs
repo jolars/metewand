@@ -159,7 +159,7 @@ fn check_execution(root: &Path, slots: usize, max_concurrency: u64, failures: us
     let report = &records.last().unwrap()["data"];
     assert_eq!(
         report["summary"],
-        json!({"attempt_slots": slots, "accepted_attempts": slots - failures, "failed_attempts": failures})
+        json!({"attempt_slots": slots, "accepted_attempts": slots - failures, "failed_attempts": failures, "superseded_attempts": 0})
     );
     let attempts = report["attempts"].as_array().unwrap();
     assert_eq!(
@@ -299,9 +299,10 @@ fn event_sink_failure_joins_dispatched_attempts_and_stops_before_the_next_batch(
     let state = document(&root.path().join("state.json"));
     assert_eq!(state["active"], 0);
     assert_eq!(state["entered"].as_array().unwrap().len(), 2);
-    let attempts = fs::read_dir(root.path().join("run/attempts"))
+    let attempts = fs::read_dir(root.path().join("run/artifacts"))
         .unwrap()
         .map(Result::unwrap)
+        .filter(|entry| entry.file_name().to_string_lossy().starts_with("attempt-"))
         .collect::<Vec<_>>();
     assert_eq!(attempts.len(), 2);
     for attempt in attempts {

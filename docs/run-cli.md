@@ -2,7 +2,7 @@
 
 `metewand run` connects the checked manifest and logical plan to the Gate-1
 [fixed-dataset runtime](fixed-dataset-run.md) and
-[durable publisher](durable-publication.md):
+[transactional run store](run-store-schema.md):
 
 ```sh
 cargo run --locked -p metewand-cli -- run \
@@ -11,8 +11,9 @@ cargo run --locked -p metewand-cli -- run \
   --output jsonl
 ```
 
-The destination must be new, and its parent must exist. The command refuses an
-existing file, directory, or symlink without changing it. `run` authorizes
+The destination must be new, and its parent must exist. With `--resume`, it must
+instead be an existing durable run directory. Without that flag, the command
+refuses an existing file, directory, or symlink without changing it. `run` authorizes
 worker launches, private temporary input copies, and publication beneath this
 explicit destination. Optional `--cache-dir PATH` assigns a separate directory to
 Metewand for persistent [artifact storage](artifact-store.md) and construction
@@ -68,7 +69,7 @@ planning because the local backend cannot guarantee lifetime isolation.
 See [Execution controls](execution-controls.md) for the complete report and
 runtime failure behavior.
 Provisioning backends, standard-I/O protocol transport,
-symbolic links in copied inputs, locked execution, and resume are also rejected.
+symbolic links in copied inputs and locked execution are also rejected.
 These features belong to later roadmap slices. A rejected selection emits a
 structured diagnostic without launching any worker or creating the destination.
 
@@ -182,6 +183,9 @@ OS user from accessing undeclared paths or restoring bytes within one operation.
 The `prepare_and_execute` timer remains continuous, including result writing and
 integrity checks between the two exchanges. Execution provenance records that
 overhead as `timing_dataset_integrity: "included_between_prepare_and_execute"`.
+Durable phase transitions also occur between preparation and execution. Their
+coordination overhead is included in cold and prepare-and-execute wall timing,
+excluded from execute-only timing, and labeled in `timing_coordination`.
 
 ## Events and final output
 
@@ -199,10 +203,11 @@ Every event has `command: "run"`, a zero-based `sequence`, and one transition:
 | `run_started` | Total measured `attempt_slots`. |
 | `attempt_started` | `logical_slot_id` and `resolved_slot_id`. |
 | `attempt_finished` | The finalized `attempt` summary. |
-| `run_finished` | `accepted_attempts` and `failed_attempts`. |
+| `run_finished` | `accepted_attempts`, `failed_attempts`, and `superseded_attempts`. |
 
 An attempt summary contains its logical and resolved slot IDs, attempt ID,
-status, relative attempt directory, optional observation ID and directory,
+`accepted`, `failed`, or `superseded` status, relative attempt directory, optional
+observation ID and directory,
 validated result and metrics, and an optional diagnostic. Inapplicable values
 are explicit nulls. The final report repeats the emitted events in `events` so
 JSON and JSON Lines consumers can inspect the same lifecycle.
@@ -234,20 +239,75 @@ an accepted terminal event. A previously finalized observation may remain as an
 orphan, as described by the publisher. Closing the event pipe stops further
 execution and returns successful cancellation; already published artifacts remain.
 
-Gate 1 uses an independent fresh destination per invocation, with retry index
-zero. It does not coordinate attempt acceptance across runs, persist an event
-database, reserve retry indices across invocations, provide attempt recovery,
-or claim resume semantics. The artifact cache coordinates content publication
-and construction mappings independently of those later run-state features.
+## Selection, bounds, retries, and resume
+
+Use `--select ID` to execute the measured slots associated with a stable logical
+candidate, logical or resolved run, logical or resolved observation slot, or
+logical or resolved attempt slot. Repeat the flag to select their union.
+Recorded attempt and observation IDs can also select their producing slot when
+using `--resume`. Unknown IDs fail with `invalid_run_selection`; filters never
+silently expand to the complete benchmark. A selection containing only logical
+IDs narrows the plan before acquisition. Resolving other IDs may require dataset
+construction and launch resolution before filtering. Gate 2 also recognizes the
+store's internal `run-store-v1:unconditional:<logical-candidate-id>` decision key;
+public, configuration-dependent applicability identities belong to Gate 3.
+
+`--max-attempts N` limits the new measured attempts allocated by this invocation.
+It accepts a positive integer up to `9007199254740991`. Filtering preserves the
+scheduler's relative order. Eligible slots are then bounded and divided into
+concurrency batches within each experiment. Warm-ups remain part of their
+measured attempt and do not consume additional entries in this limit. Invocation
+bounds and filters do not change the scientific policy, seeds, or slot identities.
+
+```sh
+metewand run --output-dir results --select mw1-logical-candidate-<digest> --max-attempts 2
+metewand run --output-dir results --resume --max-attempts 2
+metewand run --output-dir results --resume --retry --select mw1-attempt-<digest>
+```
+
+`--resume` opens `run.sqlite3`, recovers expired reservations and finalization
+claims, and fills unsatisfied slots from the current resolved plan. It always
+skips accepted slots. Changing a declared input can produce new resolved slots;
+the prior attempts stay intact. Resume does not restore implementation process
+state. Replacement workers repeat their contracted warm-ups.
+
+Previous failures require `--retry`. This flag authorizes one additional attempt
+per selected unsatisfied slot in this invocation, including an explicitly
+requested concurrent candidate for a live slot. It does not create an automatic
+retry loop. Every reservation allocates the next retry index transactionally,
+so every retry has a distinct attempt ID and immutable directory. Accepted slots
+remain protected even when `--retry` is present.
+
+Processes renew their 30-second ownership leases every five seconds. A killed
+owner can be recovered after its lease expires. A claim alone never satisfies a
+slot: the terminal database transaction follows durable artifact publication.
+Concurrent successful candidates compete for that claim before writing their
+immutable attempt documents. One candidate is accepted; a loser publishes a
+`superseded` attempt and retains its valid, unselected observation. Existing valid
+observation selections are never replaced.
+
+The run directory contains `run.sqlite3`, coordination lock files, and immutable
+`artifacts/observation-<content-hash>` and `artifacts/attempt-<content-hash>`
+directories. Executed attempts include both the public `attempt.json` and the
+canonical coordination `outcome.json`. Recovery-generated interruption failures
+retain their self-describing coordination outcome. Reports give their relative paths; clients
+should use those paths instead of constructing directory names from record IDs.
+SQLite records and finalized artifacts retain all retries across invocations.
+The JSON and JSON Lines event sequence and final counts describe the current
+invocation. A resume with no eligible slots succeeds with an empty `attempts`
+array and only `run_started` and `run_finished` events.
 
 ## Compatibility
 
-The new `run-output` entry point begins at public-schema version 1. Existing
-machine envelopes, manifest syntax, identity transcripts, seeds, wire messages,
-and timing semantics remain version 1. Source and program bindings complete the
-unreleased Gate-1 resolver without changing existing record representations.
-Schema conformance cases, exact event bytes, relocated-input tests, and
-end-to-end publication and failure tests cover these interfaces.
+The unreleased public-schema version 1 now includes superseded one-shot outcomes,
+explicit superseded counts, and empty resume reports. Its conformance fixtures
+cover these cases. The manifest, identity, seed, scheduling, run-store, artifact,
+and wire contracts remain at version 1. Execution semantics remain at version 2:
+selection and resume use its existing policy-bounded batch order, and retries use
+the existing slot-plus-retry identity transcript. They do not redefine timing
+scopes or scientific policies. These compatibility constants were reviewed for
+this slice. End-to-end tests cover selection, bounds, immutable retries,
+concurrent finalization, interruption recovery, and accepted-slot preservation.
 
 A materializer failure occurs before resolved attempt identities exist. It emits
 `dataset_materialization_failed` with exit code `5`, removes private construction

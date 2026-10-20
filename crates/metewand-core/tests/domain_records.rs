@@ -374,6 +374,26 @@ fn records_one_shot_observations_and_terminal_attempts_without_losing_failures()
         ..accepted.clone()
     };
 
+    let superseded = RunAttemptRecord {
+        outcome: RunAttemptOutcome::Superseded {
+            observation: Some(observation_id),
+        },
+        ..accepted.clone()
+    };
+    assert_eq!(
+        record_id(&superseded).unwrap(),
+        record_id(&accepted).unwrap()
+    );
+    let superseded_document = metewand_core::run_documents::attempt_document(&superseded).unwrap();
+    assert_eq!(
+        superseded_document.as_json()["outcome"],
+        serde_json::json!({"kind": "superseded"})
+    );
+    assert_eq!(
+        superseded_document.as_json()["observations"],
+        serde_json::json!([observation_id])
+    );
+
     record_id(&observation).unwrap();
     record_id(&not_reached_observation).unwrap();
     record_id(&accepted).unwrap();

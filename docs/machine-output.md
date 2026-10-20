@@ -138,6 +138,13 @@ The CLI emits these stable codes:
 | `seed_derivation_failed` | A deterministic seed cannot be derived. |
 | `internal_error` | An internal invariant or output serialization failed. |
 | `output_write_failed` | Standard output could not be written. |
+| `invalid_run_selection` | A selected ID matches no current measured slot, or a resume destination is invalid. |
+| `invalid_max_attempts` | The attempt bound is not a positive safe integer. |
+| `duplicate_max_attempts` | The attempt bound was supplied more than once. |
+| `missing_run_selection` | A selection or attempt bound lacks a value. |
+| `duplicate_run_flag` | A resume or retry flag was supplied more than once. |
+| `run_store_failed` | Durable run coordination or recovery failed. |
+| `coordination_failed` | The nested run-store diagnostic explains the failure. |
 | `run_setup_failed` | Execution resolution or destination setup failed. |
 | `execution_input_unavailable` | A required executable or run path is unavailable. |
 | `execution_resolution_failed` | An internal resolution invariant failed. |

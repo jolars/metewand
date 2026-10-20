@@ -1,6 +1,13 @@
 //! Manifest-driven execution of the trusted local Gate-1 vertical path.
 
+mod attempt;
 mod resolution;
+mod selection;
+
+use crate::run_store::{AttemptPhase, RunStore};
+use attempt::AttemptExecution;
+
+pub use metewand_core::run_output::RunOptions;
 
 use std::{
     fs, io,
@@ -32,9 +39,7 @@ use crate::{
         run_fixed_dataset_with_session,
     },
     local_tree::LocalTreeHashError,
-    publication::{
-        PublicationError, PublicationRequest, finalize_failed_attempt, finalize_fixed_dataset,
-    },
+    publication::{PublicationError, PublicationRequest},
     repository::CheckedRepository,
     source_bundle::{SourceBundleError, SourceBundleIdentityError},
     source_resolution::SourceResolutionError,
@@ -80,9 +85,30 @@ pub fn run_repository_with_cache(
     plan: &LogicalPlan,
     output_directory: &Path,
     cache_directory: Option<&Path>,
+    event_sink: impl FnMut(&RunEvent) -> io::Result<()>,
+) -> Result<RunReport, RunError> {
+    run_repository_with_options(
+        repository,
+        plan,
+        output_directory,
+        cache_directory,
+        &RunOptions::default(),
+        event_sink,
+    )
+}
+
+/// Executes a selected, bounded invocation, optionally resuming durable history.
+/// Accepted slots are never reserved again. Explicit retries get new identities.
+pub fn run_repository_with_options(
+    repository: &CheckedRepository,
+    plan: &LogicalPlan,
+    output_directory: &Path,
+    cache_directory: Option<&Path>,
+    options: &RunOptions,
     mut event_sink: impl FnMut(&RunEvent) -> io::Result<()>,
 ) -> Result<RunReport, RunError> {
-    let output_directory = destination(output_directory)?;
+    let plan = selection::preselect(plan, options)?;
+    let output_directory = destination(output_directory, options.resume)?;
     let cache_directory = cache_directory
         .map(|path| {
             let path = if path.is_absolute() {
@@ -107,20 +133,78 @@ pub fn run_repository_with_cache(
             }
         })
         .transpose()?;
-    let resolved = resolution::resolve(
+    let mut resolved = resolution::resolve(
         repository,
-        plan,
+        &plan,
         &output_directory,
         cache_directory.as_deref(),
     )?;
     for candidate in &resolved.candidates {
         candidate.validate_destination(&output_directory)?;
     }
-    fs::DirBuilder::new()
-        .mode(0o700)
-        .create(&output_directory)?;
-    fs::set_permissions(&output_directory, fs::Permissions::from_mode(0o700))?;
-    fs::File::open(output_directory.parent().expect("destination has a parent"))?.sync_all()?;
+    let mut store = if options.resume {
+        Some(RunStore::open(&output_directory)?)
+    } else {
+        None
+    };
+    let mut selected = std::collections::BTreeSet::new();
+    if options.selected_ids.is_empty() {
+        selected.extend(resolved.schedule.iter().copied());
+    }
+    for id in &options.selected_ids {
+        let previous = store
+            .as_ref()
+            .map(|store| store.slots_for_record(id))
+            .transpose()?
+            .unwrap_or_default();
+        let mut matched = false;
+        for &(candidate, measurement) in &resolved.schedule {
+            let slot = &resolved.candidates[candidate].measurements[measurement];
+            if slot.selection_ids.contains(id) || previous.contains(&slot.attempt_slot.id) {
+                selected.insert((candidate, measurement));
+                matched = true;
+            }
+        }
+        if !matched {
+            return Err(RunError::Selection(format!(
+                "selected identity `{id}` matches no measured slot"
+            )));
+        }
+    }
+    if !options.resume {
+        fs::DirBuilder::new()
+            .mode(0o700)
+            .create(&output_directory)?;
+        fs::set_permissions(&output_directory, fs::Permissions::from_mode(0o700))?;
+        fs::File::open(output_directory.parent().expect("destination has a parent"))?.sync_all()?;
+        store = Some(RunStore::open(&output_directory)?);
+    }
+    let mut store = store.expect("new or resumed store");
+    if options.resume {
+        store.recover(attempt::now)?;
+    }
+    let mut schedule = Vec::new();
+    for &(candidate, measurement) in &resolved.schedule {
+        let slot = &resolved.candidates[candidate].measurements[measurement];
+        if !selected.contains(&(candidate, measurement)) {
+            continue;
+        }
+        store.register_one_shot(
+            slot.candidate,
+            &slot.specification,
+            &slot.attempt_slot,
+            &slot.observation_slot,
+        )?;
+        let progress = store.slot_progress(slot.attempt_slot.id)?;
+        if progress.accepted || (progress.attempts > 0 && !options.retry) {
+            continue;
+        }
+        schedule.push((candidate, measurement));
+    }
+    if let Some(bound) = options.max_attempts {
+        schedule.truncate(bound.min(schedule.len() as u64) as usize);
+    }
+    selection::rebuild_batches(&mut resolved, schedule)?;
     let attempt_slots = resolved.schedule.len();
     let mut events = Vec::new();
     emit(
@@ -135,8 +219,27 @@ pub fn run_repository_with_cache(
             batch.lane_count,
             crate::worker_reuse::ReusableWorker::default,
         );
-        let slots = &resolved.schedule[batch.slots.clone()];
-        for &(candidate_index, measurement_index) in slots {
+        let mut slots = Vec::new();
+        let mut executions = Vec::new();
+        for &(candidate, measurement) in &resolved.schedule[batch.slots.clone()] {
+            if let Some(execution) = AttemptExecution::reserve(
+                &store,
+                &resolved.candidates[candidate].measurements[measurement],
+                options.retry,
+            )? {
+                slots.push((candidate, measurement));
+                executions.push(execution);
+            }
+        }
+        for (lane, &(candidate, measurement)) in slots.iter().enumerate() {
+            let provenance =
+                &mut resolved.candidates[candidate].measurements[measurement].provenance;
+            let mut value = provenance.as_json().clone();
+            value["concurrency"]["batch_size"] = json!(slots.len());
+            value["concurrency"]["lane_index"] = json!(lane);
+            *provenance = canonical(value)?;
+        }
+        for &(candidate_index, measurement_index) in &slots {
             let measurement = &resolved.candidates[candidate_index].measurements[measurement_index];
             emit(
                 &mut events,
@@ -150,9 +253,9 @@ pub fn run_repository_with_cache(
         let completed = execute_batch(
             repository,
             &resolved.candidates,
-            slots,
+            &slots,
+            &mut executions,
             resolved.private_root.path(),
-            &output_directory,
             &mut workers,
         )?;
         for attempt in completed {
@@ -170,13 +273,21 @@ pub fn run_repository_with_cache(
         .iter()
         .filter(|attempt| attempt.status == RunAttemptStatus::Accepted)
         .count();
-    let failed_attempts = attempts.len() - accepted_attempts;
+    let failed_attempts = attempts
+        .iter()
+        .filter(|attempt| attempt.status == RunAttemptStatus::Failed)
+        .count();
+    let superseded_attempts = attempts
+        .iter()
+        .filter(|attempt| attempt.status == RunAttemptStatus::Superseded)
+        .count();
     emit(
         &mut events,
         &mut event_sink,
         RunEventKind::RunFinished {
             accepted_attempts,
             failed_attempts,
+            superseded_attempts,
         },
     )?;
     Ok(RunReport {
@@ -193,6 +304,7 @@ pub fn run_repository_with_cache(
             attempt_slots,
             accepted_attempts,
             failed_attempts,
+            superseded_attempts,
         },
     })
 }
@@ -201,8 +313,8 @@ fn execute_batch(
     repository: &CheckedRepository,
     candidates: &[ResolvedCandidate],
     slots: &[(usize, usize)],
+    executions: &mut [AttemptExecution],
     private_root: &Path,
-    output_root: &Path,
     workers: &mut [crate::worker_reuse::ReusableWorker],
 ) -> Result<Vec<RunAttemptOutput>, RunError> {
     if let [(candidate, measurement)] = slots {
@@ -211,15 +323,17 @@ fn execute_batch(
             &candidates[*candidate],
             &candidates[*candidate].measurements[*measurement],
             private_root,
-            output_root,
             &mut workers[0],
+            &mut executions[0],
         )
         .map(|attempt| vec![attempt]);
     }
     let results = thread::scope(|scope| {
         let mut handles = Vec::new();
         let mut spawn_error = None;
-        for (lane, (&(candidate, measurement), worker)) in slots.iter().zip(workers).enumerate() {
+        for (lane, ((&(candidate, measurement), worker), execution)) in
+            slots.iter().zip(workers).zip(executions).enumerate()
+        {
             let candidate = &candidates[candidate];
             let measurement = &candidate.measurements[measurement];
             match thread::Builder::new()
@@ -230,8 +344,8 @@ fn execute_batch(
                         candidate,
                         measurement,
                         private_root,
-                        output_root,
                         worker,
+                        execution,
                     )
                 }) {
                 Ok(handle) => handles.push(handle),
@@ -260,21 +374,23 @@ fn execute(
     candidate: &ResolvedCandidate,
     measurement: &ResolvedMeasurement,
     private_root: &Path,
-    output_root: &Path,
     worker: &mut crate::worker_reuse::ReusableWorker,
+    execution: &mut AttemptExecution,
 ) -> Result<RunAttemptOutput, RunError> {
+    execution.advance(AttemptPhase::Materializing)?;
     let started_at = SystemTime::now();
     let mut measurements = ExecutionMeasurements {
         materialization_time_ns: candidate.dataset.materialization_time_ns,
         ..ExecutionMeasurements::default()
     };
+    execution.advance(AttemptPhase::Starting)?;
     let executor =
         crate::executor::LocalProcessExecutor::new(std::time::Duration::from_millis(100));
     if let Err(error) = executor.preflight_policy(&candidate.reuse_key.policy) {
         worker.discard();
         return failed_attempt(
             measurement,
-            output_root,
+            execution,
             started_at,
             "control_preflight_failed",
             error.to_string(),
@@ -285,7 +401,7 @@ fn execute(
         worker.discard();
         return failed_attempt(
             measurement,
-            output_root,
+            execution,
             started_at,
             input_change_code(&error),
             error.to_string(),
@@ -297,7 +413,7 @@ fn execute(
         Err(error) => {
             return failed_attempt(
                 measurement,
-                output_root,
+                execution,
                 started_at,
                 "dataset_mutation",
                 error.to_string(),
@@ -361,6 +477,7 @@ fn execute(
                     &dataset_view,
                     &mut measurements,
                     session,
+                    None,
                 );
                 match &result {
                     Ok(result) => warmups.push(json!({
@@ -382,7 +499,13 @@ fn execute(
                 result.map(|_| ())
             },
             |session| {
-                run_fixed_dataset_with_session(request(), &dataset_view, &mut measurements, session)
+                run_fixed_dataset_with_session(
+                    request(),
+                    &dataset_view,
+                    &mut measurements,
+                    session,
+                    Some(&mut |phase| execution.advance(phase)),
+                )
             },
         );
         result.map_err(|error| match error {
@@ -394,7 +517,12 @@ fn execute(
             error => FixedDatasetRunError::PrivateDirectory(io::Error::other(error.to_string())),
         })
     } else {
-        run_fixed_dataset_in_view(request(), &dataset_view, &mut measurements)
+        run_fixed_dataset_in_view(
+            request(),
+            &dataset_view,
+            &mut measurements,
+            Some(&mut |phase| execution.advance(phase)),
+        )
     };
     let mut measurement = measurement.clone();
     let mut context = measurement.provenance.as_json().clone();
@@ -432,7 +560,7 @@ fn execute(
         worker.discard();
         return failed_attempt(
             measurement,
-            output_root,
+            execution,
             started_at,
             input_change_code(&error),
             error.to_string(),
@@ -445,7 +573,7 @@ fn execute(
             worker.discard();
             return failed_attempt(
                 measurement,
-                output_root,
+                execution,
                 started_at,
                 error.failure_kind().code(),
                 error.to_string(),
@@ -456,18 +584,21 @@ fn execute(
     result.execution_provenance["controls"] = json!(metewand_core::controls::local_control_report(
         &candidate.reuse_key.policy
     ));
-    let published = finalize_fixed_dataset(
+    let output_root = execution.output_root();
+    let retry_index = execution.retry_index();
+    let (published, attempt_directory, observation_directory) = execution.publish_result(
         &result,
         PublicationRequest {
-            root: output_root,
+            root: &output_root,
             attempt_slot: measurement.attempt_slot.id,
             observation_slot: measurement.observation_slot.id,
-            retry_index: 0,
+            retry_index,
             provenance_data: measurement.provenance.clone(),
         },
     )?;
     let (status, diagnostic) = match &published.attempt.record.outcome {
         RunAttemptOutcome::Accepted { .. } => (RunAttemptStatus::Accepted, None),
+        RunAttemptOutcome::Superseded { .. } => (RunAttemptStatus::Superseded, None),
         RunAttemptOutcome::Failed { diagnostic, .. } => (
             RunAttemptStatus::Failed,
             Some(RunDiagnostic {
@@ -482,8 +613,8 @@ fn execute(
         attempt_id: published.attempt.id,
         status,
         observation_id: Some(published.observation.id),
-        attempt_directory: format!("attempts/{}", published.attempt.id),
-        observation_directory: Some(format!("observations/{}", published.observation.id)),
+        attempt_directory,
+        observation_directory: Some(observation_directory),
         result: Some(result.result.as_json().clone()),
         metrics: Some(result.metrics.as_json().clone()),
         diagnostic,
@@ -499,7 +630,7 @@ fn input_change_code(error: &RunError) -> &'static str {
 
 fn failed_attempt(
     measurement: &ResolvedMeasurement,
-    output_root: &Path,
+    execution: &mut AttemptExecution,
     started_at: SystemTime,
     code: &str,
     message: String,
@@ -509,38 +640,37 @@ fn failed_attempt(
         code: code.to_owned(),
         message: message.clone(),
     };
-    let (attempt, _) = finalize_failed_attempt(
-        output_root,
-        RunAttemptRecord {
-            slot: measurement.attempt_slot.id,
-            retry_index: 0,
-            outcome: RunAttemptOutcome::Failed {
-                diagnostic: AttemptDiagnostic {
-                    code: code.to_owned(),
-                    message,
-                    details: None,
-                },
-                observation: None,
+    let record = RunAttemptRecord {
+        slot: measurement.attempt_slot.id,
+        retry_index: execution.retry_index(),
+        outcome: RunAttemptOutcome::Failed {
+            diagnostic: AttemptDiagnostic {
+                code: code.to_owned(),
+                message,
+                details: None,
             },
-            started_at,
-            finished_at: SystemTime::now(),
-            provenance: ProvenanceRecord {
-                tool_version: env!("CARGO_PKG_VERSION").to_owned(),
-                wire_protocol_version: metewand_protocol::WIRE_PROTOCOL_VERSION,
-                execution_semantics_version: EXECUTION_SEMANTICS_VERSION,
-                data: canonical(
-                    json!({"context": measurement.provenance.as_json(), "logs_available": false, "measurements": measurements}),
-                )?,
-            },
+            observation: None,
         },
-    )?;
+        started_at,
+        finished_at: SystemTime::now(),
+        provenance: ProvenanceRecord {
+            tool_version: env!("CARGO_PKG_VERSION").to_owned(),
+            wire_protocol_version: metewand_protocol::WIRE_PROTOCOL_VERSION,
+            execution_semantics_version: EXECUTION_SEMANTICS_VERSION,
+            data: canonical(
+                json!({"context": measurement.provenance.as_json(), "logs_available": false, "measurements": measurements}),
+            )?,
+        },
+    };
+    let attempt = metewand_core::identity::identify_record(record)?;
+    let attempt_directory = execution.publish_failure(&attempt.record)?;
     Ok(RunAttemptOutput {
         logical_slot_id: measurement.logical_slot,
         resolved_slot_id: measurement.attempt_slot.id,
         attempt_id: attempt.id,
         status: RunAttemptStatus::Failed,
         observation_id: None,
-        attempt_directory: format!("attempts/{}", attempt.id),
+        attempt_directory,
         observation_directory: None,
         result: None,
         metrics: None,
@@ -563,7 +693,7 @@ fn emit(
     Ok(())
 }
 
-fn destination(path: &Path) -> Result<PathBuf, RunError> {
+fn destination(path: &Path, resume: bool) -> Result<PathBuf, RunError> {
     let name = path.file_name().ok_or_else(|| {
         io::Error::new(
             io::ErrorKind::InvalidInput,
@@ -581,6 +711,14 @@ fn destination(path: &Path) -> Result<PathBuf, RunError> {
         ));
     }
     match fs::symlink_metadata(&destination) {
+        Ok(metadata) if resume && metadata.is_dir() => {
+            let database = destination.join("run.sqlite3");
+            if !fs::symlink_metadata(&database).is_ok_and(|metadata| metadata.is_file()) {
+                return Err(RunError::Selection(
+                    "resume requires an existing durable run store".into(),
+                ));
+            }
+        }
         Ok(_) => {
             return Err(io::Error::new(
                 io::ErrorKind::AlreadyExists,
@@ -588,7 +726,7 @@ fn destination(path: &Path) -> Result<PathBuf, RunError> {
             )
             .into());
         }
-        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) if error.kind() == io::ErrorKind::NotFound && !resume => {}
         Err(error) => return Err(error.into()),
     }
     Ok(destination)
@@ -598,6 +736,12 @@ fn destination(path: &Path) -> Result<PathBuf, RunError> {
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum RunError {
+    /// Invalid execution selection or bound.
+    #[error("{0}")]
+    Selection(String),
+    /// Durable coordination or publication failed.
+    #[error(transparent)]
+    Store(#[from] crate::run_store::RunStoreError),
     /// An internal attempt execution thread panicked after dispatch.
     #[error("an attempt execution thread panicked")]
     ExecutionThreadPanic,

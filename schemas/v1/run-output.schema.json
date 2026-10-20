@@ -48,7 +48,7 @@
         "logical_slot_id": { "$ref": "#/$defs/logical_slot_id" },
         "resolved_slot_id": { "$ref": "#/$defs/resolved_slot_id" },
         "attempt_id": { "type": "string", "pattern": "^mw1-attempt-[0-9a-f]{64}$" },
-        "status": { "enum": ["accepted", "failed"] },
+        "status": { "enum": ["accepted", "failed", "superseded"] },
         "observation_id": { "type": ["string", "null"], "pattern": "^mw1-observation-[0-9a-f]{64}$" },
         "attempt_directory": { "$ref": "common.schema.json#/$defs/repository_path" },
         "observation_directory": { "anyOf": [{ "type": "null" }, { "$ref": "common.schema.json#/$defs/repository_path" }] },
@@ -67,7 +67,11 @@
               "diagnostic": { "type": "null" }
             }
           },
-          "else": { "properties": { "diagnostic": { "$ref": "#/$defs/diagnostic" } } }
+          "else": {
+            "if": { "properties": { "status": { "const": "failed" } } },
+            "then": { "properties": { "diagnostic": { "$ref": "#/$defs/diagnostic" } } },
+            "else": { "properties": { "diagnostic": { "type": "null" } } }
+          }
         }
       ],
       "additionalProperties": false
@@ -84,7 +88,7 @@
         {
           "properties": {
             "event": { "const": "run_started" },
-            "attempt_slots": { "$ref": "common.schema.json#/$defs/safe_positive_integer" }
+            "attempt_slots": { "$ref": "common.schema.json#/$defs/safe_nonnegative_integer" }
           },
           "required": ["attempt_slots"]
         },
@@ -107,9 +111,10 @@
           "properties": {
             "event": { "const": "run_finished" },
             "accepted_attempts": { "$ref": "common.schema.json#/$defs/safe_nonnegative_integer" },
-            "failed_attempts": { "$ref": "common.schema.json#/$defs/safe_nonnegative_integer" }
+            "failed_attempts": { "$ref": "common.schema.json#/$defs/safe_nonnegative_integer" },
+            "superseded_attempts": { "$ref": "common.schema.json#/$defs/safe_nonnegative_integer" }
           },
-          "required": ["accepted_attempts", "failed_attempts"]
+          "required": ["accepted_attempts", "failed_attempts", "superseded_attempts"]
         }
       ],
       "unevaluatedProperties": false
@@ -117,11 +122,12 @@
     "summary": {
       "type": "object",
       "properties": {
-        "attempt_slots": { "$ref": "common.schema.json#/$defs/safe_positive_integer" },
+        "attempt_slots": { "$ref": "common.schema.json#/$defs/safe_nonnegative_integer" },
         "accepted_attempts": { "$ref": "common.schema.json#/$defs/safe_nonnegative_integer" },
-        "failed_attempts": { "$ref": "common.schema.json#/$defs/safe_nonnegative_integer" }
+        "failed_attempts": { "$ref": "common.schema.json#/$defs/safe_nonnegative_integer" },
+        "superseded_attempts": { "$ref": "common.schema.json#/$defs/safe_nonnegative_integer" }
       },
-      "required": ["attempt_slots", "accepted_attempts", "failed_attempts"],
+      "required": ["attempt_slots", "accepted_attempts", "failed_attempts", "superseded_attempts"],
       "additionalProperties": false
     },
     "report": {
@@ -131,8 +137,8 @@
         "benchmark": { "$ref": "common.schema.json#/$defs/name" },
         "manifest_hash": { "$ref": "common.schema.json#/$defs/sha256" },
         "output_directory": { "type": "string", "minLength": 1 },
-        "attempts": { "type": "array", "items": { "$ref": "#/$defs/attempt" }, "minItems": 1 },
-        "events": { "type": "array", "items": { "$ref": "#/$defs/event" }, "minItems": 4 },
+        "attempts": { "type": "array", "items": { "$ref": "#/$defs/attempt" } },
+        "events": { "type": "array", "items": { "$ref": "#/$defs/event" }, "minItems": 2 },
         "summary": { "$ref": "#/$defs/summary" }
       },
       "required": ["command", "benchmark", "manifest_hash", "output_directory", "attempts", "events", "summary"],

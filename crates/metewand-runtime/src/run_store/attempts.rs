@@ -40,7 +40,14 @@ impl AttemptPhase {
 #[derive(Clone, Copy, Debug)]
 pub enum RetryAuthorization {
     FirstAttempt,
-    Retry { next_index: u64, max_index: u64 },
+    /// Authorizes one atomically allocated attempt, including a retry if requested.
+    Next {
+        retry: bool,
+    },
+    Retry {
+        next_index: u64,
+        max_index: u64,
+    },
 }
 
 /// A caller-generated unique fencing token and its wall-clock expiration.
@@ -212,6 +219,11 @@ impl RunStore {
             None => 0,
         };
         match authorization {
+            RetryAuthorization::Next { retry: true } if next as u64 <= MAX_SAFE_INTEGER => (),
+            RetryAuthorization::Next { retry: false } if next == 0 => (),
+            RetryAuthorization::Next { retry: false } => {
+                return Err(RunStoreError::RetryNotAuthorized);
+            }
             RetryAuthorization::FirstAttempt if next == 0 => (),
             RetryAuthorization::Retry {
                 next_index,

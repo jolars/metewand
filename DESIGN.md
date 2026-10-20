@@ -715,8 +715,8 @@ revision. Its publisher creates leased same-filesystem stages, validates and
 synchronizes complete artifacts, publishes them without replacement, and only
 then commits their references and terminal state. Explicit recovery validates
 completed orphans, durably fails interrupted attempts, and quarantines abandoned
-stages while preserving claims until terminal commit. CLI integration remains
-a subsequent implementation slice. Uniqueness constraints permit at most one
+stages while preserving claims until terminal commit. The CLI uses this store
+for selected and bounded execution, explicit retries, and resume. Uniqueness constraints permit at most one
 accepted attempt per resolved execution slot and one selected valid observation
 per resolved observation slot.
 Before writing its immutable outcome record, a successful attempt atomically
@@ -1818,8 +1818,8 @@ changing its compatibility constants. The separate run-store publisher connects
 leased publication and terminal database references as described in [Durable run-store
 schema](docs/run-store-schema.md#transactional-publication). Its explicit
 [recovery API](docs/run-store-schema.md#explicit-recovery) resolves expired
-attempts, claimed orphans, and abandoned stages. CLI integration and garbage
-collection remain later slices. See
+attempts, claimed orphans, and abandoned stages. The CLI uses this path for
+explicit retries and resume; garbage collection remains a later slice. See
 [Artifact storage and private dataset views](docs/artifact-store.md).
 
 Later reads verify hashes whenever data crosses from the cache into a worker

@@ -7,7 +7,11 @@
 #[cfg(unix)]
 mod attempts;
 #[cfg(unix)]
+mod coordination;
+#[cfg(unix)]
 mod durable;
+#[cfg(unix)]
+pub use coordination::SlotProgress;
 #[cfg(all(test, unix))]
 mod fault_tests;
 #[cfg(unix)]

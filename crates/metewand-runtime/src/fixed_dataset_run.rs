@@ -267,7 +267,7 @@ pub fn run_fixed_dataset_outcome(request: FixedDatasetRun<'_>) -> FixedDatasetRu
     let mut measurements = ExecutionMeasurements::default();
     let timing = request.timing;
     let timeouts = request.timeouts;
-    match run_checked(request, None, &mut measurements, None) {
+    match run_checked(request, None, &mut measurements, None, None) {
         Ok(result) => FixedDatasetRunOutcome::Validated(Box::new(result)),
         Err(error) => {
             let kind = error.failure_kind();
@@ -311,15 +311,22 @@ pub fn run_fixed_dataset_outcome(request: FixedDatasetRun<'_>) -> FixedDatasetRu
 pub fn run_fixed_dataset(
     request: FixedDatasetRun<'_>,
 ) -> Result<FixedDatasetResult, FixedDatasetRunError> {
-    run_checked(request, None, &mut ExecutionMeasurements::default(), None)
+    run_checked(
+        request,
+        None,
+        &mut ExecutionMeasurements::default(),
+        None,
+        None,
+    )
 }
 
 pub(crate) fn run_fixed_dataset_in_view(
     request: FixedDatasetRun<'_>,
     view: &DatasetView,
     measurements: &mut ExecutionMeasurements,
+    observer: Option<&mut PhaseObserver<'_>>,
 ) -> Result<FixedDatasetResult, FixedDatasetRunError> {
-    run_checked(request, Some(view), measurements, None)
+    run_checked(request, Some(view), measurements, None, observer)
 }
 
 pub(crate) fn run_fixed_dataset_with_session(
@@ -327,15 +334,20 @@ pub(crate) fn run_fixed_dataset_with_session(
     view: &DatasetView,
     measurements: &mut ExecutionMeasurements,
     session: &mut WorkerSession,
+    observer: Option<&mut PhaseObserver<'_>>,
 ) -> Result<FixedDatasetResult, FixedDatasetRunError> {
-    run_checked(request, Some(view), measurements, Some(session))
+    run_checked(request, Some(view), measurements, Some(session), observer)
 }
+
+type PhaseObserver<'a> =
+    dyn FnMut(crate::run_store::AttemptPhase) -> Result<(), crate::run_store::RunStoreError> + 'a;
 
 fn run_checked(
     request: FixedDatasetRun<'_>,
     view: Option<&DatasetView>,
     measurements: &mut ExecutionMeasurements,
     session: Option<&mut WorkerSession>,
+    observer: Option<&mut PhaseObserver<'_>>,
 ) -> Result<FixedDatasetResult, FixedDatasetRunError> {
     if !request.dataset_dir.is_absolute() || !request.private_root.is_absolute() {
         return Err(FixedDatasetRunError::NonAbsolutePath);
@@ -352,7 +364,14 @@ fn run_checked(
         view,
     };
     integrity.verify("attempt start")?;
-    let result = run_workers(request, &integrity, measurements, &mut timing, session);
+    let result = run_workers(
+        request,
+        &integrity,
+        measurements,
+        &mut timing,
+        session,
+        observer,
+    );
     if let Some(started) = timing.started
         && !timing.finished
     {
@@ -378,6 +397,7 @@ fn run_workers(
     measurements: &mut ExecutionMeasurements,
     timing: &mut TimingEnvelope,
     session: Option<&mut WorkerSession>,
+    mut observer: Option<&mut PhaseObserver<'_>>,
 ) -> Result<FixedDatasetResult, FixedDatasetRunError> {
     measurements.cpu_time_scope = match request.timing.scope {
         TimingScope::ColdEndToEnd => AccountingScope::WorkerLifetimeThroughExecute,
@@ -428,6 +448,9 @@ fn run_workers(
             .expect("a fresh execution owns its session"),
     };
 
+    if let Some(observer) = observer.as_mut() {
+        observer(crate::run_store::AttemptPhase::Preparing)?;
+    }
     let mut baseline = None;
     integrity.operation("implementation prepare", || {
         if request.timing.scope == TimingScope::PrepareAndExecute {
@@ -453,6 +476,9 @@ fn run_workers(
         }
         prepared
     })?;
+    if let Some(observer) = observer.as_mut() {
+        observer(crate::run_store::AttemptPhase::Executing)?;
+    }
     let (executed, timed_wall_time) = integrity.operation("implementation execute", || {
         if request.timing.scope == TimingScope::ExecuteOnly {
             baseline = Some(implementation.process_usage());
@@ -521,6 +547,7 @@ fn run_workers(
         "operational_timeouts_ns": request.timeouts.provenance(),
         "timing_dataset_integrity": if request.timing.scope == TimingScope::ExecuteOnly { "outside_execute" } else { "included_between_prepare_and_execute" },
         "timing_resource_accounting": if request.timing.scope == TimingScope::ExecuteOnly { "outside_execute" } else { "included_between_prepare_and_execute" },
+        "timing_coordination": if observer.is_none() { "none" } else if request.timing.scope == TimingScope::ExecuteOnly { "outside_execute" } else { "included_between_prepare_and_execute" },
         "timing_excluded_phases": excluded_phases(request.timing.scope),
         "dataset_directory": request.dataset_dir,
         "dataset_tree_sha256": hex_digest(integrity.digest),
@@ -534,11 +561,17 @@ fn run_workers(
         "controls": metewand_core::controls::default_local_control_report(),
     });
 
+    if let Some(observer) = observer.as_mut() {
+        observer(crate::run_store::AttemptPhase::Validating)?;
+    }
     let result = validator
         .validate_execution_result(result_dir.path(), &executed, request.result_schema)
         .map_err(|source| FixedDatasetRunError::InvalidResult { source })?;
     let result_tree_hash = hash_local_tree(result_dir.path())
         .map_err(|source| FixedDatasetRunError::ResultTreeHash { source })?;
+    if let Some(observer) = observer.as_mut() {
+        observer(crate::run_store::AttemptPhase::Evaluating)?;
+    }
     let (evaluated, evaluation_time) = integrity.operation("evaluator evaluate", || {
         let started = Instant::now();
         let evaluated = evaluator
@@ -725,6 +758,9 @@ fn path_string(path: &Path) -> Result<String, FixedDatasetRunError> {
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum FixedDatasetRunError {
+    /// Durable execution ownership or phase recording failed.
+    #[error(transparent)]
+    Coordination(#[from] crate::run_store::RunStoreError),
     /// The scientific timeout cannot form a positive monotonic deadline.
     #[error("scientific timeout must be positive and representable by the monotonic clock")]
     InvalidScientificTimeout,
@@ -825,7 +861,8 @@ impl FixedDatasetRunError {
         match self {
             Self::DatasetMutation { .. } => FixedDatasetFailureKind::DatasetMutation,
             Self::ScientificTimeout => FixedDatasetFailureKind::ScientificTimeout,
-            Self::InvalidScientificTimeout
+            Self::Coordination(_)
+            | Self::InvalidScientificTimeout
             | Self::NonAbsolutePath
             | Self::NonUtf8Path(_)
             | Self::PrivateDirectory(_)

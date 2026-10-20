@@ -723,6 +723,11 @@ pub enum RunAttemptOutcome {
         /// Exact observation produced by this one-shot attempt.
         observation: RecordId<RunObservationRecord>,
     },
+    /// Another attempt claimed this slot before this result could be accepted.
+    Superseded {
+        /// Valid observation retained as an unselected concurrent candidate.
+        observation: Option<RecordId<RunObservationRecord>>,
+    },
     /// The attempt terminated without an accepted observation.
     Failed {
         /// Structured evidence retained for diagnosis.
@@ -739,7 +744,7 @@ pub struct RunAttemptRecord {
     pub slot: RecordId<ResolvedAttemptSlotRecord>,
     /// Zero-based retry index; every retry remains a distinct record.
     pub retry_index: u64,
-    /// Terminal accepted or failed outcome.
+    /// Terminal accepted, failed, or superseded outcome.
     pub outcome: RunAttemptOutcome,
     /// Wall-clock start time retained as provenance, never identity input.
     pub started_at: SystemTime,

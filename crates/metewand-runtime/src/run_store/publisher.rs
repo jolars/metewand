@@ -169,7 +169,7 @@ impl RunStore {
         let now = clock().max(finished);
         artifact.verified_at_ns = now;
         check_stage(&tx, attempt, &stage, now)?;
-        if coordination_snapshot(&tx, attempt)? != document.as_json()["coordination"] {
+        if coordination_snapshot(&tx, attempt, &outcome)? != document.as_json()["coordination"] {
             return Err(invalid("coordination records changed during publication"));
         }
         // Fencing uses the post-publication clock, while the terminal record and
@@ -337,7 +337,7 @@ pub(super) fn build_outcome_document(
         [attempt.id().to_string()],
         |r| r.get(0),
     )?;
-    let coordination = coordination_snapshot(tx, attempt)?;
+    let coordination = coordination_snapshot(tx, attempt, outcome)?;
     let document = CanonicalValue::try_from(json!({
         "run_store_version": RUN_STORE_SCHEMA_VERSION,
         "attempt_id": attempt.id(), "slot_id":attempt.slot(), "retry_index":attempt.retry_index(),
@@ -351,15 +351,16 @@ pub(super) fn build_outcome_document(
 fn coordination_snapshot(
     tx: &Transaction<'_>,
     attempt: &OwnedAttempt,
+    outcome: &TerminalOutcome,
 ) -> Result<serde_json::Value, RunStoreError> {
     fn rows(
         tx: &Transaction<'_>,
         sql: &str,
-        id: &str,
+        parameters: impl rusqlite::Params,
     ) -> Result<Vec<serde_json::Value>, RunStoreError> {
         let mut query = tx.prepare(sql)?;
         let documents = query
-            .query_map([id], |r| r.get::<_, String>(0))?
+            .query_map(parameters, |r| r.get::<_, String>(0))?
             .collect::<Result<Vec<_>, _>>()?;
         documents
             .iter()
@@ -371,12 +372,18 @@ fn coordination_snapshot(
             .collect()
     }
     let id = attempt.id().to_string();
+    // A losing or failed finalizer does not depend on a concurrent winner
+    // selecting its own result while this immutable outcome is being written.
+    let include_selected = matches!(
+        outcome,
+        TerminalOutcome::Accepted | TerminalOutcome::Censored { .. }
+    );
     Ok(json!({
-        "attempt_slots": rows(tx, "SELECT json_object('id', s.id, 'logical_slot_id', s.logical_slot_id, 'resolved_run_id', s.resolved_run_id, 'kind', s.kind, 'role', s.role, 'record', json(s.record_json)) FROM attempt_slots s JOIN attempts a ON a.slot_id = s.id WHERE a.id = ?1", &id)?,
-        "resolved_runs": rows(tx, "SELECT json_object('id', r.id, 'logical_specification_id', r.logical_specification_id, 'candidate_id', r.candidate_id, 'applicability_id', r.applicability_id, 'record', json(r.record_json)) FROM resolved_runs r JOIN attempt_slots s ON s.resolved_run_id = r.id JOIN attempts a ON a.slot_id = s.id WHERE a.id = ?1", &id)?,
-        "applicability_decisions": rows(tx, "SELECT json_object('id', d.id, 'candidate_id', d.candidate_id, 'applicable', d.applicable, 'record', json(d.record_json)) FROM applicability_decisions d JOIN resolved_runs r ON r.applicability_id = d.id JOIN attempt_slots s ON s.resolved_run_id = r.id JOIN attempts a ON a.slot_id = s.id WHERE a.id = ?1", &id)?,
-        "observation_slots": rows(tx, "SELECT json_object('id', o.id, 'logical_slot_id', o.logical_slot_id, 'resolved_run_id', o.resolved_run_id, 'record', json(o.record_json)) FROM observation_slots o JOIN attempt_observation_slots m ON m.observation_slot_id = o.id JOIN attempts a ON a.slot_id = m.attempt_slot_id WHERE a.id = ?1 ORDER BY o.id", &id)?,
-        "observations": rows(tx, "SELECT json_object('id', o.id, 'slot_id', o.slot_id, 'producing_attempt_id', o.producing_attempt_id, 'valid', o.valid, 'completion', o.completion, 'artifact_id', o.artifact_id, 'record', json(o.record_json), 'selected_at_ns', CAST(s.selected_at_ns AS TEXT)) FROM observations o LEFT JOIN selected_observations s ON s.observation_id = o.id WHERE o.producing_attempt_id = ?1 OR (s.observation_id IS NOT NULL AND o.slot_id IN (SELECT observation_slot_id FROM attempt_observation_slots m JOIN attempts a ON a.slot_id = m.attempt_slot_id WHERE a.id = ?1)) ORDER BY o.id", &id)?,
+        "attempt_slots": rows(tx, "SELECT json_object('id', s.id, 'logical_slot_id', s.logical_slot_id, 'resolved_run_id', s.resolved_run_id, 'kind', s.kind, 'role', s.role, 'record', json(s.record_json)) FROM attempt_slots s JOIN attempts a ON a.slot_id = s.id WHERE a.id = ?1", [&id])?,
+        "resolved_runs": rows(tx, "SELECT json_object('id', r.id, 'logical_specification_id', r.logical_specification_id, 'candidate_id', r.candidate_id, 'applicability_id', r.applicability_id, 'record', json(r.record_json)) FROM resolved_runs r JOIN attempt_slots s ON s.resolved_run_id = r.id JOIN attempts a ON a.slot_id = s.id WHERE a.id = ?1", [&id])?,
+        "applicability_decisions": rows(tx, "SELECT json_object('id', d.id, 'candidate_id', d.candidate_id, 'applicable', d.applicable, 'record', json(d.record_json)) FROM applicability_decisions d JOIN resolved_runs r ON r.applicability_id = d.id JOIN attempt_slots s ON s.resolved_run_id = r.id JOIN attempts a ON a.slot_id = s.id WHERE a.id = ?1", [&id])?,
+        "observation_slots": rows(tx, "SELECT json_object('id', o.id, 'logical_slot_id', o.logical_slot_id, 'resolved_run_id', o.resolved_run_id, 'record', json(o.record_json)) FROM observation_slots o JOIN attempt_observation_slots m ON m.observation_slot_id = o.id JOIN attempts a ON a.slot_id = m.attempt_slot_id WHERE a.id = ?1 ORDER BY o.id", [&id])?,
+        "observations": rows(tx, "SELECT json_object('id', o.id, 'slot_id', o.slot_id, 'producing_attempt_id', o.producing_attempt_id, 'valid', o.valid, 'completion', o.completion, 'artifact_id', o.artifact_id, 'record', json(o.record_json), 'selected_at_ns', CAST(s.selected_at_ns AS TEXT)) FROM observations o LEFT JOIN selected_observations s ON s.observation_id = o.id WHERE o.producing_attempt_id = ?1 OR (?2 AND s.observation_id IS NOT NULL AND o.slot_id IN (SELECT observation_slot_id FROM attempt_observation_slots m JOIN attempts a ON a.slot_id = m.attempt_slot_id WHERE a.id = ?1)) ORDER BY o.id", params![id, include_selected])?,
     }))
 }
 
@@ -448,4 +455,94 @@ fn hex(digest: ContentDigest) -> String {
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::run_store::{LeaseRequest, RetryAuthorization};
+    use metewand_core::records::{RecordId, ResolvedAttemptSlotRecord};
+
+    #[test]
+    fn nonaccepted_snapshots_survive_a_concurrent_winner_selecting_its_result() {
+        let root = tempfile::TempDir::new().unwrap();
+        let mut store = RunStore::open(root.path()).unwrap();
+        let slot = RecordId::<ResolvedAttemptSlotRecord>::from_digest([1; 32]);
+        store.connection.execute_batch("INSERT INTO applicability_decisions VALUES ('decision', 'candidate', 1, '{}');
+            INSERT INTO resolved_runs VALUES ('run', 'logical', 'candidate', 'decision', 1, '{}');
+            INSERT INTO observation_slots VALUES ('observation-slot', 'logical-observation', 'run', '{}');").unwrap();
+        store.connection.execute("INSERT INTO attempt_slots VALUES (?1, 'logical', 'run', 'one_shot', 'measurement', '{}')", [slot.to_string()]).unwrap();
+        store
+            .connection
+            .execute(
+                "INSERT INTO attempt_observation_slots VALUES (?1, 'observation-slot', 'run')",
+                [slot.to_string()],
+            )
+            .unwrap();
+        let lease = |name: &str| LeaseRequest {
+            id: name.into(),
+            owner_token: "owner".into(),
+            expires_at_ns: 100,
+        };
+        let winner = store
+            .reserve(slot, RetryAuthorization::FirstAttempt, lease("winner"), 10)
+            .unwrap();
+        let loser = store
+            .reserve(
+                slot,
+                RetryAuthorization::Retry {
+                    next_index: 1,
+                    max_index: 1,
+                },
+                lease("loser"),
+                11,
+            )
+            .unwrap();
+        let winner = store
+            .begin_finalization(&winner, lease("winner-claim"), 12)
+            .unwrap()
+            .attempt;
+        let loser = store
+            .begin_finalization(&loser, lease("loser-claim"), 13)
+            .unwrap()
+            .attempt;
+        store.connection.execute("INSERT INTO artifacts VALUES ('observation-artifact', 'observation', 'artifacts/observation', ?1, 'directory', ?1, 14)", ["0".repeat(64)]).unwrap();
+        for (id, attempt) in [
+            ("winner-observation", &winner),
+            ("loser-observation", &loser),
+        ] {
+            store.connection.execute("INSERT INTO observations VALUES (?1, 'observation-slot', ?2, ?3, 1, 'reached', 'observation-artifact', 'observation', '{}')", params![id, attempt.id().to_string(), slot.to_string()]).unwrap();
+        }
+        let tx = store.connection.transaction().unwrap();
+        let superseded =
+            build_outcome_document(&tx, &loser, &TerminalOutcome::Superseded, &[], 20).unwrap();
+        let failed_outcome = TerminalOutcome::Failed {
+            code: "execution_failed".into(),
+            details: CanonicalValue::try_from(json!({})).unwrap(),
+        };
+        let failed = build_outcome_document(&tx, &loser, &failed_outcome, &[], 20).unwrap();
+        tx.execute_batch("INSERT INTO selected_observations VALUES ('observation-slot', 'winner-observation', 1, 21)").unwrap();
+        assert_eq!(
+            build_outcome_document(&tx, &loser, &TerminalOutcome::Superseded, &[], 20).unwrap(),
+            superseded
+        );
+        assert_eq!(
+            build_outcome_document(&tx, &loser, &failed_outcome, &[], 20).unwrap(),
+            failed
+        );
+        assert_eq!(
+            superseded.as_json()["coordination"]["observations"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            superseded.as_json()["coordination"]["observations"][0]["id"],
+            "loser-observation"
+        );
+        assert!(
+            superseded.as_json()["coordination"]["observations"][0]["selected_at_ns"].is_null()
+        );
+    }
 }

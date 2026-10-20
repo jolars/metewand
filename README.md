@@ -149,7 +149,7 @@ self-describing observation before the enclosing attempt, retaining provenance,
 scoped logs, and hash-complete completion manifests in separate directories.
 The [`metewand run` command](docs/run-cli.md) connects checked manifests and
 logical plans to this trusted local path, streams versioned lifecycle events,
-and reports durable accepted and failed attempts. The
+and reports durable accepted, failed, and superseded attempts. The
 [fixed-dataset example](examples/fixed-dataset) demonstrates the complete path
 with raw workers and an independent evaluator.
 
@@ -160,7 +160,8 @@ WAL/FULL settings and filesystem capability probes. Its writer API coordinates
 leased reservations, revision-checked transitions, finalization claims, and all
 terminal outcomes in transactions. Its publisher connects durable artifact
 publication to terminal commits, and explicit recovery resolves expired attempts,
-completed orphans, and abandoned stages. CLI integration remains subsequent work.
+completed orphans, and abandoned stages. The CLI uses this store for selected and bounded execution, explicit
+retries, and resume without repeating accepted slots.
 
 ## Development
 

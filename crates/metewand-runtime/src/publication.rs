@@ -126,6 +126,50 @@ pub fn finalize_fixed_dataset(
     if !request.root.is_absolute() || !fs::symlink_metadata(request.root)?.is_dir() {
         return Err(PublicationError::InvalidRoot);
     }
+    let root = request.root;
+    if !request.provenance_data.as_json().is_object() {
+        return Err(PublicationError::InvalidProvenance);
+    }
+    let observations = durable_child(root, "observations")?;
+    let prepared = prepare_fixed_dataset(result, request)?;
+    let observation_stage = staging(&observations)?;
+    copy_prepared(prepared.observation_files.path(), observation_stage.path())?;
+    let observation_directory = publish(
+        observation_stage,
+        &observations.join(prepared.observation.id.to_string()),
+    )?;
+    let attempts = durable_child(root, "attempts")?;
+    let attempt_stage = staging(&attempts)?;
+    copy_prepared(prepared.attempt_files.path(), attempt_stage.path())?;
+    write_document(
+        attempt_stage.path(),
+        "attempt.json",
+        PublicSchema::Attempt,
+        &attempt_document(&prepared.attempt.record)?,
+    )?;
+    let attempt_directory = publish(
+        attempt_stage,
+        &attempts.join(prepared.attempt.id.to_string()),
+    )?;
+    Ok(PublishedOneShot {
+        observation: prepared.observation,
+        attempt: prepared.attempt,
+        observation_directory,
+        attempt_directory,
+    })
+}
+
+pub(crate) struct PreparedOneShot {
+    pub observation: IdentifiedRecord<RunObservationRecord>,
+    pub attempt: IdentifiedRecord<RunAttemptRecord>,
+    pub observation_files: TempDir,
+    pub attempt_files: TempDir,
+}
+
+pub(crate) fn prepare_fixed_dataset(
+    result: &FixedDatasetResult,
+    request: PublicationRequest<'_>,
+) -> Result<PreparedOneShot, PublicationError> {
     if !request.provenance_data.as_json().is_object() {
         return Err(PublicationError::InvalidProvenance);
     }
@@ -163,8 +207,7 @@ pub fn finalize_fixed_dataset(
     // The attempt ID binds only the slot and retry, so it is available before
     // the observation without creating an identity cycle.
     let attempt_id = record_id(&attempt)?;
-    let observations = durable_child(request.root, "observations")?;
-    let observation_stage = staging(&observations)?;
+    let observation_stage = Builder::new().prefix("metewand-observation-").tempdir()?;
     let result_copy = observation_stage.path().join("result");
     copy_result(result, &result_copy)?;
     let metrics_path = result.metrics_document();
@@ -223,11 +266,6 @@ pub fn finalize_fixed_dataset(
         PublicSchema::Observation,
         &document,
     )?;
-    let observation_directory = publish(
-        observation_stage,
-        &observations.join(observation.id.to_string()),
-    )?;
-
     attempt.outcome = if result.completion == CompletionStatus::NotReached {
         RunAttemptOutcome::Failed {
             diagnostic: AttemptDiagnostic {
@@ -245,8 +283,7 @@ pub fn finalize_fixed_dataset(
     };
     attempt.finished_at = SystemTime::now();
     let attempt = identify_record(attempt)?;
-    let attempts = durable_child(request.root, "attempts")?;
-    let attempt_stage = staging(&attempts)?;
+    let attempt_stage = Builder::new().prefix("metewand-attempt-").tempdir()?;
     write_logs(
         attempt_stage.path(),
         "implementation",
@@ -257,20 +294,30 @@ pub fn finalize_fixed_dataset(
         "problem-evaluator",
         &result.evaluator_output,
     )?;
-    let document = attempt_document(&attempt.record)?;
-    write_document(
-        attempt_stage.path(),
-        "attempt.json",
-        PublicSchema::Attempt,
-        &document,
-    )?;
-    let attempt_directory = publish(attempt_stage, &attempts.join(attempt.id.to_string()))?;
-    Ok(PublishedOneShot {
+    Ok(PreparedOneShot {
         observation,
         attempt,
-        observation_directory,
-        attempt_directory,
+        observation_files: observation_stage,
+        attempt_files: attempt_stage,
     })
+}
+
+pub(crate) fn copy_prepared(source: &Path, destination: &Path) -> io::Result<()> {
+    for entry in fs::read_dir(source)? {
+        let entry = entry?;
+        let target = destination.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            fs::create_dir(&target)?;
+            copy_prepared(&entry.path(), &target)?;
+        } else if entry.file_type()?.is_file() {
+            fs::copy(entry.path(), target)?;
+        } else {
+            return Err(io::Error::other(
+                "prepared publication contains an unsafe entry",
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// Verifies the completion marker and the exact hash and size inventory.

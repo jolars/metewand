@@ -48,6 +48,15 @@ impl RunStore {
         &self.database_path
     }
 
+    pub(crate) fn reconnect(&self) -> Result<Self, RunStoreError> {
+        let connection = open_database(&self.database_path)?;
+        configure(&connection)?;
+        Ok(Self {
+            database_path: self.database_path.clone(),
+            connection,
+        })
+    }
+
     fn open_checked(root: &Path, check: &Check<'_>) -> Result<Self, RunStoreError> {
         if !root.is_absolute() || !fs::symlink_metadata(root)?.is_dir() {
             return Err(RunStoreError::UnsafePath(root.to_owned()));
@@ -103,6 +112,8 @@ pub enum RunStoreError {
     StaleAttempt,
     #[error("attempt slot is already satisfied")]
     SatisfiedSlot,
+    #[error("slot has a previous attempt; retry requires explicit authorization")]
+    RetryNotAuthorized,
     #[error("attempt identity failed: {0}")]
     Identity(#[from] metewand_core::identity::IdentityError),
     #[error("attempt event is not canonical JSON: {0}")]

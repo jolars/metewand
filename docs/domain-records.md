@@ -93,10 +93,12 @@ references, executor-observed timing, completion status, and provenance.
 
 `RunAttemptOutcome` preserves the one-shot cardinality rules in its shape:
 
-- `Accepted` contains exactly one observation identity; and
+- `Accepted` contains exactly one observation identity;
 - `Failed` contains a structured diagnostic and may retain one valid
   observation—for example, when a valid result did not reach the contract's
-  one-shot completion target.
+  one-shot completion target; and
+- `Superseded` may retain the valid observation produced by a concurrent
+  candidate that lost the resolved slot's finalization claim.
 
 Every retry is a separate `RunAttemptRecord` with its resolved slot and retry
 index. Wall-clock timestamps and observed provenance remain on attempts and

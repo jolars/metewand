@@ -993,6 +993,9 @@ impl CommandError {
     #[cfg(unix)]
     pub fn execution(error: &metewand_runtime::run::RunError) -> Self {
         use metewand_runtime::run::RunError;
+        if let RunError::Selection(message) = error {
+            return Self::usage("invalid_run_selection", message);
+        }
         if let RunError::Unsupported(message) = error {
             return Self::unsupported(
                 message,
@@ -1025,6 +1028,7 @@ impl CommandError {
             RunError::ArtifactStore(_) => {
                 (EXIT_IO, "artifact_cache_failed", "artifact_cache_failed")
             }
+            RunError::Store(_) => (EXIT_IO, "run_store_failed", "coordination_failed"),
             RunError::Publication(_) => (EXIT_IO, "run_publication_failed", "publication_failed"),
             RunError::Io(_) => (EXIT_IO, "run_setup_failed", "execution_input_unavailable"),
             RunError::Identity(_) | RunError::Canonical(_) | RunError::PublicSchemas(_) => (
@@ -1174,22 +1178,27 @@ pub fn render_event(event: &RunEvent, format: OutputFormat) -> Result<String, se
                 match attempt.status {
                     RunAttemptStatus::Accepted => "accepted",
                     RunAttemptStatus::Failed => "failed",
+                    RunAttemptStatus::Superseded => "superseded",
                 }
             ),
             RunEventKind::RunFinished {
                 accepted_attempts,
                 failed_attempts,
-            } => format!("Finished: {accepted_attempts} accepted, {failed_attempts} failed.\n"),
+                superseded_attempts,
+            } => format!(
+                "Finished: {accepted_attempts} accepted, {failed_attempts} failed, {superseded_attempts} superseded.\n"
+            ),
         }),
     }
 }
 
 fn render_run_report(report: &RunReport) -> String {
     let mut output = format!(
-        "Benchmark `{}`: {} accepted, {} failed.\n  output directory: {}\n",
+        "Benchmark `{}`: {} accepted, {} failed, {} superseded.\n  output directory: {}\n",
         report.benchmark,
         report.summary.accepted_attempts,
         report.summary.failed_attempts,
+        report.summary.superseded_attempts,
         report.output_directory
     );
     for attempt in &report.attempts {
@@ -1200,6 +1209,7 @@ fn render_run_report(report: &RunReport) -> String {
             match attempt.status {
                 RunAttemptStatus::Accepted => "accepted",
                 RunAttemptStatus::Failed => "failed",
+                RunAttemptStatus::Superseded => "superseded",
             }
         )
         .expect("writing to a string cannot fail");

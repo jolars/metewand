@@ -284,7 +284,7 @@ fn run_streams_events_and_publishes_a_self_describing_attempt() {
     );
     assert_eq!(fs::read(root.path().join("worker.py")).unwrap(), source);
     assert!(!root.path().join("__pycache__").exists());
-    assert_eq!(fs::read_dir(root.path().join("run")).unwrap().count(), 2);
+    assert!(root.path().join("run/run.sqlite3").is_file());
 }
 
 #[test]
@@ -1357,7 +1357,7 @@ fn manifest_paths_are_relative_to_the_invocation_and_inputs_to_the_manifest() {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert!(working.path().join("run/attempts").is_dir());
+    assert!(working.path().join("run/run.sqlite3").is_file());
     assert!(!root.path().join("run").exists());
 }
 

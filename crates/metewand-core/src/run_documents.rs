@@ -61,6 +61,9 @@ pub fn attempt_document(record: &RunAttemptRecord) -> Result<CanonicalValue, Run
         RunAttemptOutcome::Accepted { observation } => {
             (json!({"kind": "accepted"}), Some(*observation))
         }
+        RunAttemptOutcome::Superseded { observation } => {
+            (json!({"kind": "superseded"}), *observation)
+        }
         RunAttemptOutcome::Failed {
             diagnostic,
             observation,

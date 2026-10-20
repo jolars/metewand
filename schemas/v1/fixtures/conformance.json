@@ -2,6 +2,69 @@
   "version": 1,
   "valid": [
     {
+      "name": "superseded one-shot retry retains its valid observation",
+      "schema": "attempt",
+      "instance": {
+        "schema_version": 1,
+        "id": "mw1-attempt-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "slot_id": "mw1-attempt-slot-2222222222222222222222222222222222222222222222222222222222222222",
+        "retry_index": 1,
+        "outcome": {
+          "kind": "superseded"
+        },
+        "observations": [
+          "mw1-observation-cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        ],
+        "started_at": "2026-09-05T10:00:00Z",
+        "finished_at": "2026-09-05T10:00:01Z",
+        "provenance": {
+          "tool_version": "0.1.0",
+          "wire_protocol_version": 1,
+          "execution_semantics_version": 1,
+          "data": {
+            "machine": "fixture"
+          }
+        }
+      }
+    },
+    {
+      "name": "resume with no eligible slots produces an empty report",
+      "schema": "run-output",
+      "instance": {
+        "schema_version": 1,
+        "kind": "result",
+        "data": {
+          "command": "run",
+          "benchmark": "empty-resume",
+          "manifest_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "output_directory": "/tmp/run",
+          "attempts": [],
+          "events": [
+            {
+              "command": "run",
+              "sequence": 0,
+              "event": "run_started",
+              "attempt_slots": 0
+            },
+            {
+              "command": "run",
+              "sequence": 1,
+              "event": "run_finished",
+              "accepted_attempts": 0,
+              "failed_attempts": 0,
+              "superseded_attempts": 0
+            }
+          ],
+          "summary": {
+            "attempt_slots": 0,
+            "accepted_attempts": 0,
+            "failed_attempts": 0,
+            "superseded_attempts": 0
+          }
+        }
+      }
+    },
+    {
       "name": "private worker environment with a redacted channel",
       "schema": "worker-environment",
       "instance": {
@@ -937,6 +1000,32 @@
     }
   ],
   "invalid": [
+    {
+      "name": "superseded is not an accepted outcome alias",
+      "schema": "attempt",
+      "instance": {
+        "schema_version": 1,
+        "id": "mw1-attempt-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "slot_id": "mw1-attempt-slot-2222222222222222222222222222222222222222222222222222222222222222",
+        "retry_index": 1,
+        "outcome": {
+          "kind": "accepted_elsewhere"
+        },
+        "observations": [
+          "mw1-observation-cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        ],
+        "started_at": "2026-09-05T10:00:00Z",
+        "finished_at": "2026-09-05T10:00:01Z",
+        "provenance": {
+          "tool_version": "0.1.0",
+          "wire_protocol_version": 1,
+          "execution_semantics_version": 1,
+          "data": {
+            "machine": "fixture"
+          }
+        }
+      }
+    },
     {
       "name": "worker environment rejects a relative working directory",
       "schema": "worker-environment",

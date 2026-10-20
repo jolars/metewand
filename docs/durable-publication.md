@@ -143,14 +143,17 @@ It verifies directory integrity; scientific validation occurs before publication
 This Gate-1 publisher does not add a metadata database, recovery/import
 transactions, or quarantine. The separate [transactional run-store
 publisher](run-store-schema.md#transactional-publication) connects leased artifact
-publication to SQLite completion; the current CLI does not use it yet. The [`metewand run` command](run-cli.md) composes it with manifest
-resolution and execution. A completed orphan alone does not establish attempt
-acceptance. `finalize_failed_attempt` uses the same durable boundary to publish
+publication to SQLite completion. The [`metewand run` command](run-cli.md)
+uses that transactional path, reserving retry identities and deciding success
+claims before writing immutable attempt outcomes. Its content-addressed
+`artifacts/` layout differs from the standalone publisher shown above. A completed
+orphan alone does not establish attempt acceptance. `finalize_failed_attempt` uses the same durable boundary to publish
 technical failures without creating an observation.
 
 The manifest, public-schema, identity, local-tree-hash, execution-semantics, and
-wire-protocol compatibility constants remain at version 1. This implementation
-uses the existing contracts without changing their representations. Tests pin
+wire-protocol compatibility constants remain at version 1, except that execution
+semantics are now at version 2. The standalone publisher continues to use these
+existing contracts. Tests pin
 canonical completion-marker bytes and artifact identity vectors, validate the
 emitted public envelopes, independently check file hashes and sizes, and cover
 nested binary results, truncated logs, missed completion targets, competing

@@ -29,6 +29,12 @@
         },
         {
           "type": "object",
+          "properties": { "kind": { "const": "superseded" } },
+          "required": ["kind"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
           "properties": {
             "kind": {
               "type": "string",

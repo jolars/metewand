@@ -8,6 +8,19 @@ use crate::records::{
     RunObservationRecord,
 };
 
+/// Invocation controls that do not alter scientific slot identities.
+#[derive(Clone, Debug, Default)]
+pub struct RunOptions {
+    /// Union of stable IDs to execute; an empty list selects the complete plan.
+    pub selected_ids: Vec<String>,
+    /// Maximum new attempts allocated by this invocation, including retries.
+    pub max_attempts: Option<u64>,
+    /// Reopen an existing durable output directory.
+    pub resume: bool,
+    /// Explicitly authorize one additional attempt per selected unsatisfied slot.
+    pub retry: bool,
+}
+
 /// A stable technical or scientific reason for a failed attempt.
 #[derive(Clone, Debug, Serialize)]
 pub struct RunDiagnostic {
@@ -23,6 +36,8 @@ pub struct RunDiagnostic {
 pub enum RunAttemptStatus {
     /// The independently evaluated result met its completion rule.
     Accepted,
+    /// A concurrent candidate won the slot finalization claim.
+    Superseded,
     /// Execution, validation, evaluation, or scientific completion failed.
     Failed,
 }
@@ -36,7 +51,7 @@ pub struct RunAttemptOutput {
     pub resolved_slot_id: RecordId<ResolvedAttemptSlotRecord>,
     /// Finalized attempt identity.
     pub attempt_id: RecordId<RunAttemptRecord>,
-    /// Accepted or failed terminal outcome.
+    /// Accepted, failed, or superseded terminal outcome.
     pub status: RunAttemptStatus,
     /// Independently published observation, when a valid result exists.
     pub observation_id: Option<RecordId<RunObservationRecord>>,
@@ -91,6 +106,8 @@ pub enum RunEventKind {
         accepted_attempts: usize,
         /// Number of failed attempts.
         failed_attempts: usize,
+        /// Number of concurrent candidates superseded by another finalizer.
+        superseded_attempts: usize,
     },
 }
 
@@ -103,6 +120,8 @@ pub struct RunSummary {
     pub accepted_attempts: usize,
     /// Number of durably failed attempts.
     pub failed_attempts: usize,
+    /// Number of durably superseded concurrent candidates.
+    pub superseded_attempts: usize,
 }
 
 /// Final command output rendered by both human and machine interfaces.

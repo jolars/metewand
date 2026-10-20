@@ -26,7 +26,7 @@ than infer it from the Metewand release that produced the record.
 | `artifact-cache-lease` | Process-held lease receipt for publication, reading, or a private view. |
 | `result-manifest` | Metewand metadata around problem-defined canonical result data and referenced files. |
 | `observation` | Independently finalized result, metrics, timing, validity, and provenance. |
-| `attempt` | Terminal accepted or failed execution with its observations and provenance. |
+| `attempt` | Terminal accepted, failed, or superseded execution with its observations and provenance. |
 | `metrics` | Metewand metadata around evaluator-owned metric data. |
 | `dataset-materialization` | Construction receipt with a derivation identity and separate output hash. |
 | `dataset-validation-request` | Versioned request to a contract-owned binary dataset checker. |
