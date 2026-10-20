@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "metewand"
+version = "0.1.0"
+description = "Small Python worker helpers for Metewand benchmarks"
+requires-python = ">=3.11"
+license = "MIT OR Apache-2.0"
+license-files = ["LICENSE-*"]
+authors = [{name = "Johan Larsson", email = "johan@jolars.co"}]
+readme = "README.md"
+dependencies = []
+
+[project.urls]
+Repository = "https://github.com/jolars/metewand"
+
+[tool.setuptools.packages.find]
+where = ["src"]

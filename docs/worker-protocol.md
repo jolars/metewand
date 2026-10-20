@@ -119,9 +119,17 @@ which it must finish the metrics document:
 {"dataset_dir":"/private/dataset","id":"1","method":"evaluate","metrics_path":"/private/metrics.json","problem_contract_id":"mw1-problem-contract-abc","problem_parameters":{"lambda":0.1},"result_dir":"/private/result"}
 ```
 
-Evaluation also receives the common acknowledgment. `shutdown` is the final
-request for every role; the shutdown phase includes both its acknowledgment
-and clean process exit.
+Evaluation returns a required problem-owned verdict after writing metrics:
+
+```json
+{"id":"1","ok":true,"verdict":"reached"}
+```
+
+The verdict is `invalid`, `reached`, `not_reached`, or `not_required`; transport
+success does not imply scientific validity. `shutdown` is the final request
+for every role; the shutdown phase includes both its acknowledgment and clean
+process exit. The [Python SDK](python-sdk.md) supplies callback helpers for all
+three roles.
 
 The manifest paths in successful responses are worker-supplied data. The
 [worker-output validation layer](worker-output-validation.md) resolves them

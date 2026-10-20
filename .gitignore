@@ -11,3 +11,10 @@ devenv.local.yaml
 
 # Rust
 /target
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+/sdk/python/build/
+/sdk/python/dist/

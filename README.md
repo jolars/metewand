@@ -22,7 +22,7 @@ layers:
 Core and protocol are independent foundation crates. Runtime depends on both,
 and the CLI composes all three.
 
-Repository-level schemas live in `schemas/`; language SDKs will live in `sdk/`;
+Repository-level schemas live in `schemas/`; language SDKs live in `sdk/`;
 runnable examples in `examples/`; and longer-form documentation in `docs/`.
 These directories are added only when they have real contents. Conformance
 fixtures are colocated with the contracts or components they exercise.
@@ -168,6 +168,11 @@ current plans and durable history by stable identity. Status retains pending
 slots, live and expired attempts, retries, selected observations, and failures;
 explanations connect definitions, runs, slots, attempts, artifacts, and diagnostics
 without launching workers or recovering the store.
+
+The [Python SDK](docs/python-sdk.md) provides small helpers for implementations,
+dataset materializers, and independent evaluators over the existing one-shot
+protocol. Its [runnable example](examples/python-sdk) uses all three roles and
+publishes two observations with process reuse.
 
 ## Development
 

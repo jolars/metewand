@@ -289,7 +289,7 @@ artifacts](DESIGN.md#6-environments-execution-and-artifacts).
 
 See [Initial SDK APIs](DESIGN.md#7-initial-sdk-apis).
 
-- [ ] Build the Python SDK helpers for implementations, dataset materializers,
+- [x] Build the Python SDK helpers for implementations, dataset materializers,
   and evaluators without exposing orchestrator responsibilities.
 - [ ] Build the equivalent R SDK helpers with the same protocol behavior and
   canonical-value restrictions.
