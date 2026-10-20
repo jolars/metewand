@@ -178,6 +178,10 @@ The equivalent [R SDK](docs/r-sdk.md) provides the same roles, canonical JSON
 restrictions, and structured errors. Its [example](examples/r-sdk) also exercises
 all three roles and publishes two observations with process reuse.
 
+The [SDK conformance suites](docs/sdk-conformance.md) run shared canonicalization,
+identity, seed, error, and protocol vectors across Rust, Python, and R and test
+reference problem contracts against correct and deliberately incorrect workers.
+
 ## Development
 
 The development environment pins Rust 1.98.0 and includes rustfmt, Clippy, and

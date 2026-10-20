@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "complete": {
+      "const": true
+    },
+    "files": {
+      "items": {
+        "properties": {
+          "path": {
+            "const": "data.json"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      },
+      "maxItems": 1,
+      "minItems": 1,
+      "type": "array"
+    },
+    "schema_version": {
+      "const": 1
+    }
+  },
+  "required": [
+    "schema_version",
+    "complete",
+    "files"
+  ],
+  "type": "object"
+}

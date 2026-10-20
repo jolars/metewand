@@ -21,7 +21,7 @@ from metewand import (
     write_metrics,
     write_result,
 )
-from metewand._worker import MAX_LINE_BYTES, ProtocolError, _encode_response, _serve
+from metewand._worker import MAX_LINE_BYTES, ProtocolError, _encode_response, _object, _serve
 
 ROOT = Path(__file__).resolve().parents[3]
 WORKER_ID = "mw1-resolved-worker-" + "a" * 64
@@ -210,10 +210,17 @@ class WorkerTests(unittest.TestCase):
                 events.append("clock")
                 return next(ticks)
 
-            with patch("metewand._worker.time.perf_counter_ns", side_effect=clock):
+            def validate_statistics(value, name):
+                events.append("statistics")
+                return _object(value, name)
+
+            with (
+                patch("metewand._worker.time.perf_counter_ns", side_effect=clock),
+                patch("metewand._worker._object", side_effect=validate_statistics),
+            ):
                 responses = exchange(worker, "implementation", calls)
             self.assertEqual(
-                events, ["prepare", "clock", "execute", "clock", "write_result"]
+                events, ["prepare", "clock", "execute", "clock", "statistics", "write_result"]
             )
             self.assertEqual(
                 responses[0],

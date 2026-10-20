@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "one_shot_completion": {
+      "const": {
+        "absolute_error": 0
+      }
+    },
+    "preprocessing": {
+      "const": {
+        "allowed_outside_timed_scope": [],
+        "values": "preserve_values_and_order"
+      }
+    },
+    "validity": {
+      "const": {
+        "count": "input_length"
+      }
+    },
+    "computation": {
+      "const": {
+        "operation": "sum_plus_offset",
+        "input_file": "data.json",
+        "input_field": "values",
+        "input_domain": "finite_number_array",
+        "result_field": "answer",
+        "offset_parameter": "offset"
+      }
+    }
+  },
+  "required": [
+    "computation",
+    "preprocessing",
+    "validity",
+    "one_shot_completion"
+  ],
+  "type": "object"
+}

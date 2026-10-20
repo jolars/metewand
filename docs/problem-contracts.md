@@ -75,3 +75,14 @@ parsed document after the complete offline catalog has been compiled.
 `parse_problem_contract` remains the convenient combined operation. A document
 returned by the parsing-only phase is not valid for planning until the second
 phase succeeds.
+
+## Executable reference suites
+
+The [SDK conformance suites](sdk-conformance.md#reference-problem-contracts)
+include complete sum and argmin contracts with reference datasets, results,
+and expected metrics. Both Python and R implementations run against both
+evaluators through the Rust transport and scientific-schema validator. Correct
+implementations reach completion; malformed, numerically wrong, and semantically
+invalid variants fail their respective checks. The semantic cases include a
+later tied minimum with zero numerical error, so matching the objective value
+alone cannot pass conformance.

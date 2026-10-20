@@ -1,0 +1,38 @@
+version = 1
+name = "sum"
+family = "arithmetic"
+parameter_schema = "schemas/parameters.json"
+dataset_schemas = ["schemas/dataset.json"]
+result_schema = "schemas/result.json"
+metric_schema = "schemas/metrics.json"
+semantics_schema = "schemas/semantics.json"
+allowed_timing_scopes = ["prepare_and_execute"]
+supported_budgets = ["none"]
+
+[semantics.computation]
+operation = "sum_plus_offset"
+input_file = "data.json"
+input_field = "values"
+input_domain = "finite_number_array"
+result_field = "answer"
+offset_parameter = "offset"
+
+[semantics.preprocessing]
+values = "preserve_values_and_order"
+allowed_outside_timed_scope = []
+
+[semantics.validity]
+count = "input_length"
+
+[semantics.one_shot_completion]
+absolute_error = 0
+
+[[reference_cases]]
+dataset = "fixtures/mixed/dataset"
+result = "fixtures/mixed/result"
+expected_metrics = "fixtures/mixed/metrics/metrics.json"
+
+[[reference_cases]]
+dataset = "fixtures/empty/dataset"
+result = "fixtures/empty/result"
+expected_metrics = "fixtures/empty/metrics/metrics.json"

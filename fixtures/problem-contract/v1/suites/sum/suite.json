@@ -1,0 +1,71 @@
+{
+  "cases": [
+    {
+      "expected_metrics": {
+        "correct": {
+          "absolute_error": 0,
+          "semantically_valid": true
+        },
+        "numerically_wrong": {
+          "absolute_error": 1,
+          "semantically_valid": true
+        },
+        "semantically_invalid": {
+          "absolute_error": 0,
+          "semantically_valid": false
+        }
+      },
+      "name": "mixed",
+      "problem_parameters": {
+        "offset": 2
+      }
+    },
+    {
+      "expected_metrics": {
+        "correct": {
+          "absolute_error": 0,
+          "semantically_valid": true
+        },
+        "numerically_wrong": {
+          "absolute_error": 1,
+          "semantically_valid": true
+        },
+        "semantically_invalid": {
+          "absolute_error": 0,
+          "semantically_valid": false
+        }
+      },
+      "name": "empty",
+      "problem_parameters": {
+        "offset": -3
+      }
+    }
+  ],
+  "family": "sum",
+  "variants": [
+    {
+      "mode": "correct",
+      "validation": "valid",
+      "verdict": "reached"
+    },
+    {
+      "mode": "missing_field",
+      "validation": "malformed"
+    },
+    {
+      "mode": "wrong_type",
+      "validation": "malformed"
+    },
+    {
+      "mode": "numerically_wrong",
+      "validation": "valid",
+      "verdict": "not_reached"
+    },
+    {
+      "mode": "semantically_invalid",
+      "validation": "valid",
+      "verdict": "invalid"
+    }
+  ],
+  "version": 1
+}

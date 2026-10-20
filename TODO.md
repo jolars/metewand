@@ -293,12 +293,12 @@ See [Initial SDK APIs](DESIGN.md#7-initial-sdk-apis).
   and evaluators without exposing orchestrator responsibilities.
 - [x] Build the equivalent R SDK helpers with the same protocol behavior and
   canonical-value restrictions.
-- [ ] Measure only the user implementation callback as SDK
+- [x] Measure only the user implementation callback as SDK
   `implementation_time`, while writing the result before replying to
   `execute`.
-- [ ] Run canonicalization, identity, seed, error, and protocol golden vectors
+- [x] Run canonicalization, identity, seed, error, and protocol golden vectors
   across Rust, Python, and R.
-- [ ] Add reference problem-contract suites that accept correct implementations
+- [x] Add reference problem-contract suites that accept correct implementations
   and reject malformed, numerically wrong, and semantically invalid results.
 
 ### 2.6 Authoring, exports, and local examples

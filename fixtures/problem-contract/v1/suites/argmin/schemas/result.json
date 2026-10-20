@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "index": {
+      "minimum": 0,
+      "type": "integer"
+    },
+    "value": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "value",
+    "index"
+  ],
+  "type": "object"
+}

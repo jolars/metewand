@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "one_shot_completion": {
+      "const": {
+        "absolute_error": 0
+      }
+    },
+    "preprocessing": {
+      "const": {
+        "allowed_outside_timed_scope": [],
+        "values": "preserve_values_and_order"
+      }
+    },
+    "validity": {
+      "const": {
+        "index": "in_bounds_and_minimal",
+        "index_base": 0,
+        "ties": "first_minimum"
+      }
+    },
+    "computation": {
+      "const": {
+        "operation": "minimum",
+        "input_file": "data.json",
+        "input_field": "values",
+        "input_domain": "nonempty_finite_number_array",
+        "result_field": "value"
+      }
+    }
+  },
+  "required": [
+    "computation",
+    "preprocessing",
+    "validity",
+    "one_shot_completion"
+  ],
+  "type": "object"
+}

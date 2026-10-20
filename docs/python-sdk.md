@@ -185,9 +185,12 @@ versions are unchanged. This SDK implements the current contracts without adding
 messages, fields, or orchestrator policy. Applicability, scientific budgets, and
 profile subprotocols remain reserved for later roadmap slices.
 
-The Python tests consume the shared [canonicalization
-vectors](../fixtures/canonical-json/v1.json), check lifecycle dispatch, callback
-errors, malformed frames, and exact response bytes. Rust integration tests run
+The Python tests consume shared canonicalization, identity, seed, error, and
+protocol vectors, check lifecycle dispatch, callback errors, malformed frames,
+and exact response bytes. Deterministic timing tests exclude statistics
+validation and result serialization from `implementation_time_ns` and reopen
+completed results before replying. See [SDK conformance](sdk-conformance.md) for
+the vectors and reference problem suites. Rust integration tests run
 that suite and connect all three Python roles through `WorkerSession`, validate
 their files and schemas, check SDK metadata and separated logs, and exercise
 reset and reuse. The CLI test runs the example through durable publication. Run

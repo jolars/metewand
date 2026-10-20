@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "answer": {
+      "type": "number"
+    },
+    "count": {
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "answer",
+    "count"
+  ],
+  "type": "object"
+}

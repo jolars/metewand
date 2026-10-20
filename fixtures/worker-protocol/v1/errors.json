@@ -1,0 +1,64 @@
+{
+  "version": 1,
+  "accepted": [
+    {
+      "error": {
+        "code": "invalid_request",
+        "message": "bad data: π\nline two",
+        "details": {
+          "index": 2,
+          "nested": {
+            "valid": false
+          }
+        }
+      },
+      "frame": "{\"error\":{\"code\":\"invalid_request\",\"details\":{\"index\":2,\"nested\":{\"valid\":false}},\"message\":\"bad data: π\\nline two\"},\"id\":\"failure\",\"ok\":false}\n"
+    },
+    {
+      "error": {
+        "code": "unsupported_operation",
+        "message": "bad data: π\nline two"
+      },
+      "frame": "{\"error\":{\"code\":\"unsupported_operation\",\"message\":\"bad data: π\\nline two\"},\"id\":\"failure\",\"ok\":false}\n"
+    },
+    {
+      "error": {
+        "code": "operation_failed",
+        "message": "bad data: π\nline two",
+        "details": {
+          "index": 2,
+          "nested": {
+            "valid": false
+          }
+        }
+      },
+      "frame": "{\"error\":{\"code\":\"operation_failed\",\"details\":{\"index\":2,\"nested\":{\"valid\":false}},\"message\":\"bad data: π\\nline two\"},\"id\":\"failure\",\"ok\":false}\n"
+    },
+    {
+      "error": {
+        "code": "internal_error",
+        "message": "bad data: π\nline two"
+      },
+      "frame": "{\"error\":{\"code\":\"internal_error\",\"message\":\"bad data: π\\nline two\"},\"id\":\"failure\",\"ok\":false}\n"
+    }
+  ],
+  "rejected": [
+    {
+      "code": "invented",
+      "message": "bad"
+    },
+    {
+      "code": "operation_failed",
+      "message": ""
+    },
+    {
+      "code": "operation_failed",
+      "message": "bad",
+      "details": []
+    },
+    {
+      "code": "internal_error",
+      "message": 1
+    }
+  ]
+}

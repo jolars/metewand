@@ -112,8 +112,9 @@ worker_error <- function(code, message, details = NULL) {
       prepared <<- FALSE
       execute <- worker$execute
       start <- .clock()
-      state <<- execute(state, NULL, NULL)
+      executed <- execute(state, NULL, NULL)
       elapsed <- .clock() - start
+      state <<- executed
       statistics <- if (is.function(worker$statistics)) worker$statistics(state) else NULL
       if (is.null(statistics)) statistics <- json_object()
       statistics <- .object(statistics, "Implementation statistics")

@@ -196,9 +196,12 @@ This SDK uses the existing protocol, schema, canonicalization, identity, and
 execution-semantics versions. It introduces no messages or fields. Applicability,
 scientific budgets, and profile subprotocols remain reserved for later slices.
 
-The R contract suite consumes the shared [canonical JSON
-vectors](../fixtures/canonical-json/v1.json) and checks R value restrictions,
-inventories, lifecycle, failures, and framing. Rust integration tests install the
+The R contract suite consumes shared canonicalization, identity, seed, error,
+and protocol vectors and checks R value restrictions, inventories, lifecycle,
+failures, and framing. Deterministic timing tests exclude returned-state storage,
+statistics, and result writing from `implementation_time_ns` and reopen completed
+outputs before replying. See [SDK conformance](sdk-conformance.md) for the vectors
+and reference problem suites. Rust integration tests install the
 package in an isolated temporary library and connect all three roles through
 `WorkerSession`, validate artifacts, verify SDK provenance and separated logs,
 and exercise reset and reuse. The CLI test runs the example through durable
