@@ -13,6 +13,7 @@ mod fault_injection;
 
 #[cfg(unix)]
 pub mod artifact_store;
+pub mod authoring;
 #[cfg(unix)]
 pub mod datamonger;
 #[cfg(unix)]

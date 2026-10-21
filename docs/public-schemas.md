@@ -15,7 +15,7 @@ than infer it from the Metewand release that produced the record.
 
 | Schema | Contract |
 | --- | --- |
-| `machine-output` | Outer envelope for command events, results, and structured diagnostics. |
+| `machine-output` | Outer envelope for command events, results, and structured diagnostics, including the initial `init` result shape. |
 | `run-output` | Sequenced execution events, finalized attempt summaries, and terminal run reports. |
 | `inspection-output` | Read-only slot coverage, complete attempt history, selected observations, diagnostics, and stable identity explanations. |
 | `manifest` | Initial benchmark manifest, including definitions, environments, experiments, and policies. |

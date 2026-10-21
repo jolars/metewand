@@ -2,6 +2,56 @@
   "version": 1,
   "valid": [
     {
+      "name": "minimal initialization",
+      "schema": "manifest",
+      "instance": {
+        "version": 1,
+        "name": "benchmark"
+      }
+    },
+    {
+      "name": "initialization creates only manifest",
+      "schema": "machine-output",
+      "instance": {
+        "schema_version": 1,
+        "kind": "result",
+        "data": {
+          "command": "init",
+          "dry_run": false,
+          "manifest": "./metewand.toml",
+          "paths": [
+            {
+              "path": "./metewand.toml",
+              "kind": "file"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "initialization dry run includes new directory",
+      "schema": "machine-output",
+      "instance": {
+        "schema_version": 1,
+        "kind": "result",
+        "data": {
+          "command": "init",
+          "dry_run": true,
+          "manifest": "benchmark/metewand.toml",
+          "paths": [
+            {
+              "path": "benchmark",
+              "kind": "directory"
+            },
+            {
+              "path": "benchmark/metewand.toml",
+              "kind": "file"
+            }
+          ]
+        }
+      }
+    },
+    {
       "name": "identity explanation",
       "schema": "inspection-output",
       "instance": {
@@ -1053,6 +1103,77 @@
     }
   ],
   "invalid": [
+    {
+      "name": "initialization requires dry-run flag",
+      "schema": "machine-output",
+      "instance": {
+        "schema_version": 1,
+        "kind": "result",
+        "data": {
+          "command": "init",
+          "manifest": "./metewand.toml",
+          "paths": [
+            {
+              "path": "./metewand.toml",
+              "kind": "file"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "initialization rejects unknown result fields",
+      "schema": "machine-output",
+      "instance": {
+        "schema_version": 1,
+        "kind": "result",
+        "data": {
+          "command": "init",
+          "dry_run": false,
+          "manifest": "./metewand.toml",
+          "paths": [
+            {
+              "path": "./metewand.toml",
+              "kind": "file"
+            }
+          ],
+          "extra": true
+        }
+      }
+    },
+    {
+      "name": "initialization rejects unknown path kinds",
+      "schema": "machine-output",
+      "instance": {
+        "schema_version": 1,
+        "kind": "result",
+        "data": {
+          "command": "init",
+          "dry_run": false,
+          "manifest": "./metewand.toml",
+          "paths": [
+            {
+              "path": "metewand.toml",
+              "kind": "symlink"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "initialization requires a changed path",
+      "schema": "machine-output",
+      "instance": {
+        "schema_version": 1,
+        "kind": "result",
+        "data": {
+          "command": "init",
+          "dry_run": false,
+          "manifest": "./metewand.toml",
+          "paths": []
+        }
+      }
+    },
     {
       "name": "inspection rejects an unstable identity",
       "schema": "inspection-output",

@@ -1,3 +1,4 @@
+mod authoring;
 mod execution;
 mod inspection;
 mod output;
@@ -15,6 +16,7 @@ const HELP: &str = "\
 Metewand reproducible benchmark runner
 
 Usage:
+  metewand [--output FORMAT] init [PATH] [--dry-run]
   metewand [--output FORMAT] schema [SCHEMA]
   metewand [--output FORMAT] check [--manifest PATH]
   metewand [--output FORMAT] plan [--manifest PATH]
@@ -23,6 +25,7 @@ Usage:
   metewand [--output FORMAT] explain <id> [--manifest PATH] [--output-dir PATH]
 
 Commands:
+  init    Create a minimal versioned manifest without overwriting files.
   schema  List public schemas, or print one exact versioned document.
   check   Validate a benchmark repository without launching workers.
   plan    Print the expanded logical plan without side effects.
@@ -105,7 +108,11 @@ fn write_failure(error: &CommandError, output_format: OutputFormat) -> ExitCode 
 }
 
 fn output_format_hint(arguments: &[OsString]) -> OutputFormat {
-    arguments
+    let options_end = arguments
+        .iter()
+        .position(|argument| argument == "--")
+        .unwrap_or(arguments.len());
+    arguments[..options_end]
         .windows(2)
         .filter(|pair| pair[0] == "--output")
         .filter_map(|pair| pair[1].to_str().and_then(OutputFormat::parse))
@@ -118,6 +125,11 @@ fn extract_output_format(arguments: Vec<OsString>) -> Result<Vec<OsString>, Comm
     let mut selected = None;
     let mut arguments = arguments.into_iter();
     while let Some(argument) = arguments.next() {
+        if argument == "--" {
+            command_arguments.push(argument);
+            command_arguments.extend(arguments);
+            break;
+        }
         if argument != "--output" {
             command_arguments.push(argument);
             continue;
@@ -170,6 +182,7 @@ fn run(arguments: &[OsString], output_format: OutputFormat) -> Result<CommandRes
             no_arguments(&arguments[1..])?;
             Ok(CommandResult::version(env!("CARGO_PKG_VERSION")))
         }
+        "init" => authoring::init_command(&arguments[1..]),
         "schema" => schema_command(&arguments[1..]),
         "check" => check_command(&arguments[1..]),
         "plan" => plan_command(&arguments[1..]),

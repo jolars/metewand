@@ -9,6 +9,11 @@ The project is in its initial implementation phase. [DESIGN.md](DESIGN.md) is
 the source of truth for semantics and interfaces, and [TODO.md](TODO.md) records
 the implementation order.
 
+Start a benchmark with `metewand init [PATH]`, or preview its paths with
+`metewand init [PATH] --dry-run`. It creates only a minimal versioned
+`metewand.toml` and refuses to overwrite existing files. See
+[benchmark initialization](docs/authoring-cli.md) for the authoring contract.
+
 ## Workspace
 
 The Rust workspace separates the user interface from its domain and execution

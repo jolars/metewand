@@ -13,7 +13,10 @@ use metewand_core::{
     public_schemas::{PUBLIC_SCHEMAS, PublicSchema},
     run_output::{RunAttemptStatus, RunEvent, RunEventKind, RunReport},
 };
-use metewand_runtime::repository::{CheckedRepository, RepositoryCheckError};
+use metewand_runtime::{
+    authoring::{CreatedPathKind, InitError, InitReport},
+    repository::{CheckedRepository, RepositoryCheckError},
+};
 use serde::{Serialize, Serializer};
 use serde_json::Value;
 
@@ -49,6 +52,7 @@ impl OutputFormat {
 
 #[derive(Debug)]
 pub enum CommandResult {
+    Init(InitReport),
     Help(HelpResult),
     Version(VersionResult),
     SchemaList(SchemaListResult),
@@ -119,6 +123,23 @@ impl CommandResult {
 
     pub fn render_human(&self) -> String {
         match self {
+            Self::Init(report) => {
+                let verb = if report.dry_run {
+                    "Would create"
+                } else {
+                    "Created"
+                };
+                let mut output = String::new();
+                for entry in &report.paths {
+                    let kind = match entry.kind {
+                        CreatedPathKind::Directory => "directory",
+                        CreatedPathKind::File => "file",
+                    };
+                    writeln!(output, "{verb} {kind}: {}", entry.path.display())
+                        .expect("string write");
+                }
+                output
+            }
             Self::Help(result) => result.usage.to_owned(),
             Self::Version(result) => format!("metewand {}\n", result.version),
             Self::SchemaList(result) => result.render_human(),
@@ -169,6 +190,7 @@ impl Serialize for CommandResult {
         S: Serializer,
     {
         match self {
+            Self::Init(result) => result.serialize(serializer),
             Self::Help(result) => result.serialize(serializer),
             Self::Version(result) => result.serialize(serializer),
             Self::SchemaList(result) => result.serialize(serializer),
@@ -1044,6 +1066,14 @@ impl Diagnostic {
             writeln!(output, "{indentation}  affected: {identity}")
                 .expect("writing to a string cannot fail");
         }
+        if let Some(paths) = self.details.get("created_paths").and_then(Value::as_array) {
+            for entry in paths {
+                if let (Some(path), Some(kind)) = (entry["path"].as_str(), entry["kind"].as_str()) {
+                    writeln!(output, "{indentation}  Created {kind}: {path}")
+                        .expect("string write");
+                }
+            }
+        }
         if let Some(remediation) = &self.remediation {
             writeln!(output, "{indentation}  help: {remediation}")
                 .expect("writing to a string cannot fail");
@@ -1082,6 +1112,23 @@ pub struct CommandError {
 }
 
 impl CommandError {
+    pub fn init(error: &InitError) -> Self {
+        let code = if error.source.kind() == std::io::ErrorKind::AlreadyExists {
+            "init_path_exists"
+        } else {
+            "init_io_failed"
+        };
+        Self {
+            exit_code: EXIT_IO,
+            diagnostic: Box::new(
+                Diagnostic::new(code, error.to_string())
+                    .with_detail("path", error.path.to_string_lossy().as_ref())
+                    .with_detail("created_paths", serde_json::to_value(&error.created_paths).expect("UTF-8 paths serialize"))
+                    .with_remediation("Inspect any created paths and choose a writable destination without an existing metewand.toml; existing files are never overwritten."),
+            ),
+        }
+    }
+
     #[cfg(unix)]
     pub fn inspection(error: &metewand_runtime::inspection::InspectionError) -> Self {
         use metewand_runtime::{
@@ -1555,6 +1602,38 @@ mod tests {
             serde_json::json!([
                 format!("mw1-logical-attempt-slot-{}", "b".repeat(64)),
                 first
+            ])
+        );
+    }
+
+    #[test]
+    fn initialization_failures_report_created_paths_in_both_formats() {
+        use metewand_runtime::authoring::{CreatedPath, CreatedPathKind, InitError};
+        let error = super::CommandError::init(&InitError {
+            path: "benchmark/metewand.toml".into(),
+            source: std::io::Error::new(std::io::ErrorKind::AlreadyExists, "path already exists"),
+            created_paths: vec![CreatedPath {
+                path: "benchmark".into(),
+                kind: CreatedPathKind::Directory,
+            }],
+        });
+        assert_eq!(error.exit_code, super::EXIT_IO);
+        assert!(
+            error
+                .diagnostic
+                .render_human()
+                .contains("Created directory: benchmark\n")
+        );
+        let value: Value = serde_json::from_str(
+            &render_diagnostic(&error.diagnostic, OutputFormat::JsonLines).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(value["data"]["code"], "init_path_exists");
+        assert_eq!(value["data"]["details"]["path"], "benchmark/metewand.toml");
+        assert_eq!(
+            value["data"]["details"]["created_paths"],
+            serde_json::json!([
+                {"path": "benchmark", "kind": "directory"}
             ])
         );
     }

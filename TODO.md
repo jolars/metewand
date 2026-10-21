@@ -307,7 +307,7 @@ See [Authoring and scaffolding](DESIGN.md#authoring-and-scaffolding) and
 [Environments, execution, and
 artifacts](DESIGN.md#6-environments-execution-and-artifacts).
 
-- [ ] Implement `metewand init` as a dry-runnable, no-overwrite operation that
+- [x] Implement `metewand init` as a dry-runnable, no-overwrite operation that
   creates only a minimal, domain-neutral versioned manifest.
 - [ ] Implement explicit dataset, problem, and implementation scaffolds; report
   every changed path, update only the requested manifest component, and do

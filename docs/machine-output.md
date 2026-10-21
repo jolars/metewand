@@ -11,6 +11,13 @@ metewand schema manifest --output json
 
 The accepted formats are `human`, `json`, and `jsonl`; `human` is the default.
 The option may be supplied at most once.
+Global option parsing stops at `--`, allowing authoring destinations such as
+`metewand --output json init -- --output`.
+
+[`init`](authoring-cli.md) emits one terminal result with `command`, `dry_run`,
+`manifest`, and an ordered `paths` list. Each entry identifies a created or
+proposed `path` and its `kind` (`directory` or `file`). The `machine-output`
+schema defines this command's result shape.
 
 ## Versioned envelopes
 
@@ -75,7 +82,7 @@ Exit codes are part of the command-line compatibility contract:
 | `4` | A required manifest or repository input is unavailable. |
 | `5` | Execution completed with at least one durably failed attempt. |
 | `70` | An internal invariant or serialization operation failed. |
-| `74` | Command output, run-directory setup, or durable publication failed. |
+| `74` | Filesystem authoring, command output, run-directory setup, or durable publication failed. |
 
 The exit code classifies the command outcome; `data.code` identifies the
 specific diagnostic.
@@ -109,6 +116,10 @@ The CLI emits these stable codes:
 | `duplicate_output_format` | `--output` was supplied more than once. |
 | `invalid_command_name` | The command name is not UTF-8. |
 | `unknown_command` | The command name is not recognized. |
+| `invalid_init_path` | The initialization destination is empty or not UTF-8. |
+| `duplicate_init_flag` | `--dry-run` was supplied more than once. |
+| `init_path_exists` | A manifest path or required directory conflicts with an existing entry. |
+| `init_io_failed` | Initialization could not validate or create a path. |
 | `invalid_schema_name` | A schema name is not UTF-8. |
 | `unknown_schema` | A public schema name is not recognized. |
 | `unexpected_argument` | A command or option received an extra argument. |
