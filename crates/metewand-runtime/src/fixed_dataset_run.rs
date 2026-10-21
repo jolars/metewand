@@ -885,9 +885,11 @@ impl FixedDatasetRunError {
 
 fn classify_session(source: &WorkerSessionError, implementation: bool) -> FixedDatasetFailureKind {
     match source {
-        WorkerSessionError::ControlEnforcementLost { .. } => {
-            FixedDatasetFailureKind::ControlEnforcementLost
-        }
+        WorkerSessionError::ControlEnforcementLost { .. }
+        | WorkerSessionError::Process {
+            source: crate::worker_process::WorkerProcessError::LogDrainDeadline { .. },
+            ..
+        } => FixedDatasetFailureKind::ControlEnforcementLost,
         WorkerSessionError::Timeout { .. } => FixedDatasetFailureKind::PhaseTimeout,
         WorkerSessionError::ScientificTimeout { .. } => FixedDatasetFailureKind::ScientificTimeout,
         WorkerSessionError::ProtocolRead { .. }

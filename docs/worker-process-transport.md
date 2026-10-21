@@ -47,8 +47,12 @@ worker that writes more than the retained limit cannot block on a full standard
 stream pipe. Logs remain raw bytes because arbitrary worker output need not be
 UTF-8.
 
-`wait()` closes both protocol endpoints before waiting for the process and then
-joins both drains. It returns the exit status and the complete capture metadata.
+`wait()` closes both protocol endpoints before waiting for the process. After
+process-group termination, it allows both log drains one shared second to reach
+EOF. If either pipe remains open, it cancels both drains, closes their read
+endpoints, and returns a typed `LogDrainDeadline` error instead of reporting
+complete capture metadata. Successful waits return the exit status and complete
+capture metadata.
 Callers that need a final protocol exchange must complete it before calling
 `wait()`. `WorkerSession::shutdown` performs that exchange, closes the protocol
 endpoints, requires clean process exit within the shutdown deadline, and then
@@ -121,10 +125,23 @@ leader for up to one additional second and returns `TerminationDeadline` if
 the kernel has not reported exit. Callers retain the handle after an error and
 can retry cleanup. Call `wait` after successful termination to collect logs and
 release the private directory. Escaped descendants can keep inherited pipes
-open; bounded log completion requires workers to respect group containment or
-a backend with stronger containment.
+open. Protocol reads and nonblocking writes check cancellation while waiting for
+pipe readiness, so phase timeouts and session disposal can stop the protocol
+thread even when such descendants retain its endpoints. Log drains use the same
+cancellation mechanism and the shared post-exit deadline described above. A
+shutdown log deadline becomes a typed `control_enforcement_lost` attempt failure
+for either worker role and prevents acceptance. Dropping a process also cancels
+its drains, so abandoned handles do not leave blocked drain threads behind.
 
-This adds the local lifecycle implementation of execution semantics version 1;
-it does not change wire types, identities, or canonical record encodings. The
+This bounds cleanup of inherited pipes; it does not identify or terminate a
+process that escaped the group, or detect an escaped process that closed its
+pipes. Complete process-tree containment remains unsupported. Regression tests
+launch descendants that call `setsid`, retain log and protocol endpoints, and
+stop reading a request pipe. They verify bounded cleanup, timeout reporting, and
+rejection of otherwise valid runs whose shutdown logs cannot reach EOF.
+
+This implements the local lifecycle and cleanup requirements of execution
+semantics version 1. It does not change wire types, identities, or canonical
+record encodings. The
 local executor tests cover preflight rejection and forced cleanup of ordinary
 descendants that ignore interruption.

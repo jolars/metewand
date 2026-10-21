@@ -718,3 +718,69 @@ fn protocol_fd(name: &str) -> i32 {
         .parse()
         .unwrap_or_else(|_| panic!("{name} must be a descriptor number"))
 }
+
+#[test]
+fn escaped_descendant_cannot_block_protocol_timeout_or_a_full_request_pipe() {
+    for fill_request_pipe in [false, true] {
+        let mut command = Command::new("python3");
+        command.env(
+            "FILL_REQUEST_PIPE",
+            if fill_request_pipe { "1" } else { "0" },
+        );
+        command.args([
+            "-c",
+            r#"
+import json, os, time
+ready, signal = os.pipe()
+if os.fork() == 0:
+    os.close(ready)
+    os.setsid()
+    os.write(signal, b"ready")
+    os.close(signal)
+    time.sleep(5)
+    os._exit(0)
+os.close(signal)
+os.read(ready, 5)
+if os.environ['FILL_REQUEST_PIPE'] == '1':
+    reader = os.fdopen(int(os.environ['METEWAND_PROTOCOL_READ_FD']))
+    hello = json.loads(reader.readline())
+    response = dict(id=hello['id'], ok=True, protocol=1,
+                    worker_id=hello['worker_id'], sdk=None, capabilities=['one_shot'])
+    os.write(int(os.environ['METEWAND_PROTOCOL_WRITE_FD']),
+             (json.dumps(response) + '\n').encode())
+os._exit(0)
+"#,
+        ]);
+        let worker = PosixWorkerProcess::spawn(command, WorkerLogLimits::new(32, 32)).unwrap();
+        let started = Instant::now();
+        let mut deadlines = timeouts();
+        deadlines.hello = Duration::from_millis(100);
+        deadlines.prepare = Duration::from_millis(100);
+        let session = WorkerSession::connect(
+            worker,
+            WorkerRole::Implementation,
+            worker_identity(),
+            &[Capability::OneShot],
+            deadlines,
+        );
+        let error = if fill_request_pipe {
+            session
+                .unwrap()
+                .prepare(
+                    "/dataset",
+                    "contract",
+                    json!({"large": "x".repeat(256 * 1024)}),
+                    json!({}),
+                    1,
+                )
+                .unwrap_err()
+        } else {
+            session.unwrap_err()
+        };
+        assert!(
+            matches!(error, WorkerSessionError::Timeout { .. }),
+            "{error:?}"
+        );
+        assert!(started.elapsed() < Duration::from_secs(3));
+    }
+}

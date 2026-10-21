@@ -25,7 +25,7 @@ use crate::{
     executor::{Executor, LocalProcessExecutor},
     redaction::Redactor,
     worker_environment::WorkerEnvironmentProvenance,
-    worker_process::{PosixWorkerProcess, WorkerProcessError, WorkerProcessOutput},
+    worker_process::{PosixWorkerProcess, WorkerPipe, WorkerProcessError, WorkerProcessOutput},
 };
 
 /// Fully resolved operational deadline for every Gate-1 worker phase.
@@ -587,6 +587,9 @@ impl WorkerSession {
 
     fn stop_protocol_io(&mut self) {
         self.protocol_sender.take();
+        if let Some(process) = &self.process {
+            process.cancel_protocol_io();
+        }
         if let Some(protocol_thread) = self.protocol_thread.take() {
             let _ = protocol_thread.join();
         }
@@ -636,8 +639,8 @@ enum ProtocolIoError {
 }
 
 fn start_protocol_io(
-    mut reader: FrameReader<std::fs::File>,
-    mut writer: std::fs::File,
+    mut reader: FrameReader<WorkerPipe<std::fs::File>>,
+    mut writer: WorkerPipe<std::fs::File>,
 ) -> io::Result<(Sender<ProtocolCommand>, JoinHandle<()>)> {
     let (sender, receiver) = mpsc::channel();
     let thread = thread::Builder::new()
@@ -647,8 +650,8 @@ fn start_protocol_io(
 }
 
 fn run_protocol_io(
-    reader: &mut FrameReader<std::fs::File>,
-    writer: &mut std::fs::File,
+    reader: &mut FrameReader<WorkerPipe<std::fs::File>>,
+    writer: &mut WorkerPipe<std::fs::File>,
     receiver: &Receiver<ProtocolCommand>,
 ) {
     while let Ok(command) = receiver.recv() {

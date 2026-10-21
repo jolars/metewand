@@ -1232,3 +1232,23 @@ fn lost_private_directory_control_is_a_typed_runtime_failure() {
     assert_eq!(diagnostic.code, "control_enforcement_lost");
     assert!(diagnostic.message.contains("private_working_directory"));
 }
+
+#[test]
+fn escaped_descendant_prevents_acceptance_when_shutdown_logs_remain_open() {
+    for evaluator in [false, true] {
+        let started = std::time::Instant::now();
+        let mode = Some(("METEWAND_TEST_SHUTDOWN_ESCAPE", "1"));
+        let (_root, outcome) = run_case(
+            if evaluator { None } else { mode },
+            if evaluator { mode } else { None },
+            timeouts(),
+        );
+        let FixedDatasetRunOutcome::Failed { kind, diagnostic } = outcome else {
+            panic!("incomplete cleanup must prevent acceptance");
+        };
+        assert_eq!(kind, FixedDatasetFailureKind::ControlEnforcementLost);
+        assert_eq!(diagnostic.code, "control_enforcement_lost");
+        assert!(diagnostic.message.contains("log-drain deadline"));
+        assert!(started.elapsed() < Duration::from_secs(3));
+    }
+}

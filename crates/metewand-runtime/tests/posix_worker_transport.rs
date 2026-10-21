@@ -220,3 +220,43 @@ fn protocol_fd(name: &str) -> i32 {
         .parse()
         .unwrap_or_else(|_| panic!("{name} must be a descriptor number"))
 }
+
+#[test]
+fn escaped_descendant_cannot_hold_log_cleanup_open() {
+    for flood in [false, true] {
+        let mut command = Command::new("python3");
+        command.env("FLOOD", if flood { "1" } else { "0" });
+        command.args([
+            "-c",
+            r#"
+import os, time
+ready, signal = os.pipe()
+if os.fork() == 0:
+    os.close(ready)
+    os.setsid()
+    os.write(signal, b"ready")
+    os.close(signal)
+    if os.environ['FLOOD'] == '1':
+        until = time.monotonic() + 5
+        while time.monotonic() < until:
+            os.write(1, b'x' * 8192)
+    else:
+        time.sleep(5)
+    os._exit(0)
+os.close(signal)
+os.read(ready, 5)
+os._exit(0)
+"#,
+        ]);
+        let worker = PosixWorkerProcess::spawn(command, WorkerLogLimits::new(32, 32)).unwrap();
+        let started = Instant::now();
+        let error = worker
+            .wait()
+            .expect_err("inherited pipes must report incomplete cleanup");
+        assert!(started.elapsed() < Duration::from_secs(3));
+        assert!(matches!(
+            error,
+            metewand_runtime::worker_process::WorkerProcessError::LogDrainDeadline { .. }
+        ));
+    }
+}

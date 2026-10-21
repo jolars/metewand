@@ -2,15 +2,19 @@
 
 use std::{
     fs::File,
-    io::{self, Read},
+    io::{self, Read, Write},
     os::{
         fd::{AsRawFd, BorrowedFd, OwnedFd, RawFd},
         unix::process::CommandExt,
     },
     path::Path,
     process::{Child, Command, ExitStatus, Stdio},
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
     thread::{self, JoinHandle},
+    time::{Duration, Instant},
 };
 
 use metewand_protocol::framing::FrameReader;
@@ -165,6 +169,88 @@ impl LiveLog {
     }
 }
 
+/// A pipe whose pending I/O can be canceled during worker cleanup.
+#[derive(Debug)]
+pub struct WorkerPipe<T> {
+    inner: T,
+    canceled: Arc<AtomicBool>,
+}
+
+impl<T: AsRawFd> WorkerPipe<T> {
+    fn ready(&self, events: libc::c_short) -> io::Result<()> {
+        loop {
+            if self.canceled.load(Ordering::Acquire) {
+                return Err(io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    "worker pipe cleanup canceled",
+                ));
+            }
+            let mut descriptor = libc::pollfd {
+                fd: self.inner.as_raw_fd(),
+                events,
+                revents: 0,
+            };
+            // SAFETY: The descriptor remains owned by this pipe, and poll only
+            // writes to the single initialized pollfd for the duration of this call.
+            let result = unsafe { libc::poll(&mut descriptor, 1, 20) };
+            if result > 0 {
+                return Ok(());
+            }
+            if result < 0 {
+                let error = io::Error::last_os_error();
+                if error.kind() != io::ErrorKind::Interrupted {
+                    return Err(error);
+                }
+            }
+        }
+    }
+}
+
+impl<T: Read + AsRawFd> Read for WorkerPipe<T> {
+    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+        self.ready(libc::POLLIN)?;
+        self.inner.read(buffer)
+    }
+}
+
+impl<T: Write + AsRawFd> Write for WorkerPipe<T> {
+    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+        loop {
+            self.ready(libc::POLLOUT)?;
+            match self.inner.write(buffer) {
+                Err(error)
+                    if matches!(
+                        error.kind(),
+                        io::ErrorKind::WouldBlock | io::ErrorKind::Interrupted
+                    ) =>
+                {
+                    continue;
+                }
+                result => return result,
+            }
+        }
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.inner.flush()
+    }
+}
+
+#[derive(Debug, Default)]
+struct PipeCancellation(Arc<AtomicBool>);
+
+impl PipeCancellation {
+    fn cancel(&self) {
+        self.0.store(true, Ordering::Release);
+    }
+}
+
+impl Drop for PipeCancellation {
+    fn drop(&mut self) {
+        self.cancel();
+    }
+}
+
 /// A spawned worker using dedicated version-1 POSIX protocol pipes.
 ///
 /// Standard output and standard error are reserved for logs and begin draining
@@ -178,8 +264,10 @@ pub struct PosixWorkerProcess {
     child: Child,
     group: ProcessGroup,
     private_working_directory: Option<TempDir>,
-    protocol_reader: Option<FrameReader<File>>,
-    protocol_writer: Option<File>,
+    protocol_reader: Option<FrameReader<WorkerPipe<File>>>,
+    protocol_writer: Option<WorkerPipe<File>>,
+    protocol_cancellation: PipeCancellation,
+    log_cancellation: PipeCancellation,
     stdout_drain: JoinHandle<io::Result<CapturedWorkerLog>>,
     stderr_drain: JoinHandle<io::Result<CapturedWorkerLog>>,
     stdout_live: Arc<Mutex<LiveLog>>,
@@ -215,6 +303,13 @@ impl PosixWorkerProcess {
             protocol_pipe().map_err(WorkerProcessError::CreateRequestPipe)?;
         let (parent_response_reader, worker_response_writer) =
             protocol_pipe().map_err(WorkerProcessError::CreateResponsePipe)?;
+
+        // Readiness can change before a large protocol write completes, so
+        // writes must return to the cancellation check when the pipe fills.
+        let flags = rustix::fs::fcntl_getfl(&parent_request_writer)
+            .map_err(|error| WorkerProcessError::CreateRequestPipe(error.into()))?;
+        rustix::fs::fcntl_setfl(&parent_request_writer, flags | rustix::fs::OFlags::NONBLOCK)
+            .map_err(|error| WorkerProcessError::CreateRequestPipe(error.into()))?;
 
         let worker_read_fd = worker_request_reader.as_raw_fd();
         let worker_write_fd = worker_response_writer.as_raw_fd();
@@ -255,11 +350,16 @@ impl PosixWorkerProcess {
             });
         };
 
+        let log_cancellation = PipeCancellation::default();
+        let protocol_cancellation = PipeCancellation::default();
         let stdout_live = Arc::new(Mutex::new(LiveLog::default()));
         let stderr_live = Arc::new(Mutex::new(LiveLog::default()));
         let stdout_drain = match start_log_drain(
             WorkerLogStream::Stdout,
-            stdout,
+            WorkerPipe {
+                inner: stdout,
+                canceled: Arc::clone(&log_cancellation.0),
+            },
             log_limits.stdout_bytes,
             redactor.clone(),
             Arc::clone(&stdout_live),
@@ -275,7 +375,10 @@ impl PosixWorkerProcess {
         };
         let stderr_drain = match start_log_drain(
             WorkerLogStream::Stderr,
-            stderr,
+            WorkerPipe {
+                inner: stderr,
+                canceled: Arc::clone(&log_cancellation.0),
+            },
             log_limits.stderr_bytes,
             redactor.clone(),
             Arc::clone(&stderr_live),
@@ -283,6 +386,7 @@ impl PosixWorkerProcess {
             Ok(drain) => drain,
             Err(source) => {
                 abort_spawn(&mut child);
+                log_cancellation.cancel();
                 let _ = stdout_drain.join();
                 return Err(WorkerProcessError::StartLogDrain {
                     stream: WorkerLogStream::Stderr,
@@ -298,8 +402,16 @@ impl PosixWorkerProcess {
             group,
             child,
             private_working_directory: None,
-            protocol_reader: Some(FrameReader::new(File::from(parent_response_reader))),
-            protocol_writer: Some(File::from(parent_request_writer)),
+            protocol_reader: Some(FrameReader::new(WorkerPipe {
+                inner: File::from(parent_response_reader),
+                canceled: Arc::clone(&protocol_cancellation.0),
+            })),
+            protocol_writer: Some(WorkerPipe {
+                inner: File::from(parent_request_writer),
+                canceled: Arc::clone(&protocol_cancellation.0),
+            }),
+            protocol_cancellation,
+            log_cancellation,
             stdout_drain,
             stderr_drain,
             stdout_live,
@@ -329,20 +441,20 @@ impl PosixWorkerProcess {
     }
 
     /// Returns the bounded protocol response reader.
-    pub fn protocol_reader(&mut self) -> &mut FrameReader<File> {
+    pub fn protocol_reader(&mut self) -> &mut FrameReader<WorkerPipe<File>> {
         self.protocol_reader
             .as_mut()
             .expect("protocol I/O can be transferred only by the runtime session")
     }
 
     /// Returns the protocol request writer.
-    pub fn protocol_writer(&mut self) -> &mut File {
+    pub fn protocol_writer(&mut self) -> &mut WorkerPipe<File> {
         self.protocol_writer
             .as_mut()
             .expect("protocol I/O can be transferred only by the runtime session")
     }
 
-    pub(crate) fn take_protocol_io(&mut self) -> (FrameReader<File>, File) {
+    pub(crate) fn take_protocol_io(&mut self) -> (FrameReader<WorkerPipe<File>>, WorkerPipe<File>) {
         let reader = self
             .protocol_reader
             .take()
@@ -352,6 +464,10 @@ impl PosixWorkerProcess {
             .take()
             .expect("protocol I/O must be transferred exactly once");
         (reader, writer)
+    }
+
+    pub(crate) fn cancel_protocol_io(&self) {
+        self.protocol_cancellation.cancel();
     }
 
     pub(crate) fn retain_private_working_directory(&mut self, directory: TempDir) {
@@ -423,8 +539,8 @@ impl PosixWorkerProcess {
     ///
     /// # Errors
     ///
-    /// Returns a typed transport error if waiting or draining fails, or if a
-    /// drain thread panics.
+    /// Returns a typed transport error if waiting or draining fails, if a
+    /// drain thread panics, or if logs remain open one second after group cleanup.
     pub fn wait(self) -> Result<WorkerProcessOutput, WorkerProcessError> {
         let Self {
             environment,
@@ -435,6 +551,7 @@ impl PosixWorkerProcess {
             protocol_writer,
             stdout_drain,
             stderr_drain,
+            log_cancellation,
             ..
         } = self;
         drop(protocol_reader);
@@ -444,6 +561,7 @@ impl PosixWorkerProcess {
             Ok(status) => status,
             Err(source) => {
                 abort_spawn(&mut child);
+                log_cancellation.cancel();
                 let _ = stdout_drain.join();
                 let _ = stderr_drain.join();
                 return Err(WorkerProcessError::Wait(source));
@@ -452,6 +570,13 @@ impl PosixWorkerProcess {
         group
             .signal(libc::SIGKILL)
             .map_err(WorkerProcessError::Kill)?;
+        let deadline = Instant::now() + Duration::from_secs(1);
+        while !(stdout_drain.is_finished() && stderr_drain.is_finished())
+            && Instant::now() < deadline
+        {
+            thread::sleep(Duration::from_millis(5));
+        }
+        log_cancellation.cancel();
         let stdout = join_log_drain(WorkerLogStream::Stdout, stdout_drain);
         let stderr = join_log_drain(WorkerLogStream::Stderr, stderr_drain);
 
@@ -537,6 +662,13 @@ pub enum WorkerProcessError {
         source: io::Error,
     },
 
+    /// A pipe remained open after process-group cleanup and the drain deadline.
+    #[error("worker {stream} exceeded the log-drain deadline after process-group termination")]
+    LogDrainDeadline {
+        /// Standard stream that did not reach EOF.
+        stream: WorkerLogStream,
+    },
+
     /// A standard-stream drain thread panicked.
     #[error("worker {stream} drain thread panicked")]
     DrainThreadPanicked {
@@ -617,7 +749,13 @@ fn join_log_drain(
     drain
         .join()
         .map_err(|_| WorkerProcessError::DrainThreadPanicked { stream })?
-        .map_err(|source| WorkerProcessError::Drain { stream, source })
+        .map_err(|source| {
+            if source.kind() == io::ErrorKind::TimedOut {
+                WorkerProcessError::LogDrainDeadline { stream }
+            } else {
+                WorkerProcessError::Drain { stream, source }
+            }
+        })
 }
 
 fn inherit_for_exec(raw_fd: RawFd) -> io::Result<()> {

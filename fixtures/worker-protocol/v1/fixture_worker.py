@@ -42,6 +42,18 @@ def run_role(role: str) -> int:
             _mutate_dataset(method)
             if method == "shutdown":
                 _require_shape(request, "shutdown", set())
+                if os.environ.get("METEWAND_TEST_SHUTDOWN_ESCAPE") == "1":
+                    ready, signal = os.pipe()
+                    if os.fork() == 0:
+                        os.close(ready)
+                        os.setsid()
+                        os.write(signal, b"ready")
+                        os.close(signal)
+                        time.sleep(5)
+                        os._exit(0)
+                    os.close(signal)
+                    os.read(ready, 5)
+                    os.close(ready)
                 _send(writer, {"id": request_id, "ok": True})
                 return 0
 
