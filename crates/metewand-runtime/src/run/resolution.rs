@@ -828,7 +828,7 @@ fn resolve_candidate(
     })
 }
 
-fn resolve_worker(
+pub(super) fn resolve_worker(
     repository: &CheckedRepository,
     worker: &WorkerDefinition,
     private_root: &Path,
@@ -1072,7 +1072,7 @@ fn snapshot(
     })
 }
 
-fn file_inventory(root: &Path) -> Result<Vec<Value>, RunError> {
+pub(super) fn file_inventory(root: &Path) -> Result<Vec<Value>, RunError> {
     fn visit(
         root: &Path,
         path: &Path,

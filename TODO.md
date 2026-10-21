@@ -312,7 +312,7 @@ artifacts](DESIGN.md#6-environments-execution-and-artifacts).
 - [x] Implement explicit dataset, problem, and implementation scaffolds; report
   every changed path, update only the requested manifest component, and do
   not invent scientific semantics or invoke package managers.
-- [ ] Implement `metewand check --workers` with capability verification and
+- [x] Implement `metewand check --workers` with capability verification and
   problem reference-case execution.
 - [ ] Implement a rebuildable JSONL index and tidy JSONL/CSV export that retain
   valid observations and accepted, invalid, censored, superseded, and failed

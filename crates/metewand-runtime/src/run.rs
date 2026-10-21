@@ -1,6 +1,11 @@
 //! Manifest-driven execution of the trusted local Gate-1 vertical path.
 
 mod attempt;
+mod check;
+
+pub use check::{
+    ReferenceCaseCheck, WorkerCheck, WorkerCheckError, WorkerCheckReport, check_repository_workers,
+};
 mod resolution;
 mod selection;
 

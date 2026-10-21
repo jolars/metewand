@@ -2,6 +2,46 @@
   "version": 1,
   "valid": [
     {
+      "name": "worker check reports current capability evidence",
+      "schema": "machine-output",
+      "instance": {
+        "schema_version": 1,
+        "kind": "result",
+        "data": {
+          "command": "check",
+          "benchmark": "example",
+          "manifest_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "problem_contracts": 1,
+          "repository_schemas": 1,
+          "source_bundles": 1,
+          "worker_launches": 1,
+          "workers": [
+            {
+              "component": "reference",
+              "role": "implementation",
+              "worker_id": "mw1-worker-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "evidence": "verified_now",
+              "selected_capabilities": [
+                "one_shot"
+              ],
+              "reported_capabilities": [
+                "one_shot"
+              ]
+            }
+          ],
+          "reference_cases": [
+            {
+              "problem": "sum",
+              "case_index": 0,
+              "metrics": {
+                "absolute_error": 0
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
       "name": "dataset scaffold reports creations and manifest edit",
       "schema": "machine-output",
       "instance": {
@@ -1254,6 +1294,46 @@
     }
   ],
   "invalid": [
+    {
+      "name": "worker check rejects declaration-only evidence",
+      "schema": "machine-output",
+      "instance": {
+        "schema_version": 1,
+        "kind": "result",
+        "data": {
+          "command": "check",
+          "benchmark": "example",
+          "manifest_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "problem_contracts": 1,
+          "repository_schemas": 1,
+          "source_bundles": 1,
+          "worker_launches": 1,
+          "workers": [
+            {
+              "component": "reference",
+              "role": "implementation",
+              "worker_id": "mw1-worker-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "evidence": "declared",
+              "selected_capabilities": [
+                "one_shot"
+              ],
+              "reported_capabilities": [
+                "one_shot"
+              ]
+            }
+          ],
+          "reference_cases": [
+            {
+              "problem": "sum",
+              "case_index": 0,
+              "metrics": {
+                "absolute_error": 0
+              }
+            }
+          ]
+        }
+      }
+    },
     {
       "name": "scaffold requires component",
       "schema": "machine-output",

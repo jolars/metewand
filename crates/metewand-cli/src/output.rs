@@ -116,7 +116,17 @@ impl CommandResult {
             repository_schemas: repository.schema_count,
             source_bundles: repository.source_bundle_count,
             worker_launches: 0,
+            #[cfg(unix)]
+            worker_check: None,
         })
+    }
+
+    #[cfg(unix)]
+    pub fn set_worker_check(&mut self, report: metewand_runtime::run::WorkerCheckReport) {
+        if let Self::Check(result) = self {
+            result.worker_launches = report.workers.len();
+            result.worker_check = Some(report);
+        }
     }
 
     pub fn plan(repository: &CheckedRepository, plan: &LogicalPlan) -> Self {
@@ -368,11 +378,14 @@ pub struct CheckResult {
     repository_schemas: usize,
     source_bundles: usize,
     worker_launches: usize,
+    #[cfg(unix)]
+    #[serde(flatten, skip_serializing_if = "Option::is_none")]
+    worker_check: Option<metewand_runtime::run::WorkerCheckReport>,
 }
 
 impl CheckResult {
     fn render_human(&self) -> String {
-        format!(
+        let mut output = format!(
             "Benchmark `{}` is valid.\n  manifest hash: {}\n  problem contracts: {}\n  repository schemas: {}\n  source bundles: {}\n  worker launches: {}\n",
             self.benchmark,
             self.manifest_hash,
@@ -380,7 +393,42 @@ impl CheckResult {
             self.repository_schemas,
             self.source_bundles,
             self.worker_launches,
-        )
+        );
+        #[cfg(unix)]
+        if let Some(report) = &self.worker_check {
+            for worker in &report.workers {
+                writeln!(
+                    output,
+                    "  worker: {} ({:?}, {})",
+                    worker.component, worker.role, worker.worker_id
+                )
+                .expect("string writes succeed");
+                writeln!(
+                    output,
+                    "    capabilities: {} ({})",
+                    serde_json::to_string(&worker.selected_capabilities)
+                        .expect("capabilities serialize"),
+                    worker.evidence
+                )
+                .expect("string writes succeed");
+                writeln!(
+                    output,
+                    "    reported capabilities: {}",
+                    serde_json::to_string(&worker.reported_capabilities)
+                        .expect("capabilities serialize")
+                )
+                .expect("string writes succeed");
+            }
+            for case in &report.reference_cases {
+                writeln!(
+                    output,
+                    "  reference case: {}[{}], metrics: {}",
+                    case.problem, case.case_index, case.metrics
+                )
+                .expect("string writes succeed");
+            }
+        }
+        output
     }
 }
 
@@ -1209,6 +1257,15 @@ impl CommandError {
             _ => (EXIT_INVALID_REPOSITORY, "invalid_inspection_evidence"),
         };
         Self { exit_code, diagnostic: Box::new(Diagnostic::new(code, error.to_string()).with_remediation("Select an existing run with `--output-dir PATH`, a checked repository with `--manifest PATH`, or both.")) }
+    }
+
+    #[cfg(unix)]
+    pub fn worker_check(error: &metewand_runtime::run::WorkerCheckError) -> Self {
+        Self {
+            exit_code: EXIT_INVALID_REPOSITORY,
+            diagnostic: Box::new(Diagnostic::new("worker_check_failed", error.to_string())
+                .with_remediation("Inspect worker declarations and problem reference artifacts, then rerun `metewand check --workers`.")),
+        }
     }
 
     #[cfg(unix)]

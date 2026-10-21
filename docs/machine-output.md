@@ -59,6 +59,12 @@ claims shown by the human renderer. A schema-document result embeds the parsed
 schema under `data.document`; omit `--output` when exact checked-in schema bytes
 are required.
 
+A successful [`check --workers`](worker-checks.md) result additionally includes
+`workers` with `verified_now` capability evidence and `reference_cases` with
+matching canonical metrics. Plain `check` omits these fields. The command
+produces one terminal envelope in either machine format and keeps worker logs
+out of standard output.
+
 ## Standard streams
 
 Successful human output is written to standard output. Human diagnostics are

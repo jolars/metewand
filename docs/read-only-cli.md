@@ -63,8 +63,9 @@ and `worker-protocol-message`. The complete catalog appears in
 
 A successful check reports the canonical whole-manifest hash and the numbers of
 contracts, schemas, and source bundles examined. Worker capability declarations
-are not verified by this command. `check --workers` belongs to the worker
-protocol slice and currently fails explicitly without launching anything.
+are not verified by this command. The explicit
+[`check --workers`](worker-checks.md) option launches trusted local workers to
+verify capabilities and execute problem reference cases in temporary storage.
 
 ## Logical plans
 

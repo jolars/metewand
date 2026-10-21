@@ -19,7 +19,7 @@ Usage:
   metewand [--output FORMAT] init [PATH] [--dry-run]
   metewand [--output FORMAT] scaffold <component> NAME --environment NAME [OPTIONS]
   metewand [--output FORMAT] schema [SCHEMA]
-  metewand [--output FORMAT] check [--manifest PATH]
+  metewand [--output FORMAT] check [--manifest PATH] [--workers]
   metewand [--output FORMAT] plan [--manifest PATH]
   metewand [--output FORMAT] run [--manifest PATH] --output-dir PATH
   metewand [--output FORMAT] status [--manifest PATH] [--output-dir PATH]
@@ -29,7 +29,7 @@ Commands:
   init    Create a minimal versioned manifest without overwriting files.
   scaffold Add one dataset, problem, or implementation without scientific defaults.
   schema  List public schemas, or print one exact versioned document.
-  check   Validate a benchmark repository without launching workers.
+  check   Validate a benchmark repository; optionally verify workers.
   plan    Print the expanded logical plan without side effects.
   run     Execute trusted local workers and publish validated outcomes.
   status  Inspect planned slots, durable attempts, and resumable state.
@@ -43,7 +43,7 @@ Options:
   -V, --version    Print the package version.
 ";
 
-const CHECK_HELP: &str = "Usage: metewand [--output FORMAT] check [--manifest PATH]\n\nValidate the manifest, contracts, schemas, source bundles, and logical compatibility without launching workers or modifying the repository.\n";
+const CHECK_HELP: &str = "Usage: metewand [--output FORMAT] check [--manifest PATH] [--workers]\n\nValidate the manifest, contracts, schemas, source bundles, and logical compatibility. With --workers, launch trusted local workers to verify declared capabilities and evaluate problem reference cases in temporary storage.\n";
 const PLAN_HELP: &str = "Usage: metewand [--output FORMAT] plan [--manifest PATH]\n\nPrint the deterministic unresolved logical plan without downloads, builds, worker launches, or filesystem writes.\n";
 const SCHEMA_HELP: &str = "Usage: metewand [--output FORMAT] schema [SCHEMA]\n\nWithout SCHEMA, list the stable public schema names and identifiers.\n";
 
@@ -234,16 +234,39 @@ fn check_command(arguments: &[OsString]) -> Result<CommandResult, CommandError> 
     if arguments == ["-h"] || arguments == ["--help"] {
         return Ok(CommandResult::help(CHECK_HELP));
     }
-    if arguments == ["--workers"] {
-        return Err(CommandError::unsupported(
-            "`check --workers` is not available until the worker protocol is implemented; no workers were launched",
-            "Omit `--workers` to run the side-effect-free repository check.",
+    let workers = arguments
+        .iter()
+        .filter(|argument| *argument == "--workers")
+        .count();
+    if workers > 1 {
+        return Err(CommandError::usage(
+            "duplicate_workers_flag",
+            "`--workers` may be supplied once",
         ));
     }
-    let manifest = manifest_argument(arguments)?;
+    let remaining = arguments
+        .iter()
+        .filter(|argument| *argument != "--workers")
+        .cloned()
+        .collect::<Vec<_>>();
+    let manifest = manifest_argument(&remaining)?;
     let repository =
         check_repository(&manifest).map_err(|error| CommandError::repository("check", &error))?;
-    Ok(CommandResult::check(&repository))
+    let mut result = CommandResult::check(&repository);
+    if workers == 1 {
+        #[cfg(unix)]
+        {
+            let report = metewand_runtime::run::check_repository_workers(&repository)
+                .map_err(|error| CommandError::worker_check(&error))?;
+            result.set_worker_check(report);
+        }
+        #[cfg(not(unix))]
+        return Err(CommandError::unsupported(
+            "worker checks require POSIX protocol pipes",
+            "Run on a supported POSIX host.",
+        ));
+    }
+    Ok(result)
 }
 
 fn plan_command(arguments: &[OsString]) -> Result<CommandResult, CommandError> {

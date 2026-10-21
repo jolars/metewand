@@ -19,6 +19,38 @@
   "allOf": [
     {
       "if": {
+        "properties": {
+          "kind": {
+            "const": "result"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "command": {
+                "const": "check"
+              }
+            },
+            "required": [
+              "command",
+              "workers"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "data"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "$ref": "#/$defs/worker_check_result"
+          }
+        }
+      }
+    },
+    {
+      "if": {
         "properties": { "kind": { "const": "diagnostic" } },
         "required": ["kind"]
       },
@@ -62,6 +94,134 @@
     }
   ],
   "$defs": {
+    "worker_check_result": {
+      "type": "object",
+      "properties": {
+        "command": {
+          "const": "check"
+        },
+        "benchmark": {
+          "type": "string"
+        },
+        "manifest_hash": {
+          "type": "string"
+        },
+        "problem_contracts": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "repository_schemas": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "source_bundles": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "worker_launches": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "workers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "component": {
+                "type": "string",
+                "minLength": 1
+              },
+              "role": {
+                "enum": [
+                  "implementation",
+                  "problem_evaluator",
+                  "dataset_materializer"
+                ]
+              },
+              "worker_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "evidence": {
+                "const": "verified_now"
+              },
+              "selected_capabilities": {
+                "type": "array",
+                "uniqueItems": true,
+                "items": {
+                  "enum": [
+                    "one_shot",
+                    "applicability",
+                    "fresh_sequence",
+                    "streaming_profile"
+                  ]
+                }
+              },
+              "reported_capabilities": {
+                "type": "array",
+                "uniqueItems": true,
+                "items": {
+                  "enum": [
+                    "one_shot",
+                    "applicability",
+                    "fresh_sequence",
+                    "streaming_profile"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "component",
+              "role",
+              "worker_id",
+              "evidence",
+              "selected_capabilities",
+              "reported_capabilities"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "reference_cases": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "problem": {
+                "type": "string",
+                "minLength": 1
+              },
+              "case_index": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "metrics": {}
+            },
+            "required": [
+              "problem",
+              "case_index",
+              "metrics"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "command",
+        "benchmark",
+        "manifest_hash",
+        "problem_contracts",
+        "repository_schemas",
+        "source_bundles",
+        "worker_launches",
+        "workers",
+        "reference_cases"
+      ],
+      "additionalProperties": false
+    },
     "changed_path": {
       "type": "object",
       "properties": {
