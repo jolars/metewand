@@ -1,0 +1,73 @@
+version = 1
+name = "parameter-matrix"
+
+[datasets.numbers]
+output_schema = "schemas/dataset.json"
+runner = "command"
+program = "python3"
+args = ["{sources}/worker.py", "dataset_materializer"]
+sources = ["worker.py"]
+environment = "local"
+parameter_schema = "schemas/dataset-parameters.json"
+parameter_defaults = { values = [1, 2, 3] }
+
+[problems.sum]
+contract = "problem.toml"
+parameter_defaults = { offset = 2 }
+
+[problems.sum.evaluator]
+runner = "command"
+program = "python3"
+args = ["{sources}/worker.py", "problem_evaluator"]
+sources = ["worker.py"]
+environment = "local"
+
+[implementations.reference]
+parameter_schema = "schemas/implementation-parameters.json"
+parameter_defaults = { representation = "list" }
+runner = "command"
+program = "python3"
+args = ["{sources}/worker.py", "implementation"]
+sources = ["worker.py"]
+environment = "local"
+problem_contracts = ["sum"]
+capabilities = ["one_shot"]
+
+[environments.local]
+kind = "local"
+
+[[experiments]]
+name = "main"
+problem = "sum"
+datasets = ["numbers"]
+implementations = ["reference"]
+execution_policy = "local"
+observation_policy = "final"
+implementation_repetitions = 1
+measurement_repetitions = 1
+seed = 7
+
+[execution_policies.local]
+version = 1
+timing_scope = "prepare_and_execute"
+
+[observation_policies.final]
+version = 1
+kind = "one_shot"
+
+[experiments.implementation_parameters.reference]
+representation = { grid = ["list", "packed"] }
+
+[[experiments.cases]]
+name = "cartesian"
+[experiments.cases.dataset_parameters.numbers]
+values = { grid = [[1, 2, 3], [4, 6]] }
+[experiments.cases.problem_parameters]
+offset = { grid = [0, 2] }
+
+[[experiments.cases]]
+name = "coupled"
+[experiments.cases.dataset_parameters.numbers]
+values = { value = [10, 10] }
+[experiments.cases.problem_parameters]
+offset = { value = 1 }

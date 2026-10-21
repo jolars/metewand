@@ -321,7 +321,7 @@ artifacts](DESIGN.md#6-environments-execution-and-artifacts).
 - [x] Add exact-target cache verification and garbage collection from a
   transactional database snapshot, with root and lease awareness, a dry-run
   mode, and no deletion authorized solely by a stale index.
-- [ ] Add representative raw-command, Python-only, R-only, dataset-free, and
+- [x] Add representative raw-command, Python-only, R-only, dataset-free, and
   parameter-matrix local examples without privileged built-in scientific
   templates.
 - [ ] Pass Gate 2 acceptance tests for archive safety, dataset mutation, timing

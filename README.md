@@ -17,6 +17,10 @@ Add components explicitly with `metewand scaffold dataset|problem|implementation
 NAME --environment NAME`. Scaffolds report every change, support `--dry-run`,
 and leave scientific schemas, semantics, and worker behavior for the author.
 
+Try the [local examples](examples) for raw-command, Python-only, R-only,
+dataset-free, and parameter-matrix benchmarks with explicit contracts and
+independent evaluators.
+
 ## Workspace
 
 The Rust workspace separates the user interface from its domain and execution
