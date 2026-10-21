@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "metewand://schemas/v1/cache-output.schema.json",
+  "x-metewand-compatibility-version": 1,
+  "title": "Metewand cache maintenance receipt",
+  "type": "object",
+  "properties": {
+    "schema_version": { "const": 1 },
+    "kind": { "const": "result" },
+    "data": { "$ref": "#/$defs/report" }
+  },
+  "required": ["schema_version", "kind", "data"],
+  "additionalProperties": false,
+  "$defs": {
+    "report": {
+      "type": "object",
+      "properties": {
+        "command": { "const": "cache" },
+        "schema_version": { "const": 1 },
+        "operation": { "enum": ["verify", "gc", "roots", "root_add", "root_remove"] },
+        "cache_directory": { "type": "string", "minLength": 1 },
+        "dry_run": { "type": "boolean" },
+        "targets": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/target" }
+        }
+      },
+      "required": ["command", "schema_version", "operation", "cache_directory", "dry_run", "targets"],
+      "additionalProperties": false
+    },
+    "target": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "pattern": "^tree-v1-[0-9a-f]{64}$" },
+        "state": { "enum": ["verified", "missing", "corrupt", "retained", "would_delete", "deleted", "root_added", "root_removed", "would_add_root", "would_remove_root"] },
+        "roots": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "leases": {
+          "type": "array",
+          "items": { "enum": ["publication", "mapping", "read", "view"] },
+          "uniqueItems": true
+        },
+        "detail": { "type": ["string", "null"] }
+      },
+      "required": ["id", "state", "roots", "leases", "detail"],
+      "additionalProperties": false
+    }
+  }
+}

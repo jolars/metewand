@@ -1,5 +1,6 @@
 //! Core domain types, planning, scheduling, and run records for Metewand.
 
+pub mod cache;
 pub mod canonical;
 pub mod compatibility;
 pub mod controls;
@@ -55,5 +56,6 @@ mod tests {
         assert_eq!(SCHEDULING_POLICY_VERSION, 1);
         assert_eq!(EXECUTION_SEMANTICS_VERSION, 2);
         assert_eq!(crate::export::EXPORT_SCHEMA_VERSION, 1);
+        assert_eq!(crate::cache::CACHE_MAINTENANCE_VERSION, 1);
     }
 }

@@ -429,9 +429,17 @@ fn active_owners_keep_leases_and_crashed_owners_leave_reclaimable_staging() {
     }
     assert_eq!(store.active_leases().unwrap().len(), 1);
     assert_eq!(store.quarantine_abandoned_leases().unwrap(), 0);
+    assert_eq!(
+        store.collect(&[], false).unwrap().targets[0].state,
+        metewand_core::cache::CacheTargetState::Retained
+    );
     child.kill().unwrap();
     child.wait().unwrap();
     assert!(store.active_leases().unwrap().is_empty());
+    assert_eq!(
+        store.collect(&[], true).unwrap().targets[0].state,
+        metewand_core::cache::CacheTargetState::WouldDelete
+    );
     assert_eq!(store.quarantine_abandoned_leases().unwrap(), 1);
     assert_eq!(
         fs::read_dir(cache.path().join("objects")).unwrap().count(),
@@ -444,6 +452,14 @@ fn active_owners_keep_leases_and_crashed_owners_leave_reclaimable_staging() {
         .unwrap()
         .unwrap()
         .path();
+    assert_eq!(
+        fs::read(quarantined.join("object/partial")).unwrap(),
+        b"unfinished staging"
+    );
+    assert_eq!(
+        store.collect(&[], false).unwrap().targets[0].state,
+        metewand_core::cache::CacheTargetState::Deleted
+    );
     assert_eq!(
         fs::read(quarantined.join("object/partial")).unwrap(),
         b"unfinished staging"

@@ -300,6 +300,9 @@ metewand run --locked          refuse any lock or artifact mismatch
 metewand status                inspect attempts and resumable state
 metewand explain <id>          explain a specification, artifact, or failure
 metewand export --format csv   export tidy results
+metewand cache verify          verify exact cached tree identities
+metewand cache roots           inspect durable named cache roots
+metewand cache gc --dry-run    inspect collection from a committed catalog snapshot
 metewand snapshot create       create a portable, selected result snapshot
 metewand snapshot verify       verify a snapshot without importing it
 metewand snapshot import       import a verified snapshot into the run store
@@ -1830,7 +1833,7 @@ leased publication and terminal database references as described in [Durable run
 schema](docs/run-store-schema.md#transactional-publication). Its explicit
 [recovery API](docs/run-store-schema.md#explicit-recovery) resolves expired
 attempts, claimed orphans, and abandoned stages. The CLI uses this path for
-explicit retries and resume; garbage collection remains a later slice. See
+explicit retries and resume. See
 [Artifact storage and private dataset views](docs/artifact-store.md).
 
 Later reads verify hashes whenever data crosses from the cache into a worker
@@ -1841,6 +1844,15 @@ object is quarantined transactionally. Cache garbage collection takes a database
 snapshot, respects active leases and GC roots, and deletes only exact
 unreferenced content identities; an index or failed cleanup can never authorize
 deletion by a broad path.
+
+The local cache implements this boundary with a WAL/FULL SQLite catalog of
+verified object hashes, named roots, and exact collection intents. Persistent
+runs pin their datasets before registering run-store slots. `cache verify`
+checks complete tree identities, `cache roots` lists retention edges, and
+`cache gc` takes a fresh transactional snapshot while holding the cache lock
+through lease checks and deletion. Verification and `--dry-run` leave cache
+files unchanged. Interrupted collection resumes only its recorded exact
+identity. See [Cache verification, roots, and garbage collection](docs/cache-maintenance.md).
 
 Finalized attempt outputs are immutable directories containing:
 

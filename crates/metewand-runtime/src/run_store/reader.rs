@@ -28,7 +28,7 @@ impl StoreSnapshot {
         let private = tempfile::Builder::new()
             .prefix("metewand-inspect-")
             .tempdir()?;
-        copy_snapshot(&root, private.path())?;
+        copy_database_snapshot(&root, private.path(), "run.sqlite3")?;
         let connection = Connection::open_with_flags(
             private.path().join("run.sqlite3"),
             OpenFlags::SQLITE_OPEN_READ_ONLY
@@ -65,11 +65,16 @@ impl StoreSnapshot {
 // its WAL index without touching the source, including after a writer's crash.
 // Both files must remain unchanged throughout the copy so a checkpoint cannot
 // mix main-file pages from different commits. A busy store fails boundedly.
-fn copy_snapshot(root: &Path, target: &Path) -> Result<(), RunStoreError> {
+pub(crate) fn copy_database_snapshot(
+    root: &Path,
+    target: &Path,
+    name: &str,
+) -> Result<(), RunStoreError> {
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
-        let database = open_source(&root.join("run.sqlite3"))?;
-        let wal = match open_source(&root.join("run.sqlite3-wal")) {
+        let database = open_source(&root.join(name))?;
+        let wal_name = format!("{name}-wal");
+        let wal = match open_source(&root.join(&wal_name)) {
             Ok(file) => Some(file),
             Err(RunStoreError::Io(error)) if error.kind() == io::ErrorKind::NotFound => None,
             Err(error) => return Err(error),
@@ -81,24 +86,18 @@ fn copy_snapshot(root: &Path, target: &Path) -> Result<(), RunStoreError> {
             .transpose()?
             .as_ref()
             .map(signature);
-        io::copy(
-            &mut &database,
-            &mut File::create(target.join("run.sqlite3"))?,
-        )?;
+        io::copy(&mut &database, &mut File::create(target.join(name))?)?;
         if let Some(wal) = &wal {
-            io::copy(
-                &mut &*wal,
-                &mut File::create(target.join("run.sqlite3-wal"))?,
-            )?;
+            io::copy(&mut &*wal, &mut File::create(target.join(&wal_name))?)?;
         } else {
-            match fs::remove_file(target.join("run.sqlite3-wal")) {
+            match fs::remove_file(target.join(&wal_name)) {
                 Ok(()) => (),
                 Err(error) if error.kind() == io::ErrorKind::NotFound => (),
                 Err(error) => return Err(error.into()),
             }
         }
-        let unchanged = source_signature(&root.join("run.sqlite3"))? == Some(database_before)
-            && source_signature(&root.join("run.sqlite3-wal"))? == wal_before;
+        let unchanged = source_signature(&root.join(name))? == Some(database_before)
+            && source_signature(&root.join(&wal_name))? == wal_before;
         if unchanged {
             return Ok(());
         }

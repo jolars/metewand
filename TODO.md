@@ -318,7 +318,7 @@ artifacts](DESIGN.md#6-environments-execution-and-artifacts).
   valid observations and accepted, invalid, censored, superseded, and failed
   attempts without silently combining incompatible timing or guarantee
   classes.
-- [ ] Add exact-target cache verification and garbage collection from a
+- [x] Add exact-target cache verification and garbage collection from a
   transactional database snapshot, with root and lease awareness, a dry-run
   mode, and no deletion authorized solely by a stale index.
 - [ ] Add representative raw-command, Python-only, R-only, dataset-free, and

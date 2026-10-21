@@ -194,6 +194,12 @@ pub fn run_repository_with_options(
         if !selected.contains(&(candidate, measurement)) {
             continue;
         }
+        if cache_directory.is_some() {
+            resolved.candidates[candidate]
+                .dataset
+                .artifact
+                .add_root(&format!("run:{}", output_directory.display()))?;
+        }
         store.register_one_shot(
             slot.candidate,
             &slot.specification,

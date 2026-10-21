@@ -1441,6 +1441,34 @@
           }
         }
       }
+    },
+    {
+      "name": "rooted-and-leased-cache-target",
+      "schema": "cache-output",
+      "instance": {
+        "schema_version": 1,
+        "kind": "result",
+        "data": {
+          "command": "cache",
+          "schema_version": 1,
+          "operation": "gc",
+          "cache_directory": "/cache",
+          "dry_run": true,
+          "targets": [
+            {
+              "id": "tree-v1-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "state": "retained",
+              "roots": [
+                "run:/results"
+              ],
+              "leases": [
+                "read"
+              ],
+              "detail": null
+            }
+          ]
+        }
+      }
     }
   ],
   "invalid": [
@@ -3510,6 +3538,34 @@
           }
         },
         "unexpected": true
+      }
+    },
+    {
+      "name": "cache-target-is-not-an-exact-identity",
+      "schema": "cache-output",
+      "instance": {
+        "schema_version": 1,
+        "kind": "result",
+        "data": {
+          "command": "cache",
+          "schema_version": 1,
+          "operation": "gc",
+          "cache_directory": "/cache",
+          "dry_run": true,
+          "targets": [
+            {
+              "id": "../objects",
+              "state": "retained",
+              "roots": [
+                "run:/results"
+              ],
+              "leases": [
+                "read"
+              ],
+              "detail": null
+            }
+          ]
+        }
       }
     }
   ]

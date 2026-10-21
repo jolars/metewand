@@ -77,7 +77,9 @@ for pinned URLs and optional external providers, keeping acquisition separate
 from read-only checking and planning. The [artifact store](docs/artifact-store.md)
 durably publishes verified trees, maps dataset constructions to output hashes,
 and leases private per-attempt copies. `run --cache-dir PATH` enables persistent
-construction reuse.
+construction reuse. [Cache maintenance](docs/cache-maintenance.md) verifies exact
+objects and collects unreferenced content from a transactional catalog snapshot,
+respecting durable run roots and active leases.
 The optional [Datamonger adapter](docs/datamonger.md) resolves a pinned registry
 and dataset version through a process, records artifact or decoded verification,
 and feeds benchmark-owned materialization. Its [runnable example](examples/datamonger)

@@ -19,6 +19,9 @@ explicit destination. Optional `--cache-dir PATH` assigns a separate directory t
 Metewand for persistent [artifact storage](artifact-store.md) and construction
 reuse; its parent must exist. Without it, the run uses a temporary store. It
 never rewrites the manifest or original source files.
+Persistent runs create [cache roots](cache-maintenance.md) for resolved datasets
+before registering their run-store slots. Those roots remain until explicitly
+released, including after failed runs or removal of the output directory.
 Manifest paths resolve from the invoking directory; declared inputs resolve
 from the manifest's parent. The output directory resolves from the invoking
 directory and must lie outside declared source directories and glob prefixes.

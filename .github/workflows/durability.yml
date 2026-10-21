@@ -13,6 +13,7 @@ on:
       - rust-toolchain.toml
       - crates/metewand-runtime/Cargo.toml
       - crates/metewand-runtime/src/artifact_store.rs
+      - crates/metewand-runtime/src/artifact_store/**
       - crates/metewand-runtime/src/durability.rs
       - crates/metewand-runtime/src/fault_injection.rs
       - crates/metewand-runtime/src/local_tree.rs
@@ -39,4 +40,9 @@ jobs:
         run: >-
           cargo test -p metewand-runtime --lib --locked
           run_store::fault_tests::every_durability_boundary_survives_process_death_and_resume
+          -- --exact --ignored --nocapture
+      - name: Exercise every cache collection boundary
+        run: >-
+          cargo test -p metewand-runtime --lib --locked
+          artifact_store::maintenance::tests::collection_recovers_after_each_database_sync_rename_and_cleanup_boundary
           -- --exact --ignored --nocapture

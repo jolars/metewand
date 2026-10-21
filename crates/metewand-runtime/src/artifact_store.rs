@@ -1,5 +1,10 @@
 //! Durable content-addressed trees, construction mappings, and leased copies.
 
+mod catalog;
+mod maintenance;
+
+pub use catalog::CACHE_CATALOG_VERSION;
+
 use std::{
     fs::{self, File, OpenOptions, TryLockError},
     io::{self, Read, Write},
@@ -112,10 +117,31 @@ impl ArtifactStore {
         }
         create_directory(root)?;
         let root = fs::canonicalize(root)?;
-        for child in ["objects", "derivations", "leases", "quarantine"] {
+        for child in ["objects", "derivations", "leases", "quarantine", "garbage"] {
             create_directory(&root.join(child))?;
         }
-        Ok(Self { root })
+        let store = Self { root };
+        let _guard = store.lock_file(true)?;
+        catalog::Catalog::initialize(&store)?;
+        Ok(store)
+    }
+
+    /// Opens an initialized cache without creating directories, catalogs, locks,
+    /// or SQLite sidecars. Maintenance reads use a private committed snapshot.
+    pub fn open_existing(root: &Path) -> Result<Self, ArtifactStoreError> {
+        if !root.is_absolute() {
+            return Err(ArtifactStoreError::InvalidRoot);
+        }
+        real_directory(root)?;
+        let store = Self {
+            root: fs::canonicalize(root)?,
+        };
+        for child in ["objects", "derivations", "leases", "quarantine", "garbage"] {
+            real_directory(&store.root.join(child))?;
+        }
+        let _guard = store.lock()?;
+        catalog::Catalog::read(&store)?;
+        Ok(store)
     }
 
     #[must_use]
@@ -167,6 +193,7 @@ impl ArtifactStore {
         }
         File::open(lease.directory())?.sync_all()?;
         File::open(self.root.join("objects"))?.sync_all()?;
+        self.register_object(expected)?;
         Ok(StoredArtifact {
             store: self.clone(),
             digest: expected,
@@ -185,6 +212,7 @@ impl ArtifactStore {
             return Ok(None);
         }
         self.verify_or_quarantine(digest)?;
+        self.register_object(digest)?;
         Ok(Some(StoredArtifact {
             store: self.clone(),
             digest,
@@ -285,6 +313,10 @@ impl ArtifactStore {
     /// Reports only leases whose owner still holds its kernel lock.
     pub fn active_leases(&self) -> Result<Vec<CacheLeaseRecord>, ArtifactStoreError> {
         let _guard = self.lock()?;
+        self.active_leases_locked()
+    }
+
+    fn active_leases_locked(&self) -> Result<Vec<CacheLeaseRecord>, ArtifactStoreError> {
         let mut active: Vec<CacheLeaseRecord> = Vec::new();
         for entry in fs::read_dir(self.root.join("leases"))? {
             let entry = entry?;
@@ -379,14 +411,21 @@ impl ArtifactStore {
     }
 
     fn lock(&self) -> Result<File, ArtifactStoreError> {
+        self.lock_file(false)
+    }
+
+    fn lock_file(&self, create: bool) -> Result<File, ArtifactStoreError> {
         let lock = OpenOptions::new()
-            .create(true)
+            .create(create)
             .truncate(false)
             .read(true)
             .write(true)
             .mode(0o600)
             .custom_flags(rustix::fs::OFlags::NOFOLLOW.bits() as i32)
             .open(self.root.join(".lock"))?;
+        if !lock.metadata()?.is_file() {
+            return Err(ArtifactStoreError::UnsafeEntry(self.root.join(".lock")));
+        }
         lock.lock()?;
         Ok(lock)
     }
@@ -719,6 +758,16 @@ fn validate(schema: PublicSchema, document: &CanonicalValue) -> Result<(), Artif
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum ArtifactStoreError {
+    #[error("cache target must be one exact lowercase tree-v1 SHA-256 identity: {0}")]
+    InvalidTarget(String),
+    #[error("cache catalog does not register target: {0}")]
+    UnknownTarget(String),
+    #[error("invalid cache root name")]
+    InvalidRootName,
+    #[error("cache root does not protect this target: {0}")]
+    UnknownRoot(String),
+    #[error("cache catalog: {0}")]
+    Catalog(&'static str),
     #[error("artifact cache root must be an absolute directory beneath an existing parent")]
     InvalidRoot,
     #[error("artifact import or view overlaps the canonical store")]
@@ -755,4 +804,8 @@ pub enum ArtifactStoreError {
     Publication(#[from] PublicationError),
     #[error(transparent)]
     Json(#[from] serde_json::Error),
+    #[error(transparent)]
+    Sqlite(#[from] rusqlite::Error),
+    #[error(transparent)]
+    Snapshot(#[from] crate::run_store::RunStoreError),
 }

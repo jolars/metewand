@@ -40,6 +40,8 @@ leases/lease-<unique-token>/
   object/ or mapping-*/         unfinished publication, when present
 quarantine/lease-<token>/        abandoned staging retained for diagnosis
 quarantine/tree-v1-<hash>-<token>/object/  corrupt canonical object and its marker
+cache.sqlite3                  authoritative object, root, and collection catalog
+garbage/tree-v1-<tree-sha256>/   exactly identified, detached collection work
 .lock                           serializes cache reads, publication, and quarantine
 ```
 
@@ -48,6 +50,10 @@ Host paths, timestamps, ownership, and completion metadata do not enter the
 address. Empty directories and executable flags are preserved, including the
 empty tree used for dataset-free problems. The store accepts normalized UTF-8
 paths, regular files, and directories; it rejects symlinks and special files.
+
+See [Cache verification, roots, and garbage collection](cache-maintenance.md)
+for exact-target verification, transactional collection, durable run roots,
+kernel lease protection, and read-only dry runs.
 
 `import_tree` takes a source directory and its expected tree digest. It copies
 files into unique leased staging on the destination filesystem, checks the
@@ -101,8 +107,9 @@ After a process exits or crashes, the kernel releases its locks.
 exact directory and unfinished staging into quarantine for diagnosis. It leaves
 active leases, completed objects, and derivation mappings intact. A crash after object publication can leave a
 complete object without a mapping; publishing it again verifies and reuses it.
-These filesystem leases precede the later transactional run-state and garbage
-collection interfaces. The store does not delete completed content objects.
+The transactional cache catalog uses these same kernel leases to protect
+completed objects during explicit collection. Durable named roots retain
+datasets after their process-held leases end.
 
 `StoredArtifact::private_view` creates a unique owned copy for one attempt,
 verifying canonical and copied bytes around the transfer. Each CLI attempt

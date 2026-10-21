@@ -1,4 +1,5 @@
 mod authoring;
+mod cache;
 mod execution;
 mod export;
 mod inspection;
@@ -26,6 +27,7 @@ Usage:
   metewand [--output FORMAT] status [--manifest PATH] [--output-dir PATH]
   metewand [--output FORMAT] explain <id> [--manifest PATH] [--output-dir PATH]
   metewand [--output FORMAT] export --output-dir PATH --destination PATH [--format csv|jsonl]
+  metewand [--output FORMAT] cache <operation> --cache-dir PATH [OPTIONS]
 
 Commands:
   init    Create a minimal versioned manifest without overwriting files.
@@ -37,6 +39,7 @@ Commands:
   status  Inspect planned slots, durable attempts, and resumable state.
   explain Explain a stable identity and its recorded relationships.
   export  Export verified history or rebuild the disposable JSONL index.
+  cache   Verify exact objects, manage roots, or collect unused cache objects.
 
 Options:
   --output FORMAT  Write human, json, or jsonl output (default: human).
@@ -196,6 +199,7 @@ fn run(arguments: &[OsString], output_format: OutputFormat) -> Result<CommandRes
         "status" => inspection::command("status", &arguments[1..]),
         "explain" => inspection::command("explain", &arguments[1..]),
         "export" => export::command(&arguments[1..]),
+        "cache" => cache::command(&arguments[1..]),
         _ => Err(CommandError::usage(
             "unknown_command",
             format!("unknown command `{command}`"),

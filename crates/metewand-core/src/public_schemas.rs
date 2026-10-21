@@ -33,6 +33,8 @@ pub enum PublicSchema {
     ExportRow,
     /// Export receipts and adjacent lineage manifests.
     ExportOutput,
+    /// Exact cache verification, root, and garbage collection receipts.
+    CacheOutput,
     /// Typed benchmark manifest.
     Manifest,
     /// Problem and fairness contract.
@@ -70,13 +72,14 @@ pub enum PublicSchema {
 }
 
 /// Every public schema entry point in stable presentation order.
-pub const PUBLIC_SCHEMAS: [PublicSchema; 24] = [
+pub const PUBLIC_SCHEMAS: [PublicSchema; 25] = [
     PublicSchema::MachineOutput,
     PublicSchema::RunOutput,
     PublicSchema::InspectionOutput,
     PublicSchema::ExportRecord,
     PublicSchema::ExportRow,
     PublicSchema::ExportOutput,
+    PublicSchema::CacheOutput,
     PublicSchema::Manifest,
     PublicSchema::ProblemContract,
     PublicSchema::OneShotObservationPolicy,
@@ -112,6 +115,7 @@ impl PublicSchema {
             Self::ExportRecord => "export-record",
             Self::ExportRow => "export-row",
             Self::ExportOutput => "export-output",
+            Self::CacheOutput => "cache-output",
             Self::Manifest => "manifest",
             Self::ProblemContract => "problem-contract",
             Self::OneShotObservationPolicy => "one-shot-observation-policy",
@@ -151,6 +155,7 @@ impl PublicSchema {
             Self::ExportRecord => "schemas/v1/export-record.schema.json",
             Self::ExportRow => "schemas/v1/export-row.schema.json",
             Self::ExportOutput => "schemas/v1/export-output.schema.json",
+            Self::CacheOutput => "schemas/v1/cache-output.schema.json",
             Self::Manifest => "schemas/v1/manifest.schema.json",
             Self::ProblemContract => "schemas/v1/problem-contract.schema.json",
             Self::OneShotObservationPolicy => "schemas/v1/one-shot-observation-policy.schema.json",
@@ -186,6 +191,7 @@ impl PublicSchema {
             Self::ExportRecord => "metewand://schemas/v1/export-record.schema.json",
             Self::ExportRow => "metewand://schemas/v1/export-row.schema.json",
             Self::ExportOutput => "metewand://schemas/v1/export-output.schema.json",
+            Self::CacheOutput => "metewand://schemas/v1/cache-output.schema.json",
             Self::Manifest => "metewand://schemas/v1/manifest.schema.json",
             Self::ProblemContract => "metewand://schemas/v1/problem-contract.schema.json",
             Self::OneShotObservationPolicy => {
@@ -241,6 +247,7 @@ impl PublicSchema {
             Self::ExportRecord => include_str!("../../../schemas/v1/export-record.schema.json"),
             Self::ExportRow => include_str!("../../../schemas/v1/export-row.schema.json"),
             Self::ExportOutput => include_str!("../../../schemas/v1/export-output.schema.json"),
+            Self::CacheOutput => include_str!("../../../schemas/v1/cache-output.schema.json"),
             Self::Manifest => include_str!("../../../schemas/v1/manifest.schema.json"),
             Self::ProblemContract => {
                 include_str!("../../../schemas/v1/problem-contract.schema.json")

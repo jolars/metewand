@@ -662,6 +662,9 @@ change the durability implementation, workspace dependencies or toolchain, or
 release metadata. Release PRs change the workspace version in `Cargo.toml`, so
 they exercise the exhaustive campaign separately from normal CI.
 
+The same workflow also runs the [cache collection crash campaign](cache-maintenance.md),
+which checks exact content retirement while preserving durable roots and live leases.
+
 The campaign models abrupt process death around application and SQLite
 statement boundaries; it does not simulate a storage device losing power. The
 schema, identities, canonical bytes, and public compatibility constants retain

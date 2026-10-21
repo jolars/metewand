@@ -2,6 +2,7 @@ use std::{collections::BTreeMap, fmt::Write as _, path::Path};
 
 use metewand_core::{
     PUBLIC_SCHEMA_VERSION,
+    cache::{CacheReport, CacheTargetState},
     export::ExportReport,
     inspection::{Explanation, StatusReport},
     manifest::{
@@ -66,6 +67,7 @@ pub enum CommandResult {
     Status(Box<StatusReport>),
     Explain(Box<Explanation>),
     Export(Box<ExportReport>),
+    Cache(Box<CacheReport>),
 }
 
 impl CommandResult {
@@ -181,6 +183,32 @@ impl CommandResult {
             Self::Run(result) => render_run_report(result),
             Self::Status(result) => render_status(result),
             Self::Explain(result) => render_explanation(result),
+            Self::Cache(result) => {
+                let mut output = String::new();
+                for target in &result.targets {
+                    let state = serde_json::to_value(target.state).expect("cache state serializes");
+                    writeln!(
+                        output,
+                        "{}: {}",
+                        target.id,
+                        state.as_str().expect("state string")
+                    )
+                    .expect("string write");
+                    for root in &target.roots {
+                        writeln!(output, "  root: {root}").expect("string write");
+                    }
+                    for lease in &target.leases {
+                        writeln!(output, "  active lease: {lease}").expect("string write");
+                    }
+                    if let Some(detail) = &target.detail {
+                        writeln!(output, "  {detail}").expect("string write");
+                    }
+                }
+                if result.targets.is_empty() {
+                    output.push_str("No matching cache objects.\n");
+                }
+                output
+            }
             Self::Export(result) => {
                 let mut output = format!(
                     "Exported {} records as {} rows.\n",
@@ -198,6 +226,16 @@ impl CommandResult {
     }
 
     pub fn exit_code(&self) -> u8 {
+        if let Self::Cache(report) = self
+            && report.targets.iter().any(|target| {
+                matches!(
+                    target.state,
+                    CacheTargetState::Missing | CacheTargetState::Corrupt
+                )
+            })
+        {
+            return EXIT_RUN_FAILED;
+        }
         if let Self::Run(report) = self
             && report.summary.failed_attempts > 0
         {
@@ -247,6 +285,7 @@ impl Serialize for CommandResult {
             Self::Status(result) => result.serialize(serializer),
             Self::Explain(result) => result.serialize(serializer),
             Self::Export(result) => result.serialize(serializer),
+            Self::Cache(result) => result.serialize(serializer),
         }
     }
 }
@@ -1213,6 +1252,25 @@ pub struct CommandError {
 }
 
 impl CommandError {
+    #[cfg(unix)]
+    pub fn cache(error: &metewand_runtime::artifact_store::ArtifactStoreError) -> Self {
+        use metewand_runtime::artifact_store::ArtifactStoreError;
+        let (exit_code, code) = match error {
+            ArtifactStoreError::InvalidTarget(_) | ArtifactStoreError::InvalidRootName => {
+                (EXIT_USAGE, "invalid_cache_target")
+            }
+            ArtifactStoreError::UnknownTarget(_) | ArtifactStoreError::UnknownRoot(_) => {
+                (EXIT_INPUT_UNAVAILABLE, "cache_target_not_found")
+            }
+            ArtifactStoreError::Io(_) => (EXIT_IO, "cache_io_failed"),
+            _ => (EXIT_INPUT_UNAVAILABLE, "invalid_cache_evidence"),
+        };
+        Self {
+            exit_code,
+            diagnostic: Box::new(Diagnostic::new(code, error.to_string())),
+        }
+    }
+
     pub fn scaffold(error: &ScaffoldError) -> Self {
         let (exit_code, code) = match error.kind {
             ScaffoldErrorKind::InvalidRequest => (EXIT_USAGE, "scaffold_invalid_request"),
