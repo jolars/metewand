@@ -42,6 +42,10 @@ pub struct Inspection {
 }
 
 impl Inspection {
+    pub(crate) fn into_records(self) -> BTreeMap<String, InspectionRecord> {
+        self.records
+    }
+
     /// Adds the complete logical graph, including warm-ups and definitions.
     pub fn add_repository(
         &mut self,

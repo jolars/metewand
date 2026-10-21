@@ -314,7 +314,7 @@ artifacts](DESIGN.md#6-environments-execution-and-artifacts).
   not invent scientific semantics or invoke package managers.
 - [x] Implement `metewand check --workers` with capability verification and
   problem reference-case execution.
-- [ ] Implement a rebuildable JSONL index and tidy JSONL/CSV export that retain
+- [x] Implement a rebuildable JSONL index and tidy JSONL/CSV export that retain
   valid observations and accepted, invalid, censored, superseded, and failed
   attempts without silently combining incompatible timing or guarantee
   classes.

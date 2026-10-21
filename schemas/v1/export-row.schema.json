@@ -1,0 +1,136 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "metewand://schemas/v1/export-row.schema.json",
+  "x-metewand-compatibility-version": 1,
+  "title": "Metewand tidy result row",
+  "allOf": [
+    {
+      "$ref": "export-record.schema.json#/$defs/record"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "metric_name": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "metric_value": {},
+        "metric_unit": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "metric_direction": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "timed_wall_time_ns": {
+          "anyOf": [
+            {
+              "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "implementation_time_ns": {
+          "anyOf": [
+            {
+              "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "evaluation_time_ns": {
+          "anyOf": [
+            {
+              "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cpu_time_ns": {
+          "anyOf": [
+            {
+              "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "peak_rss_bytes": {
+          "anyOf": [
+            {
+              "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "timed_wall_time_status": {
+          "enum": [
+            "complete",
+            "partial",
+            "unavailable"
+          ]
+        },
+        "cpu_time_status": {
+          "enum": [
+            "complete",
+            "partial",
+            "unavailable"
+          ]
+        },
+        "peak_rss_status": {
+          "enum": [
+            "complete",
+            "partial",
+            "unavailable"
+          ]
+        }
+      },
+      "required": [
+        "metric_name",
+        "metric_value",
+        "metric_unit",
+        "metric_direction",
+        "timed_wall_time_ns",
+        "implementation_time_ns",
+        "evaluation_time_ns",
+        "cpu_time_ns",
+        "peak_rss_bytes",
+        "timed_wall_time_status",
+        "cpu_time_status",
+        "peak_rss_status"
+      ]
+    }
+  ],
+  "unevaluatedProperties": false
+}

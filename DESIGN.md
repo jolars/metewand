@@ -1879,6 +1879,13 @@ provisional metrics and stop reasons, and evaluator-confirmed target status.
 Measurement evidence remains separate from environment and control guarantees.
 Metewand never silently averages repetitions or drops failed attempts.
 
+The local foundation implements this projection with version-1 `export-record`
+and `export-row` schemas. `metewand export --output-dir PATH --rebuild-index`
+explicitly rebuilds `index.jsonl`; `--destination PATH --format jsonl|csv`
+creates a new table directory with an adjacent lineage receipt. Both read a
+committed snapshot and verify registered artifacts independently of the index.
+See [Result indexes and tidy exports](docs/exports.md).
+
 Every export has an adjacent or enveloping export manifest containing the
 canonical selector, the ordered source candidate, attempt, and observation
 identities, the result and metric schema identities, compatibility classes, the

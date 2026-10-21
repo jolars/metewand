@@ -836,6 +836,7 @@ dependencies = [
  "metewand-runtime",
  "serde",
  "serde_json",
+ "sha2",
  "tempfile",
 ]
 

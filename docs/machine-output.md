@@ -52,6 +52,11 @@ select behavior from `schema_version`, not from the package version.
 to `inspection-output`. Status includes all recorded attempts, so a successful
 inspection exits with `0` even when the inspected benchmark has failures.
 
+[`export`](exports.md) emits one terminal `export-output` receipt with record
+and row counts, the explicitly created destination or rebuilt index path, and
+the export manifest. `--format jsonl|csv` selects the table file's encoding;
+the global `--output` option continues to select the receipt's encoding.
+
 The command-owned `data` object retains deterministic ordering. A plan result
 contains the same definitions, resource identities, requirements, experiments,
 candidate and slot identities, capability evidence, counts, and side-effect
@@ -95,6 +100,15 @@ Exit codes are part of the command-line compatibility contract:
 | `5` | Execution completed with at least one durably failed attempt. |
 | `70` | An internal invariant or serialization operation failed. |
 | `74` | Filesystem authoring, command output, run-directory setup, or durable publication failed. |
+
+Export uses `2` for malformed options or unsafe index targets, `4` for missing
+store inputs or unknown result selectors, `3` for incompatible or corrupt
+evidence, and `74` for snapshot contention or export writes. It reuses the
+inspection diagnostic codes for source-reading failures. Its own codes are
+`missing_export_value`, `duplicate_export_option`, `invalid_export_id`,
+`missing_output_directory`, `missing_export_destination`,
+`invalid_export_format`, `export_id_not_found`, `export_write_failed`,
+`invalid_export_destination`, and `invalid_export_evidence`.
 
 The exit code classifies the command outcome; `data.code` identifies the
 specific diagnostic.

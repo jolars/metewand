@@ -19,6 +19,8 @@ pub mod datamonger;
 #[cfg(unix)]
 pub mod dataset_materialization;
 #[cfg(unix)]
+pub mod export;
+#[cfg(unix)]
 pub mod fixed_dataset_run;
 #[cfg(unix)]
 pub mod inspection;

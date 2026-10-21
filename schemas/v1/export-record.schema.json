@@ -1,0 +1,381 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "metewand://schemas/v1/export-record.schema.json",
+  "x-metewand-compatibility-version": 1,
+  "title": "Metewand rebuildable result index record",
+  "allOf": [
+    {
+      "$ref": "#/$defs/record"
+    }
+  ],
+  "unevaluatedProperties": false,
+  "$defs": {
+    "compatibility": {
+      "type": "object",
+      "properties": {
+        "timing_scope": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "primary_time": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "environment_class": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "unclassified_record": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "execution_semantics_version": {
+          "anyOf": [
+            {
+              "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "measurements_version": {
+          "anyOf": [
+            {
+              "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "control_class": {
+          "enum": [
+            "enforced",
+            "best_effort",
+            "unsupported",
+            "unknown"
+          ]
+        },
+        "controls": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "object"
+          }
+        },
+        "execution_policy": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "accounting": {
+          "type": "object"
+        },
+        "control_evidence": {
+          "enum": [
+            "observed",
+            "declared",
+            "unavailable"
+          ]
+        }
+      },
+      "required": [
+        "timing_scope",
+        "primary_time",
+        "environment_class",
+        "unclassified_record",
+        "execution_semantics_version",
+        "measurements_version",
+        "control_class",
+        "controls",
+        "execution_policy",
+        "accounting",
+        "control_evidence"
+      ],
+      "additionalProperties": false
+    },
+    "record": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "record_type": {
+          "enum": [
+            "applicability",
+            "attempt",
+            "observation"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "candidate_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "logical_run_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "resolved_run_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "logical_slot_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "resolved_slot_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "attempt_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "attempt_state": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "outcome": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "completion": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "failure_code": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "metric_schema": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "result_schema": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "retry_index": {
+          "anyOf": [
+            {
+              "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "valid": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "selected": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "warmup": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "compatibility_id": {
+          "type": "string",
+          "pattern": "^export-v1:[0-9a-f]{64}$"
+        },
+        "compatibility": {
+          "$ref": "export-record.schema.json#/$defs/compatibility"
+        },
+        "timing": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "metrics": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "provenance": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "evidence": {
+          "type": "object"
+        },
+        "logical_observation_slot_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "resolved_observation_slot_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "schema_version",
+        "record_type",
+        "id",
+        "candidate_id",
+        "logical_run_id",
+        "resolved_run_id",
+        "logical_slot_id",
+        "resolved_slot_id",
+        "attempt_id",
+        "attempt_state",
+        "outcome",
+        "completion",
+        "failure_code",
+        "metric_schema",
+        "result_schema",
+        "retry_index",
+        "valid",
+        "selected",
+        "warmup",
+        "compatibility_id",
+        "compatibility",
+        "timing",
+        "metrics",
+        "provenance",
+        "evidence",
+        "logical_observation_slot_id",
+        "resolved_observation_slot_id"
+      ]
+    }
+  }
+}

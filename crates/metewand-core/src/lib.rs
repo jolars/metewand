@@ -3,6 +3,7 @@
 pub mod canonical;
 pub mod compatibility;
 pub mod controls;
+pub mod export;
 pub mod identity;
 pub mod inspection;
 pub mod manifest;
@@ -53,5 +54,6 @@ mod tests {
         assert_eq!(SEED_DERIVATION_VERSION, 1);
         assert_eq!(SCHEDULING_POLICY_VERSION, 1);
         assert_eq!(EXECUTION_SEMANTICS_VERSION, 2);
+        assert_eq!(crate::export::EXPORT_SCHEMA_VERSION, 1);
     }
 }

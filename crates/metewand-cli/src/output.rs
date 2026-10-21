@@ -2,6 +2,7 @@ use std::{collections::BTreeMap, fmt::Write as _, path::Path};
 
 use metewand_core::{
     PUBLIC_SCHEMA_VERSION,
+    export::ExportReport,
     inspection::{Explanation, StatusReport},
     manifest::{
         DatasetDefinition, Enforcement, EnvironmentDefinition, ImplementationCapability,
@@ -64,6 +65,7 @@ pub enum CommandResult {
     Run(Box<RunReport>),
     Status(Box<StatusReport>),
     Explain(Box<Explanation>),
+    Export(Box<ExportReport>),
 }
 
 impl CommandResult {
@@ -179,6 +181,19 @@ impl CommandResult {
             Self::Run(result) => render_run_report(result),
             Self::Status(result) => render_status(result),
             Self::Explain(result) => render_explanation(result),
+            Self::Export(result) => {
+                let mut output = format!(
+                    "Exported {} records as {} rows.\n",
+                    result.records, result.rows
+                );
+                if let Some(destination) = &result.destination {
+                    writeln!(output, "Results and lineage: {destination}").expect("string write");
+                }
+                if let Some(index) = &result.index_path {
+                    writeln!(output, "Rebuilt index: {index}").expect("string write");
+                }
+                output
+            }
         }
     }
 
@@ -231,6 +246,7 @@ impl Serialize for CommandResult {
             Self::Run(result) => result.serialize(serializer),
             Self::Status(result) => result.serialize(serializer),
             Self::Explain(result) => result.serialize(serializer),
+            Self::Export(result) => result.serialize(serializer),
         }
     }
 }
@@ -1237,6 +1253,23 @@ impl CommandError {
                     .with_remediation("Inspect any created paths and choose a writable destination without an existing metewand.toml; existing files are never overwritten."),
             ),
         }
+    }
+
+    #[cfg(unix)]
+    pub fn export(error: &metewand_runtime::export::ExportError) -> Self {
+        use metewand_runtime::export::ExportError;
+        if let ExportError::Inspection(error) = error {
+            return Self::inspection(error);
+        }
+        let (exit_code, code) = match error {
+            ExportError::UnknownIdentity(_) => (EXIT_INPUT_UNAVAILABLE, "export_id_not_found"),
+            ExportError::Io(_) => (EXIT_IO, "export_write_failed"),
+            ExportError::UnsafeIndex | ExportError::InvalidDestination => {
+                (EXIT_USAGE, "invalid_export_destination")
+            }
+            _ => (EXIT_INVALID_REPOSITORY, "invalid_export_evidence"),
+        };
+        Self { exit_code, diagnostic: Box::new(Diagnostic::new(code, error.to_string()).with_remediation("Select a verified run with `--output-dir PATH` and a new export directory with `--destination PATH`.")) }
     }
 
     #[cfg(unix)]

@@ -1,0 +1,169 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "metewand://schemas/v1/export-output.schema.json",
+  "x-metewand-compatibility-version": 1,
+  "title": "Metewand export receipt and lineage manifest",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "kind": {
+      "const": "result"
+    },
+    "data": {
+      "type": "object",
+      "properties": {
+        "command": {
+          "const": "export"
+        },
+        "schema_version": {
+          "const": 1
+        },
+        "records": {
+          "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
+        },
+        "rows": {
+          "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
+        },
+        "destination": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "index_path": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "manifest": {
+          "$ref": "#/$defs/manifest"
+        }
+      },
+      "required": [
+        "command",
+        "schema_version",
+        "records",
+        "rows",
+        "destination",
+        "index_path",
+        "manifest"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "schema_version",
+    "kind",
+    "data"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "manifest": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "tool_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "selector": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "candidate_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "attempt_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "observation_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "result_schemas": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "metric_schemas": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "compatibility_classes": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^export-v1:[0-9a-f]{64}$"
+          },
+          "additionalProperties": {
+            "$ref": "export-record.schema.json#/$defs/compatibility"
+          }
+        },
+        "files": {
+          "type": "object",
+          "propertyNames": {
+            "enum": [
+              "results.csv",
+              "results.jsonl"
+            ]
+          },
+          "additionalProperties": {
+            "$ref": "common.schema.json#/$defs/sha256"
+          }
+        }
+      },
+      "required": [
+        "schema_version",
+        "tool_version",
+        "selector",
+        "candidate_ids",
+        "attempt_ids",
+        "observation_ids",
+        "result_schemas",
+        "metric_schemas",
+        "compatibility_classes",
+        "files"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

@@ -1291,6 +1291,156 @@
           }
         }
       }
+    },
+    {
+      "name": "export-record retains an attempt without metrics",
+      "schema": "export-record",
+      "instance": {
+        "logical_run_id": null,
+        "resolved_run_id": null,
+        "logical_slot_id": null,
+        "resolved_slot_id": null,
+        "attempt_id": null,
+        "retry_index": null,
+        "attempt_state": null,
+        "outcome": null,
+        "valid": null,
+        "selected": null,
+        "completion": null,
+        "failure_code": null,
+        "warmup": null,
+        "metric_schema": null,
+        "result_schema": null,
+        "timing": null,
+        "metrics": null,
+        "provenance": null,
+        "schema_version": 1,
+        "record_type": "attempt",
+        "id": "mw1-attempt-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "candidate_id": "mw1-logical-candidate-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "compatibility_id": "export-v1:ef8e70f6ea03111d16d5c167c2906752058958635d3914e4b6ab3b4814b73fa9",
+        "compatibility": {
+          "execution_semantics_version": 2,
+          "timing_scope": "prepare_and_execute",
+          "primary_time": "timed_wall_time",
+          "environment_class": "development",
+          "control_class": "best_effort",
+          "controls": [],
+          "execution_policy": {},
+          "measurements_version": 2,
+          "accounting": {},
+          "unclassified_record": null,
+          "control_evidence": "observed"
+        },
+        "evidence": {},
+        "logical_observation_slot_id": null,
+        "resolved_observation_slot_id": null
+      }
+    },
+    {
+      "name": "export-row retains an attempt without metrics",
+      "schema": "export-row",
+      "instance": {
+        "logical_run_id": null,
+        "resolved_run_id": null,
+        "logical_slot_id": null,
+        "resolved_slot_id": null,
+        "attempt_id": null,
+        "retry_index": null,
+        "attempt_state": null,
+        "outcome": null,
+        "valid": null,
+        "selected": null,
+        "completion": null,
+        "failure_code": null,
+        "warmup": null,
+        "metric_schema": null,
+        "result_schema": null,
+        "timing": null,
+        "metrics": null,
+        "provenance": null,
+        "schema_version": 1,
+        "record_type": "attempt",
+        "id": "mw1-attempt-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "candidate_id": "mw1-logical-candidate-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "compatibility_id": "export-v1:ef8e70f6ea03111d16d5c167c2906752058958635d3914e4b6ab3b4814b73fa9",
+        "compatibility": {
+          "execution_semantics_version": 2,
+          "timing_scope": "prepare_and_execute",
+          "primary_time": "timed_wall_time",
+          "environment_class": "development",
+          "control_class": "best_effort",
+          "controls": [],
+          "execution_policy": {},
+          "measurements_version": 2,
+          "accounting": {},
+          "unclassified_record": null,
+          "control_evidence": "observed"
+        },
+        "evidence": {},
+        "metric_name": null,
+        "metric_value": null,
+        "metric_unit": null,
+        "metric_direction": null,
+        "timed_wall_time_ns": null,
+        "implementation_time_ns": null,
+        "evaluation_time_ns": null,
+        "cpu_time_ns": null,
+        "peak_rss_bytes": null,
+        "timed_wall_time_status": "unavailable",
+        "cpu_time_status": "unavailable",
+        "peak_rss_status": "unavailable",
+        "logical_observation_slot_id": null,
+        "resolved_observation_slot_id": null
+      }
+    },
+    {
+      "name": "export-output retains an attempt without metrics",
+      "schema": "export-output",
+      "instance": {
+        "schema_version": 1,
+        "kind": "result",
+        "data": {
+          "command": "export",
+          "schema_version": 1,
+          "records": 1,
+          "rows": 1,
+          "destination": "table",
+          "index_path": null,
+          "manifest": {
+            "schema_version": 1,
+            "tool_version": "0.1.0",
+            "selector": [],
+            "candidate_ids": [
+              "mw1-logical-candidate-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+            ],
+            "attempt_ids": [
+              "mw1-attempt-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            ],
+            "observation_ids": [],
+            "result_schemas": [],
+            "metric_schemas": [],
+            "compatibility_classes": {
+              "export-v1:ef8e70f6ea03111d16d5c167c2906752058958635d3914e4b6ab3b4814b73fa9": {
+                "execution_semantics_version": 2,
+                "timing_scope": "prepare_and_execute",
+                "primary_time": "timed_wall_time",
+                "environment_class": "development",
+                "control_class": "best_effort",
+                "controls": [],
+                "execution_policy": {},
+                "measurements_version": 2,
+                "accounting": {},
+                "unclassified_record": null,
+                "control_evidence": "observed"
+              }
+            },
+            "files": {
+              "results.csv": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+            }
+          }
+        }
+      }
     }
   ],
   "invalid": [
@@ -3207,6 +3357,159 @@
             "machine": "fixture"
           }
         }
+      }
+    },
+    {
+      "name": "export-record rejects unknown properties",
+      "schema": "export-record",
+      "instance": {
+        "logical_run_id": null,
+        "resolved_run_id": null,
+        "logical_slot_id": null,
+        "resolved_slot_id": null,
+        "attempt_id": null,
+        "retry_index": null,
+        "attempt_state": null,
+        "outcome": null,
+        "valid": null,
+        "selected": null,
+        "completion": null,
+        "failure_code": null,
+        "warmup": null,
+        "metric_schema": null,
+        "result_schema": null,
+        "timing": null,
+        "metrics": null,
+        "provenance": null,
+        "schema_version": 1,
+        "record_type": "attempt",
+        "id": "mw1-attempt-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "candidate_id": "mw1-logical-candidate-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "compatibility_id": "export-v1:ef8e70f6ea03111d16d5c167c2906752058958635d3914e4b6ab3b4814b73fa9",
+        "compatibility": {
+          "execution_semantics_version": 2,
+          "timing_scope": "prepare_and_execute",
+          "primary_time": "timed_wall_time",
+          "environment_class": "development",
+          "control_class": "best_effort",
+          "controls": [],
+          "execution_policy": {},
+          "measurements_version": 2,
+          "accounting": {},
+          "unclassified_record": null,
+          "control_evidence": "observed"
+        },
+        "evidence": {},
+        "unexpected": true,
+        "logical_observation_slot_id": null,
+        "resolved_observation_slot_id": null
+      }
+    },
+    {
+      "name": "export-row rejects unknown properties",
+      "schema": "export-row",
+      "instance": {
+        "logical_run_id": null,
+        "resolved_run_id": null,
+        "logical_slot_id": null,
+        "resolved_slot_id": null,
+        "attempt_id": null,
+        "retry_index": null,
+        "attempt_state": null,
+        "outcome": null,
+        "valid": null,
+        "selected": null,
+        "completion": null,
+        "failure_code": null,
+        "warmup": null,
+        "metric_schema": null,
+        "result_schema": null,
+        "timing": null,
+        "metrics": null,
+        "provenance": null,
+        "schema_version": 1,
+        "record_type": "attempt",
+        "id": "mw1-attempt-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "candidate_id": "mw1-logical-candidate-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "compatibility_id": "export-v1:ef8e70f6ea03111d16d5c167c2906752058958635d3914e4b6ab3b4814b73fa9",
+        "compatibility": {
+          "execution_semantics_version": 2,
+          "timing_scope": "prepare_and_execute",
+          "primary_time": "timed_wall_time",
+          "environment_class": "development",
+          "control_class": "best_effort",
+          "controls": [],
+          "execution_policy": {},
+          "measurements_version": 2,
+          "accounting": {},
+          "unclassified_record": null,
+          "control_evidence": "observed"
+        },
+        "evidence": {},
+        "metric_name": null,
+        "metric_value": null,
+        "metric_unit": null,
+        "metric_direction": null,
+        "unexpected": true,
+        "timed_wall_time_ns": null,
+        "implementation_time_ns": null,
+        "evaluation_time_ns": null,
+        "cpu_time_ns": null,
+        "peak_rss_bytes": null,
+        "timed_wall_time_status": "unavailable",
+        "cpu_time_status": "unavailable",
+        "peak_rss_status": "unavailable",
+        "logical_observation_slot_id": null,
+        "resolved_observation_slot_id": null
+      }
+    },
+    {
+      "name": "export-output rejects unknown properties",
+      "schema": "export-output",
+      "instance": {
+        "schema_version": 1,
+        "kind": "result",
+        "data": {
+          "command": "export",
+          "schema_version": 1,
+          "records": 1,
+          "rows": 1,
+          "destination": "table",
+          "index_path": null,
+          "manifest": {
+            "schema_version": 1,
+            "tool_version": "0.1.0",
+            "selector": [],
+            "candidate_ids": [
+              "mw1-logical-candidate-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+            ],
+            "attempt_ids": [
+              "mw1-attempt-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            ],
+            "observation_ids": [],
+            "result_schemas": [],
+            "metric_schemas": [],
+            "compatibility_classes": {
+              "export-v1:ef8e70f6ea03111d16d5c167c2906752058958635d3914e4b6ab3b4814b73fa9": {
+                "execution_semantics_version": 2,
+                "timing_scope": "prepare_and_execute",
+                "primary_time": "timed_wall_time",
+                "environment_class": "development",
+                "control_class": "best_effort",
+                "controls": [],
+                "execution_policy": {},
+                "measurements_version": 2,
+                "accounting": {},
+                "unclassified_record": null,
+                "control_evidence": "observed"
+              }
+            },
+            "files": {
+              "results.csv": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+            }
+          }
+        },
+        "unexpected": true
       }
     }
   ]

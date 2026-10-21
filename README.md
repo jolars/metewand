@@ -179,6 +179,11 @@ slots, live and expired attempts, retries, selected observations, and failures;
 explanations connect definitions, runs, slots, attempts, artifacts, and diagnostics
 without launching workers or recovering the store.
 
+[`metewand export`](docs/exports.md) writes tidy JSONL or CSV tables with an
+adjacent lineage manifest. It retains attempts and observations independently,
+labels timing and guarantee classes, and can rebuild the disposable run index
+with `--rebuild-index`.
+
 The [Python SDK](docs/python-sdk.md) provides small helpers for implementations,
 dataset materializers, and independent evaluators over the existing one-shot
 protocol. Its [runnable example](examples/python-sdk) uses all three roles and

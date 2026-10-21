@@ -9,6 +9,10 @@ The command registers its resolved one-shot slots, reserves leased attempts,
 publishes observations and terminal outcomes, and recovers expired owners through
 this store.
 
+The [rebuildable JSONL index and tidy exports](exports.md) read a committed
+snapshot and verified finalized artifacts. The index is never authoritative
+coordination or evidence of acceptance.
+
 ## Compatibility and connection requirements
 
 The database layout has its own compatibility version. It does not change the
