@@ -309,7 +309,7 @@ artifacts](DESIGN.md#6-environments-execution-and-artifacts).
 
 - [x] Implement `metewand init` as a dry-runnable, no-overwrite operation that
   creates only a minimal, domain-neutral versioned manifest.
-- [ ] Implement explicit dataset, problem, and implementation scaffolds; report
+- [x] Implement explicit dataset, problem, and implementation scaffolds; report
   every changed path, update only the requested manifest component, and do
   not invent scientific semantics or invoke package managers.
 - [ ] Implement `metewand check --workers` with capability verification and

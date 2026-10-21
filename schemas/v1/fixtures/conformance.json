@@ -2,6 +2,157 @@
   "version": 1,
   "valid": [
     {
+      "name": "dataset scaffold reports creations and manifest edit",
+      "schema": "machine-output",
+      "instance": {
+        "schema_version": 1,
+        "kind": "result",
+        "data": {
+          "command": "scaffold",
+          "component": "dataset",
+          "name": "sample.name",
+          "dry_run": false,
+          "manifest": "metewand.toml",
+          "paths": [
+            {
+              "path": "datasets",
+              "kind": "directory",
+              "action": "create"
+            },
+            {
+              "path": "datasets/sample.name",
+              "kind": "directory",
+              "action": "create"
+            },
+            {
+              "path": "datasets/sample.name/parameters.schema.json",
+              "kind": "file",
+              "action": "create"
+            },
+            {
+              "path": "datasets/sample.name/dataset.schema.json",
+              "kind": "file",
+              "action": "create"
+            },
+            {
+              "path": "datasets/sample.name/materializer.sh",
+              "kind": "file",
+              "action": "create"
+            },
+            {
+              "path": "metewand.toml",
+              "kind": "file",
+              "action": "modify"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "problem scaffold reports creations and manifest edit",
+      "schema": "machine-output",
+      "instance": {
+        "schema_version": 1,
+        "kind": "result",
+        "data": {
+          "command": "scaffold",
+          "component": "problem",
+          "name": "sample.name",
+          "dry_run": true,
+          "manifest": "metewand.toml",
+          "paths": [
+            {
+              "path": "problems",
+              "kind": "directory",
+              "action": "create"
+            },
+            {
+              "path": "problems/sample.name",
+              "kind": "directory",
+              "action": "create"
+            },
+            {
+              "path": "problems/sample.name/contract.toml",
+              "kind": "file",
+              "action": "create"
+            },
+            {
+              "path": "problems/sample.name/parameters.schema.json",
+              "kind": "file",
+              "action": "create"
+            },
+            {
+              "path": "problems/sample.name/result.schema.json",
+              "kind": "file",
+              "action": "create"
+            },
+            {
+              "path": "problems/sample.name/metrics.schema.json",
+              "kind": "file",
+              "action": "create"
+            },
+            {
+              "path": "problems/sample.name/semantics.schema.json",
+              "kind": "file",
+              "action": "create"
+            },
+            {
+              "path": "problems/sample.name/evaluator.sh",
+              "kind": "file",
+              "action": "create"
+            },
+            {
+              "path": "metewand.toml",
+              "kind": "file",
+              "action": "modify"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "implementation scaffold reports creations and manifest edit",
+      "schema": "machine-output",
+      "instance": {
+        "schema_version": 1,
+        "kind": "result",
+        "data": {
+          "command": "scaffold",
+          "component": "implementation",
+          "name": "sample.name",
+          "dry_run": false,
+          "manifest": "metewand.toml",
+          "paths": [
+            {
+              "path": "implementations",
+              "kind": "directory",
+              "action": "create"
+            },
+            {
+              "path": "implementations/sample.name",
+              "kind": "directory",
+              "action": "create"
+            },
+            {
+              "path": "implementations/sample.name/parameters.schema.json",
+              "kind": "file",
+              "action": "create"
+            },
+            {
+              "path": "implementations/sample.name/worker.sh",
+              "kind": "file",
+              "action": "create"
+            },
+            {
+              "path": "metewand.toml",
+              "kind": "file",
+              "action": "modify"
+            }
+          ]
+        }
+      }
+    },
+    {
       "name": "minimal initialization",
       "schema": "manifest",
       "instance": {
@@ -1103,6 +1254,498 @@
     }
   ],
   "invalid": [
+    {
+      "name": "scaffold requires component",
+      "schema": "machine-output",
+      "instance": {
+        "schema_version": 1,
+        "kind": "result",
+        "data": {
+          "command": "scaffold",
+          "name": "sample.name",
+          "dry_run": false,
+          "manifest": "metewand.toml",
+          "paths": [
+            {
+              "path": "datasets/sample.name",
+              "kind": "directory",
+              "action": "create"
+            },
+            {
+              "path": "datasets/sample.name/worker.sh",
+              "kind": "file",
+              "action": "create"
+            },
+            {
+              "path": "metewand.toml",
+              "kind": "file",
+              "action": "modify"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "scaffold requires name",
+      "schema": "machine-output",
+      "instance": {
+        "schema_version": 1,
+        "kind": "result",
+        "data": {
+          "command": "scaffold",
+          "component": "dataset",
+          "dry_run": false,
+          "manifest": "metewand.toml",
+          "paths": [
+            {
+              "path": "datasets/sample.name",
+              "kind": "directory",
+              "action": "create"
+            },
+            {
+              "path": "datasets/sample.name/worker.sh",
+              "kind": "file",
+              "action": "create"
+            },
+            {
+              "path": "metewand.toml",
+              "kind": "file",
+              "action": "modify"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "scaffold requires dry_run",
+      "schema": "machine-output",
+      "instance": {
+        "schema_version": 1,
+        "kind": "result",
+        "data": {
+          "command": "scaffold",
+          "component": "dataset",
+          "name": "sample.name",
+          "manifest": "metewand.toml",
+          "paths": [
+            {
+              "path": "datasets/sample.name",
+              "kind": "directory",
+              "action": "create"
+            },
+            {
+              "path": "datasets/sample.name/worker.sh",
+              "kind": "file",
+              "action": "create"
+            },
+            {
+              "path": "metewand.toml",
+              "kind": "file",
+              "action": "modify"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "scaffold requires manifest",
+      "schema": "machine-output",
+      "instance": {
+        "schema_version": 1,
+        "kind": "result",
+        "data": {
+          "command": "scaffold",
+          "component": "dataset",
+          "name": "sample.name",
+          "dry_run": false,
+          "paths": [
+            {
+              "path": "datasets/sample.name",
+              "kind": "directory",
+              "action": "create"
+            },
+            {
+              "path": "datasets/sample.name/worker.sh",
+              "kind": "file",
+              "action": "create"
+            },
+            {
+              "path": "metewand.toml",
+              "kind": "file",
+              "action": "modify"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "scaffold requires paths",
+      "schema": "machine-output",
+      "instance": {
+        "schema_version": 1,
+        "kind": "result",
+        "data": {
+          "command": "scaffold",
+          "component": "dataset",
+          "name": "sample.name",
+          "dry_run": false,
+          "manifest": "metewand.toml"
+        }
+      }
+    },
+    {
+      "name": "scaffold rejects invalid component",
+      "schema": "machine-output",
+      "instance": {
+        "schema_version": 1,
+        "kind": "result",
+        "data": {
+          "command": "scaffold",
+          "component": "experiment",
+          "name": "sample.name",
+          "dry_run": false,
+          "manifest": "metewand.toml",
+          "paths": [
+            {
+              "path": "datasets/sample.name",
+              "kind": "directory",
+              "action": "create"
+            },
+            {
+              "path": "datasets/sample.name/worker.sh",
+              "kind": "file",
+              "action": "create"
+            },
+            {
+              "path": "metewand.toml",
+              "kind": "file",
+              "action": "modify"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "scaffold rejects invalid name",
+      "schema": "machine-output",
+      "instance": {
+        "schema_version": 1,
+        "kind": "result",
+        "data": {
+          "command": "scaffold",
+          "component": "dataset",
+          "name": "../escape",
+          "dry_run": false,
+          "manifest": "metewand.toml",
+          "paths": [
+            {
+              "path": "datasets/sample.name",
+              "kind": "directory",
+              "action": "create"
+            },
+            {
+              "path": "datasets/sample.name/worker.sh",
+              "kind": "file",
+              "action": "create"
+            },
+            {
+              "path": "metewand.toml",
+              "kind": "file",
+              "action": "modify"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "scaffold rejects invalid unexpected",
+      "schema": "machine-output",
+      "instance": {
+        "schema_version": 1,
+        "kind": "result",
+        "data": {
+          "command": "scaffold",
+          "component": "dataset",
+          "name": "sample.name",
+          "dry_run": false,
+          "manifest": "metewand.toml",
+          "paths": [
+            {
+              "path": "datasets/sample.name",
+              "kind": "directory",
+              "action": "create"
+            },
+            {
+              "path": "datasets/sample.name/worker.sh",
+              "kind": "file",
+              "action": "create"
+            },
+            {
+              "path": "metewand.toml",
+              "kind": "file",
+              "action": "modify"
+            }
+          ],
+          "unexpected": true
+        }
+      }
+    },
+    {
+      "name": "scaffold rejects missing action",
+      "schema": "machine-output",
+      "instance": {
+        "schema_version": 1,
+        "kind": "result",
+        "data": {
+          "command": "scaffold",
+          "component": "dataset",
+          "name": "sample.name",
+          "dry_run": false,
+          "manifest": "metewand.toml",
+          "paths": [
+            {
+              "path": "datasets/sample.name",
+              "kind": "directory"
+            },
+            {
+              "path": "datasets/sample.name/worker.sh",
+              "kind": "file",
+              "action": "create"
+            },
+            {
+              "path": "metewand.toml",
+              "kind": "file",
+              "action": "modify"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "scaffold rejects unknown action",
+      "schema": "machine-output",
+      "instance": {
+        "schema_version": 1,
+        "kind": "result",
+        "data": {
+          "command": "scaffold",
+          "component": "dataset",
+          "name": "sample.name",
+          "dry_run": false,
+          "manifest": "metewand.toml",
+          "paths": [
+            {
+              "path": "datasets/sample.name",
+              "kind": "directory",
+              "action": "overwrite"
+            },
+            {
+              "path": "datasets/sample.name/worker.sh",
+              "kind": "file",
+              "action": "create"
+            },
+            {
+              "path": "metewand.toml",
+              "kind": "file",
+              "action": "modify"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "scaffold rejects modified directory",
+      "schema": "machine-output",
+      "instance": {
+        "schema_version": 1,
+        "kind": "result",
+        "data": {
+          "command": "scaffold",
+          "component": "dataset",
+          "name": "sample.name",
+          "dry_run": false,
+          "manifest": "metewand.toml",
+          "paths": [
+            {
+              "path": "datasets/sample.name",
+              "kind": "directory",
+              "action": "create"
+            },
+            {
+              "path": "datasets/sample.name/worker.sh",
+              "kind": "file",
+              "action": "create"
+            },
+            {
+              "path": "metewand.toml",
+              "kind": "directory",
+              "action": "modify"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "scaffold rejects multiple modifications",
+      "schema": "machine-output",
+      "instance": {
+        "schema_version": 1,
+        "kind": "result",
+        "data": {
+          "command": "scaffold",
+          "component": "dataset",
+          "name": "sample.name",
+          "dry_run": false,
+          "manifest": "metewand.toml",
+          "paths": [
+            {
+              "path": "datasets/sample.name",
+              "kind": "directory",
+              "action": "create"
+            },
+            {
+              "path": "datasets/sample.name/worker.sh",
+              "kind": "file",
+              "action": "modify"
+            },
+            {
+              "path": "metewand.toml",
+              "kind": "file",
+              "action": "modify"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "scaffold rejects no manifest edit",
+      "schema": "machine-output",
+      "instance": {
+        "schema_version": 1,
+        "kind": "result",
+        "data": {
+          "command": "scaffold",
+          "component": "dataset",
+          "name": "sample.name",
+          "dry_run": false,
+          "manifest": "metewand.toml",
+          "paths": [
+            {
+              "path": "datasets/sample.name",
+              "kind": "directory",
+              "action": "create"
+            },
+            {
+              "path": "datasets/sample.name/worker.sh",
+              "kind": "file",
+              "action": "create"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "scaffold rejects duplicate paths",
+      "schema": "machine-output",
+      "instance": {
+        "schema_version": 1,
+        "kind": "result",
+        "data": {
+          "command": "scaffold",
+          "component": "dataset",
+          "name": "sample.name",
+          "dry_run": false,
+          "manifest": "metewand.toml",
+          "paths": [
+            {
+              "path": "datasets/sample.name",
+              "kind": "directory",
+              "action": "create"
+            },
+            {
+              "path": "datasets/sample.name",
+              "kind": "directory",
+              "action": "create"
+            },
+            {
+              "path": "datasets/sample.name/worker.sh",
+              "kind": "file",
+              "action": "create"
+            },
+            {
+              "path": "metewand.toml",
+              "kind": "file",
+              "action": "modify"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "scaffold rejects empty path",
+      "schema": "machine-output",
+      "instance": {
+        "schema_version": 1,
+        "kind": "result",
+        "data": {
+          "command": "scaffold",
+          "component": "dataset",
+          "name": "sample.name",
+          "dry_run": false,
+          "manifest": "metewand.toml",
+          "paths": [
+            {
+              "path": "",
+              "kind": "directory",
+              "action": "create"
+            },
+            {
+              "path": "datasets/sample.name/worker.sh",
+              "kind": "file",
+              "action": "create"
+            },
+            {
+              "path": "metewand.toml",
+              "kind": "file",
+              "action": "modify"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "scaffold rejects unknown path field",
+      "schema": "machine-output",
+      "instance": {
+        "schema_version": 1,
+        "kind": "result",
+        "data": {
+          "command": "scaffold",
+          "component": "dataset",
+          "name": "sample.name",
+          "dry_run": false,
+          "manifest": "metewand.toml",
+          "paths": [
+            {
+              "path": "datasets/sample.name",
+              "kind": "directory",
+              "action": "create",
+              "unexpected": true
+            },
+            {
+              "path": "datasets/sample.name/worker.sh",
+              "kind": "file",
+              "action": "create"
+            },
+            {
+              "path": "metewand.toml",
+              "kind": "file",
+              "action": "modify"
+            }
+          ]
+        }
+      }
+    },
     {
       "name": "initialization requires dry-run flag",
       "schema": "machine-output",

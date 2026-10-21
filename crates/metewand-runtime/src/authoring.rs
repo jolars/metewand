@@ -1,5 +1,7 @@
 //! Explicit, no-overwrite repository authoring operations.
 
+pub mod scaffold;
+
 use std::{
     collections::BTreeSet,
     fs::{self, OpenOptions},
@@ -24,9 +26,9 @@ pub struct CreatedPath {
 #[derive(Clone, Copy, Debug, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CreatedPathKind {
-    /// A directory required to contain the manifest.
+    /// A directory required by an authoring operation.
     Directory,
-    /// The minimal benchmark manifest.
+    /// A file created by an authoring operation.
     File,
 }
 

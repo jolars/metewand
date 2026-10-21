@@ -12,7 +12,10 @@ the implementation order.
 Start a benchmark with `metewand init [PATH]`, or preview its paths with
 `metewand init [PATH] --dry-run`. It creates only a minimal versioned
 `metewand.toml` and refuses to overwrite existing files. See
-[benchmark initialization](docs/authoring-cli.md) for the authoring contract.
+[benchmark authoring](docs/authoring-cli.md) for the authoring contract.
+Add components explicitly with `metewand scaffold dataset|problem|implementation
+NAME --environment NAME`. Scaffolds report every change, support `--dry-run`,
+and leave scientific schemas, semantics, and worker behavior for the author.
 
 ## Workspace
 

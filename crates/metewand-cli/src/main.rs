@@ -17,6 +17,7 @@ Metewand reproducible benchmark runner
 
 Usage:
   metewand [--output FORMAT] init [PATH] [--dry-run]
+  metewand [--output FORMAT] scaffold <component> NAME --environment NAME [OPTIONS]
   metewand [--output FORMAT] schema [SCHEMA]
   metewand [--output FORMAT] check [--manifest PATH]
   metewand [--output FORMAT] plan [--manifest PATH]
@@ -26,6 +27,7 @@ Usage:
 
 Commands:
   init    Create a minimal versioned manifest without overwriting files.
+  scaffold Add one dataset, problem, or implementation without scientific defaults.
   schema  List public schemas, or print one exact versioned document.
   check   Validate a benchmark repository without launching workers.
   plan    Print the expanded logical plan without side effects.
@@ -183,6 +185,7 @@ fn run(arguments: &[OsString], output_format: OutputFormat) -> Result<CommandRes
             Ok(CommandResult::version(env!("CARGO_PKG_VERSION")))
         }
         "init" => authoring::init_command(&arguments[1..]),
+        "scaffold" => authoring::scaffold_command(&arguments[1..]),
         "schema" => schema_command(&arguments[1..]),
         "check" => check_command(&arguments[1..]),
         "plan" => plan_command(&arguments[1..]),

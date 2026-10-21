@@ -43,9 +43,62 @@
       "then": {
         "properties": { "data": { "$ref": "#/$defs/init_result" } }
       }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": { "const": "result" },
+          "data": {
+            "type": "object",
+            "properties": { "command": { "const": "scaffold" } },
+            "required": ["command"]
+          }
+        },
+        "required": ["kind", "data"]
+      },
+      "then": {
+        "properties": { "data": { "$ref": "#/$defs/scaffold_result" } }
+      }
     }
   ],
   "$defs": {
+    "changed_path": {
+      "type": "object",
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "kind": { "enum": ["directory", "file"] },
+        "action": { "enum": ["create", "modify"] }
+      },
+      "required": ["path", "kind", "action"],
+      "if": { "properties": { "action": { "const": "modify" } } },
+      "then": { "properties": { "kind": { "const": "file" } } },
+      "additionalProperties": false
+    },
+    "scaffold_result": {
+      "type": "object",
+      "properties": {
+        "command": { "const": "scaffold" },
+        "component": { "enum": ["dataset", "problem", "implementation"] },
+        "name": { "$ref": "common.schema.json#/$defs/name" },
+        "dry_run": { "type": "boolean" },
+        "manifest": { "type": "string", "minLength": 1 },
+        "paths": {
+          "type": "array",
+          "minItems": 2,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/changed_path" },
+          "contains": {
+            "type": "object",
+            "properties": { "action": { "const": "modify" } },
+            "required": ["action"]
+          },
+          "minContains": 1,
+          "maxContains": 1
+        }
+      },
+      "required": ["command", "component", "name", "dry_run", "manifest", "paths"],
+      "additionalProperties": false
+    },
     "created_path": {
       "type": "object",
       "properties": {

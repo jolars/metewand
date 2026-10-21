@@ -14,6 +14,7 @@ use metewand_core::{
     run_output::{RunAttemptStatus, RunEvent, RunEventKind, RunReport},
 };
 use metewand_runtime::{
+    authoring::scaffold::{PathAction, ScaffoldError, ScaffoldErrorKind, ScaffoldReport},
     authoring::{CreatedPathKind, InitError, InitReport},
     repository::{CheckedRepository, RepositoryCheckError},
 };
@@ -53,6 +54,7 @@ impl OutputFormat {
 #[derive(Debug)]
 pub enum CommandResult {
     Init(InitReport),
+    Scaffold(ScaffoldReport),
     Help(HelpResult),
     Version(VersionResult),
     SchemaList(SchemaListResult),
@@ -123,6 +125,24 @@ impl CommandResult {
 
     pub fn render_human(&self) -> String {
         match self {
+            Self::Scaffold(report) => {
+                let mut output = String::new();
+                for entry in &report.paths {
+                    let verb = match (report.dry_run, entry.action) {
+                        (false, PathAction::Create) => "Created",
+                        (true, PathAction::Create) => "Would create",
+                        (false, PathAction::Modify) => "Modified",
+                        (true, PathAction::Modify) => "Would modify",
+                    };
+                    let kind = match entry.kind {
+                        CreatedPathKind::Directory => "directory",
+                        CreatedPathKind::File => "file",
+                    };
+                    writeln!(output, "{verb} {kind}: {}", entry.path.display())
+                        .expect("string write");
+                }
+                output
+            }
             Self::Init(report) => {
                 let verb = if report.dry_run {
                     "Would create"
@@ -191,6 +211,7 @@ impl Serialize for CommandResult {
     {
         match self {
             Self::Init(result) => result.serialize(serializer),
+            Self::Scaffold(result) => result.serialize(serializer),
             Self::Help(result) => result.serialize(serializer),
             Self::Version(result) => result.serialize(serializer),
             Self::SchemaList(result) => result.serialize(serializer),
@@ -1074,6 +1095,22 @@ impl Diagnostic {
                 }
             }
         }
+        if let Some(paths) = self.details.get("changed_paths").and_then(Value::as_array) {
+            for entry in paths {
+                if let (Some(path), Some(kind), Some(action)) = (
+                    entry["path"].as_str(),
+                    entry["kind"].as_str(),
+                    entry["action"].as_str(),
+                ) {
+                    let verb = if action == "modify" {
+                        "Modified"
+                    } else {
+                        "Created"
+                    };
+                    writeln!(output, "{indentation}  {verb} {kind}: {path}").expect("string write");
+                }
+            }
+        }
         if let Some(remediation) = &self.remediation {
             writeln!(output, "{indentation}  help: {remediation}")
                 .expect("writing to a string cannot fail");
@@ -1112,6 +1149,31 @@ pub struct CommandError {
 }
 
 impl CommandError {
+    pub fn scaffold(error: &ScaffoldError) -> Self {
+        let (exit_code, code) = match error.kind {
+            ScaffoldErrorKind::InvalidRequest => (EXIT_USAGE, "scaffold_invalid_request"),
+            ScaffoldErrorKind::ComponentExists => (EXIT_IO, "scaffold_component_exists"),
+            ScaffoldErrorKind::InvalidManifest => {
+                (EXIT_INVALID_REPOSITORY, "scaffold_invalid_manifest")
+            }
+            ScaffoldErrorKind::PathExists => (EXIT_IO, "scaffold_path_exists"),
+            ScaffoldErrorKind::Busy => (EXIT_IO, "scaffold_manifest_busy"),
+            ScaffoldErrorKind::ManifestChanged => (EXIT_IO, "scaffold_manifest_changed"),
+            ScaffoldErrorKind::Io => (EXIT_IO, "scaffold_io_failed"),
+        };
+        let mut diagnostic = Diagnostic::new(code, error.to_string())
+            .with_detail("path", error.path.to_string_lossy().as_ref())
+            .with_detail("changed_paths", serde_json::to_value(&error.changed_paths).expect("UTF-8 paths serialize"))
+            .with_remediation("Inspect any reported changes, select existing environment and problem names, and choose a new component name without conflicting files. Complete the generated scientific definitions before checking or running.");
+        if let Some(span) = &error.source_span {
+            diagnostic = diagnostic.with_source_span(span);
+        }
+        Self {
+            exit_code,
+            diagnostic: Box::new(diagnostic),
+        }
+    }
+
     pub fn init(error: &InitError) -> Self {
         let code = if error.source.kind() == std::io::ErrorKind::AlreadyExists {
             "init_path_exists"
@@ -1634,6 +1696,50 @@ mod tests {
             value["data"]["details"]["created_paths"],
             serde_json::json!([
                 {"path": "benchmark", "kind": "directory"}
+            ])
+        );
+    }
+
+    #[test]
+    fn scaffold_failures_report_created_and_modified_paths_in_both_formats() {
+        use metewand_runtime::authoring::{
+            CreatedPathKind,
+            scaffold::{ChangedPath, PathAction, ScaffoldError, ScaffoldErrorKind},
+        };
+        let error = super::CommandError::scaffold(&ScaffoldError {
+            kind: ScaffoldErrorKind::Io,
+            path: "metewand.toml".into(),
+            message: "partial write".into(),
+            source: None,
+            source_span: None,
+            changed_paths: vec![
+                ChangedPath {
+                    path: "datasets/new".into(),
+                    kind: CreatedPathKind::Directory,
+                    action: PathAction::Create,
+                },
+                ChangedPath {
+                    path: "metewand.toml".into(),
+                    kind: CreatedPathKind::File,
+                    action: PathAction::Modify,
+                },
+            ],
+        });
+        assert_eq!(error.exit_code, super::EXIT_IO);
+        let human = error.diagnostic.render_human();
+        assert!(human.contains("Created directory: datasets/new\n"));
+        assert!(human.contains("Modified file: metewand.toml\n"));
+        let value: Value = serde_json::from_str(
+            &render_diagnostic(&error.diagnostic, OutputFormat::JsonLines).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(value["data"]["code"], "scaffold_io_failed");
+        assert_eq!(value["data"]["details"]["path"], "metewand.toml");
+        assert_eq!(
+            value["data"]["details"]["changed_paths"],
+            serde_json::json!([
+                {"path": "datasets/new", "kind": "directory", "action": "create"},
+                {"path": "metewand.toml", "kind": "file", "action": "modify"}
             ])
         );
     }

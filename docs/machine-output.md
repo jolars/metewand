@@ -19,6 +19,12 @@ Global option parsing stops at `--`, allowing authoring destinations such as
 proposed `path` and its `kind` (`directory` or `file`). The `machine-output`
 schema defines this command's result shape.
 
+[`scaffold`](authoring-cli.md#component-scaffolding) emits one terminal result
+with `command`, `component`, `name`, `dry_run`, `manifest`, and ordered `paths`.
+Each path has `path`, `kind` (`directory` or `file`), and `action` (`create` or
+`modify`). The manifest is the only modified path and is reported last. The
+`machine-output` schema defines this additive version-1 result shape.
+
 ## Versioned envelopes
 
 Both machine formats use the published `machine-output` schema. Every emitted
@@ -120,6 +126,17 @@ The CLI emits these stable codes:
 | `duplicate_init_flag` | `--dry-run` was supplied more than once. |
 | `init_path_exists` | A manifest path or required directory conflicts with an existing entry. |
 | `init_io_failed` | Initialization could not validate or create a path. |
+| `invalid_scaffold_component` | The scaffold component is missing or is not dataset, problem, or implementation. |
+| `invalid_scaffold_argument` | A scaffold name or path is empty or is not UTF-8. |
+| `missing_scaffold_argument` | A required scaffold name, environment, or option value is missing. |
+| `duplicate_scaffold_flag` | A scaffold option was supplied more than once. |
+| `scaffold_invalid_request` | A component name is invalid, an environment or problem is undefined, or the problem selection does not match the component. |
+| `scaffold_component_exists` | The requested component name is already defined in its manifest namespace. |
+| `scaffold_invalid_manifest` | The existing manifest could not be parsed or the component addition could not be represented. |
+| `scaffold_path_exists` | A generated path conflicts with an existing entry, or a required directory or manifest is a symbolic link or has the wrong type. |
+| `scaffold_manifest_busy` | Another operation holds the manifest lock. |
+| `scaffold_manifest_changed` | The manifest file or contents changed before the requested addition could be written. |
+| `scaffold_io_failed` | Scaffolding could not read, create, or modify a path. |
 | `invalid_schema_name` | A schema name is not UTF-8. |
 | `unknown_schema` | A public schema name is not recognized. |
 | `unexpected_argument` | A command or option received an extra argument. |
