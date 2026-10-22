@@ -33,6 +33,10 @@ The generated website is in `docs/.vitepress/dist/`. Preview that build with
 The favicon files and `site.webmanifest` live directly in `public/`. The shared
 `head` configuration in `.vitepress/config.ts` adds their links to every page.
 
+`public/robots.txt` allows crawlers to access the site and points to
+`https://metewand.org/sitemap.xml`. VitePress generates the sitemap from the
+published pages and copies `robots.txt` to the site root during the build.
+
 The original logos and social preview image live in the repository's `assets/`
 directory. The development and build commands copy `logo.svg`, `logo.png`,
 `logo-small.png`, and `og.png` into the ignored `public/brand/` directory. Edit
