@@ -22,3 +22,12 @@ __pycache__/
 # R
 /sdk/r/src/*.o
 /sdk/r/src/*.so
+
+# Website
+/docs/node_modules/
+/docs/.vitepress/cache/
+/docs/.vitepress/dist/
+/docs/.cloudflare/
+/docs/.wrangler/
+/docs/.env
+/docs/.env.*

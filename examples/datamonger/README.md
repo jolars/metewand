@@ -75,5 +75,5 @@ METEWAND_DATAMONGER_PYTHON=/tmp/metewand-datamonger/bin/python \
   cargo test --locked -p metewand-runtime --example datamonger -- --ignored
 ```
 
-See [Datamonger sources](../../docs/datamonger.md) for the adapter contract,
+See [Datamonger sources](../../docs/reference/datamonger.md) for the adapter contract,
 verification claims, ownership, limits, schemas, and failure cases.

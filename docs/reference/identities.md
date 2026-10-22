@@ -93,7 +93,7 @@ Parsing an identity through `RecordId<T>` verifies the kind associated with
 Persisted failure diagnostics use the canonical resource value
 `{"code":...,"message":...,"details":...}`; missing details are null. Attempt
 IDs, paths to stored records, and navigation links are excluded. The
-[diagnostic vectors](../fixtures/identities/diagnostics-v1.json) define exact
+[diagnostic vectors](https://github.com/jolars/metewand/blob/main/fixtures/identities/diagnostics-v1.json) define exact
 canonical bytes and IDs. This additive kind retains `IDENTITY_VERSION = 1` and
 does not change existing identity transcripts. See [inspection](inspection-cli.md)
 for lookup and evidence availability.
@@ -159,7 +159,7 @@ absolute path into an identity. Wall-clock timestamps are never identity inputs.
 
 ## Conformance vectors
 
-[`fixtures/identities/v1.json`](../fixtures/identities/v1.json) pins the
+[`fixtures/identities/v1.json`](https://github.com/jolars/metewand/blob/main/fixtures/identities/v1.json) pins the
 canonical representation, kind, and identity of every version-1 resource and
 record in one complete dependency graph. The fixture is language-neutral so
 each SDK can verify the same bytes and digests.

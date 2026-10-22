@@ -610,7 +610,7 @@ fn campaign_child() {
 }
 
 #[test]
-#[ignore = "exhaustive crash campaign; see docs/run-store-schema.md#crash-conformance"]
+#[ignore = "exhaustive crash campaign; see docs/reference/run-store-schema.md#crash-conformance"]
 fn every_durability_boundary_survives_process_death_and_resume() {
     let scenarios = [
         "initialize",

@@ -1,7 +1,7 @@
 # Public schemas
 
 Metewand's version-1 public schemas define the machine-readable contracts used
-by the conformance kernel. The checked-in documents under [`schemas/v1`](../schemas/v1/)
+by the conformance kernel. The checked-in documents under [`schemas/v1`](https://github.com/jolars/metewand/tree/main/schemas/v1/)
 are the source of truth. Each document declares JSON Schema 2020-12, a stable
 `metewand://schemas/v1/...` identifier, and
 `x-metewand-compatibility-version: 1`.
@@ -104,4 +104,4 @@ let catalog = public_schema_catalog()?;
 
 The catalog also contains the shared `common.schema.json` resource needed by the
 entry points. Conformance examples and negative cases live beside the schemas in
-[`schemas/v1/fixtures`](../schemas/v1/fixtures/).
+[`schemas/v1/fixtures`](https://github.com/jolars/metewand/tree/main/schemas/v1/fixtures/).

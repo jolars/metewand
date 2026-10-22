@@ -31,5 +31,5 @@ three operations; the secondary SDK `implementation_time_ns` covers only the
 The evaluator computes the expected answer from its private dataset view and
 supplied problem parameters. The SDK handles protocol messages and error
 responses; the runtime owns scheduling, validation, and publication. See the
-[Python SDK guide](../../docs/python-sdk.md) for callback signatures and output
+[Python SDK guide](../../docs/reference/python-sdk.md) for callback signatures and output
 helpers.

@@ -43,6 +43,6 @@ object contributes an omitted value. The resolved object remains in Metewand's
 by later identity and transport operations.
 
 Versioned conformance fixtures for local references and parameter schemas live
-under [`fixtures/schema-validation/v1`](../fixtures/schema-validation/v1/).
+under [`fixtures/schema-validation/v1`](https://github.com/jolars/metewand/tree/main/fixtures/schema-validation/v1/).
 Metewand-owned record contracts and their colocated conformance cases are
 documented separately under [Public schemas](public-schemas.md).

@@ -7,7 +7,7 @@ Datamonger are required only when the caller explicitly selects this backend.
 The benchmark author supplies the materializer that turns those sources into a
 standard Metewand dataset.
 
-The [runnable example](../examples/datamonger) resolves `uci:iris@1`, materializes
+The [runnable example](https://github.com/jolars/metewand/tree/main/examples/datamonger) resolves `uci:iris@1`, materializes
 one dataset instance, and compares two implementations using independent private
 views. The current manifest and CLI do not select external providers. Runtime
 callers select this adapter directly; `check` and `plan` remain read-only and
@@ -124,7 +124,7 @@ public `datamonger-selector`, `datamonger-acquisition-request`, and
 `datamonger-acquisition-response` schemas declare JSON Schema 2020-12 and initial
 compatibility version 1. Their positive and negative vectors live beside the
 schemas; canonical standalone vectors and the test registry live in
-[`fixtures/datamonger/v1`](../fixtures/datamonger/v1).
+[`fixtures/datamonger/v1`](https://github.com/jolars/metewand/tree/main/fixtures/datamonger/v1).
 
 These entry points preserve the version-1 manifest, source-resolution, identity,
 tree-hash, wire-protocol, and public-schema contracts. Execution semantics

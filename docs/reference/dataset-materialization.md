@@ -40,7 +40,7 @@ or materializer execution and constructs each distinct dataset configuration
 once per run or reuses its verified construction from an explicit `--cache-dir`.
 The download limit is 1 GiB of raw bytes, and the materialization phase timeout
 also bounds the HTTP request. `check` and `plan` never acquire
-sources or execute workers. The [generated dataset example](../examples/generated-dataset)
+sources or execute workers. The [generated dataset example](https://github.com/jolars/metewand/tree/main/examples/generated-dataset)
 provides a complete raw-protocol generator, implementation, and evaluator.
 
 ## Materialization and implementation preparation
@@ -107,11 +107,11 @@ Readers must not implicitly pool measurements from different scopes. The
 current local CLI implements only `prepare_and_execute` and rejects other scopes
 before worker launch or output creation, even if the contract permits them.
 
-The [generated dataset example](../examples/generated-dataset) exercises this
+The [generated dataset example](https://github.com/jolars/metewand/tree/main/examples/generated-dataset) exercises this
 boundary with list and packed-integer implementations. Its
-[conversion vector](../examples/generated-dataset/fixtures/preparation.json)
+[conversion vector](https://github.com/jolars/metewand/blob/main/examples/generated-dataset/fixtures/preparation.json)
 specifies the exact native values and expected result and metrics. The
-[CLI conformance tests](../crates/metewand-cli/tests/dataset_preparation.rs)
+[CLI conformance tests](https://github.com/jolars/metewand/blob/main/crates/metewand-cli/tests/dataset_preparation.rs)
 verify one shared construction, identical input bytes and problem instances,
 separate attempt views, exact conversions, preparation on every attempt,
 conversion and result writing inside the timer, and shared construction outside
@@ -147,7 +147,7 @@ The receipt keeps the provider name, exact selector, resolved dataset version,
 recipe, status, complete file sizes and hashes, and original acquisition receipt.
 External-provider manifest syntax remains outside the current CLI contract.
 The optional [Datamonger adapter](datamonger.md) supplies this evidence through a
-separate process. Its [example](../examples/datamonger) transforms verified raw
+separate process. Its [example](https://github.com/jolars/metewand/tree/main/examples/datamonger) transforms verified raw
 exports into a standard dataset and compares two implementations using private
 views of that instance, including execution after the provider becomes
 unavailable.
@@ -190,7 +190,7 @@ hashes do not enter the construction identity. The output hash remains separate,
 so nondeterministic output cannot disguise itself as a different recipe.
 
 The canonical transcript vector lives in
-[fixtures/identities/dataset-derivation-v1.json](../fixtures/identities/dataset-derivation-v1.json).
+[fixtures/identities/dataset-derivation-v1.json](https://github.com/jolars/metewand/blob/main/fixtures/identities/dataset-derivation-v1.json).
 Existing identity representations are unchanged, so `IDENTITY_VERSION` stays 1.
 The new `dataset-materialization` receipt and `dataset-validation-request`
 command request have version-1 public schemas and positive and negative

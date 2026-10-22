@@ -45,7 +45,9 @@ concerns out of core and protocol.
 - Runnable end-to-end demonstrations belong in `examples/`.
 - Language SDKs belong in `sdk/r`, `sdk/python`, and `sdk/julia`.
 - Longer-form documentation belongs in `docs/`; `README.md` remains the concise
-  entry point.
+  entry point. The VitePress site lives in `docs/`, with introductory guides in
+  `docs/guide/` and interface and contract documentation in `docs/reference/`.
+  See `docs/README.md` for website development and deployment.
 
 Do not create placeholder directories. Add each directory with its first real
 schema, fixture, example, SDK, or document.
@@ -75,11 +77,13 @@ with `devenv test` or the equivalent commands:
 - `cargo fmt --all -- --check`
 - `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`
 - `cargo test --workspace --all-targets --locked`
+- `npm --prefix docs ci`
+- `npm --prefix docs run deploy:check`
 
 The exhaustive crash campaign is ignored by default. Run it explicitly when
 changing durability, publication, recovery, or the run-store schema, or when
 requested. Ordinary CLI, planning, and documentation changes do not require it.
-See [Crash conformance](docs/run-store-schema.md#crash-conformance) for the command
+See [Crash conformance](docs/reference/run-store-schema.md#crash-conformance) for the command
 and separate CI coverage. Keep the representative crash tests in the normal
 suite.
 

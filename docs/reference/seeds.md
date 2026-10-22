@@ -65,7 +65,7 @@ matrix-expansion order.
 function for each role. The canonical-field functions make the exact hashed
 bytes inspectable by conformance tools.
 
-[`fixtures/seeds/v1.json`](../fixtures/seeds/v1.json) fixes the canonical field
+[`fixtures/seeds/v1.json`](https://github.com/jolars/metewand/blob/main/fixtures/seeds/v1.json) fixes the canonical field
 bytes, complete digest, and exposed value for all three roles. Rust, Python,
 and R consume this file directly. The SDK test harnesses reconstruct the
 transcripts without adding seed derivation to their worker APIs. Future SDKs

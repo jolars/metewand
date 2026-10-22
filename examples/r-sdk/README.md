@@ -32,5 +32,5 @@ operations; the secondary SDK diagnostic covers only `execute`. The runtime
 resets the implementation between slots. The evaluator independently computes
 the expected answer from its dataset and problem parameters.
 
-See the [R SDK guide](../../docs/r-sdk.md) for callback signatures, explicit R
+See the [R SDK guide](../../docs/reference/r-sdk.md) for callback signatures, explicit R
 representations of JSON values, output helpers, and protocol errors.

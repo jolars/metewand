@@ -58,7 +58,7 @@ JSON serializer produces Metewand's wire or hashing representation.
 
 ## Conformance vectors
 
-[`fixtures/canonical-json/v1.json`](../fixtures/canonical-json/v1.json) is the
+[`fixtures/canonical-json/v1.json`](https://github.com/jolars/metewand/blob/main/fixtures/canonical-json/v1.json) is the
 shared cross-language contract. Its `accepted` entries pair source JSON with the
 exact expected bytes, while its `rejected` entries identify values that every
 implementation must refuse. Rust integration tests consume this file directly;

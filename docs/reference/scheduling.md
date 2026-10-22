@@ -103,7 +103,7 @@ unchanged. `WIRE_PROTOCOL_VERSION`, `SEED_DERIVATION_VERSION`, and
 `SCHEDULING_POLICY_VERSION` also remain `1`; workers, seed transcripts, and
 priority transcripts retain their existing contracts. Updated identity and
 planning vectors pin the expanded policy representation. The policy vectors in
-[fixtures/identities/concurrency-v1.json](../fixtures/identities/concurrency-v1.json)
+[fixtures/identities/concurrency-v1.json](https://github.com/jolars/metewand/blob/main/fixtures/identities/concurrency-v1.json)
 pin the canonical bytes and identities for bounds of one, two, and three.
 
 ## Slot counts and seed sharing
@@ -158,7 +158,7 @@ ascending byte order. Equal block priorities use the typed block fields in the
 order listed above as a tie-breaker; equal within-block priorities use the
 logical attempt-slot identity. Adding an unrelated slot or reordering the input
 therefore preserves the relative randomized order of existing slots.
-The conformance vectors in [fixtures/scheduling/v1.json](../fixtures/scheduling/v1.json)
+The conformance vectors in [fixtures/scheduling/v1.json](https://github.com/jolars/metewand/blob/main/fixtures/scheduling/v1.json)
 pin the block transcript. Existing attempt-slot vectors continue to pin
 within-block priorities.
 

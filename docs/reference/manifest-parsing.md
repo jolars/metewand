@@ -65,4 +65,4 @@ performs the filesystem-sensitive
 [source-bundle expansion](source-bundles.md).
 
 The complete version-1 TOML fixture is
-[`fixtures/manifest/v1/complete.toml`](../fixtures/manifest/v1/complete.toml).
+[`fixtures/manifest/v1/complete.toml`](https://github.com/jolars/metewand/blob/main/fixtures/manifest/v1/complete.toml).

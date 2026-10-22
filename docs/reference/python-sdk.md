@@ -1,10 +1,10 @@
 # Python worker helpers
 
-The [Python SDK](../sdk/python) supports the existing version-1 one-shot worker
+The [Python SDK](https://github.com/jolars/metewand/tree/main/sdk/python) supports the existing version-1 one-shot worker
 protocol. It requires Python 3.11 or later and uses only the standard library at
 runtime. Install it into the worker's selected environment, or include its
 `metewand` package in a declared source bundle as the [runnable
-example](../examples/python-sdk) does. An ambient `PYTHONPATH` is not inherited
+example](https://github.com/jolars/metewand/tree/main/examples/python-sdk) does. An ambient `PYTHONPATH` is not inherited
 by the trusted local launcher.
 
 ## Implementation workers

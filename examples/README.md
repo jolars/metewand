@@ -22,5 +22,5 @@ explicitly into temporary benchmark directories before running.
 
 Further examples demonstrate [generated datasets](generated-dataset) and an
 optional [Datamonger source adapter](datamonger). See the
-[authoring guide](../docs/authoring-cli.md) to create your own benchmark and the
-[run guide](../docs/run-cli.md) for output and execution policies.
+[authoring guide](../docs/reference/authoring-cli.md) to create your own benchmark and the
+[run guide](../docs/reference/run-cli.md) for output and execution policies.

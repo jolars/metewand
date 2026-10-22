@@ -58,7 +58,7 @@ The manifest, identity, public-schema, and execution-semantics compatibility
 constants remain 1. These reports complete the unreleased version-1 control
 contract. Existing identity inputs are unchanged, and provenance already admits
 canonical extension fields. The
-[canonical conformance vector](../fixtures/execution-controls/v1.json) fixes the
+[canonical conformance vector](https://github.com/jolars/metewand/blob/main/fixtures/execution-controls/v1.json) fixes the
 default report bytes. Tests cover explicit resource entries, planning rejection,
 best-effort resource requests, durable runtime failure evidence, failures during
 hello, preparation, execution, evaluation, and shutdown, and worker replacement

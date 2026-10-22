@@ -1,6 +1,6 @@
 # R worker helpers
 
-The [R package](../sdk/r) implements the existing version-1 one-shot protocol
+The [R package](https://github.com/jolars/metewand/tree/main/sdk/r) implements the existing version-1 one-shot protocol
 for implementations, dataset materializers, and independent evaluators. It
 requires R 4.2 or later, POSIX, `digest`, and a C++17 compiler with floating-point
 `std::to_chars` support. The native code handles canonical JSON, dedicated pipes,
@@ -10,7 +10,7 @@ Install the package into the selected worker environment with
 `R CMD INSTALL sdk/r`. The local launcher assigns a private `R_LIBS_USER` and
 does not inherit ambient language search paths. Install dependencies into the
 selected environment's site library, or explicitly bundle an installed SDK as
-the [runnable example](../examples/r-sdk) does.
+the [runnable example](https://github.com/jolars/metewand/tree/main/examples/r-sdk) does.
 
 ## Implementation workers
 

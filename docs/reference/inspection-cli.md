@@ -139,5 +139,5 @@ This slice adds a schema entry point and a diagnostic identity kind. It leaves
 `RUN_STORE_SCHEMA_VERSION = 1`, `WIRE_PROTOCOL_VERSION = 1`, and
 `EXECUTION_SEMANTICS_VERSION = 2`: existing schemas, identity transcripts,
 execution behavior, and persisted store layouts are unchanged. Public-schema
-conformance cases and [diagnostic identity vectors](../fixtures/identities/diagnostics-v1.json)
+conformance cases and [diagnostic identity vectors](https://github.com/jolars/metewand/blob/main/fixtures/identities/diagnostics-v1.json)
 cover the additions.

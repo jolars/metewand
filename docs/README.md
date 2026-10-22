@@ -1,0 +1,59 @@
+# Website development
+
+The website at <https://metewand.org> uses VitePress. Its source, npm
+dependencies, and Cloudflare deployment configuration live in this directory.
+
+From the repository root, use Node.js 22.18 or later to install dependencies and
+start the development server:
+
+```sh
+npm --prefix docs ci
+npm --prefix docs run dev
+```
+
+`devenv shell` includes Node.js. Build the site and validate its Cloudflare
+packaging without credentials or uploads:
+
+```sh
+npm --prefix docs run deploy:check
+```
+
+The generated website is in `docs/.vitepress/dist/`. Preview that build with
+`npm --prefix docs run preview`.
+
+## Content
+
+- `index.md` is the homepage.
+- `guide/` contains the getting started guide and example index.
+- `reference/` contains the implemented interfaces and compatibility contracts.
+- `.vitepress/config.ts` defines navigation, search, and site metadata.
+- `.vitepress/theme/` extends the default theme.
+- `public/` contains static assets.
+
+Keep links between published pages relative and include their `.md` extension,
+so they work both in GitHub and VitePress. Link to source code, fixtures,
+schemas, and runnable examples on GitHub. The build rejects missing page links.
+Add new reference pages to the sidebar in `.vitepress/config.ts`.
+
+This README is excluded from the published site.
+
+## Deployment
+
+`cloudflare.config.ts` declares the assets-only `metewand-docs` Worker and its
+`metewand.org` custom domain. `wrangler.config.ts` supplies the asset directory
+to the Cloudflare CLI's build tool. The CLI and its build tool are pinned by
+`package-lock.json`.
+
+The Website workflow builds and validates pull requests. Pushes to `main` that
+change the website also deploy the validated build. Run the workflow manually on
+`main` to redeploy. It reads `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN`
+from GitHub repository secrets only in the deployment step. The token needs
+access to deploy Workers and configure the custom domain in the account that
+hosts the `metewand.org` Cloudflare zone.
+
+For a manual local deployment, authenticate with `npx cf auth login` from
+`docs/`, or set those two environment variables, then run:
+
+```sh
+npm --prefix docs run deploy
+```

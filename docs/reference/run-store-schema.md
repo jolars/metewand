@@ -1,7 +1,7 @@
 # Durable run-store schema
 
 The runtime embeds an executable SQLite design in
-[`src/run_store/v1.sql`](../crates/metewand-runtime/src/run_store/v1.sql).
+[`src/run_store/v1.sql`](https://github.com/jolars/metewand/blob/main/crates/metewand-runtime/src/run_store/v1.sql).
 `metewand_runtime::run_store::RUN_STORE_SCHEMA_SQL` exposes the same bytes, and
 `RUN_STORE_SCHEMA_VERSION = 1` matches SQLite's `user_version`. This is the
 coordination schema used by [`run`, explicit retries, and resume](run-cli.md).
@@ -20,7 +20,7 @@ manifest, public JSON Schemas, identities, execution semantics, wire protocol,
 or artifact-store compatibility constants. Execution semantics are at version 2;
 the other contracts remain at version 1. Profile
 states and slot kinds in this layout reserve the semantics described in
-[DESIGN.md](../DESIGN.md#automation-and-agentic-workflows); they do not add profile
+[DESIGN.md](https://github.com/jolars/metewand/blob/main/DESIGN.md#automation-and-agentic-workflows); they do not add profile
 support to the current one-shot domain records or CLI. The writer uses these
 existing version-1 edges and constraints without changing any compatibility
 constant. Identity conformance tests also check the reservation helper against
@@ -471,7 +471,7 @@ Failed and superseded snapshots retain their own produced observations; another
 attempt selecting its result cannot change their completion evidence.
 The snapshot retains canonical domain records alongside their indexed columns.
 It contains no owner tokens, lease IDs, or staging paths. The internal
-[conformance vector](../crates/metewand-runtime/src/run_store/fixtures/outcome-v1.json)
+[conformance vector](https://github.com/jolars/metewand/blob/main/crates/metewand-runtime/src/run_store/fixtures/outcome-v1.json)
 pins its exact canonical bytes. This internal coordination record supplements
 public one-shot documents; it does not extend their schemas with profile
 outcomes. The SQLite layout remains at version 1. Public contracts remain at version 1
@@ -568,7 +568,7 @@ Without an unambiguous verified outcome, recovery moves the expired attempt to
 failure before releasing its claim. Its private recovery stages use the global
 kernel lock for their lifetime. A crash after publishing this failure but before
 commit leaves another recoverable orphan. The
-[recovered-failure conformance vector](../crates/metewand-runtime/src/run_store/fixtures/recovered-failure-v1.json)
+[recovered-failure conformance vector](https://github.com/jolars/metewand/blob/main/crates/metewand-runtime/src/run_store/fixtures/recovered-failure-v1.json)
 pins the canonical bytes for an expired reservation. The schema and public
 compatibility constants retain their current versions; recovery reuses their
 existing representations and constraints.
@@ -656,7 +656,7 @@ cargo test -p metewand-runtime --lib --locked \
   -- --exact --ignored --nocapture
 ```
 
-The separate [durability workflow](../.github/workflows/durability.yml) runs this
+The separate [durability workflow](https://github.com/jolars/metewand/blob/main/.github/workflows/durability.yml) runs this
 campaign weekly and on manual dispatch. It also runs for pull requests that
 change the durability implementation, workspace dependencies or toolchain, or
 release metadata. Release PRs change the workspace version in `Cargo.toml`, so

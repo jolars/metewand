@@ -5,6 +5,10 @@ benchmarks. It describes benchmark components in a versioned manifest, runs
 workers as isolated processes, and records content-addressed identities and
 provenance for every result.
 
+The [website](https://metewand.org) provides a
+[getting started guide](docs/guide/getting-started.md) and the
+[reference documentation](docs/reference/index.md).
+
 The project is in its initial implementation phase. [DESIGN.md](DESIGN.md) is
 the source of truth for semantics and interfaces, and [TODO.md](TODO.md) records
 the implementation order.
@@ -12,7 +16,7 @@ the implementation order.
 Start a benchmark with `metewand init [PATH]`, or preview its paths with
 `metewand init [PATH] --dry-run`. It creates only a minimal versioned
 `metewand.toml` and refuses to overwrite existing files. See
-[benchmark authoring](docs/authoring-cli.md) for the authoring contract.
+[benchmark authoring](docs/reference/authoring-cli.md) for the authoring contract.
 Add components explicitly with `metewand scaffold dataset|problem|implementation
 NAME --environment NAME`. Scaffolds report every change, support `--dry-run`,
 and leave scientific schemas, semantics, and worker behavior for the author.
@@ -41,135 +45,135 @@ fixtures are colocated with the contracts or components they exercise.
 
 ## Compatibility contracts
 
-Metewand's [version-1 canonical JSON contract](docs/canonical-json.md) defines
+Metewand's [version-1 canonical JSON contract](docs/reference/canonical-json.md) defines
 the language-neutral value domain and the exact bytes used for hashing and
 transport. All implementations share the corresponding
 [conformance vectors](fixtures/canonical-json/v1.json).
 
 Version 1 also defines [offline JSON Schema validation and parameter-default
-resolution](docs/schema-validation.md). Repository-relative references resolve
+resolution](docs/reference/schema-validation.md). Repository-relative references resolve
 only through an explicitly supplied schema catalog; validation never retrieves
 schemas from the filesystem or network.
 
-The [version-1 public schemas](docs/public-schemas.md) define the initial
+The [version-1 public schemas](docs/reference/public-schemas.md) define the initial
 manifest, problem contract, one-shot policy, artifact and execution records,
 the worker handshake, and strict envelopes for machine output, canonical
 results, and evaluator metrics. `metewand-core` embeds the checked-in documents
 for offline consumers.
-The [manifest parser](docs/manifest-parsing.md) turns `metewand.toml` into strict
+The [manifest parser](docs/reference/manifest-parsing.md) turns `metewand.toml` into strict
 domain types and reports path-aware source spans for invalid input. Its
-[parameter-namespace validation](docs/parameter-namespaces.md) binds dataset and
+[parameter-namespace validation](docs/reference/parameter-namespaces.md) binds dataset and
 implementation parameter tables to selected, schema-bearing definitions while
 preserving the benchmark author's explicit scientific classification.
-Together, the manifest and [problem-contract parser](docs/problem-contracts.md)
+Together, the manifest and [problem-contract parser](docs/reference/problem-contracts.md)
 require each schema, reference case, evaluator definition, and distinct validity
 and one-shot completion rule, then validate family semantics offline. The
-[compatibility pass](docs/manifest-compatibility.md) checks dataset schemas,
+[compatibility pass](docs/reference/manifest-compatibility.md) checks dataset schemas,
 implementation declarations, timing scopes, budgets, and dataset-free unit
 bindings across those parsed documents.
-`metewand-runtime` expands each declared [source bundle](docs/source-bundles.md)
+`metewand-runtime` expands each declared [source bundle](docs/reference/source-bundles.md)
 into unique bytewise-ordered repository paths, requiring every pattern to match
 and rejecting selected trees that escape through symlinks. Its versioned
-[local-tree hash](docs/local-tree-hashing.md) covers normalized paths, entry
+[local-tree hash](docs/reference/local-tree-hashing.md) covers normalized paths, entry
 types, file bytes, link targets, and the portable executable-bit semantic while
 excluding incidental filesystem metadata.
 
-The runtime's [source-resolution boundary](docs/source-resolution.md) returns
+The runtime's [source-resolution boundary](docs/reference/source-resolution.md) returns
 privately staged source files, verified content digests, and provenance. It
 resolves repository bundles directly and provides explicit acquisition hooks
 for pinned URLs and optional external providers, keeping acquisition separate
-from read-only checking and planning. The [artifact store](docs/artifact-store.md)
+from read-only checking and planning. The [artifact store](docs/reference/artifact-store.md)
 durably publishes verified trees, maps dataset constructions to output hashes,
 and leases private per-attempt copies. `run --cache-dir PATH` enables persistent
-construction reuse. [Cache maintenance](docs/cache-maintenance.md) verifies exact
+construction reuse. [Cache maintenance](docs/reference/cache-maintenance.md) verifies exact
 objects and collects unreferenced content from a transactional catalog snapshot,
 respecting durable run roots and active leases.
-The optional [Datamonger adapter](docs/datamonger.md) resolves a pinned registry
+The optional [Datamonger adapter](docs/reference/datamonger.md) resolves a pinned registry
 and dataset version through a process, records artifact or decoded verification,
 and feeds benchmark-owned materialization. Its [runnable example](examples/datamonger)
 compares two implementations using private views of one dataset instance.
 
-The Gate 1 [domain-record graph](docs/domain-records.md) separates definitions,
+The Gate 1 [domain-record graph](docs/reference/domain-records.md) separates definitions,
 configurations, logical plans, resolved execution dependencies, observations,
-and attempts. Its [version-1 typed identities](docs/identities.md) hash explicit
+and attempts. Its [version-1 typed identities](docs/reference/identities.md) hash explicit
 canonical representations and encode dependencies as typed IDs.
-The [whole-manifest hash](docs/manifest-hashing.md) instead binds the complete,
+The [whole-manifest hash](docs/reference/manifest-hashing.md) instead binds the complete,
 defaulted, path-normalized, and name-resolved typed manifest without becoming a
 dependency of unrelated component identities.
-The [seed-derivation contract](docs/seeds.md) produces independently domain-
+The [seed-derivation contract](docs/reference/seeds.md) produces independently domain-
 separated dataset, implementation, and scheduling seeds while retaining each
 complete derivation digest.
-The deterministic [configuration expander](docs/configuration-expansion.md)
+The deterministic [configuration expander](docs/reference/configuration-expansion.md)
 resolves literal values, Cartesian grids, and coupled named cases within their
 explicit parameter namespaces and rejects duplicate logical candidates.
-The [one-shot logical planner](docs/logical-planning.md) then assigns stable
+The [one-shot logical planner](docs/reference/logical-planning.md) then assigns stable
 typed identities, derives dataset, implementation, and scheduling values, and
 expands implementation repetitions, measurement repetitions, warm-ups,
 observation slots, and measurement attempt slots without runtime side effects.
 Its capability reports distinguish declarations from current and previously
 recorded runtime verification; this side-effect-free stage reports declarations
 only.
-The [scheduler](docs/scheduling.md) preserves logical-plan order by
+The [scheduler](docs/reference/scheduling.md) preserves logical-plan order by
 default. An execution policy can select deterministic block randomization to
 interleave comparable implementations by dataset instance, problem configuration,
 implementation repetition, and measurement index.
 Performance execution stays serial by default; an explicit `max_concurrency`
 in the execution policy enables bounded concurrent attempts with deterministic
 event order and separate worker ownership.
-The [read-only command-line workflow](docs/read-only-cli.md) composes these
+The [read-only command-line workflow](docs/reference/read-only-cli.md) composes these
 layers into `metewand schema`, `metewand check`, and `metewand plan`. Repository
 checks load contracts and transitive schema references offline, source contents
 feed definition identities, and plans expose every unresolved logical identity
 without downloads, builds, worker launches, or filesystem writes. Every command
-also has [versioned JSON and JSON Lines output](docs/machine-output.md), stable
+also has [versioned JSON and JSON Lines output](docs/reference/machine-output.md), stable
 exit and diagnostic codes, structured source spans and causal chains, and
 strict machine-output stream separation.
-Use [`metewand check --workers`](docs/worker-checks.md) to verify declared
+Use [`metewand check --workers`](docs/reference/worker-checks.md) to verify declared
 worker capabilities and problem reference cases before running a benchmark.
-The initial [worker protocol framing layer](docs/worker-protocol-framing.md)
+The initial [worker protocol framing layer](docs/reference/worker-protocol-framing.md)
 reads bounded JSON Lines independently of transport fragmentation and reports
 typed failures for invalid bytes or malformed and ambiguous frames. Its typed
-[version-1 worker session](docs/worker-protocol.md) negotiates the protocol,
+[version-1 worker session](docs/reference/worker-protocol.md) negotiates the protocol,
 fixes a worker role and resolved identity, records SDK and capability metadata,
 and runs the materialize, prepare, one-shot execute, reset, evaluate, and
 shutdown exchanges under phase-specific deadlines. The
-[POSIX worker transport](docs/worker-process-transport.md) carries those frames
+[POSIX worker transport](docs/reference/worker-process-transport.md) carries those frames
 over dedicated inherited descriptors while concurrently draining bounded
 standard-output and standard-error logs through EOF, even after truncation. Its
-trusted local launch path supplies [worker environments](docs/worker-environments.md)
+trusted local launch path supplies [worker environments](docs/reference/worker-environments.md)
 with fixed locale, timezone, and umask, private home, temp, and cache directories,
 and explicit allowlists and redacted secret channels.
-The runtime's [worker-output validator](docs/worker-output-validation.md) then
+The runtime's [worker-output validator](docs/reference/worker-output-validation.md) then
 confines returned manifests to their assigned directories, rejects special or
 undeclared entries, verifies every declared size and SHA-256 digest, and checks
 dataset manifests, canonical results, and evaluator metrics against their
 public and problem-owned schemas.
-The checked-in [raw worker fixtures](docs/raw-worker-fixtures.md) exercise all
+The checked-in [raw worker fixtures](docs/reference/raw-worker-fixtures.md) exercise all
 three Gate-1 worker roles without an SDK, produce a deterministic validated
 dataset-to-result-to-metrics chain, and expose every version-1 framing and
 request-correlation abuse case as a selectable fixture mode.
-[Dataset materialization](docs/dataset-materialization.md) now connects local
+[Dataset materialization](docs/reference/dataset-materialization.md) now connects local
 generators and pinned-source transformations to validated artifacts, construction
 identities, and provenance. Try the [generated dataset example](examples/generated-dataset).
-The [fixed-dataset runtime path](docs/fixed-dataset-run.md) launches a resolved
+The [fixed-dataset runtime path](docs/reference/fixed-dataset-run.md) launches a resolved
 implementation and independent evaluator, measures the selected
-[timing envelope](docs/fixed-dataset-run.md), and
+[timing envelope](docs/reference/fixed-dataset-run.md), and
 returns validated result and metric values from private temporary output. Its
-[phase and resource measurements](docs/execution-measurements.md) retain explicit
+[phase and resource measurements](docs/reference/execution-measurements.md) retain explicit
 missing and partial values, including elapsed time from failed exchanges.
-[Execution controls](docs/execution-controls.md) retain requested values and
+[Execution controls](docs/reference/execution-controls.md) retain requested values and
 explicit enforcement guarantees, with planning rejection for insufficient
 required controls and typed failures when runtime controls are lost. Its
-[durable publication path](docs/durable-publication.md) finalizes a
+[durable publication path](docs/reference/durable-publication.md) finalizes a
 self-describing observation before the enclosing attempt, retaining provenance,
 scoped logs, and hash-complete completion manifests in separate directories.
-The [`metewand run` command](docs/run-cli.md) connects checked manifests and
+The [`metewand run` command](docs/reference/run-cli.md) connects checked manifests and
 logical plans to this trusted local path, streams versioned lifecycle events,
 and reports durable accepted, failed, and superseded attempts. The
 [fixed-dataset example](examples/fixed-dataset) demonstrates the complete path
 with raw workers and an independent evaluator.
 
-The [durable run-store schema](docs/run-store-schema.md) defines versioned SQLite
+The [durable run-store schema](docs/reference/run-store-schema.md) defines versioned SQLite
 coordination for resolved slots, retries, observations, leases, events, and
 finalization claims. The runtime initializes durable stores with verified
 WAL/FULL settings and filesystem capability probes. Its writer API coordinates
@@ -179,31 +183,35 @@ publication to terminal commits, and explicit recovery resolves expired attempts
 completed orphans, and abandoned stages. The CLI uses this store for selected and bounded execution, explicit
 retries, and resume without repeating accepted slots.
 
-The read-only [`status` and `explain` commands](docs/inspection-cli.md) inspect
+The read-only [`status` and `explain` commands](docs/reference/inspection-cli.md) inspect
 current plans and durable history by stable identity. Status retains pending
 slots, live and expired attempts, retries, selected observations, and failures;
 explanations connect definitions, runs, slots, attempts, artifacts, and diagnostics
 without launching workers or recovering the store.
 
-[`metewand export`](docs/exports.md) writes tidy JSONL or CSV tables with an
+[`metewand export`](docs/reference/exports.md) writes tidy JSONL or CSV tables with an
 adjacent lineage manifest. It retains attempts and observations independently,
 labels timing and guarantee classes, and can rebuild the disposable run index
 with `--rebuild-index`.
 
-The [Python SDK](docs/python-sdk.md) provides small helpers for implementations,
+The [Python SDK](docs/reference/python-sdk.md) provides small helpers for implementations,
 dataset materializers, and independent evaluators over the existing one-shot
 protocol. Its [runnable example](examples/python-sdk) uses all three roles and
 publishes two observations with process reuse.
 
-The equivalent [R SDK](docs/r-sdk.md) provides the same roles, canonical JSON
+The equivalent [R SDK](docs/reference/r-sdk.md) provides the same roles, canonical JSON
 restrictions, and structured errors. Its [example](examples/r-sdk) also exercises
 all three roles and publishes two observations with process reuse.
 
-The [SDK conformance suites](docs/sdk-conformance.md) run shared canonicalization,
+The [SDK conformance suites](docs/reference/sdk-conformance.md) run shared canonicalization,
 identity, seed, error, and protocol vectors across Rust, Python, and R and test
 reference problem contracts against correct and deliberately incorrect workers.
 
 ## Development
+
+The VitePress website lives in `docs/`, with guides in `docs/guide/` and
+interface documentation in `docs/reference/`. See
+[website development](docs/README.md) for preview, build, and deployment commands.
 
 The development environment pins Rust 1.98.0 and includes rustfmt, Clippy, and
 pre-commit hooks:
@@ -224,6 +232,8 @@ The equivalent commands are:
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 cargo test --workspace --all-targets --locked
+npm --prefix docs ci
+npm --prefix docs run deploy:check
 ```
 
 Normal tests include focused crash and recovery coverage. The exhaustive
@@ -240,7 +250,7 @@ cargo test -p metewand-runtime --lib --locked \
 Separate [durability CI](.github/workflows/durability.yml) runs this campaign
 weekly, on demand, and for pull requests that change durability code,
 dependencies, or release metadata. See
-[Crash conformance](docs/run-store-schema.md#crash-conformance) for its coverage.
+[Crash conformance](docs/reference/run-store-schema.md#crash-conformance) for its coverage.
 
 ## License
 

@@ -16,7 +16,7 @@ reports structured failures. Metewand owns environments, source acquisition,
 seeds, scheduling, validation, and publication. Benchmark code owns scientific
 semantics and its random generators.
 
-See the [API guide](../../docs/r-sdk.md) and the runnable
+See the [API guide](../../docs/reference/r-sdk.md) and the runnable
 [R SDK example](../../examples/r-sdk). The normal Rust workspace tests install
 the SDK into temporary libraries, run its contracts, and exercise all three
 roles through Rust's transport and output validator. For focused checks, run:

@@ -192,7 +192,7 @@ includes integrity verification between prepare and execute, and the new
 diagnostic and provenance use the existing extensible fields. Quarantine adds a private storage location
 without changing the object, mapping, or lease formats.
 
-The schema [conformance cases](../schemas/v1/fixtures/conformance.json) cover the
+The schema [conformance cases](https://github.com/jolars/metewand/blob/main/schemas/v1/fixtures/conformance.json) cover the
 new formats and reject unknown versions. Runtime tests cover exact canonical
 marker bytes, empty trees, executable flags, concurrent publication, incomplete
 objects, independent views and provider imports, construction conflicts,

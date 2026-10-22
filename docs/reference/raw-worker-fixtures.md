@@ -1,7 +1,7 @@
 # Raw worker fixtures
 
 Metewand includes executable version-1 workers under
-[`fixtures/worker-protocol/v1`](../fixtures/worker-protocol/v1). They implement
+[`fixtures/worker-protocol/v1`](https://github.com/jolars/metewand/tree/main/fixtures/worker-protocol/v1). They implement
 the protocol directly with the Python standard library and report `sdk: null`,
 so tests exercise the process and wire boundaries without depending on a
 language SDK. The development environment supplies Python 3 for reproducible

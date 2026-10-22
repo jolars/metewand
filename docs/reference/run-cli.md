@@ -26,7 +26,7 @@ Manifest paths resolve from the invoking directory; declared inputs resolve
 from the manifest's parent. The output directory resolves from the invoking
 directory and must lie outside declared source directories and glob prefixes.
 
-The [runnable example](../examples/fixed-dataset) uses Python's standard library
+The [runnable example](https://github.com/jolars/metewand/tree/main/examples/fixed-dataset) uses Python's standard library
 to implement the raw protocol without an SDK. It sums three fixed integers,
 adds the problem-owned offset, and independently evaluates the answer. The
 expected result is `{"answer":8}` and the metrics are `{"absolute_error":0}`.
@@ -109,10 +109,10 @@ verified persistent cache mapping, validated against its output schema, and
 recorded with its derivation identity and separate output hash. Every attempt
 receives its own verified dataset copy, including fixed and unit datasets. See
 [Dataset materialization](dataset-materialization.md) and its
-[runnable example](../examples/generated-dataset). External providers and optional
+[runnable example](https://github.com/jolars/metewand/tree/main/examples/generated-dataset). External providers and optional
 contract-owned binary checkers are explicit runtime APIs; the current manifest
 does not select those integrations.
-The optional [Datamonger example](../examples/datamonger) demonstrates external
+The optional [Datamonger example](https://github.com/jolars/metewand/tree/main/examples/datamonger) demonstrates external
 resolution and shared materialization through those runtime APIs.
 
 ## Inputs and launches

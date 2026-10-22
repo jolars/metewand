@@ -619,7 +619,9 @@ metewand/
 │   ├── python-only/
 │   ├── nix-locked/
 │   └── mixed/
-└── docs/
+└── docs/                     # VitePress website
+    ├── guide/                # introductory guides
+    └── reference/            # implemented interfaces and contracts
 ```
 
 The binary owns:
@@ -710,7 +712,7 @@ SQLite database in WAL mode with full synchronous durability coordinates
 applicability decisions, resolved attempt and observation slots, leases,
 transitions, durable checkpoint observations, and finalized artifact references;
 event rows are insert-only, and state changes occur in transactions. The
-[version-1 SQLite schema](docs/run-store-schema.md) defines this coordination
+[version-1 SQLite schema](docs/reference/run-store-schema.md) defines this coordination
 layout. The runtime initializes stores with verified WAL/FULL settings and
 filesystem capability probes. Its transactional writer API fences reservations,
 transitions, finalization claims, and terminal outcomes by lease ownership and
@@ -761,7 +763,7 @@ exact stable identities across definitions, runs, slots, attempts, artifacts,
 and persisted failure diagnostics. The inspection reader uses a private SQLite
 snapshot without initializing or recovering the source store. Human and machine
 output share core inspection records and the version-1 `inspection-output`
-schema. See [Status and identity explanations](docs/inspection-cli.md).
+schema. See [Status and identity explanations](docs/reference/inspection-cli.md).
 
 ### Main domain types
 
@@ -1733,10 +1735,10 @@ preparation may occur outside the timed scope. Such permission does not move
 work outside the selected policy's timer: `prepare_and_execute` includes all
 preparation, while `execute_only` requires precise rules for untimed preparation
 and produces an operation-scope comparison. These rules and the
-[materialization and preparation conformance cases](docs/dataset-materialization.md#materialization-and-implementation-preparation)
+[materialization and preparation conformance cases](docs/reference/dataset-materialization.md#materialization-and-implementation-preparation)
 complete existing version-1 semantics without adding a manifest field, wire
 message or identity transcript. All three envelopes are implemented in the
-local runtime; its [timing policy](docs/fixed-dataset-run.md) distinguishes the
+local runtime; its [timing policy](docs/reference/fixed-dataset-run.md) distinguishes the
 shared scientific deadline from operational phase limits. Diagnostic measurement
 payload version 2 records the corresponding CPU accounting scopes.
 
@@ -1761,7 +1763,7 @@ Its selector and standalone command have initial version-1 public schemas under
 representations remain unchanged. The [runnable example](examples/datamonger)
 constructs a standard dataset and compares implementations using private views
 of the same instance after source resolution, with no further provider access.
-See [Datamonger sources](docs/datamonger.md) for limits, evidence, and offline
+See [Datamonger sources](docs/reference/datamonger.md) for limits, evidence, and offline
 conformance tests. The current local `run` path uses the repository branch of
 this boundary for fixed data and an explicit HTTP(S) backend for
 generated datasets.
@@ -1788,7 +1790,7 @@ Provider claims remain distinct from Metewand's independent raw-byte checks.
 The version-1 `dataset-derivation` identity binds these semantics and the verified
 source trees to the resolved materializer, canonical parameters, and dataset
 seed. Construction receipts record output hashes separately. See
-[Dataset materialization](docs/dataset-materialization.md) for the runtime
+[Dataset materialization](docs/reference/dataset-materialization.md) for the runtime
 interfaces, standalone validation command, and compatibility review. The local
 `run` command materializes each selected dataset configuration once per run or
 reuses its verified construction from an explicit `--cache-dir`; `check` and
@@ -1830,11 +1832,11 @@ derivation mappings constrain any reconstruction to the original output hash.
 These controls complete the unreleased version-1 immutability contract without
 changing its compatibility constants. The separate run-store publisher connects
 leased publication and terminal database references as described in [Durable run-store
-schema](docs/run-store-schema.md#transactional-publication). Its explicit
-[recovery API](docs/run-store-schema.md#explicit-recovery) resolves expired
+schema](docs/reference/run-store-schema.md#transactional-publication). Its explicit
+[recovery API](docs/reference/run-store-schema.md#explicit-recovery) resolves expired
 attempts, claimed orphans, and abandoned stages. The CLI uses this path for
 explicit retries and resume. See
-[Artifact storage and private dataset views](docs/artifact-store.md).
+[Artifact storage and private dataset views](docs/reference/artifact-store.md).
 
 Later reads verify hashes whenever data crosses from the cache into a worker
 view, before evaluation, and during export or explicit cache verification.
@@ -1852,7 +1854,7 @@ checks complete tree identities, `cache roots` lists retention edges, and
 `cache gc` takes a fresh transactional snapshot while holding the cache lock
 through lease checks and deletion. Verification and `--dry-run` leave cache
 files unchanged. Interrupted collection resumes only its recorded exact
-identity. See [Cache verification, roots, and garbage collection](docs/cache-maintenance.md).
+identity. See [Cache verification, roots, and garbage collection](docs/reference/cache-maintenance.md).
 
 Finalized attempt outputs are immutable directories containing:
 
@@ -1896,7 +1898,7 @@ and `export-row` schemas. `metewand export --output-dir PATH --rebuild-index`
 explicitly rebuilds `index.jsonl`; `--destination PATH --format jsonl|csv`
 creates a new table directory with an adjacent lineage receipt. Both read a
 committed snapshot and verify registered artifacts independently of the index.
-See [Result indexes and tidy exports](docs/exports.md).
+See [Result indexes and tidy exports](docs/reference/exports.md).
 
 Every export has an adjacent or enveloping export manifest containing the
 canonical selector, the ordered source candidate, attempt, and observation

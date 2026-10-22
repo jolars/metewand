@@ -31,7 +31,7 @@ implemented. An unselected report remains inert.
 ## Validation and negotiation
 
 The checked-in
-[`worker-protocol-message` schema](../schemas/v1/worker-protocol-message.schema.json)
+[`worker-protocol-message` schema](https://github.com/jolars/metewand/blob/main/schemas/v1/worker-protocol-message.schema.json)
 is the source of truth for every message shape. It rejects unknown fields,
 empty request IDs and paths, unsafe seeds and diagnostic times, unsupported
 roles, capabilities, or failure codes, duplicate protocol versions and

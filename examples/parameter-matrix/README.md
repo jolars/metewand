@@ -30,7 +30,7 @@ The array entries use `grid` to select whole arrays in the first case and
 `value` to preserve a literal array in the second. All grids expand
 deterministically. Overlapping cases are errors rather than implicit statistical
 replications; use repetition fields for that purpose. See
-[configuration expansion](../../docs/configuration-expansion.md).
+[configuration expansion](../../docs/reference/configuration-expansion.md).
 
 The worker uses the raw protocol and Python's standard library. No SDK or
 third-party package is needed, and all scientific choices remain visible in

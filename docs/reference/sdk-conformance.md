@@ -9,11 +9,11 @@ and CI provide both interpreters and the R build dependencies.
 
 | Contract | Checked-in vectors | Checks |
 | --- | --- | --- |
-| Canonical JSON | [`fixtures/canonical-json/v1.json`](../fixtures/canonical-json/v1.json) | Accepted values produce the exact UTF-8 bytes; duplicate keys, unsafe numbers, and invalid Unicode fail. |
-| Identities | [`fixtures/identities/`](../fixtures/identities) | Canonical transcripts and typed SHA-256 identities agree, including diagnostic details, dataset derivations, and concurrency policies. |
-| Seeds | [`fixtures/seeds/v1.json`](../fixtures/seeds/v1.json) | All three roles reconstruct the canonical fields, complete digest, and first 53 digest bits. |
-| Errors | [`fixtures/worker-protocol/v1/errors.json`](../fixtures/worker-protocol/v1/errors.json) | All four failure codes preserve messages and optional object details in exact response frames; invalid failures are rejected. |
-| Protocol | [`fixtures/worker-protocol/v1/golden.json`](../fixtures/worker-protocol/v1/golden.json) | Complete sessions for every role, request validation, nullable timing, scientific verdicts, and malformed frames agree. |
+| Canonical JSON | [`fixtures/canonical-json/v1.json`](https://github.com/jolars/metewand/blob/main/fixtures/canonical-json/v1.json) | Accepted values produce the exact UTF-8 bytes; duplicate keys, unsafe numbers, and invalid Unicode fail. |
+| Identities | [`fixtures/identities/`](https://github.com/jolars/metewand/tree/main/fixtures/identities) | Canonical transcripts and typed SHA-256 identities agree, including diagnostic details, dataset derivations, and concurrency policies. |
+| Seeds | [`fixtures/seeds/v1.json`](https://github.com/jolars/metewand/blob/main/fixtures/seeds/v1.json) | All three roles reconstruct the canonical fields, complete digest, and first 53 digest bits. |
+| Errors | [`fixtures/worker-protocol/v1/errors.json`](https://github.com/jolars/metewand/blob/main/fixtures/worker-protocol/v1/errors.json) | All four failure codes preserve messages and optional object details in exact response frames; invalid failures are rejected. |
+| Protocol | [`fixtures/worker-protocol/v1/golden.json`](https://github.com/jolars/metewand/blob/main/fixtures/worker-protocol/v1/golden.json) | Complete sessions for every role, request validation, nullable timing, scientific verdicts, and malformed frames agree. |
 
 The SDK tests reconstruct identity and seed transcripts only for conformance.
 Workers receive their identities and seeds from Metewand; the SDK APIs do not
@@ -43,7 +43,7 @@ timer resolution cannot change their expected results.
 
 ## Reference problem contracts
 
-[`fixtures/problem-contract/v1/suites/`](../fixtures/problem-contract/v1/suites)
+[`fixtures/problem-contract/v1/suites/`](https://github.com/jolars/metewand/tree/main/fixtures/problem-contract/v1/suites)
 contains two benchmark-owned contracts with complete schemas, datasets, result
 artifacts, expected metrics, and Python and R workers:
 
