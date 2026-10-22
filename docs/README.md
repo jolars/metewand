@@ -30,6 +30,9 @@ The generated website is in `docs/.vitepress/dist/`. Preview that build with
 - `.vitepress/theme/` extends the default theme.
 - `public/` contains static assets.
 
+The favicon files and `site.webmanifest` live directly in `public/`. The shared
+`head` configuration in `.vitepress/config.ts` adds their links to every page.
+
 The original logos and social preview image live in the repository's `assets/`
 directory. The development and build commands copy `logo.svg`, `logo.png`,
 `logo-small.png`, and `og.png` into the ignored `public/brand/` directory. Edit
