@@ -53,7 +53,7 @@ This README is excluded from the published site.
 
 ## Deployment
 
-`cloudflare.config.ts` declares the assets-only `metewand-docs` Worker and its
+`cloudflare.config.ts` declares the `metewand-docs` Worker and its
 `metewand.org` custom domain. `wrangler.config.ts` supplies the asset directory
 to the Cloudflare CLI's build tool. The CLI and its build tool are pinned by
 `package-lock.json`.
@@ -71,3 +71,32 @@ For a manual local deployment, authenticate with `npx cf auth login` from
 ```sh
 npm --prefix docs run deploy
 ```
+
+## Markdown for agents
+
+The build converts each published page's rendered content to Markdown, including
+homepage features, code blocks, and tables, and strips navigation and controls.
+`worker.mjs` serves these static representations when a GET or HEAD request
+explicitly accepts `text/markdown` with a positive quality at least as high as
+`text/html`. Browsers and requests without an explicit Markdown preference
+receive HTML. Both representations include `Vary: Accept`.
+
+This uses the same build-time conversion and Worker approach as LazyMatrix and
+does not require Cloudflare's paid Markdown for Agents feature. Static assets,
+canonical redirects, and missing-page responses retain their normal behavior.
+Markdown has its own ETag for conditional requests.
+
+Preview negotiation locally with `npm --prefix docs run preview:worker` after
+building, then request a page:
+
+```sh
+curl -i -H 'Accept: text/markdown' http://localhost:8787/guide/getting-started
+```
+
+`npm --prefix docs run deploy:check` runs the Markdown integration tests against
+the local Workers runtime before validating the deployment package. The regular
+VitePress preview serves HTML without negotiation.
+
+On NixOS, the npm-provided `workerd` executable needs a compatible dynamic
+loader. If it cannot start, set `MINIFLARE_WORKERD_PATH` to a NixOS-compatible
+`workerd` executable when running the integration tests or Worker preview.
