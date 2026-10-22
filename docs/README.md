@@ -30,6 +30,13 @@ The generated website is in `docs/.vitepress/dist/`. Preview that build with
 - `.vitepress/theme/` extends the default theme.
 - `public/` contains static assets.
 
+The original logos and social preview image live in the repository's `assets/`
+directory. The development and build commands copy `logo.svg`, `logo.png`,
+`logo-small.png`, and `og.png` into the ignored `public/brand/` directory. Edit
+the originals to update the site's branding. The site configuration adds Open
+Graph and Twitter card metadata to every page using the shared preview image and
+each page's title, description, and URL.
+
 Keep links between published pages relative and include their `.md` extension,
 so they work both in GitHub and VitePress. Link to source code, fixtures,
 schemas, and runnable examples on GitHub. The build rejects missing page links.
@@ -45,11 +52,11 @@ to the Cloudflare CLI's build tool. The CLI and its build tool are pinned by
 `package-lock.json`.
 
 The Website workflow builds and validates pull requests. Pushes to `main` that
-change the website also deploy the validated build. Run the workflow manually on
-`main` to redeploy. It reads `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN`
-from GitHub repository secrets only in the deployment step. The token needs
-access to deploy Workers and configure the custom domain in the account that
-hosts the `metewand.org` Cloudflare zone.
+change the website or its assets also deploy the validated build. Run the
+workflow manually on `main` to redeploy. It reads `CLOUDFLARE_ACCOUNT_ID` and
+`CLOUDFLARE_API_TOKEN` from GitHub repository secrets only in the deployment
+step. The token needs access to deploy Workers and configure the custom domain
+in the account that hosts the `metewand.org` Cloudflare zone.
 
 For a manual local deployment, authenticate with `npx cf auth login` from
 `docs/`, or set those two environment variables, then run:

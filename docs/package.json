@@ -6,8 +6,8 @@
     "node": ">=22.18.0"
   },
   "scripts": {
-    "dev": "vitepress dev",
-    "build": "vitepress build",
+    "dev": "node .vitepress/prepare-assets.mjs && vitepress dev",
+    "build": "node .vitepress/prepare-assets.mjs && vitepress build",
     "preview": "vitepress preview",
     "deploy:check": "npm run build && cf deploy --dry-run",
     "deploy": "npm run build && cf deploy"

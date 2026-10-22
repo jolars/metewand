@@ -4,11 +4,13 @@ on:
   push:
     branches: [main]
     paths:
+      - assets/**
       - docs/**
       - .github/workflows/website.yml
   pull_request:
     branches: [main]
     paths:
+      - assets/**
       - docs/**
       - .github/workflows/website.yml
   workflow_dispatch:

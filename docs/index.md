@@ -3,6 +3,9 @@ layout: home
 
 hero:
   name: Metewand
+  image:
+    src: /brand/logo.png
+    alt: A measuring rod with gold ends and evenly spaced graduations.
   text: |
     Reproducible benchmarks.
     Across languages.

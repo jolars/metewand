@@ -1,5 +1,10 @@
 import { defineConfig } from 'vitepress'
 
+const siteUrl = 'https://metewand.org/'
+const description = 'Reproducible, language-neutral computational benchmarks.'
+const imageUrl = new URL('brand/og.png', siteUrl).href
+const imageAlt = 'Metewand measuring rod logo. Measure. Compare. Reproduce.'
+
 const reference = [
   {
     text: 'Commands and workflows',
@@ -79,15 +84,46 @@ const reference = [
 export default defineConfig({
   lang: 'en-US',
   title: 'Metewand',
-  description: 'Reproducible, language-neutral computational benchmarks.',
+  description,
   cleanUrls: true,
   srcExclude: ['README.md'],
-  sitemap: { hostname: 'https://metewand.org' },
+  sitemap: { hostname: siteUrl },
   head: [
-    ['link', { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' }],
+    ['link', { rel: 'icon', type: 'image/svg+xml', href: '/brand/logo.svg' }],
+    ['link', { rel: 'icon', type: 'image/png', sizes: '192x192', href: '/brand/logo-small.png' }],
+    ['link', { rel: 'apple-touch-icon', href: '/brand/logo-small.png' }],
     ['meta', { name: 'theme-color', content: '#24634a' }],
+    ['meta', { property: 'og:type', content: 'website' }],
+    ['meta', { property: 'og:site_name', content: 'Metewand' }],
+    ['meta', { property: 'og:locale', content: 'en_US' }],
+    ['meta', { property: 'og:image', content: imageUrl }],
+    ['meta', { property: 'og:image:type', content: 'image/png' }],
+    ['meta', { property: 'og:image:width', content: '1200' }],
+    ['meta', { property: 'og:image:height', content: '630' }],
+    ['meta', { property: 'og:image:alt', content: imageAlt }],
+    ['meta', { name: 'twitter:card', content: 'summary_large_image' }],
+    ['meta', { name: 'twitter:image', content: imageUrl }],
+    ['meta', { name: 'twitter:image:alt', content: imageAlt }],
   ],
+  transformHead({ pageData }) {
+    const title = pageData.relativePath === 'index.md'
+      ? 'Metewand'
+      : `${pageData.title} | Metewand`
+    const pageDescription = pageData.description || description
+    const path = pageData.relativePath
+      .replace(/(^|\/)index\.md$/, '$1')
+      .replace(/\.md$/, '')
+
+    return [
+      ['meta', { property: 'og:title', content: title }],
+      ['meta', { property: 'og:description', content: pageDescription }],
+      ['meta', { property: 'og:url', content: new URL(path, siteUrl).href }],
+      ['meta', { name: 'twitter:title', content: title }],
+      ['meta', { name: 'twitter:description', content: pageDescription }],
+    ]
+  },
   themeConfig: {
+    logo: { src: '/brand/logo-small.png', alt: '' },
     nav: [
       { text: 'Guide', link: '/guide/getting-started', activeMatch: '/guide/' },
       { text: 'Reference', link: '/reference/', activeMatch: '/reference/' },
