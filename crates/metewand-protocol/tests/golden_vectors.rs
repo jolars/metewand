@@ -121,3 +121,35 @@ fn shared_sdk_error_vectors_preserve_codes_messages_and_details() {
         );
     }
 }
+
+#[test]
+fn version_one_messages_preserve_the_gate3_compatibility_boundary() {
+    let vectors: Value = serde_json::from_str(include_str!(
+        "../../../fixtures/worker-protocol/v1/compatibility.json"
+    ))
+    .unwrap();
+    assert_eq!(vectors["version"], metewand_protocol::WIRE_PROTOCOL_VERSION);
+    for vector in vectors["messages"].as_array().unwrap() {
+        let frame = vector["frame"].as_str().unwrap();
+        let valid = vector["valid"].as_bool().unwrap();
+        let message = FrameReader::new(frame.as_bytes())
+            .read_frame()
+            .unwrap()
+            .unwrap();
+        let accepted = match vector["message_type"].as_str().unwrap() {
+            "hello-response" => decode_message::<HelloResponse>(message).is_ok(),
+            "execute-request" => decode_message::<ExecuteRequest>(message).is_ok(),
+            "execute-response" => decode_message::<ExecuteResponse>(message).is_ok(),
+            kind => panic!("uncovered compatibility message: {kind}"),
+        };
+        assert_eq!(accepted, valid, "{}", vector["name"]);
+        if valid {
+            match vector["message_type"].as_str().unwrap() {
+                "hello-response" => round_trip::<HelloResponse>(frame),
+                "execute-request" => round_trip::<ExecuteRequest>(frame),
+                "execute-response" => round_trip::<ExecuteResponse>(frame),
+                kind => panic!("uncovered compatibility message: {kind}"),
+            }
+        }
+    }
+}

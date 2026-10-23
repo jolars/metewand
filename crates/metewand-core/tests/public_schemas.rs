@@ -1,8 +1,10 @@
-use std::collections::BTreeSet;
+use std::{collections::BTreeSet, path::Path};
 
 use metewand_core::{
     PUBLIC_SCHEMA_VERSION,
     canonical::CanonicalValue,
+    manifest::{ObservationPolicyDefinition, parse_manifest},
+    problem_contract::parse_problem_contract_document,
     public_schemas::{PUBLIC_SCHEMAS, PublicSchema, public_schema_catalog},
     schema::{DRAFT_2020_12_DIALECT, SchemaValidationError},
 };
@@ -161,5 +163,102 @@ fn measurement_scope_versions_preserve_existing_records() {
                 "{vector}"
             );
         }
+    }
+}
+
+#[derive(Deserialize)]
+struct Gate3Extensions {
+    version: u32,
+    extensions: Vec<Gate3Extension>,
+}
+
+#[derive(Deserialize)]
+struct Gate3Extension {
+    name: String,
+    template: String,
+    pointer: String,
+    field: String,
+    value: Value,
+}
+
+fn typed_document_is_valid(schema: PublicSchema, instance: &Value) -> bool {
+    let source = serde_json::to_string(instance).unwrap();
+    match schema {
+        PublicSchema::Manifest => parse_manifest(Path::new("metewand.yaml"), &source).is_ok(),
+        PublicSchema::ProblemContract => {
+            parse_problem_contract_document(Path::new("problem.yaml"), &source).is_ok()
+        }
+        PublicSchema::OneShotObservationPolicy => {
+            serde_json::from_value::<ObservationPolicyDefinition>(instance.clone()).is_ok()
+        }
+        _ => panic!("uncovered typed document: {schema:?}"),
+    }
+}
+
+#[test]
+fn gate3_extensions_require_new_contracts_in_both_schemas_and_typed_parsers() {
+    let cases = conformance_cases();
+    let vectors: Gate3Extensions = serde_json::from_str(include_str!(
+        "../../../schemas/v1/fixtures/gate3-extensions.json"
+    ))
+    .unwrap();
+    assert_eq!(vectors.version, PUBLIC_SCHEMA_VERSION);
+    let catalog = public_schema_catalog().unwrap();
+
+    for vector in vectors.extensions {
+        let template = cases
+            .valid
+            .iter()
+            .find(|case| case.name == vector.template)
+            .unwrap();
+        let schema = PublicSchema::from_slug(&template.schema).unwrap();
+        catalog
+            .validate(schema.repository_path(), &template.instance)
+            .unwrap();
+        assert!(typed_document_is_valid(schema, &template.instance));
+
+        let mut instance = template.instance.clone();
+        instance
+            .pointer_mut(&vector.pointer)
+            .unwrap()
+            .as_object_mut()
+            .unwrap()
+            .insert(vector.field, vector.value);
+        assert!(
+            catalog
+                .validate(schema.repository_path(), &instance)
+                .is_err(),
+            "schema accepted {}",
+            vector.name
+        );
+        assert!(
+            !typed_document_is_valid(schema, &instance),
+            "typed parser accepted {}",
+            vector.name
+        );
+    }
+}
+
+#[test]
+fn worker_schema_matches_the_gate3_protocol_compatibility_vectors() {
+    let vectors: Value = serde_json::from_str(include_str!(
+        "../../../fixtures/worker-protocol/v1/compatibility.json"
+    ))
+    .unwrap();
+    assert_eq!(vectors["version"], PUBLIC_SCHEMA_VERSION);
+    let catalog = public_schema_catalog().unwrap();
+    for vector in vectors["messages"].as_array().unwrap() {
+        let message: Value = serde_json::from_str(vector["frame"].as_str().unwrap()).unwrap();
+        assert_eq!(
+            catalog
+                .validate(
+                    PublicSchema::WorkerProtocolMessage.repository_path(),
+                    &message
+                )
+                .is_ok(),
+            vector["valid"].as_bool().unwrap(),
+            "{}",
+            vector["name"]
+        );
     }
 }

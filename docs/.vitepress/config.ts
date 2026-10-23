@@ -24,6 +24,7 @@ const reference = [
     items: [
       ['problem-contracts', 'Problem contracts'],
       ['public-schemas', 'Public schemas'],
+      ['compatibility-versions', 'Compatibility versions'],
       ['manifest-parsing', 'Manifest parsing'],
       ['parameter-namespaces', 'Parameter namespaces'],
       ['manifest-compatibility', 'Manifest compatibility'],

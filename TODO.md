@@ -358,10 +358,11 @@ and [Main domain types](DESIGN.md#main-domain-types).
   clustered-lasso workflows. Run their one-shot portions on the Gate 2
   foundation, and document the missing applicability and profile behavior.
   See [workflow smoke cases](examples/workflow-smoke/README.md).
-- [ ] Review the manifest, public-schema, wire-protocol, identity, and
+- [x] Review the manifest, public-schema, wire-protocol, identity, and
   execution-semantics compatibility constants before introducing new fields or
   capabilities. Add conformance vectors with each slice; the design-only
   extension does not change existing version-1 bytes.
+  See the [Gate 3 compatibility review](docs/reference/compatibility-versions.md).
 - [ ] Preserve the distinction between logical definitions and slots and their
   resolved execution identities as applicability and profiles extend them.
   Keep environment fingerprints separate from exact worker launch identities,

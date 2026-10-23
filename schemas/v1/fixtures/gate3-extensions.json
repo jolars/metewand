@@ -1,0 +1,89 @@
+{
+  "version": 1,
+  "extensions": [
+    {
+      "name": "manifest applicability selection",
+      "template": "complete one-shot benchmark manifest",
+      "pointer": "/implementations/native",
+      "field": "capabilities",
+      "value": ["one_shot", "applicability"]
+    },
+    {
+      "name": "manifest fresh-sequence selection",
+      "template": "complete one-shot benchmark manifest",
+      "pointer": "/implementations/native",
+      "field": "capabilities",
+      "value": ["one_shot", "fresh_sequence"]
+    },
+    {
+      "name": "manifest streaming-profile selection",
+      "template": "complete one-shot benchmark manifest",
+      "pointer": "/implementations/native",
+      "field": "capabilities",
+      "value": ["one_shot", "streaming_profile"]
+    },
+    {
+      "name": "manifest buffered-profile selection",
+      "template": "complete one-shot benchmark manifest",
+      "pointer": "/implementations/native",
+      "field": "capabilities",
+      "value": ["one_shot", "buffered_profile"]
+    },
+    {
+      "name": "manifest profile policy",
+      "template": "complete one-shot benchmark manifest",
+      "pointer": "/observation-policies/final",
+      "field": "kind",
+      "value": "profile"
+    },
+    {
+      "name": "manifest scientific budget",
+      "template": "complete one-shot benchmark manifest",
+      "pointer": "/experiments/0",
+      "field": "scientific-budget",
+      "value": {"evaluations": 100}
+    },
+    {
+      "name": "implementation observation-control schema",
+      "template": "complete one-shot benchmark manifest",
+      "pointer": "/implementations/native",
+      "field": "observation-control-schema",
+      "value": "schemas/controls.json"
+    },
+    {
+      "name": "standalone profile policy",
+      "template": "one-shot observation policy",
+      "pointer": "",
+      "field": "kind",
+      "value": "profile"
+    },
+    {
+      "name": "standalone policy implementation bindings",
+      "template": "one-shot observation policy",
+      "pointer": "",
+      "field": "implementations",
+      "value": {"native": {"delivery": "fresh_sequence", "controls": [{"iterations": 10}]}}
+    },
+    {
+      "name": "standalone policy instrumentation",
+      "template": "one-shot observation policy",
+      "pointer": "",
+      "field": "measurement-basis",
+      "value": "instrumented"
+    },
+    {
+      "name": "contract scientific budget capability",
+      "template": "dataset problem contract",
+      "pointer": "",
+      "field": "supported-budgets",
+      "value": ["none", "evaluations"]
+    },
+    {
+      "name": "contract scientific budget schema",
+      "template": "dataset problem contract",
+      "pointer": "",
+      "field": "budget-schema",
+      "value": "schemas/budget.json"
+    }
+  ]
+}

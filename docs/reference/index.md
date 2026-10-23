@@ -22,6 +22,10 @@ expansion](configuration-expansion.md), [logical planning](logical-planning.md),
 and [scheduling](scheduling.md) define how a manifest becomes an ordered set of
 attempts.
 
+[Compatibility versions](compatibility-versions.md) records the current contract
+versions, the Gate 3 baseline review, and the conformance requirements for
+extensions.
+
 ## Sources, execution, and storage
 
 [Source resolution](source-resolution.md) and the [artifact

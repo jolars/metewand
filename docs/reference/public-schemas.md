@@ -11,6 +11,9 @@ manifest version, wire-protocol version, identity version, and execution-semanti
 version. A reader must select the schema version declared by the record rather
 than infer it from the Metewand release that produced the record.
 
+See [compatibility versions](compatibility-versions.md) for the Gate 3 baseline
+review and the requirements for extending strict entry points.
+
 ## Entry points
 
 | Schema | Contract |
