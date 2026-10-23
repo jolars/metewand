@@ -7,6 +7,7 @@
 use std::{
     collections::{BTreeMap, btree_map::Entry},
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
 use jsonschema::{Draft, Registry, Validator};
@@ -19,9 +20,9 @@ pub const DRAFT_2020_12_DIALECT: &str = "https://json-schema.org/draft/2020-12/s
 const REPOSITORY_SCHEMA_BASE_URI: &str = "metewand://repository/";
 
 /// A collection of compiled schemas addressable by normalized repository path.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct SchemaCatalog {
-    validators: BTreeMap<PathBuf, Validator>,
+    validators: Arc<BTreeMap<PathBuf, Validator>>,
 }
 
 impl SchemaCatalog {
@@ -95,7 +96,9 @@ impl SchemaCatalog {
             validators.insert(path.clone(), validator);
         }
 
-        Ok(Self { validators })
+        Ok(Self {
+            validators: Arc::new(validators),
+        })
     }
 
     /// Validates an instance with the schema at `schema_path`.
@@ -292,4 +295,35 @@ fn repository_uri(path: &Path) -> String {
         }
     }
     uri
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::public_schemas::{PUBLIC_SCHEMAS, public_schema_catalog};
+
+    #[test]
+    fn public_catalogs_share_compiled_validators_across_threads() {
+        let catalogs = std::thread::scope(|scope| {
+            let callers = (0..8)
+                .map(|_| scope.spawn(|| public_schema_catalog().unwrap()))
+                .collect::<Vec<_>>();
+            callers
+                .into_iter()
+                .map(|caller| caller.join().unwrap())
+                .collect::<Vec<_>>()
+        });
+
+        for schema in PUBLIC_SCHEMAS {
+            let first = catalogs[0]
+                .validators
+                .get(schema.repository_path())
+                .unwrap();
+            for catalog in &catalogs[1..] {
+                assert!(std::ptr::eq(
+                    first,
+                    catalog.validators.get(schema.repository_path()).unwrap()
+                ));
+            }
+        }
+    }
 }

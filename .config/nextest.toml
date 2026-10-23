@@ -1,0 +1,18 @@
+[test-groups.processes]
+max-threads = 4
+
+[profile.default]
+slow-timeout = "15s"
+
+# These tests already start multiple workers or concurrent initialization writers.
+[[profile.default.overrides]]
+filter = 'binary(concurrency) | binary(run_store_initialization)'
+test-group = "processes"
+threads-required = 4
+
+[[profile.default.overrides]]
+filter = 'package(metewand-cli) | package(metewand-runtime)'
+test-group = "processes"
+
+[profile.ci]
+fail-fast = false

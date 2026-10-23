@@ -526,15 +526,7 @@ fn randomized_runs_interleave_comparable_implementations_and_record_the_schedule
                 "datasets: [\"numbers\"]",
                 "datasets: [\"numbers\", \"other\"]",
             ),
-            (
-                "implementation_repetitions: 1",
-                "implementation_repetitions: 2",
-            ),
             ("measurement_repetitions: 3", "measurement_repetitions: 2"),
-            (
-                "seed: 7",
-                "seed: 7\nproblem_parameters:\n  offset: { grid: [2, 3] }",
-            ),
             (
                 "version: 1\nworker_reuse",
                 "version: 1\nrun_order: \"randomized\"\nworker_reuse",
@@ -549,7 +541,7 @@ fn randomized_runs_interleave_comparable_implementations_and_record_the_schedule
         assert!(output.status.success(), "{output:?}");
         let records = envelopes(&output);
         let report = records.last().unwrap();
-        assert_eq!(report["data"]["summary"]["accepted_attempts"], 32);
+        assert_eq!(report["data"]["summary"]["accepted_attempts"], 8);
         let attempts = attempt_documents(root.path(), report);
         let mut blocks = BTreeSet::new();
         let mut previous_priority = None;
@@ -589,7 +581,7 @@ fn randomized_runs_interleave_comparable_implementations_and_record_the_schedule
                 );
             }
         }
-        assert_eq!(blocks.len(), 16);
+        assert_eq!(blocks.len(), 4);
         let mut previous_specification = None;
         for attempt in &attempts {
             let data = &attempt["provenance"]["data"];
@@ -814,70 +806,14 @@ fn unrelated_slots_preserve_existing_relative_execution_order_and_seeds() {
     use std::collections::BTreeSet;
 
     let root = scheduling_contract_repository();
-    let baseline = scheduled_slot_snapshots(root.path(), 2 * 2);
+    let baseline = scheduled_slot_snapshots(root.path(), 4);
     let existing = baseline.iter().map(|(id, _)| id).collect::<BTreeSet<_>>();
-    for (addition, expected_count) in [
-        ("implementation configurations", 4 * 2),
-        ("dataset", 2 * 2 * 2),
-        ("problem configuration", 2 * 2 * 2),
-        ("implementation repetition", 2 * 2 * 2),
-        ("measurement repetition", 2 * 3),
-        ("experiment", 2 * 2 + 2 * 2),
-    ] {
-        let root = scheduling_contract_repository();
-        let (before, after) = match addition {
-            "implementation configurations" => {
-                replace(
-                    root.path(),
-                    "metewand.yaml",
-                    "  alternative:",
-                    r#"  third:
-    runner: "command"
-    program: "python3"
-    args: ["{sources}/worker.py", "implementation"]
-    sources: ["worker.py"]
-    environment: "local"
-    problem_contracts: ["sum"]
-    capabilities: ["one_shot"]
-  alternative:"#,
-                );
-                replace(
-                    root.path(),
-                    "metewand.yaml",
-                    "seed: 7",
-                    "seed: 7\nimplementation_parameters:\n  reference:\n    method: { grid: [1, 0] }",
-                );
-                (
-                    "implementations: [\"reference\", \"alternative\"]",
-                    "implementations: [\"alternative\", \"third\", \"reference\"]",
-                )
-            }
-            "dataset" => {
-                replace(
-                    root.path(),
-                    "metewand.yaml",
-                    "  numbers:",
-                    "  other:\n    output_schema: \"schemas/dataset.json\"\n    sources: [\"data.json\"]\n  numbers:",
-                );
-                (
-                    "datasets: [\"numbers\"]",
-                    "datasets: [\"other\", \"numbers\"]",
-                )
-            }
-            "problem configuration" => (
-                "seed: 7",
-                "seed: 7\nproblem_parameters:\n  offset: { grid: [3, 2] }",
-            ),
-            "implementation repetition" => (
-                "implementation_repetitions: 1",
-                "implementation_repetitions: 2",
-            ),
-            "measurement repetition" => {
-                ("measurement_repetitions: 2", "measurement_repetitions: 3")
-            }
-            "experiment" => (
-                "experiments:",
-                r#"experiments:
+    let root = scheduling_contract_repository();
+    replace(
+        root.path(),
+        "metewand.yaml",
+        "experiments:",
+        r#"experiments:
   - name: "unrelated"
     problem: "sum"
     datasets: ["numbers"]
@@ -888,17 +824,12 @@ fn unrelated_slots_preserve_existing_relative_execution_order_and_seeds() {
     measurement_repetitions: 2
     seed: 8
 "#,
-            ),
-            _ => unreachable!(),
-        };
-        replace(root.path(), "metewand.yaml", before, after);
-        let expanded = scheduled_slot_snapshots(root.path(), expected_count);
-        let retained = expanded
-            .into_iter()
-            .filter(|(id, _)| existing.contains(id))
-            .collect::<Vec<_>>();
-        assert_eq!(retained, baseline, "adding {addition}");
-    }
+    );
+    let retained = scheduled_slot_snapshots(root.path(), 8)
+        .into_iter()
+        .filter(|(id, _)| existing.contains(id))
+        .collect::<Vec<_>>();
+    assert_eq!(retained, baseline);
 }
 
 #[test]

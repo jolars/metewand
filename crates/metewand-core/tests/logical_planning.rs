@@ -6,14 +6,16 @@ use std::{
 use metewand_core::{
     manifest::{ImplementationCapability, Manifest, Name, parse_manifest},
     planning::{
-        DatasetConfigurationDefinition, LogicalPlanningCatalog, expand_manifest_logical_plan,
-        identify_builtin_unit_dataset_definition,
+        DatasetConfigurationDefinition, LogicalPlan, LogicalPlanningCatalog,
+        expand_manifest_logical_plan, identify_builtin_unit_dataset_definition,
     },
     problem_contract::{ProblemContract, ScientificBudget, parse_problem_contract},
     records::{
-        AttemptSlotRole, CapabilityEvidence, DatasetDefinitionRecord, EnvironmentDefinitionRecord,
-        ImplementationDefinitionRecord, ProblemDefinitionRecord, RecordId,
+        AttemptSlotRole, CapabilityEvidence, DatasetDefinitionRecord, DerivedSeedRecord,
+        EnvironmentDefinitionRecord, ImplementationDefinitionRecord, LogicalObservationSlotRecord,
+        ProblemDefinitionRecord, RecordId,
     },
+    scheduling::{ComparisonBlock, SchedulingSlot, schedule_slots},
     schema::SchemaCatalog,
 };
 use serde_json::Value;
@@ -606,6 +608,178 @@ fn existing_ids_survive_unrelated_candidates_and_more_measurements() {
                 after.record.scheduling_priority
             );
         }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct ScheduledMeasurement {
+    slot: SchedulingSlot,
+    seed: DerivedSeedRecord,
+    observation: RecordId<LogicalObservationSlotRecord>,
+}
+
+fn scheduled_measurements(plan: &LogicalPlan) -> Vec<ScheduledMeasurement> {
+    let mut scheduled = Vec::new();
+    for experiment in &plan.experiments {
+        let mut measurements = Vec::new();
+        for candidate in &experiment.candidates {
+            for specification in &candidate.specifications {
+                for (index, observation) in specification.observation_slots.iter().enumerate() {
+                    let attempt = &specification.attempt_slots
+                        [experiment.execution_policy.record.warmup_runs as usize + index];
+                    measurements.push(ScheduledMeasurement {
+                        slot: SchedulingSlot {
+                            logical_slot: attempt.id,
+                            comparison_block: ComparisonBlock {
+                                // A fixed synthetic resolution keeps this test independent of workers.
+                                dataset_instance: RecordId::from_digest(
+                                    *candidate.dataset_configuration.id.digest(),
+                                ),
+                                problem_configuration: candidate.problem_configuration.id,
+                                implementation_repetition: specification
+                                    .specification
+                                    .record
+                                    .implementation_repetition,
+                                measurement_index: observation.record.measurement_index,
+                            },
+                            scheduling_priority: attempt.record.scheduling_priority,
+                        },
+                        seed: specification.specification.record.implementation_seed,
+                        observation: observation.id,
+                    });
+                }
+            }
+        }
+        let slots = measurements.iter().map(|m| m.slot).collect::<Vec<_>>();
+        scheduled.extend(
+            schedule_slots(
+                experiment.execution_policy.record.run_order,
+                &experiment.scheduling_seed,
+                &slots,
+            )
+            .into_iter()
+            .map(|index| measurements[index]),
+        );
+    }
+    scheduled
+}
+
+#[test]
+fn schedule_and_seeds_survive_each_unrelated_expansion() {
+    let source = MANIFEST
+        .replace(
+            "  alpha:",
+            "  alpha:\n    parameter_schema: \"schemas/parameters.json\"\n    parameter_defaults: { method: 0 }",
+        )
+        .replace(
+            "    seed: 17",
+            "    seed: 17\n    problem_parameters:\n      lambda: { value: 0.1 }",
+        )
+        .replace("    worker_reuse: true", "    worker_reuse: true\n    run_order: \"randomized\"");
+    let schemas = schemas();
+    let baseline_manifest = manifest(&source);
+    let contracts = contracts(&baseline_manifest);
+    let baseline = scheduled_measurements(
+        &expand_manifest_logical_plan(&baseline_manifest, &contracts, &schemas, &catalog())
+            .unwrap(),
+    );
+    assert_eq!(baseline.len(), 12);
+    let existing = baseline
+        .iter()
+        .map(|m| m.slot.logical_slot)
+        .collect::<BTreeSet<_>>();
+
+    for (addition, expected) in [
+        ("implementation configuration", 18),
+        ("implementation", 18),
+        ("dataset", 24),
+        ("problem configuration", 24),
+        ("implementation repetition", 18),
+        ("measurement repetition", 16),
+        ("experiment", 24),
+    ] {
+        let expanded_source = match addition {
+            "implementation configuration" => source.replace(
+                "    seed: 17",
+                r#"    seed: 17
+    implementation_parameters:
+      alpha:
+        method: { grid: [1, 0] }"#,
+            ),
+            "implementation" => source
+                .replace(
+                    "  beta:",
+                    r#"  gamma:
+    runner: "command"
+    program: "gamma"
+    environment: "local"
+    problem_contracts: ["regression"]
+    capabilities: ["one_shot"]
+  beta:"#,
+                )
+                .replace(
+                    "implementations: [\"alpha\", \"beta\"]",
+                    "implementations: [\"beta\", \"gamma\", \"alpha\"]",
+                ),
+            "dataset" => source
+                .replace(
+                    "datasets:\n",
+                    r#"datasets:
+  other:
+    output_schema: "schemas/dataset.json"
+    sources: ["datasets/other.json"]
+"#,
+                )
+                .replace("datasets: [\"fixed\"]", "datasets: [\"other\", \"fixed\"]"),
+            "problem configuration" => {
+                source.replace("lambda: { value: 0.1 }", "lambda: { grid: [0.2, 0.1] }")
+            }
+            "implementation repetition" => source.replace(
+                "implementation_repetitions: 2",
+                "implementation_repetitions: 3",
+            ),
+            "measurement repetition" => {
+                source.replace("measurement_repetitions: 3", "measurement_repetitions: 4")
+            }
+            "experiment" => source.replace(
+                "experiments:\n",
+                r#"experiments:
+  - name: "unrelated"
+    problem: "regression"
+    datasets: ["fixed"]
+    implementations: ["beta", "alpha"]
+    execution_policy: "reused"
+    observation_policy: "final"
+    implementation_repetitions: 2
+    measurement_repetitions: 3
+    seed: 18
+"#,
+            ),
+            _ => unreachable!(),
+        };
+        let expanded_manifest = manifest(&expanded_source);
+        let mut expanded_catalog = catalog();
+        expanded_catalog
+            .implementation_definitions
+            .insert(name("gamma"), id(6));
+        expanded_catalog
+            .dataset_definitions
+            .insert(DatasetConfigurationDefinition::Named(name("other")), id(7));
+        let expanded = scheduled_measurements(
+            &expand_manifest_logical_plan(
+                &expanded_manifest,
+                &contracts,
+                &schemas,
+                &expanded_catalog,
+            )
+            .unwrap(),
+        );
+        assert_eq!(expanded.len(), expected, "adding {addition}");
+        let retained = expanded
+            .into_iter()
+            .filter(|m| existing.contains(&m.slot.logical_slot))
+            .collect::<Vec<_>>();
+        assert_eq!(retained, baseline, "adding {addition}");
     }
 }
 

@@ -97,6 +97,14 @@ curl -i -H 'Accept: text/markdown' http://localhost:8787/guide/getting-started
 the local Workers runtime before validating the deployment package. The regular
 VitePress preview serves HTML without negotiation.
 
-On NixOS, the npm-provided `workerd` executable needs a compatible dynamic
-loader. If it cannot start, set `MINIFLARE_WORKERD_PATH` to a NixOS-compatible
-`workerd` executable when running the integration tests or Worker preview.
+On Linux, `devenv shell` configures `MINIFLARE_WORKERD_PATH` to launch the
+npm-pinned `workerd` executable through the Nix dynamic loader. This keeps the
+runtime version aligned with `package-lock.json` and works on NixOS without
+patching `node_modules`. Run `npm ci` before starting the runtime. Outside
+devenv, set `MINIFLARE_WORKERD_PATH` to a compatible executable if the npm binary
+cannot start.
+
+The integration tests share one local Worker harness, check that the runtime can
+start before opening the server, and close the harness even if startup fails.
+Each test file has a 60-second timeout so a stalled runtime cannot leave the
+check running indefinitely.

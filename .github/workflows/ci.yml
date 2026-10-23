@@ -37,8 +37,11 @@ jobs:
       - uses: actions/checkout@v7
       - name: Install R SDK dependencies
         run: sudo apt-get update && sudo apt-get install -y r-base-dev r-cran-digest
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: nextest
       - uses: Swatinem/rust-cache@v2
-      - run: cargo test --workspace --all-targets --locked
+      - run: cargo nextest run --workspace --all-targets --locked --profile ci
 
   versionary:
     name: versionary

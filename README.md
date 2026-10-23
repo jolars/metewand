@@ -220,6 +220,35 @@ pre-commit hooks:
 devenv shell
 ```
 
+For a short feedback loop, run the core and protocol tests with `test-fast`,
+or run all Rust tests with Nextest using `test-rust`. Both commands accept
+Nextest arguments, including filters for individual tests:
+
+```sh
+test-fast
+test-rust
+test-rust -E 'binary(run_command) and test(randomized_runs)'
+```
+
+The equivalent commands outside devenv, with Cargo Nextest installed, are:
+
+```sh
+cargo nextest run -p metewand-core -p metewand-protocol --locked
+cargo nextest run --workspace --all-targets --locked
+```
+
+The full Rust suite includes SDK, process, publication, and recovery tests.
+The scheduling matrices run in core; smaller CLI cases check actual execution
+and provenance. Public JSON Schemas compile once per process and share their
+immutable validators across runtime operations.
+Test builds retain debug line tables for backtraces while keeping the many
+integration binaries small.
+Nextest limits CLI and runtime tests to four concurrent tests to avoid
+oversubscribing filesystem and worker resources. Core and protocol tests use
+its normal CPU-based parallelism. Tests that start their own concurrency
+campaigns reserve the process group for their duration. Local verification and
+GitHub Actions use the CI profile, which runs every test even after a failure.
+
 Run the normal local CI checks with:
 
 ```sh
@@ -231,7 +260,7 @@ The equivalent commands are:
 ```sh
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
-cargo test --workspace --all-targets --locked
+cargo nextest run --workspace --all-targets --locked --profile ci
 npm --prefix docs ci
 npm --prefix docs run deploy:check
 ```

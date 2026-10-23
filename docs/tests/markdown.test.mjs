@@ -1,38 +1,44 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
-import { unstable_dev } from "wrangler";
-import { mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { resolve, join } from "node:path";
+import { createTestHarness } from "wrangler";
+import { execFileSync } from "node:child_process";
+import { readFile } from "node:fs/promises";
+import { createRequire } from "node:module";
+import { resolve } from "node:path";
 import config from "../cloudflare.config.ts";
-let temporary;
 
 let worker;
 before(async () => {
-  temporary = await mkdtemp(join(tmpdir(), "metewand-markdown-"));
+  const wranglerRequire = createRequire(import.meta.resolve("wrangler"));
+  const runtime = process.env.MINIFLARE_WORKERD_PATH ?? wranglerRequire("workerd").default;
+  try {
+    execFileSync(runtime, ["--version"], { timeout: 5_000, stdio: "pipe" });
+  } catch (cause) {
+    throw new Error(
+      `Cannot start workerd at ${runtime}. On NixOS, use devenv shell or set MINIFLARE_WORKERD_PATH to a compatible executable.`,
+      { cause },
+    );
+  }
   const { worker: settings } = config;
-  const configPath = join(temporary, "wrangler.json");
-  await writeFile(configPath, JSON.stringify({
-    name: settings.name,
-    compatibility_date: settings.compatibilityDate,
-    assets: {
-      directory: resolve(".vitepress/dist"),
-      binding: "ASSETS",
-      run_worker_first: settings.assets.runWorkerFirst,
-      not_found_handling: settings.assets.notFoundHandling,
-    },
-  }));
-  worker = await unstable_dev("worker.mjs", {
-    experimental: { disableExperimentalWarning: true },
-    config: configPath,
-    local: true,
-    logLevel: "error",
+  // Keep the handle before startup so a failed listen can still be closed.
+  worker = createTestHarness({
+    workers: [{ config: {
+      name: settings.name,
+      main: resolve("worker.mjs"),
+      compatibility_date: settings.compatibilityDate,
+      assets: {
+        directory: resolve(".vitepress/dist"),
+        binding: "ASSETS",
+        run_worker_first: settings.assets.runWorkerFirst,
+        not_found_handling: settings.assets.notFoundHandling,
+      },
+    } }],
   });
+  await worker.listen();
 }, { timeout: 30_000 });
 after(async () => {
-  await worker?.stop();
-  await rm(temporary, { recursive: true, force: true });
-});
+  await worker?.close();
+}, { timeout: 10_000 });
 
 test("serves clean Markdown for every page with homepage features, code, and tables", async () => {
   const routes = JSON.parse(await readFile(".vitepress/dist/markdown-routes.json", "utf8"));

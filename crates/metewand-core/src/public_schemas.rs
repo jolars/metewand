@@ -4,7 +4,10 @@
 //! documents gives the CLI and other Rust consumers a single source of truth
 //! without allowing schema validation to retrieve network resources.
 
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    sync::Mutex,
+};
 
 use thiserror::Error;
 
@@ -15,6 +18,7 @@ use crate::{
 
 const COMMON_PATH: &str = "schemas/v1/common.schema.json";
 const COMMON_SOURCE: &str = include_str!("../../../schemas/v1/common.schema.json");
+static CATALOG: Mutex<Option<SchemaCatalog>> = Mutex::new(None);
 
 /// A public version-1 schema entry point.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -295,13 +299,21 @@ pub fn public_schema_resources() -> impl Iterator<Item = (&'static Path, &'stati
     )
 }
 
-/// Builds an offline catalog containing every version-1 public schema.
+/// Returns a shared offline catalog containing every version-1 public schema.
+///
+/// The embedded documents cannot change during a process's lifetime. Compile
+/// them once and return inexpensive clones sharing the immutable validators.
 ///
 /// # Errors
 ///
 /// Returns an error if an embedded document is outside Metewand's canonical
 /// JSON domain or if the complete catalog cannot be compiled offline.
 pub fn public_schema_catalog() -> Result<SchemaCatalog, PublicSchemaCatalogError> {
+    let mut cached = CATALOG.lock().unwrap_or_else(|error| error.into_inner());
+    if let Some(catalog) = cached.as_ref() {
+        return Ok(catalog.clone());
+    }
+
     let documents = public_schema_resources()
         .map(|(path, source)| {
             let canonical = CanonicalValue::from_slice(source.as_bytes()).map_err(|error| {
@@ -314,7 +326,9 @@ pub fn public_schema_catalog() -> Result<SchemaCatalog, PublicSchemaCatalogError
         })
         .collect::<Result<Vec<_>, PublicSchemaCatalogError>>()?;
 
-    SchemaCatalog::try_new(documents).map_err(PublicSchemaCatalogError::Catalog)
+    let catalog = SchemaCatalog::try_new(documents)?;
+    *cached = Some(catalog.clone());
+    Ok(catalog)
 }
 
 /// An error encountered while loading the embedded public schema catalog.

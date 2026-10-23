@@ -71,12 +71,17 @@ that describes the behavior before implementing it. Keep fixtures deterministic
 and assert exact machine-readable bytes where the design defines a canonical
 representation.
 
+In `devenv shell`, use `test-fast` for core and protocol changes and `test-rust`
+for the complete Rust suite. These commands use Nextest and accept its filters.
+Keep combinatorial planning and scheduling assertions in core tests, with small
+CLI cases covering worker execution, emitted records, and provenance.
+
 Run focused tests while developing, then run the normal local CI checks once
 with `devenv test` or the equivalent commands:
 
 - `cargo fmt --all -- --check`
 - `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`
-- `cargo test --workspace --all-targets --locked`
+- `cargo nextest run --workspace --all-targets --locked --profile ci`
 - `npm --prefix docs ci`
 - `npm --prefix docs run deploy:check`
 
