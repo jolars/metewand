@@ -56,11 +56,8 @@ coverage; full ports of those studies do not block this MVP.
 ### 3.1 Useful one-shot runs and compact authoring
 
 Start the adopter integrations on the existing runner while simplifying the
-declarations they actually need. Reduce authoring effort before expanding the
-comparison suite. Neither a generic schema-generation rewrite nor a new
-compatibility review is a prerequisite. Keep Criterion for kernel timings and
-small performance regressions; use the Metewand pilots for independently
-evaluated solver comparisons.
+declarations they actually need. Neither a generic schema-generation rewrite nor
+a new compatibility review is a prerequisite.
 
 - [x] Run one Basin method and an existing competitor through the process
   boundary on a small shared case. Retain final parameters, independently
@@ -70,16 +67,6 @@ evaluated solver comparisons.
   `crates/competitor-bench/metewand/` directory contains the independent evaluator,
   reference cases, reproduction commands, and a verified run with six accepted
   results and six scientific completion failures.
-- [ ] Exercise one realistic existing Basin LM comparison with a release-built
-  Metewand runner, validated worker warm-ups, and more measurement repetitions.
-  Reuse shared case definitions and solver settings across Criterion and
-  Metewand. Retain actual iterations and objective or residual evaluation
-  counts, labeling the callback units and stopping rules for each library.
-- [ ] Measure runner and result-serialization overhead on the Basin pilot.
-  Keep the primary wall timing and worker diagnostics separately labeled with
-  their measured scopes. Distinguish endpoint accuracy from time to accuracy.
-  Use profiles to identify the first saved result that independently meets a
-  target.
 - [ ] Refresh the existing clustlasso-cd package integration for the current
   YAML CLI. Reuse its fixed inputs, Python and R adapters, and independent
   evaluator, and retain the original package track's scientific criteria.
@@ -207,16 +194,17 @@ every language is not a release prerequisite.
 - [ ] Keep all three profile modes covered by small end-to-end cases. Retain
   focused tests for scientific validity, timing, stopping, failure evidence,
   and recovery, plus the existing foundation regressions.
+- [ ] Measure orchestration and result-serialization overhead in release builds
+  using a small controlled worker. Report primary wall timing and worker
+  diagnostics with their scopes so users can judge whether overhead obscures
+  their workload.
 - [ ] Preserve logical versus resolved identities, independent evaluator
   metrics, and timing and guarantee classes through durable records and
   exports. Add only problem-defined scientific budgets needed by these
   pilots.
-- [ ] Bind native build provenance to the measured executable. Capture source
-  revision and dirty state, compiler version, enabled features, build profile,
-  flags, and dependency lockfile hashes during the build, and retain a receipt
-  tied to the executable's digest. Pin the Metewand revision and record the
-  runner's build profile and executable hash. Keep post-run environment
-  observations separate from evidence of how the binaries were built.
+- [ ] Bind available build evidence to worker and runner executable hashes.
+  Capture source state, compiler, profile, features, flags, and lockfile hashes
+  during builds, and distinguish that evidence from post-run host observations.
 - [ ] Provide a useful default comparison summary and a table for analysis with
   methods, effective settings, repetition indices, evaluator metrics, durations,
   timing scopes, and failure reasons. Keep individual repetitions and failed
