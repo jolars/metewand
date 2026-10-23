@@ -324,10 +324,14 @@ artifacts](DESIGN.md#6-environments-execution-and-artifacts).
 - [x] Add representative raw-command, Python-only, R-only, dataset-free, and
   parameter-matrix local examples without privileged built-in scientific
   templates.
-- [ ] Pass Gate 2 acceptance tests for archive safety, dataset mutation, timing
+- [x] Pass Gate 2 acceptance tests for archive safety, dataset mutation, timing
   scopes, process escape, log flooding, control loss, retries, crash
   recovery, cache concurrency, garbage collection, exports, and the complete
   agent loop.
+
+The complete agent-loop acceptance test is opt-in; see the command in
+[Development](README.md#development). The normal suite retains focused coverage
+of the individual commands and failure modes.
 
 ## 3. Gate 3: comparative local MVP
 

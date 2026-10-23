@@ -238,6 +238,18 @@ cargo nextest run --workspace --all-targets --locked
 ```
 
 The full Rust suite includes SDK, process, publication, and recovery tests.
+The Gate 2 agent-loop acceptance test is ignored by default to keep the regular
+suite fast. Run it explicitly in `devenv shell`:
+
+```sh
+cargo test -p metewand-cli --test agent_loop --locked -- --ignored
+```
+
+It checks worker verification, planning, selected and bounded execution, failure
+diagnostics, explicit retry, resume, and export using machine-readable identities
+throughout the workflow. It runs locally with the raw-command example and does
+not require a model or external service.
+
 The scheduling matrices run in core; smaller CLI cases check actual execution
 and provenance. Public JSON Schemas compile once per process and share their
 immutable validators across runtime operations.
