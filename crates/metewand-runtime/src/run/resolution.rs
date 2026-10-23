@@ -875,7 +875,7 @@ pub(super) fn resolve_worker(
         EnvironmentDefinition::Local {}
     ) {
         return Err(unsupported(format!(
-            "environment `{environment}` requires provisioning; Gate 1 supports `kind = \"local\"`"
+            "environment `{environment}` requires provisioning; Gate 1 supports `kind: \"local\"`"
         )));
     }
     if transport == Some(ProtocolTransport::Stdio) {

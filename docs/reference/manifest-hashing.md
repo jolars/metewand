@@ -22,7 +22,7 @@ use metewand_core::{
 };
 
 # fn example(source: &str) -> Result<(), Box<dyn std::error::Error>> {
-let manifest = parse_manifest(Path::new("metewand.toml"), source)?;
+let manifest = parse_manifest(Path::new("metewand.yaml"), source)?;
 let canonical = canonical_manifest_bytes(&manifest)?;
 let digest = hash_manifest(&manifest)?;
 
@@ -38,14 +38,15 @@ filesystem, and they perform no mutation.
 ## Canonical representation
 
 The representation is constructed explicitly from typed fields; it is not a
-serialization of the original TOML. Consequently, comments, whitespace, TOML
-key order, table order, and the logical source path do not affect the hash.
+serialization of the original YAML. Consequently, comments, whitespace, YAML
+key order, mapping order, aliases, equivalent merge expansions, and the logical
+source path do not affect the hash.
 Repository paths have already been restricted to normalized, relative UTF-8
 paths by the parser.
 
 All top-level collections are present, including empty collections. Optional
 scalar and resource fields are represented as JSON `null`; omitted arguments,
-selections, parameter tables, and cases are represented by their typed empty
+selections, parameter mappings, and cases are represented by their typed empty
 collections. Map keys are ordered by canonical JSON. Semantic sequences remain
 arrays in their declared order, including experiments, cases, worker arguments,
 dataset and implementation selections, source declarations, and parameter
@@ -53,14 +54,14 @@ grids.
 
 The complete version-one execution-policy defaults are applied before hashing:
 
-- `network = false`;
-- `worker_reuse = false`;
-- `warmup_runs = 0`;
-- `timing_scope = "prepare_and_execute"`;
-- `primary_time = "timed_wall_time"`;
-- `run_order = "sequential"`;
-- `max_concurrency = 1`; and
-- `enforcement = "best_effort"`.
+- `network: false`;
+- `worker_reuse: false`;
+- `warmup_runs: 0`;
+- `timing_scope: "prepare_and_execute"`;
+- `primary_time: "timed_wall_time"`;
+- `run_order: "sequential"`;
+- `max_concurrency: 1`; and
+- `enforcement: "best_effort"`.
 
 Therefore, omitting one of these fields produces the same hash as spelling its
 default explicitly. CPU, thread, memory, and timeout values have no implicit
@@ -96,3 +97,9 @@ Their SHA-256 digest is:
 The representation is part of manifest compatibility version 1. Changing its
 fields, defaults, sequence semantics, or digest construction requires an
 explicit review of `MANIFEST_VERSION` and updated conformance vectors.
+
+The switch from TOML to YAML retains the unreleased version-1 typed manifest,
+public-schema, identity, and wire contracts and version-2 execution semantics.
+Canonical hashing consumes the resolved typed values. Renaming a referenced
+resource from `.toml` to `.yaml` changes that path value and can change the
+manifest hash or an identity that contains the path. Existing run-store records remain readable.

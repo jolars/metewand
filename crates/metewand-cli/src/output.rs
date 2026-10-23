@@ -1308,7 +1308,7 @@ impl CommandError {
                 Diagnostic::new(code, error.to_string())
                     .with_detail("path", error.path.to_string_lossy().as_ref())
                     .with_detail("created_paths", serde_json::to_value(&error.created_paths).expect("UTF-8 paths serialize"))
-                    .with_remediation("Inspect any created paths and choose a writable destination without an existing metewand.toml; existing files are never overwritten."),
+                    .with_remediation("Inspect any created paths and choose a writable destination without an existing metewand.yaml; existing files are never overwritten."),
             ),
         }
     }
@@ -1820,7 +1820,7 @@ mod tests {
     fn initialization_failures_report_created_paths_in_both_formats() {
         use metewand_runtime::authoring::{CreatedPath, CreatedPathKind, InitError};
         let error = super::CommandError::init(&InitError {
-            path: "benchmark/metewand.toml".into(),
+            path: "benchmark/metewand.yaml".into(),
             source: std::io::Error::new(std::io::ErrorKind::AlreadyExists, "path already exists"),
             created_paths: vec![CreatedPath {
                 path: "benchmark".into(),
@@ -1839,7 +1839,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(value["data"]["code"], "init_path_exists");
-        assert_eq!(value["data"]["details"]["path"], "benchmark/metewand.toml");
+        assert_eq!(value["data"]["details"]["path"], "benchmark/metewand.yaml");
         assert_eq!(
             value["data"]["details"]["created_paths"],
             serde_json::json!([
@@ -1856,7 +1856,7 @@ mod tests {
         };
         let error = super::CommandError::scaffold(&ScaffoldError {
             kind: ScaffoldErrorKind::Io,
-            path: "metewand.toml".into(),
+            path: "metewand.yaml".into(),
             message: "partial write".into(),
             source: None,
             source_span: None,
@@ -1867,7 +1867,7 @@ mod tests {
                     action: PathAction::Create,
                 },
                 ChangedPath {
-                    path: "metewand.toml".into(),
+                    path: "metewand.yaml".into(),
                     kind: CreatedPathKind::File,
                     action: PathAction::Modify,
                 },
@@ -1876,18 +1876,18 @@ mod tests {
         assert_eq!(error.exit_code, super::EXIT_IO);
         let human = error.diagnostic.render_human();
         assert!(human.contains("Created directory: datasets/new\n"));
-        assert!(human.contains("Modified file: metewand.toml\n"));
+        assert!(human.contains("Modified file: metewand.yaml\n"));
         let value: Value = serde_json::from_str(
             &render_diagnostic(&error.diagnostic, OutputFormat::JsonLines).unwrap(),
         )
         .unwrap();
         assert_eq!(value["data"]["code"], "scaffold_io_failed");
-        assert_eq!(value["data"]["details"]["path"], "metewand.toml");
+        assert_eq!(value["data"]["details"]["path"], "metewand.yaml");
         assert_eq!(
             value["data"]["details"]["changed_paths"],
             serde_json::json!([
                 {"path": "datasets/new", "kind": "directory", "action": "create"},
-                {"path": "metewand.toml", "kind": "file", "action": "modify"}
+                {"path": "metewand.yaml", "kind": "file", "action": "modify"}
             ])
         );
     }

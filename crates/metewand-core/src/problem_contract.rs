@@ -14,7 +14,7 @@ use crate::{
     canonical::CanonicalValue,
     manifest::{
         Name, RepositoryPath, SourceSpan, TimingScope, deserialize_manifest_value,
-        deserialize_version_one, ensure_nonempty_unique,
+        deserialize_optional_non_null, deserialize_version_one, ensure_nonempty_unique,
     },
     schema::{SchemaCatalog, SchemaValidationError},
 };
@@ -28,7 +28,7 @@ use crate::{
 ///
 /// # Errors
 ///
-/// Returns a source-spanned error for invalid TOML or an invalid typed envelope,
+/// Returns a source-spanned error for invalid YAML or an invalid typed envelope,
 /// a missing-schema error, or the deterministic violations produced by the
 /// family-specific semantics schema.
 pub fn parse_problem_contract(
@@ -51,18 +51,15 @@ pub fn parse_problem_contract(
 ///
 /// # Errors
 ///
-/// Returns a source-spanned error for invalid TOML or an invalid typed envelope.
+/// Returns a source-spanned error for invalid YAML or an invalid typed envelope.
 pub fn parse_problem_contract_document(
     source_path: &Path,
     source: &str,
 ) -> Result<ProblemContract, ProblemContractError> {
     let parsed: ParsedProblemContract =
-        toml::from_str(source).map_err(|error: toml::de::Error| {
-            let byte_span = error.span().unwrap_or(source.len()..source.len());
-            ProblemContractError::Parse {
-                message: error.message().to_owned(),
-                source_span: SourceSpan::from_byte_range(source_path, source, byte_span),
-            }
+        crate::yaml::parse(source_path, source).map_err(|error| ProblemContractError::Parse {
+            message: error.message,
+            source_span: error.source_span,
         })?;
     Ok(parsed.0)
 }
@@ -153,7 +150,7 @@ impl<'de> Deserialize<'de> for ParsedProblemContract {
             .map_err(de::Error::custom)?;
         if raw.supported_budgets != [ScientificBudget::None] {
             return Err(de::Error::custom(
-                "version 1 requires `supported_budgets = [\"none\"]`",
+                "version 1 requires `supported_budgets: [\"none\"]`",
             ));
         }
         if raw.reference_cases.is_empty() {
@@ -251,6 +248,7 @@ impl<'de> Deserialize<'de> for ProblemSemantics {
 #[serde(deny_unknown_fields)]
 pub struct ReferenceCase {
     /// Dataset artifact used by the case, when the problem accepts datasets.
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
     pub dataset: Option<RepositoryPath>,
     /// Canonical result artifact evaluated by the case.
     pub result: RepositoryPath,
@@ -305,12 +303,12 @@ impl fmt::Display for ProblemSchemaRole {
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum ProblemContractError {
-    /// The TOML document did not satisfy the typed common envelope.
+    /// The YAML document did not satisfy the typed common envelope.
     #[error("failed to parse problem contract at `{}`: {message}", source_span.path.display())]
     Parse {
         /// Decoder explanation.
         message: String,
-        /// Source range attributed by the TOML decoder.
+        /// Source range attributed by the YAML decoder.
         source_span: SourceSpan,
     },
 
@@ -341,7 +339,7 @@ pub enum ProblemContractError {
 }
 
 impl ProblemContractError {
-    /// Returns the TOML decoder's explanation for typed-envelope failures.
+    /// Returns the YAML decoder's explanation for typed-envelope failures.
     #[must_use]
     pub fn message(&self) -> Option<&str> {
         match self {
@@ -350,7 +348,7 @@ impl ProblemContractError {
         }
     }
 
-    /// Returns the source range for TOML and typed-envelope failures.
+    /// Returns the source range for YAML and typed-envelope failures.
     #[must_use]
     pub fn source_span(&self) -> Option<&SourceSpan> {
         match self {

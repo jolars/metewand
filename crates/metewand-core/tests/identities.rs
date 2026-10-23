@@ -24,8 +24,8 @@ use metewand_core::{
 
 fn name(value: &str) -> Name {
     parse_manifest(
-        Path::new("metewand.toml"),
-        &format!("version = 1\nname = {value:?}\n"),
+        Path::new("metewand.yaml"),
+        &format!("version: 1\nname: {value:?}\n"),
     )
     .unwrap()
     .name

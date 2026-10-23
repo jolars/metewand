@@ -15,7 +15,7 @@ the implementation order.
 
 Start a benchmark with `metewand init [PATH]`, or preview its paths with
 `metewand init [PATH] --dry-run`. It creates only a minimal versioned
-`metewand.toml` and refuses to overwrite existing files. See
+`metewand.yaml` and refuses to overwrite existing files. See
 [benchmark authoring](docs/reference/authoring-cli.md) for the authoring contract.
 Add components explicitly with `metewand scaffold dataset|problem|implementation
 NAME --environment NAME`. Scaffolds report every change, support `--dry-run`,
@@ -60,7 +60,7 @@ manifest, problem contract, one-shot policy, artifact and execution records,
 the worker handshake, and strict envelopes for machine output, canonical
 results, and evaluator metrics. `metewand-core` embeds the checked-in documents
 for offline consumers.
-The [manifest parser](docs/reference/manifest-parsing.md) turns `metewand.toml` into strict
+The [manifest parser](docs/reference/manifest-parsing.md) turns `metewand.yaml` into strict
 domain types and reports path-aware source spans for invalid input. Its
 [parameter-namespace validation](docs/reference/parameter-namespaces.md) binds dataset and
 implementation parameter tables to selected, schema-bearing definitions while

@@ -78,7 +78,7 @@ fn exports_verified_history_without_the_repository_and_rebuilds_stale_indexes() 
     let root = repository();
     let (code, run) = command(root.path(), &["run", "--output-dir", "run"]);
     assert_eq!(code, 0, "{run}");
-    fs::remove_file(root.path().join("metewand.toml")).unwrap();
+    fs::remove_file(root.path().join("metewand.yaml")).unwrap();
     fs::write(root.path().join("run/index.jsonl"), "stale and invalid").unwrap();
     let before = snapshot(&root.path().join("run"));
     for format in ["jsonl", "csv"] {

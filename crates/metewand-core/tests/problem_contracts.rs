@@ -9,7 +9,7 @@ use metewand_core::{
 };
 use serde_json::{Value, json};
 
-const COMPLETE_CONTRACT: &str = include_str!("../../../fixtures/problem-contract/v1/complete.toml");
+const COMPLETE_CONTRACT: &str = include_str!("../../../fixtures/problem-contract/v1/complete.yaml");
 
 fn schema_documents() -> Vec<(PathBuf, Value)> {
     [
@@ -51,7 +51,7 @@ fn schema_catalog() -> SchemaCatalog {
 #[test]
 fn parses_and_validates_a_complete_problem_contract() {
     let contract = parse_problem_contract(
-        Path::new("problems/regression.toml"),
+        Path::new("problems/regression.yaml"),
         COMPLETE_CONTRACT,
         &schema_catalog(),
     )
@@ -74,7 +74,7 @@ fn parses_and_validates_a_complete_problem_contract() {
 
 #[test]
 fn repository_loaders_can_parse_before_compiling_the_schema_catalog() {
-    let path = Path::new("problems/regression.toml");
+    let path = Path::new("problems/regression.yaml");
     let contract = parse_problem_contract_document(path, COMPLETE_CONTRACT).unwrap();
     assert_eq!(
         contract.semantics_schema.as_path(),
@@ -96,13 +96,13 @@ fn repository_loaders_can_parse_before_compiling_the_schema_catalog() {
 fn accepts_dataset_free_contracts_and_reference_cases() {
     let source = COMPLETE_CONTRACT
         .replace(
-            "dataset_schemas = [\"schemas/dataset.json\"]",
-            "dataset_schemas = []",
+            "dataset_schemas: [\"schemas/dataset.json\"]",
+            "dataset_schemas: []",
         )
-        .replace("dataset = \"fixtures/small/dataset\"\n", "");
+        .replace("    dataset: \"fixtures/small/dataset\"\n", "");
 
     let contract = parse_problem_contract(
-        Path::new("problems/regression.toml"),
+        Path::new("problems/regression.yaml"),
         &source,
         &schema_catalog(),
     )
@@ -115,12 +115,12 @@ fn accepts_dataset_free_contracts_and_reference_cases() {
 #[test]
 fn rejects_unknown_fields_with_a_source_span() {
     let source = COMPLETE_CONTRACT.replace(
-        "family = \"optimization\"",
-        "family = \"optimization\"\nunexpected = true",
+        "family: \"optimization\"",
+        "family: \"optimization\"\nunexpected: true",
     );
 
     let error = parse_problem_contract(
-        Path::new("bench/problems/regression.toml"),
+        Path::new("bench/problems/regression.yaml"),
         &source,
         &schema_catalog(),
     )
@@ -130,25 +130,22 @@ fn rejects_unknown_fields_with_a_source_span() {
     let span = error
         .source_span()
         .expect("parse errors must retain a span");
-    assert_eq!(span.path, Path::new("bench/problems/regression.toml"));
+    assert_eq!(span.path, Path::new("bench/problems/regression.yaml"));
     assert_eq!(span.line, 4);
 }
 
 #[test]
 fn requires_distinct_validity_and_one_shot_completion_rules() {
     for (heading, expected) in [
+        ("  validity:\n    nonfinite: \"reject\"\n", "validity"),
         (
-            "[semantics.validity]\nnonfinite = \"reject\"\n\n",
-            "validity",
-        ),
-        (
-            "[semantics.one_shot_completion]\nmaximum_error = 1e-8\n\n",
+            "  one_shot_completion:\n    maximum_error: 1e-8\n",
             "one_shot_completion",
         ),
     ] {
         let source = COMPLETE_CONTRACT.replace(heading, "");
         let error = parse_problem_contract(
-            Path::new("problems/regression.toml"),
+            Path::new("problems/regression.yaml"),
             &source,
             &schema_catalog(),
         )
@@ -162,13 +159,13 @@ fn requires_distinct_validity_and_one_shot_completion_rules() {
 #[test]
 fn rejects_empty_operational_rule_objects() {
     for assignment in [
-        "[semantics.validity]\nnonfinite = \"reject\"",
-        "[semantics.one_shot_completion]\nmaximum_error = 1e-8",
+        "  validity:\n    nonfinite: \"reject\"",
+        "  one_shot_completion:\n    maximum_error: 1e-8",
     ] {
         let heading = assignment.lines().next().unwrap();
-        let source = COMPLETE_CONTRACT.replace(assignment, heading);
+        let source = COMPLETE_CONTRACT.replace(assignment, &format!("{heading} {{}}"));
         let error = parse_problem_contract(
-            Path::new("problems/regression.toml"),
+            Path::new("problems/regression.yaml"),
             &source,
             &schema_catalog(),
         )
@@ -180,9 +177,9 @@ fn rejects_empty_operational_rule_objects() {
 
 #[test]
 fn validates_family_specific_semantics_against_its_declared_schema() {
-    let source = COMPLETE_CONTRACT.replace("nonfinite = \"reject\"", "nonfinite = \"allow\"");
+    let source = COMPLETE_CONTRACT.replace("    nonfinite: \"reject\"", "    nonfinite: \"allow\"");
     let error = parse_problem_contract(
-        Path::new("problems/regression.toml"),
+        Path::new("problems/regression.yaml"),
         &source,
         &schema_catalog(),
     )
@@ -212,7 +209,7 @@ fn requires_every_declared_schema_to_be_available() {
         let catalog = SchemaCatalog::try_new(documents).unwrap();
 
         let error = parse_problem_contract(
-            Path::new("problems/regression.toml"),
+            Path::new("problems/regression.yaml"),
             COMPLETE_CONTRACT,
             &catalog,
         )
@@ -235,22 +232,22 @@ fn requires_every_declared_schema_to_be_available() {
 #[test]
 fn enforces_common_envelope_constraints() {
     let mutations = [
-        ("version = 1", "version = 2"),
+        ("version: 1\n", "version: 2\n"),
         (
-            "dataset_schemas = [\"schemas/dataset.json\"]",
-            "dataset_schemas = [\"schemas/dataset.json\", \"schemas/dataset.json\"]",
+            "dataset_schemas: [\"schemas/dataset.json\"]",
+            "dataset_schemas: [\"schemas/dataset.json\", \"schemas/dataset.json\"]",
         ),
         (
-            "allowed_timing_scopes = [\"cold_end_to_end\", \"prepare_and_execute\"]",
-            "allowed_timing_scopes = []",
+            "allowed_timing_scopes: [\"cold_end_to_end\", \"prepare_and_execute\"]",
+            "allowed_timing_scopes: []",
         ),
-        ("supported_budgets = [\"none\"]", "supported_budgets = []"),
+        ("supported_budgets: [\"none\"]", "supported_budgets: []"),
     ];
 
     for (from, to) in mutations {
         let source = COMPLETE_CONTRACT.replace(from, to);
         let error = parse_problem_contract(
-            Path::new("problems/regression.toml"),
+            Path::new("problems/regression.yaml"),
             &source,
             &schema_catalog(),
         )
@@ -261,9 +258,10 @@ fn enforces_common_envelope_constraints() {
 
 #[test]
 fn requires_reference_case_datasets_exactly_when_the_contract_uses_datasets() {
-    let missing_dataset = COMPLETE_CONTRACT.replace("dataset = \"fixtures/small/dataset\"\n", "");
+    let missing_dataset =
+        COMPLETE_CONTRACT.replace("    dataset: \"fixtures/small/dataset\"\n", "");
     let error = parse_problem_contract(
-        Path::new("problems/regression.toml"),
+        Path::new("problems/regression.yaml"),
         &missing_dataset,
         &schema_catalog(),
     )
@@ -271,11 +269,11 @@ fn requires_reference_case_datasets_exactly_when_the_contract_uses_datasets() {
     assert!(error.to_string().contains("requires `dataset`"), "{error}");
 
     let dataset_free_with_dataset = COMPLETE_CONTRACT.replace(
-        "dataset_schemas = [\"schemas/dataset.json\"]",
-        "dataset_schemas = []",
+        "dataset_schemas: [\"schemas/dataset.json\"]",
+        "dataset_schemas: []",
     );
     let error = parse_problem_contract(
-        Path::new("problems/regression.toml"),
+        Path::new("problems/regression.yaml"),
         &dataset_free_with_dataset,
         &schema_catalog(),
     )
@@ -285,18 +283,15 @@ fn requires_reference_case_datasets_exactly_when_the_contract_uses_datasets() {
 
 #[test]
 fn rejects_contract_values_outside_the_canonical_domain() {
-    let source = COMPLETE_CONTRACT.replace(
-        "maximum_error = 1e-8",
-        "maximum_error = 1979-05-27T07:32:00Z",
-    );
+    let source = COMPLETE_CONTRACT.replace("    maximum_error: 1e-8", "    maximum_error: .nan");
     let error = parse_problem_contract(
-        Path::new("problems/regression.toml"),
+        Path::new("problems/regression.yaml"),
         &source,
         &schema_catalog(),
     )
     .unwrap_err();
 
-    assert!(error.to_string().contains("version-1 Metewand JSON domain"));
+    assert!(error.to_string().contains("non-finite"));
     assert!(error.source_span().is_some());
 }
 

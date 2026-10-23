@@ -55,8 +55,8 @@ fn reference_contracts_admit_correct_workers_and_reject_three_classes_of_bad_res
         )
         .unwrap();
         let contract = parse_problem_contract(
-            Path::new("problem.toml"),
-            &fs::read_to_string(base.join("problem.toml")).unwrap(),
+            Path::new("problem.yaml"),
+            &fs::read_to_string(base.join("problem.yaml")).unwrap(),
             &catalog,
         )
         .unwrap();

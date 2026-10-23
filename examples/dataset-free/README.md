@@ -9,9 +9,9 @@ From the repository root, with Python 3 on `PATH`, run:
 
 ```sh
 cargo run --locked -p metewand-cli -- check --workers \
-  --manifest examples/dataset-free/metewand.toml
+  --manifest examples/dataset-free/metewand.yaml
 cargo run --locked -p metewand-cli -- run \
-  --manifest examples/dataset-free/metewand.toml \
+  --manifest examples/dataset-free/metewand.yaml \
   --output-dir "$(mktemp -d)/run" --output jsonl
 ```
 

@@ -1,5 +1,7 @@
 #![cfg(unix)]
 
+mod support;
+
 use serde_json::Value;
 use std::{fs, path::Path, process::Command};
 use tempfile::TempDir;
@@ -21,7 +23,7 @@ fn check(root: &Path) -> std::process::Output {
         .args([
             "check",
             "--manifest",
-            "metewand.toml",
+            "metewand.yaml",
             "--workers",
             "--output",
             "json",
@@ -141,7 +143,7 @@ fn accepts_enveloped_reference_results_and_metrics() {
             serde_json::to_vec(&value).unwrap(),
         )
         .unwrap();
-        let contract = repository.path().join("problem.toml");
+        let contract = repository.path().join("problem.yaml");
         let text = fs::read_to_string(&contract).unwrap().replace(
             &format!("reference/{file}.json"),
             &format!("reference/{file}"),
@@ -157,19 +159,23 @@ fn checks_dataset_free_problem_references() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let repository = TempDir::new().unwrap();
     copy_tree(&root.join("examples/fixed-dataset"), repository.path());
-    let manifest_path = repository.path().join("metewand.toml");
-    let manifest = fs::read_to_string(&manifest_path).unwrap()
-        .replace("[datasets.numbers]\noutput_schema = \"schemas/dataset.json\"\nsources = [\"data.json\"]\n\n", "")
-        .replace("datasets = [\"numbers\"]\n", "");
+    let manifest_path = repository.path().join("metewand.yaml");
+    let manifest = fs::read_to_string(&manifest_path).unwrap();
+    let manifest = support::replace_yaml(
+        &manifest,
+        "datasets:\n  numbers:\n    output_schema: \"schemas/dataset.json\"\n    sources: [\"data.json\"]\n",
+        "",
+    )
+    .replace("    datasets: [\"numbers\"]\n", "");
     fs::write(manifest_path, manifest).unwrap();
-    let contract_path = repository.path().join("problem.toml");
+    let contract_path = repository.path().join("problem.yaml");
     let contract = fs::read_to_string(&contract_path)
         .unwrap()
         .replace(
-            "dataset_schemas = [\"schemas/dataset.json\"]",
-            "dataset_schemas = []",
+            "dataset_schemas: [\"schemas/dataset.json\"]",
+            "dataset_schemas: []",
         )
-        .replace("dataset = \"data.json\"\n", "");
+        .replace("  - dataset: \"data.json\"\n    result:", "  - result:");
     fs::write(contract_path, contract).unwrap();
     let worker_path = repository.path().join("worker.py");
     let worker = fs::read_to_string(&worker_path).unwrap().replace(
@@ -187,11 +193,11 @@ fn accepts_existing_dataset_inventory_and_checks_each_case() {
     let source = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../fixtures/problem-contract/v1/suites/sum/fixtures/mixed/dataset");
     copy_tree(&source, &repository.path().join("reference/dataset"));
-    let path = repository.path().join("problem.toml");
+    let path = repository.path().join("problem.yaml");
     let contract = fs::read_to_string(&path)
         .unwrap()
-        .replace("dataset = \"data.json\"", "dataset = \"reference/dataset\"");
-    let case = &contract[contract.find("[[reference_cases]]").unwrap()..];
+        .replace("dataset: \"data.json\"", "dataset: \"reference/dataset\"");
+    let case = &contract[contract.find("  - dataset:").unwrap()..];
     fs::write(path, format!("{contract}\n{case}")).unwrap();
     let output = check(repository.path());
     assert!(output.status.success(), "{output:?}");

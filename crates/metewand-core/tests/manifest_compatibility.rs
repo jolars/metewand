@@ -8,50 +8,49 @@ use metewand_core::{
 };
 use serde_json::Value;
 
-const COMPLETE_CONTRACT: &str = include_str!("../../../fixtures/problem-contract/v1/complete.toml");
+const COMPLETE_CONTRACT: &str = include_str!("../../../fixtures/problem-contract/v1/complete.yaml");
 
 const COMPLETE_MANIFEST: &str = r#"
-version = 1
-name = "compatibility"
-
-[datasets.input]
-output_schema = "schemas/dataset.json"
-sources = ["datasets/input.json"]
-
-[problems.regression]
-contract = "problems/regression.toml"
-[problems.regression.evaluator]
-runner = "command"
-program = "evaluate"
-environment = "local"
-
-[implementations.solver]
-runner = "command"
-program = "solve"
-environment = "local"
-problem_contracts = ["regression"]
-capabilities = ["one_shot"]
-
-[[experiments]]
-name = "main"
-problem = "regression"
-datasets = ["input"]
-implementations = ["solver"]
-execution_policy = "controlled"
-observation_policy = "final"
-implementation_repetitions = 1
-measurement_repetitions = 1
-seed = 0
-
-[execution_policies.controlled]
-version = 1
-worker_reuse = false
-warmup_runs = 0
-timing_scope = "prepare_and_execute"
-
-[observation_policies.final]
-version = 1
-kind = "one_shot"
+version: 1
+name: "compatibility"
+datasets:
+  input:
+    output_schema: "schemas/dataset.json"
+    sources: ["datasets/input.json"]
+problems:
+  regression:
+    contract: "problems/regression.yaml"
+    evaluator:
+      runner: "command"
+      program: "evaluate"
+      environment: "local"
+implementations:
+  solver:
+    runner: "command"
+    program: "solve"
+    environment: "local"
+    problem_contracts: ["regression"]
+    capabilities: ["one_shot"]
+experiments:
+  - name: "main"
+    problem: "regression"
+    datasets: ["input"]
+    implementations: ["solver"]
+    execution_policy: "controlled"
+    observation_policy: "final"
+    implementation_repetitions: 1
+    measurement_repetitions: 1
+    seed: 0
+execution_policies:
+  controlled:
+    version: 1
+    worker_reuse: false
+    warmup_runs: 0
+    timing_scope: "prepare_and_execute"
+observation_policies:
+  final:
+    version: 1
+    kind: "one_shot"
 "#;
 
 fn schema_catalog() -> SchemaCatalog {
@@ -89,24 +88,24 @@ fn schema_catalog() -> SchemaCatalog {
 }
 
 fn parse(source: &str) -> Manifest {
-    parse_manifest(Path::new("metewand.toml"), source).unwrap()
+    parse_manifest(Path::new("metewand.yaml"), source).unwrap()
 }
 
 fn contract(dataset_free: bool, allowed_timing_scopes: &str) -> ProblemContract {
     let mut source = COMPLETE_CONTRACT.replace(
-        "allowed_timing_scopes = [\"cold_end_to_end\", \"prepare_and_execute\"]",
+        "allowed_timing_scopes: [\"cold_end_to_end\", \"prepare_and_execute\"]",
         allowed_timing_scopes,
     );
     if dataset_free {
         source = source
             .replace(
-                "dataset_schemas = [\"schemas/dataset.json\"]",
-                "dataset_schemas = []",
+                "dataset_schemas: [\"schemas/dataset.json\"]",
+                "dataset_schemas: []",
             )
-            .replace("dataset = \"fixtures/small/dataset\"\n", "");
+            .replace("    dataset: \"fixtures/small/dataset\"\n", "");
     }
     parse_problem_contract(
-        Path::new("problems/regression.toml"),
+        Path::new("problems/regression.yaml"),
         &source,
         &schema_catalog(),
     )
@@ -132,7 +131,7 @@ fn accepts_compatible_dataset_backed_experiments() {
         "regression",
         contract(
             false,
-            "allowed_timing_scopes = [\"cold_end_to_end\", \"prepare_and_execute\"]",
+            "allowed_timing_scopes: [\"cold_end_to_end\", \"prepare_and_execute\"]",
         ),
     );
 
@@ -149,19 +148,21 @@ fn requires_every_problem_contract_to_be_loaded() {
             problem,
             contract_path,
         }) if problem.as_str() == "regression"
-            && contract_path == Path::new("problems/regression.toml")
+            && contract_path == Path::new("problems/regression.yaml")
     ));
 }
 
 #[test]
 fn requires_every_experiment_selection_to_resolve() {
-    let source =
-        COMPLETE_MANIFEST.replace("problem = \"regression\"", "problem = \"missing-problem\"");
+    let source = COMPLETE_MANIFEST.replace(
+        "    problem: \"regression\"",
+        "    problem: \"missing-problem\"",
+    );
     let manifest = parse(&source);
     let contracts = contracts_for(
         &manifest,
         "regression",
-        contract(false, "allowed_timing_scopes = [\"prepare_and_execute\"]"),
+        contract(false, "allowed_timing_scopes: [\"prepare_and_execute\"]"),
     );
     assert!(matches!(
         validate_manifest_compatibility(&manifest, &contracts),
@@ -169,12 +170,13 @@ fn requires_every_experiment_selection_to_resolve() {
             if problem.as_str() == "missing-problem"
     ));
 
-    let source = COMPLETE_MANIFEST.replace("datasets = [\"input\"]", "datasets = [\"missing\"]");
+    let source =
+        COMPLETE_MANIFEST.replace("    datasets: [\"input\"]", "    datasets: [\"missing\"]");
     let manifest = parse(&source);
     let contracts = contracts_for(
         &manifest,
         "regression",
-        contract(false, "allowed_timing_scopes = [\"prepare_and_execute\"]"),
+        contract(false, "allowed_timing_scopes: [\"prepare_and_execute\"]"),
     );
     assert!(matches!(
         validate_manifest_compatibility(&manifest, &contracts),
@@ -183,14 +185,14 @@ fn requires_every_experiment_selection_to_resolve() {
     ));
 
     let source = COMPLETE_MANIFEST.replace(
-        "implementations = [\"solver\"]",
-        "implementations = [\"missing\"]",
+        "    implementations: [\"solver\"]",
+        "    implementations: [\"missing\"]",
     );
     let manifest = parse(&source);
     let contracts = contracts_for(
         &manifest,
         "regression",
-        contract(false, "allowed_timing_scopes = [\"prepare_and_execute\"]"),
+        contract(false, "allowed_timing_scopes: [\"prepare_and_execute\"]"),
     );
     assert!(matches!(
         validate_manifest_compatibility(&manifest, &contracts),
@@ -199,14 +201,14 @@ fn requires_every_experiment_selection_to_resolve() {
     ));
 
     let source = COMPLETE_MANIFEST.replace(
-        "execution_policy = \"controlled\"",
-        "execution_policy = \"missing\"",
+        "    execution_policy: \"controlled\"",
+        "    execution_policy: \"missing\"",
     );
     let manifest = parse(&source);
     let contracts = contracts_for(
         &manifest,
         "regression",
-        contract(false, "allowed_timing_scopes = [\"prepare_and_execute\"]"),
+        contract(false, "allowed_timing_scopes: [\"prepare_and_execute\"]"),
     );
     assert!(matches!(
         validate_manifest_compatibility(&manifest, &contracts),
@@ -217,14 +219,14 @@ fn requires_every_experiment_selection_to_resolve() {
     ));
 
     let source = COMPLETE_MANIFEST.replace(
-        "observation_policy = \"final\"",
-        "observation_policy = \"missing\"",
+        "    observation_policy: \"final\"",
+        "    observation_policy: \"missing\"",
     );
     let manifest = parse(&source);
     let contracts = contracts_for(
         &manifest,
         "regression",
-        contract(false, "allowed_timing_scopes = [\"prepare_and_execute\"]"),
+        contract(false, "allowed_timing_scopes: [\"prepare_and_execute\"]"),
     );
     assert!(matches!(
         validate_manifest_compatibility(&manifest, &contracts),
@@ -238,21 +240,21 @@ fn requires_every_experiment_selection_to_resolve() {
 #[test]
 fn requires_implementation_contract_declarations_to_resolve() {
     let source = COMPLETE_MANIFEST.replace(
-        "[implementations.solver]",
-        r#"[implementations.invalid]
-runner = "command"
-program = "invalid"
-environment = "local"
-problem_contracts = ["missing"]
-capabilities = ["one_shot"]
-
-[implementations.solver]"#,
+        "  solver:",
+        r#"  invalid:
+    runner: "command"
+    program: "invalid"
+    environment: "local"
+    problem_contracts: ["missing"]
+    capabilities: ["one_shot"]
+  solver:
+"#,
     );
     let manifest = parse(&source);
     let contracts = contracts_for(
         &manifest,
         "regression",
-        contract(false, "allowed_timing_scopes = [\"prepare_and_execute\"]"),
+        contract(false, "allowed_timing_scopes: [\"prepare_and_execute\"]"),
     );
 
     assert!(matches!(
@@ -268,29 +270,30 @@ capabilities = ["one_shot"]
 fn rejects_implementation_problem_pairings_outside_the_declared_set() {
     let source = COMPLETE_MANIFEST
         .replace(
-            "problem_contracts = [\"regression\"]",
-            "problem_contracts = [\"other\"]",
+            "    problem_contracts: [\"regression\"]",
+            "    problem_contracts: [\"other\"]",
         )
         .replace(
-            "[implementations.solver]",
-            r#"[problems.other]
-contract = "problems/other.toml"
-[problems.other.evaluator]
-runner = "command"
-program = "evaluate-other"
-environment = "local"
-
-[implementations.solver]"#,
+            "\nimplementations:\n",
+            r#"
+  other:
+    contract: "problems/other.yaml"
+    evaluator:
+      runner: "command"
+      program: "evaluate-other"
+      environment: "local"
+implementations:
+"#,
         );
     let manifest = parse(&source);
     let mut contracts = contracts_for(
         &manifest,
         "regression",
-        contract(false, "allowed_timing_scopes = [\"prepare_and_execute\"]"),
+        contract(false, "allowed_timing_scopes: [\"prepare_and_execute\"]"),
     );
     contracts.insert(
         manifest.problems.get_key_value("other").unwrap().0.clone(),
-        contract(false, "allowed_timing_scopes = [\"prepare_and_execute\"]"),
+        contract(false, "allowed_timing_scopes: [\"prepare_and_execute\"]"),
     );
 
     assert!(matches!(
@@ -308,13 +311,13 @@ environment = "local"
 #[test]
 fn rejects_dataset_schemas_not_accepted_by_the_problem() {
     let manifest = parse(&COMPLETE_MANIFEST.replace(
-        "output_schema = \"schemas/dataset.json\"",
-        "output_schema = \"schemas/other-dataset.json\"",
+        "    output_schema: \"schemas/dataset.json\"",
+        "    output_schema: \"schemas/other-dataset.json\"",
     ));
     let contracts = contracts_for(
         &manifest,
         "regression",
-        contract(false, "allowed_timing_scopes = [\"prepare_and_execute\"]"),
+        contract(false, "allowed_timing_scopes: [\"prepare_and_execute\"]"),
     );
 
     assert!(matches!(
@@ -337,7 +340,7 @@ fn enforces_dataset_free_and_dataset_backed_selection_rules() {
     let dataset_free_contracts = contracts_for(
         &dataset_free_manifest,
         "regression",
-        contract(true, "allowed_timing_scopes = [\"prepare_and_execute\"]"),
+        contract(true, "allowed_timing_scopes: [\"prepare_and_execute\"]"),
     );
     assert!(matches!(
         validate_manifest_compatibility(&dataset_free_manifest, &dataset_free_contracts),
@@ -347,12 +350,12 @@ fn enforces_dataset_free_and_dataset_backed_selection_rules() {
         }) if experiment.as_str() == "main" && problem.as_str() == "regression"
     ));
 
-    let omitted = COMPLETE_MANIFEST.replace("datasets = [\"input\"]\n", "");
+    let omitted = COMPLETE_MANIFEST.replace("    datasets: [\"input\"]\n", "");
     let dataset_free_manifest = parse(&omitted);
     let dataset_free_contracts = contracts_for(
         &dataset_free_manifest,
         "regression",
-        contract(true, "allowed_timing_scopes = [\"prepare_and_execute\"]"),
+        contract(true, "allowed_timing_scopes: [\"prepare_and_execute\"]"),
     );
     validate_manifest_compatibility(&dataset_free_manifest, &dataset_free_contracts).unwrap();
 
@@ -360,7 +363,7 @@ fn enforces_dataset_free_and_dataset_backed_selection_rules() {
     let dataset_backed_contracts = contracts_for(
         &dataset_backed_manifest,
         "regression",
-        contract(false, "allowed_timing_scopes = [\"prepare_and_execute\"]"),
+        contract(false, "allowed_timing_scopes: [\"prepare_and_execute\"]"),
     );
     assert!(matches!(
         validate_manifest_compatibility(&dataset_backed_manifest, &dataset_backed_contracts),
@@ -377,7 +380,7 @@ fn rejects_timing_scopes_not_admitted_by_the_contract() {
     let contracts = contracts_for(
         &manifest,
         "regression",
-        contract(false, "allowed_timing_scopes = [\"cold_end_to_end\"]"),
+        contract(false, "allowed_timing_scopes: [\"cold_end_to_end\"]"),
     );
 
     assert!(matches!(
@@ -396,14 +399,14 @@ fn rejects_timing_scopes_not_admitted_by_the_contract() {
 #[test]
 fn applies_safe_defaults_when_validating_timing_and_warmups() {
     let source = COMPLETE_MANIFEST
-        .replace("worker_reuse = false\n", "")
-        .replace("warmup_runs = 0\n", "")
-        .replace("timing_scope = \"prepare_and_execute\"\n", "");
+        .replace("    worker_reuse: false\n", "")
+        .replace("    warmup_runs: 0\n", "")
+        .replace("    timing_scope: \"prepare_and_execute\"\n", "");
     let manifest = parse(&source);
     let contracts = contracts_for(
         &manifest,
         "regression",
-        contract(false, "allowed_timing_scopes = [\"prepare_and_execute\"]"),
+        contract(false, "allowed_timing_scopes: [\"prepare_and_execute\"]"),
     );
 
     validate_manifest_compatibility(&manifest, &contracts).unwrap();
@@ -411,11 +414,11 @@ fn applies_safe_defaults_when_validating_timing_and_warmups() {
 
 #[test]
 fn requires_process_local_warmups_to_reuse_the_worker() {
-    let manifest = parse(&COMPLETE_MANIFEST.replace("warmup_runs = 0", "warmup_runs = 1"));
+    let manifest = parse(&COMPLETE_MANIFEST.replace("    warmup_runs: 0", "    warmup_runs: 1"));
     let contracts = contracts_for(
         &manifest,
         "regression",
-        contract(false, "allowed_timing_scopes = [\"prepare_and_execute\"]"),
+        contract(false, "allowed_timing_scopes: [\"prepare_and_execute\"]"),
     );
 
     assert!(matches!(
@@ -430,16 +433,16 @@ fn requires_process_local_warmups_to_reuse_the_worker() {
 #[test]
 fn cold_end_to_end_requires_a_fresh_worker_without_warmups() {
     let source = COMPLETE_MANIFEST
-        .replace("worker_reuse = false", "worker_reuse = true")
+        .replace("    worker_reuse: false", "    worker_reuse: true")
         .replace(
-            "timing_scope = \"prepare_and_execute\"",
-            "timing_scope = \"cold_end_to_end\"",
+            "    timing_scope: \"prepare_and_execute\"",
+            "    timing_scope: \"cold_end_to_end\"",
         );
     let manifest = parse(&source);
     let contracts = contracts_for(
         &manifest,
         "regression",
-        contract(false, "allowed_timing_scopes = [\"cold_end_to_end\"]"),
+        contract(false, "allowed_timing_scopes: [\"cold_end_to_end\"]"),
     );
 
     assert!(matches!(
@@ -462,7 +465,7 @@ fn validates_the_observation_capability_and_scientific_budget() {
     let contracts = contracts_for(
         &manifest,
         "regression",
-        contract(false, "allowed_timing_scopes = [\"prepare_and_execute\"]"),
+        contract(false, "allowed_timing_scopes: [\"prepare_and_execute\"]"),
     );
     assert!(matches!(
         validate_manifest_compatibility(&manifest, &contracts),
@@ -474,7 +477,7 @@ fn validates_the_observation_capability_and_scientific_budget() {
 
     let manifest = parse(COMPLETE_MANIFEST);
     let mut unsupported_contract =
-        contract(false, "allowed_timing_scopes = [\"prepare_and_execute\"]");
+        contract(false, "allowed_timing_scopes: [\"prepare_and_execute\"]");
     unsupported_contract.supported_budgets.clear();
     let contracts = contracts_for(&manifest, "regression", unsupported_contract);
     assert!(matches!(
@@ -492,11 +495,14 @@ fn timing_reuse_and_warmup_compatibility_covers_every_combination() {
         for reuse in [false, true] {
             for warmups in [0, 1] {
                 let source = COMPLETE_MANIFEST
-                    .replace("worker_reuse = false", &format!("worker_reuse = {reuse}"))
-                    .replace("warmup_runs = 0", &format!("warmup_runs = {warmups}"))
                     .replace(
-                        "timing_scope = \"prepare_and_execute\"",
-                        &format!("timing_scope = {scope:?}"),
+                        "    worker_reuse: false",
+                        &format!("    worker_reuse: {reuse}"),
+                    )
+                    .replace("    warmup_runs: 0", &format!("    warmup_runs: {warmups}"))
+                    .replace(
+                        "    timing_scope: \"prepare_and_execute\"",
+                        &format!("    timing_scope: {scope:?}"),
                     );
                 let manifest = parse(&source);
                 let contracts = contracts_for(
@@ -504,7 +510,7 @@ fn timing_reuse_and_warmup_compatibility_covers_every_combination() {
                     "regression",
                     contract(
                         false,
-                        "allowed_timing_scopes = [\"cold_end_to_end\", \"prepare_and_execute\", \"execute_only\"]",
+                        "allowed_timing_scopes: [\"cold_end_to_end\", \"prepare_and_execute\", \"execute_only\"]",
                     ),
                 );
                 let expected = if scope == "cold_end_to_end" {
@@ -515,7 +521,7 @@ fn timing_reuse_and_warmup_compatibility_covers_every_combination() {
                 assert_eq!(
                     validate_manifest_compatibility(&manifest, &contracts).is_ok(),
                     expected,
-                    "scope={scope}, reuse={reuse}, warmups={warmups}"
+                    "scope:{scope}, reuse:{reuse}, warmups:{warmups}"
                 );
             }
         }

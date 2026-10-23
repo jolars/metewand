@@ -25,11 +25,11 @@ fn repository() -> TempDir {
         &Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/fixed-dataset"),
         root.path(),
     );
-    let path = root.path().join("metewand.toml");
+    let path = root.path().join("metewand.yaml");
     let manifest = fs::read_to_string(&path).unwrap();
     fs::write(
         path,
-        manifest.replace("measurement_repetitions = 1", "measurement_repetitions = 3"),
+        manifest.replace("measurement_repetitions: 1", "measurement_repetitions: 3"),
     )
     .unwrap();
     root
@@ -124,13 +124,13 @@ fn status_preserves_history_and_explains_committed_artifacts_without_the_reposit
             "--output-dir",
             "run",
             "--manifest",
-            "metewand.toml",
+            "metewand.yaml",
         ],
     );
     assert_eq!(code, 0, "{status}");
     assert_eq!(status["data"]["summary"]["satisfied_slots"], 1);
     assert_eq!(status["data"]["summary"]["pending_slots"], 2);
-    fs::remove_file(root.path().join("metewand.toml")).unwrap();
+    fs::remove_file(root.path().join("metewand.yaml")).unwrap();
     let attempt = &report["data"]["attempts"][0];
     for id in [
         attempt["attempt_id"].as_str().unwrap(),
@@ -286,12 +286,12 @@ fn changed_plans_retain_history_and_mark_old_slots_explicitly() {
         &["run", "--output-dir", "run", "--max-attempts", "1"],
     );
     assert_eq!(code, 0, "{run}");
-    let manifest = root.path().join("metewand.toml");
+    let manifest = root.path().join("metewand.yaml");
     fs::write(
         &manifest,
         fs::read_to_string(&manifest)
             .unwrap()
-            .replace("seed = 7", "seed = 8"),
+            .replace("seed: 7", "seed: 8"),
     )
     .unwrap();
     let (_, status) = command(
@@ -301,7 +301,7 @@ fn changed_plans_retain_history_and_mark_old_slots_explicitly() {
             "--output-dir",
             "run",
             "--manifest",
-            "metewand.toml",
+            "metewand.yaml",
         ],
     );
     let slots = status["data"]["slots"].as_array().unwrap();
@@ -331,7 +331,7 @@ fn changed_plans_retain_history_and_mark_old_slots_explicitly() {
             "--output-dir",
             "run",
             "--manifest",
-            "metewand.toml",
+            "metewand.yaml",
         ],
     );
     assert_eq!(code, 0, "{explanation}");

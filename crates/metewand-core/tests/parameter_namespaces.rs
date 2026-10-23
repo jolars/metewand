@@ -5,10 +5,10 @@ use metewand_core::{
     parameters::{ParameterNamespace, ParameterNamespaceError, validate_parameter_namespaces},
 };
 
-const COMPLETE_MANIFEST: &str = include_str!("../../../fixtures/manifest/v1/complete.toml");
+const COMPLETE_MANIFEST: &str = include_str!("../../../fixtures/manifest/v1/complete.yaml");
 
 fn parse(source: &str) -> metewand_core::manifest::Manifest {
-    parse_manifest(Path::new("metewand.toml"), source).unwrap()
+    parse_manifest(Path::new("metewand.yaml"), source).unwrap()
 }
 
 #[test]
@@ -17,50 +17,48 @@ fn accepts_explicit_namespaces_without_inferring_scientific_ownership() {
 
     let manifest = parse(
         r#"
-version = 1
-name = "visible-ownership"
-
-[datasets.generated]
-parameter_schema = "schemas/dataset-parameters.json"
-output_schema = "schemas/dataset.json"
-runner = "command"
-program = "generate"
-environment = "local"
-
-[problems.example]
-contract = "problems/example.toml"
-[problems.example.evaluator]
-runner = "command"
-program = "evaluate"
-environment = "local"
-
-[implementations.example]
-runner = "command"
-program = "solve"
-environment = "local"
-problem_contracts = ["example"]
-parameter_schema = "schemas/implementation-parameters.json"
-capabilities = ["one_shot"]
-
-[[experiments]]
-name = "main"
-problem = "example"
-datasets = ["generated"]
-implementations = ["example"]
-execution_policy = "default"
-observation_policy = "final"
-implementation_repetitions = 1
-measurement_repetitions = 1
-seed = 0
-
-[experiments.dataset_parameters.generated]
-scale = { value = 1 }
-
-[experiments.problem_parameters]
-scale = { value = 2 }
-
-[experiments.implementation_parameters.example]
-scale = { value = 3 }
+version: 1
+name: "visible-ownership"
+datasets:
+  generated:
+    parameter_schema: "schemas/dataset-parameters.json"
+    output_schema: "schemas/dataset.json"
+    runner: "command"
+    program: "generate"
+    environment: "local"
+problems:
+  example:
+    contract: "problems/example.yaml"
+    evaluator:
+      runner: "command"
+      program: "evaluate"
+      environment: "local"
+implementations:
+  example:
+    runner: "command"
+    program: "solve"
+    environment: "local"
+    problem_contracts: ["example"]
+    parameter_schema: "schemas/implementation-parameters.json"
+    capabilities: ["one_shot"]
+experiments:
+  - name: "main"
+    problem: "example"
+    datasets: ["generated"]
+    implementations: ["example"]
+    execution_policy: "default"
+    observation_policy: "final"
+    implementation_repetitions: 1
+    measurement_repetitions: 1
+    seed: 0
+    dataset_parameters:
+      generated:
+        scale: { value: 1 }
+    problem_parameters:
+      scale: { value: 2 }
+    implementation_parameters:
+      example:
+        scale: { value: 3 }
 "#,
     );
 
@@ -71,15 +69,15 @@ scale = { value = 3 }
 fn requires_a_schema_for_definition_owned_parameter_defaults() {
     let dataset = parse(
         r#"
-version = 1
-name = "dataset-defaults"
-
-[datasets.generated]
-parameter_defaults = { rows = 100 }
-output_schema = "schemas/dataset.json"
-runner = "command"
-program = "generate"
-environment = "local"
+version: 1
+name: "dataset-defaults"
+datasets:
+  generated:
+    parameter_defaults: { rows: 100 }
+    output_schema: "schemas/dataset.json"
+    runner: "command"
+    program: "generate"
+    environment: "local"
 "#,
     );
     assert!(matches!(
@@ -92,16 +90,16 @@ environment = "local"
 
     let implementation = parse(
         r#"
-version = 1
-name = "implementation-defaults"
-
-[implementations.example]
-runner = "command"
-program = "solve"
-environment = "local"
-problem_contracts = ["problem"]
-parameter_defaults = { tolerance = 1e-8 }
-capabilities = ["one_shot"]
+version: 1
+name: "implementation-defaults"
+implementations:
+  example:
+    runner: "command"
+    program: "solve"
+    environment: "local"
+    problem_contracts: ["problem"]
+    parameter_defaults: { tolerance: 1e-8 }
+    capabilities: ["one_shot"]
 "#,
     );
     assert!(matches!(
@@ -117,36 +115,34 @@ capabilities = ["one_shot"]
 fn rejects_parameter_namespaces_for_unselected_definitions() {
     let manifest = parse(
         r#"
-version = 1
-name = "unselected"
-
-[datasets.selected]
-parameter_schema = "schemas/dataset-parameters.json"
-output_schema = "schemas/dataset.json"
-runner = "command"
-program = "generate"
-environment = "local"
-
-[datasets.spare]
-parameter_schema = "schemas/dataset-parameters.json"
-output_schema = "schemas/dataset.json"
-runner = "command"
-program = "generate"
-environment = "local"
-
-[[experiments]]
-name = "main"
-problem = "problem"
-datasets = ["selected"]
-implementations = ["implementation"]
-execution_policy = "default"
-observation_policy = "final"
-implementation_repetitions = 1
-measurement_repetitions = 1
-seed = 0
-
-[experiments.dataset_parameters.spare]
-rows = { value = 100 }
+version: 1
+name: "unselected"
+datasets:
+  selected:
+    parameter_schema: "schemas/dataset-parameters.json"
+    output_schema: "schemas/dataset.json"
+    runner: "command"
+    program: "generate"
+    environment: "local"
+  spare:
+    parameter_schema: "schemas/dataset-parameters.json"
+    output_schema: "schemas/dataset.json"
+    runner: "command"
+    program: "generate"
+    environment: "local"
+experiments:
+  - name: "main"
+    problem: "problem"
+    datasets: ["selected"]
+    implementations: ["implementation"]
+    execution_policy: "default"
+    observation_policy: "final"
+    implementation_repetitions: 1
+    measurement_repetitions: 1
+    seed: 0
+    dataset_parameters:
+      spare:
+        rows: { value: 100 }
 "#,
     );
 
@@ -163,37 +159,35 @@ rows = { value = 100 }
 
     let implementation = parse(
         r#"
-version = 1
-name = "unselected-implementation"
-
-[implementations.selected]
-runner = "command"
-program = "solve"
-environment = "local"
-problem_contracts = ["problem"]
-parameter_schema = "schemas/implementation-parameters.json"
-capabilities = ["one_shot"]
-
-[implementations.spare]
-runner = "command"
-program = "solve"
-environment = "local"
-problem_contracts = ["problem"]
-parameter_schema = "schemas/implementation-parameters.json"
-capabilities = ["one_shot"]
-
-[[experiments]]
-name = "main"
-problem = "problem"
-implementations = ["selected"]
-execution_policy = "default"
-observation_policy = "final"
-implementation_repetitions = 1
-measurement_repetitions = 1
-seed = 0
-
-[experiments.implementation_parameters.spare]
-tolerance = { value = 1e-8 }
+version: 1
+name: "unselected-implementation"
+implementations:
+  selected:
+    runner: "command"
+    program: "solve"
+    environment: "local"
+    problem_contracts: ["problem"]
+    parameter_schema: "schemas/implementation-parameters.json"
+    capabilities: ["one_shot"]
+  spare:
+    runner: "command"
+    program: "solve"
+    environment: "local"
+    problem_contracts: ["problem"]
+    parameter_schema: "schemas/implementation-parameters.json"
+    capabilities: ["one_shot"]
+experiments:
+  - name: "main"
+    problem: "problem"
+    implementations: ["selected"]
+    execution_policy: "default"
+    observation_policy: "final"
+    implementation_repetitions: 1
+    measurement_repetitions: 1
+    seed: 0
+    implementation_parameters:
+      spare:
+        tolerance: { value: 1e-8 }
 "#,
     );
 
@@ -211,24 +205,23 @@ tolerance = { value = 1e-8 }
 fn rejects_case_namespaces_for_undefined_selected_definitions() {
     let manifest = parse(
         r#"
-version = 1
-name = "undefined"
-
-[[experiments]]
-name = "main"
-problem = "problem"
-datasets = ["missing"]
-implementations = ["implementation"]
-execution_policy = "default"
-observation_policy = "final"
-implementation_repetitions = 1
-measurement_repetitions = 1
-seed = 0
-
-[[experiments.cases]]
-name = "small"
-[experiments.cases.dataset_parameters.missing]
-rows = { value = 100 }
+version: 1
+name: "undefined"
+experiments:
+  - name: "main"
+    problem: "problem"
+    datasets: ["missing"]
+    implementations: ["implementation"]
+    execution_policy: "default"
+    observation_policy: "final"
+    implementation_repetitions: 1
+    measurement_repetitions: 1
+    seed: 0
+    cases:
+      - name: "small"
+        dataset_parameters:
+          missing:
+            rows: { value: 100 }
 "#,
     );
 
@@ -248,26 +241,25 @@ rows = { value = 100 }
 fn rejects_axes_owned_by_definitions_without_parameter_schemas() {
     let fixed_dataset = parse(
         r#"
-version = 1
-name = "fixed"
-
-[datasets.fixed]
-output_schema = "schemas/dataset.json"
-sources = ["datasets/fixed.json"]
-
-[[experiments]]
-name = "main"
-problem = "problem"
-datasets = ["fixed"]
-implementations = ["implementation"]
-execution_policy = "default"
-observation_policy = "final"
-implementation_repetitions = 1
-measurement_repetitions = 1
-seed = 0
-
-[experiments.dataset_parameters.fixed]
-fold = { value = 1 }
+version: 1
+name: "fixed"
+datasets:
+  fixed:
+    output_schema: "schemas/dataset.json"
+    sources: ["datasets/fixed.json"]
+experiments:
+  - name: "main"
+    problem: "problem"
+    datasets: ["fixed"]
+    implementations: ["implementation"]
+    execution_policy: "default"
+    observation_policy: "final"
+    implementation_repetitions: 1
+    measurement_repetitions: 1
+    seed: 0
+    dataset_parameters:
+      fixed:
+        fold: { value: 1 }
 "#,
     );
     assert!(matches!(
@@ -281,28 +273,27 @@ fold = { value = 1 }
 
     let parameterless_generated_dataset = parse(
         r#"
-version = 1
-name = "parameterless-generated"
-
-[datasets.generated]
-output_schema = "schemas/dataset.json"
-runner = "command"
-program = "generate"
-environment = "local"
-
-[[experiments]]
-name = "main"
-problem = "problem"
-datasets = ["generated"]
-implementations = ["implementation"]
-execution_policy = "default"
-observation_policy = "final"
-implementation_repetitions = 1
-measurement_repetitions = 1
-seed = 0
-
-[experiments.dataset_parameters.generated]
-fold = { value = 1 }
+version: 1
+name: "parameterless-generated"
+datasets:
+  generated:
+    output_schema: "schemas/dataset.json"
+    runner: "command"
+    program: "generate"
+    environment: "local"
+experiments:
+  - name: "main"
+    problem: "problem"
+    datasets: ["generated"]
+    implementations: ["implementation"]
+    execution_policy: "default"
+    observation_policy: "final"
+    implementation_repetitions: 1
+    measurement_repetitions: 1
+    seed: 0
+    dataset_parameters:
+      generated:
+        fold: { value: 1 }
 "#,
     );
     assert!(matches!(
@@ -316,30 +307,29 @@ fold = { value = 1 }
 
     let implementation = parse(
         r#"
-version = 1
-name = "parameterless-implementation"
-
-[implementations.example]
-runner = "command"
-program = "solve"
-environment = "local"
-problem_contracts = ["problem"]
-capabilities = ["one_shot"]
-
-[[experiments]]
-name = "main"
-problem = "problem"
-implementations = ["example"]
-execution_policy = "default"
-observation_policy = "final"
-implementation_repetitions = 1
-measurement_repetitions = 1
-seed = 0
-
-[[experiments.cases]]
-name = "strict"
-[experiments.cases.implementation_parameters.example]
-tolerance = { value = 1e-8 }
+version: 1
+name: "parameterless-implementation"
+implementations:
+  example:
+    runner: "command"
+    program: "solve"
+    environment: "local"
+    problem_contracts: ["problem"]
+    capabilities: ["one_shot"]
+experiments:
+  - name: "main"
+    problem: "problem"
+    implementations: ["example"]
+    execution_policy: "default"
+    observation_policy: "final"
+    implementation_repetitions: 1
+    measurement_repetitions: 1
+    seed: 0
+    cases:
+      - name: "strict"
+        implementation_parameters:
+          example:
+            tolerance: { value: 1e-8 }
 "#,
     );
     assert!(matches!(

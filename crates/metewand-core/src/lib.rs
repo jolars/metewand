@@ -21,6 +21,7 @@ pub mod run_output;
 pub mod scheduling;
 pub mod schema;
 pub mod seed;
+mod yaml;
 
 /// Version of the typed Metewand manifest format.
 pub const MANIFEST_VERSION: u32 = 1;

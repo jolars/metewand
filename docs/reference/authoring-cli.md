@@ -2,22 +2,22 @@
 
 ## Initialization
 
-`metewand init [PATH]` creates `PATH/metewand.toml`. The destination defaults to
+`metewand init [PATH]` creates `PATH/metewand.yaml`. The destination defaults to
 the current directory. Missing directories are created, and existing directories
 and unrelated files are preserved. The command is noninteractive.
 
 ```sh
 metewand init benchmark --dry-run
 metewand init benchmark
-metewand check --manifest benchmark/metewand.toml
-metewand plan --manifest benchmark/metewand.toml
+metewand check --manifest benchmark/metewand.yaml
+metewand plan --manifest benchmark/metewand.yaml
 ```
 
 The manifest contains exactly:
 
-```toml
-version = 1
-name = "benchmark"
+```yaml
+version: 1
+name: benchmark
 ```
 
 The neutral name does not depend on the destination directory. Edit it to name
@@ -72,9 +72,10 @@ change environments, other components, experiments, or policies.
 
 For example, after initialization, add your chosen environment to the manifest:
 
-```toml
-[environments.host]
-kind = "local"
+```yaml
+environments:
+  host:
+    kind: "local"
 ```
 
 Then add components incrementally:
@@ -90,7 +91,16 @@ metewand scaffold implementation candidate --environment host --problem target
 that manifest's parent directory, including when the manifest is outside the
 working directory. Names use the manifest's
 `^[A-Za-z0-9][A-Za-z0-9._-]*$` syntax. A dot belongs to the name; it does not
-introduce a nested component or directory.
+introduce a nested component or directory. Generated component keys are quoted
+so names such as `100_10` remain strings when the manifest is read.
+
+Scaffolding preserves existing YAML comments and formatting, including block
+and flow mappings. An anchored document root, an anchored or aliased target
+namespace, merge keys inside that namespace, or a namespace inherited through
+a root merge causes `scaffold_invalid_request` before any files are created.
+Expand the affected mapping manually, then retry. Anchors on unrelated
+components or environments and unrelated root merges are supported. Successful
+edits are reparsed and checked to change only the requested component.
 
 ### Generated files and author responsibilities
 
@@ -99,14 +109,14 @@ Each scaffold creates only the following files beneath its component directory:
 | Component | Directory | Files |
 | --- | --- | --- |
 | Dataset | `datasets/NAME/` | `parameters.schema.json`, `dataset.schema.json`, `materializer.sh` |
-| Problem | `problems/NAME/` | `contract.toml`, `parameters.schema.json`, `result.schema.json`, `metrics.schema.json`, `semantics.schema.json`, `evaluator.sh` |
+| Problem | `problems/NAME/` | `contract.yaml`, `parameters.schema.json`, `result.schema.json`, `metrics.schema.json`, `semantics.schema.json`, `evaluator.sh` |
 | Implementation | `implementations/NAME/` | `parameters.schema.json`, `worker.sh` |
 
 The dataset scaffold declares a generated dataset with a materializer. The
 problem scaffold declares a contract and an independent evaluator. The
 implementation scaffold declares support for the selected problem and the
 version-1 `one_shot` capability. Each worker uses the raw-command runner,
-`program = "sh"`, its explicitly declared source file, and the selected
+`program: "sh"`, its explicitly declared source file, and the selected
 environment. The shell file only prints a TODO diagnostic and exits with `1`.
 Replace it with your protocol worker or use a
 [Python](python-sdk.md) or [R](r-sdk.md) SDK adapter, updating the launch and
@@ -121,7 +131,7 @@ The problem contract deliberately omits a family, accepted dataset schemas,
 allowed timing scopes, validity rules, completion rules, and reference cases.
 Its comments identify each author responsibility. Choose these explicitly,
 including preprocessing rules and independently justified reference results
-and metrics. `dataset_schemas = []` is an author decision for a dataset-free
+and metrics. `dataset_schemas: []` is an author decision for a dataset-free
 problem. No reference data or results are generated, and the contract fails
 `check` until its required definitions are complete. Schema and worker stubs
 also require author edits before they can be used for execution. See
@@ -155,7 +165,7 @@ Human output reports `Created` and `Modified` paths, or `Would create` and
 
 The manifest is the only modified file and appears last. Existing manifest
 values, comments, and source text are preserved when adding the requested
-definition, including inline component tables. Relative reported paths are
+definition, including flow component mappings. Relative reported paths are
 relative to the command's working directory.
 
 Scaffolding takes a nonblocking manifest lock, shared for dry runs and exclusive

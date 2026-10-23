@@ -1,0 +1,21 @@
+version: 1
+name: "regression"
+family: "optimization"
+parameter_schema: "schemas/parameters.json"
+dataset_schemas: ["schemas/dataset.json"]
+result_schema: "schemas/result.json"
+metric_schema: "schemas/metrics.json"
+semantics_schema: "schemas/semantics.json"
+allowed_timing_scopes: ["cold_end_to_end", "prepare_and_execute"]
+supported_budgets: ["none"]
+semantics:
+  objective:
+    family: "squared_error"
+  validity:
+    nonfinite: "reject"
+  one_shot_completion:
+    maximum_error: 1e-8
+reference_cases:
+  - result: "fixtures/small/result"
+    dataset: "fixtures/small/dataset"
+    expected_metrics: "fixtures/small/metrics.json"

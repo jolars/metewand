@@ -35,7 +35,7 @@ Allowing networking expresses permission, not a guarantee of connectivity.
 The worker's fixed locale, timezone, umask, and environment settings remain in
 its separate environment provenance.
 
-With `enforcement = "required"`, logical planning checks the declared local
+With `enforcement: "required"`, logical planning checks the declared local
 capabilities before launching workers or creating output or cache directories.
 The local backend cannot enforce all lifetime isolation controls, so planning
 rejects this policy. The CLI reports `logical_planning_failed` with a

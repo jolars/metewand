@@ -7,9 +7,9 @@ stable identity, its paths, and related identities. Both commands support
 
 ```sh
 metewand status
-metewand status --manifest examples/fixed-dataset/metewand.toml
+metewand status --manifest examples/fixed-dataset/metewand.yaml
 metewand status --output-dir results --output json
-metewand status --output-dir results --manifest metewand.toml
+metewand status --output-dir results --manifest metewand.yaml
 metewand explain 'mw1-attempt-<64-lowercase-hex-digits>' --output-dir results
 metewand explain 'mw1-implementation-definition-<64-lowercase-hex-digits>'
 metewand schema inspection-output
@@ -21,7 +21,7 @@ or diagnostic codes.
 
 ## Selecting evidence
 
-Without `--output-dir`, the commands check `./metewand.toml`, or the explicit
+Without `--output-dir`, the commands check `./metewand.yaml`, or the explicit
 `--manifest PATH`, and expand its logical plan. They inspect definitions,
 schemas, problem contracts, source bundles, policies, configurations,
 candidates, logical runs, and slots without resolving environments, acquiring

@@ -13,7 +13,7 @@ ownership from library option names or move a parameter between namespaces.
 Budget and execution settings remain in their own policy structures. They do
 not become scientific parameters.
 
-Dataset and implementation parameter tables are name-qualified because an
+Dataset and implementation parameter mappings are name-qualified because an
 experiment may select several of either. Problem parameters are unqualified
 because an experiment selects exactly one problem. Named cases preserve the
 same structure and overlay the experiment-level axes during later expansion.
@@ -25,7 +25,7 @@ filesystem access, contract loading, or matrix expansion:
 
 - a dataset or implementation that declares `parameter_defaults` also declares
   `parameter_schema`;
-- every name-qualified parameter table belongs to a definition selected by its
+- every name-qualified parameter mapping belongs to a definition selected by its
   enclosing experiment;
 - the selected definition exists; and
 - the definition declares a parameter schema. Fixed datasets never do and
@@ -43,8 +43,8 @@ use metewand_core::{
     parameters::validate_parameter_namespaces,
 };
 
-# let source = "version = 1\nname = \"example\"\n";
-let manifest = parse_manifest(Path::new("metewand.toml"), source)?;
+# let source = "version: 1\nname: \"example\"\n";
+let manifest = parse_manifest(Path::new("metewand.yaml"), source)?;
 validate_parameter_namespaces(&manifest)?;
 
 # Ok::<(), Box<dyn std::error::Error>>(())

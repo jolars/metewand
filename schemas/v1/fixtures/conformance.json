@@ -52,7 +52,7 @@
           "component": "dataset",
           "name": "sample.name",
           "dry_run": false,
-          "manifest": "metewand.toml",
+          "manifest": "metewand.yaml",
           "paths": [
             {
               "path": "datasets",
@@ -80,7 +80,7 @@
               "action": "create"
             },
             {
-              "path": "metewand.toml",
+              "path": "metewand.yaml",
               "kind": "file",
               "action": "modify"
             }
@@ -99,7 +99,7 @@
           "component": "problem",
           "name": "sample.name",
           "dry_run": true,
-          "manifest": "metewand.toml",
+          "manifest": "metewand.yaml",
           "paths": [
             {
               "path": "problems",
@@ -112,7 +112,7 @@
               "action": "create"
             },
             {
-              "path": "problems/sample.name/contract.toml",
+              "path": "problems/sample.name/contract.yaml",
               "kind": "file",
               "action": "create"
             },
@@ -142,7 +142,7 @@
               "action": "create"
             },
             {
-              "path": "metewand.toml",
+              "path": "metewand.yaml",
               "kind": "file",
               "action": "modify"
             }
@@ -161,7 +161,7 @@
           "component": "implementation",
           "name": "sample.name",
           "dry_run": false,
-          "manifest": "metewand.toml",
+          "manifest": "metewand.yaml",
           "paths": [
             {
               "path": "implementations",
@@ -184,7 +184,7 @@
               "action": "create"
             },
             {
-              "path": "metewand.toml",
+              "path": "metewand.yaml",
               "kind": "file",
               "action": "modify"
             }
@@ -209,10 +209,10 @@
         "data": {
           "command": "init",
           "dry_run": false,
-          "manifest": "./metewand.toml",
+          "manifest": "./metewand.yaml",
           "paths": [
             {
-              "path": "./metewand.toml",
+              "path": "./metewand.yaml",
               "kind": "file"
             }
           ]
@@ -228,14 +228,14 @@
         "data": {
           "command": "init",
           "dry_run": true,
-          "manifest": "benchmark/metewand.toml",
+          "manifest": "benchmark/metewand.yaml",
           "paths": [
             {
               "path": "benchmark",
               "kind": "directory"
             },
             {
-              "path": "benchmark/metewand.toml",
+              "path": "benchmark/metewand.yaml",
               "kind": "file"
             }
           ]
@@ -456,7 +456,7 @@
         },
         "problems": {
           "lasso": {
-            "contract": "problems/lasso.toml",
+            "contract": "problems/lasso.yaml",
             "parameter_defaults": { "fit_intercept": true },
             "evaluator": {
               "runner": "python",
@@ -1522,7 +1522,7 @@
           "command": "scaffold",
           "name": "sample.name",
           "dry_run": false,
-          "manifest": "metewand.toml",
+          "manifest": "metewand.yaml",
           "paths": [
             {
               "path": "datasets/sample.name",
@@ -1535,7 +1535,7 @@
               "action": "create"
             },
             {
-              "path": "metewand.toml",
+              "path": "metewand.yaml",
               "kind": "file",
               "action": "modify"
             }
@@ -1553,7 +1553,7 @@
           "command": "scaffold",
           "component": "dataset",
           "dry_run": false,
-          "manifest": "metewand.toml",
+          "manifest": "metewand.yaml",
           "paths": [
             {
               "path": "datasets/sample.name",
@@ -1566,7 +1566,7 @@
               "action": "create"
             },
             {
-              "path": "metewand.toml",
+              "path": "metewand.yaml",
               "kind": "file",
               "action": "modify"
             }
@@ -1584,7 +1584,7 @@
           "command": "scaffold",
           "component": "dataset",
           "name": "sample.name",
-          "manifest": "metewand.toml",
+          "manifest": "metewand.yaml",
           "paths": [
             {
               "path": "datasets/sample.name",
@@ -1597,7 +1597,7 @@
               "action": "create"
             },
             {
-              "path": "metewand.toml",
+              "path": "metewand.yaml",
               "kind": "file",
               "action": "modify"
             }
@@ -1628,7 +1628,7 @@
               "action": "create"
             },
             {
-              "path": "metewand.toml",
+              "path": "metewand.yaml",
               "kind": "file",
               "action": "modify"
             }
@@ -1647,7 +1647,7 @@
           "component": "dataset",
           "name": "sample.name",
           "dry_run": false,
-          "manifest": "metewand.toml"
+          "manifest": "metewand.yaml"
         }
       }
     },
@@ -1662,7 +1662,7 @@
           "component": "experiment",
           "name": "sample.name",
           "dry_run": false,
-          "manifest": "metewand.toml",
+          "manifest": "metewand.yaml",
           "paths": [
             {
               "path": "datasets/sample.name",
@@ -1675,7 +1675,7 @@
               "action": "create"
             },
             {
-              "path": "metewand.toml",
+              "path": "metewand.yaml",
               "kind": "file",
               "action": "modify"
             }
@@ -1694,7 +1694,7 @@
           "component": "dataset",
           "name": "../escape",
           "dry_run": false,
-          "manifest": "metewand.toml",
+          "manifest": "metewand.yaml",
           "paths": [
             {
               "path": "datasets/sample.name",
@@ -1707,7 +1707,7 @@
               "action": "create"
             },
             {
-              "path": "metewand.toml",
+              "path": "metewand.yaml",
               "kind": "file",
               "action": "modify"
             }
@@ -1726,7 +1726,7 @@
           "component": "dataset",
           "name": "sample.name",
           "dry_run": false,
-          "manifest": "metewand.toml",
+          "manifest": "metewand.yaml",
           "paths": [
             {
               "path": "datasets/sample.name",
@@ -1739,7 +1739,7 @@
               "action": "create"
             },
             {
-              "path": "metewand.toml",
+              "path": "metewand.yaml",
               "kind": "file",
               "action": "modify"
             }
@@ -1759,7 +1759,7 @@
           "component": "dataset",
           "name": "sample.name",
           "dry_run": false,
-          "manifest": "metewand.toml",
+          "manifest": "metewand.yaml",
           "paths": [
             {
               "path": "datasets/sample.name",
@@ -1771,7 +1771,7 @@
               "action": "create"
             },
             {
-              "path": "metewand.toml",
+              "path": "metewand.yaml",
               "kind": "file",
               "action": "modify"
             }
@@ -1790,7 +1790,7 @@
           "component": "dataset",
           "name": "sample.name",
           "dry_run": false,
-          "manifest": "metewand.toml",
+          "manifest": "metewand.yaml",
           "paths": [
             {
               "path": "datasets/sample.name",
@@ -1803,7 +1803,7 @@
               "action": "create"
             },
             {
-              "path": "metewand.toml",
+              "path": "metewand.yaml",
               "kind": "file",
               "action": "modify"
             }
@@ -1822,7 +1822,7 @@
           "component": "dataset",
           "name": "sample.name",
           "dry_run": false,
-          "manifest": "metewand.toml",
+          "manifest": "metewand.yaml",
           "paths": [
             {
               "path": "datasets/sample.name",
@@ -1835,7 +1835,7 @@
               "action": "create"
             },
             {
-              "path": "metewand.toml",
+              "path": "metewand.yaml",
               "kind": "directory",
               "action": "modify"
             }
@@ -1854,7 +1854,7 @@
           "component": "dataset",
           "name": "sample.name",
           "dry_run": false,
-          "manifest": "metewand.toml",
+          "manifest": "metewand.yaml",
           "paths": [
             {
               "path": "datasets/sample.name",
@@ -1867,7 +1867,7 @@
               "action": "modify"
             },
             {
-              "path": "metewand.toml",
+              "path": "metewand.yaml",
               "kind": "file",
               "action": "modify"
             }
@@ -1886,7 +1886,7 @@
           "component": "dataset",
           "name": "sample.name",
           "dry_run": false,
-          "manifest": "metewand.toml",
+          "manifest": "metewand.yaml",
           "paths": [
             {
               "path": "datasets/sample.name",
@@ -1913,7 +1913,7 @@
           "component": "dataset",
           "name": "sample.name",
           "dry_run": false,
-          "manifest": "metewand.toml",
+          "manifest": "metewand.yaml",
           "paths": [
             {
               "path": "datasets/sample.name",
@@ -1931,7 +1931,7 @@
               "action": "create"
             },
             {
-              "path": "metewand.toml",
+              "path": "metewand.yaml",
               "kind": "file",
               "action": "modify"
             }
@@ -1950,7 +1950,7 @@
           "component": "dataset",
           "name": "sample.name",
           "dry_run": false,
-          "manifest": "metewand.toml",
+          "manifest": "metewand.yaml",
           "paths": [
             {
               "path": "",
@@ -1963,7 +1963,7 @@
               "action": "create"
             },
             {
-              "path": "metewand.toml",
+              "path": "metewand.yaml",
               "kind": "file",
               "action": "modify"
             }
@@ -1982,7 +1982,7 @@
           "component": "dataset",
           "name": "sample.name",
           "dry_run": false,
-          "manifest": "metewand.toml",
+          "manifest": "metewand.yaml",
           "paths": [
             {
               "path": "datasets/sample.name",
@@ -1996,7 +1996,7 @@
               "action": "create"
             },
             {
-              "path": "metewand.toml",
+              "path": "metewand.yaml",
               "kind": "file",
               "action": "modify"
             }
@@ -2012,10 +2012,10 @@
         "kind": "result",
         "data": {
           "command": "init",
-          "manifest": "./metewand.toml",
+          "manifest": "./metewand.yaml",
           "paths": [
             {
-              "path": "./metewand.toml",
+              "path": "./metewand.yaml",
               "kind": "file"
             }
           ]
@@ -2031,10 +2031,10 @@
         "data": {
           "command": "init",
           "dry_run": false,
-          "manifest": "./metewand.toml",
+          "manifest": "./metewand.yaml",
           "paths": [
             {
-              "path": "./metewand.toml",
+              "path": "./metewand.yaml",
               "kind": "file"
             }
           ],
@@ -2051,10 +2051,10 @@
         "data": {
           "command": "init",
           "dry_run": false,
-          "manifest": "./metewand.toml",
+          "manifest": "./metewand.yaml",
           "paths": [
             {
-              "path": "metewand.toml",
+              "path": "metewand.yaml",
               "kind": "symlink"
             }
           ]
@@ -2070,7 +2070,7 @@
         "data": {
           "command": "init",
           "dry_run": false,
-          "manifest": "./metewand.toml",
+          "manifest": "./metewand.yaml",
           "paths": []
         }
       }
@@ -2202,6 +2202,39 @@
       "name": "manifest rejects an unsupported version",
       "schema": "manifest",
       "instance": { "version": 2, "name": "future" }
+    },
+    {
+      "name": "manifest rejects explicit null enforcement",
+      "schema": "manifest",
+      "instance": {
+        "version": 1,
+        "name": "null-enforcement",
+        "execution_policies": {
+          "local": { "version": 1, "enforcement": null }
+        }
+      }
+    },
+    {
+      "name": "manifest rejects explicit null network access",
+      "schema": "manifest",
+      "instance": {
+        "version": 1,
+        "name": "null-network",
+        "execution_policies": {
+          "local": { "version": 1, "network": null }
+        }
+      }
+    },
+    {
+      "name": "manifest rejects explicit null timing scope",
+      "schema": "manifest",
+      "instance": {
+        "version": 1,
+        "name": "null-timing",
+        "execution_policies": {
+          "local": { "version": 1, "timing_scope": null }
+        }
+      }
     },
     {
       "name": "manifest rejects profile policies in Gate 1",

@@ -1,3 +1,5 @@
+mod support;
+
 use std::{
     collections::BTreeMap,
     ffi::OsStr,
@@ -40,70 +42,66 @@ const SEMANTICS_SCHEMA: &str = r#"{
 "#;
 
 const CONTRACT: &str = r#"
-version = 1
-name = "sum"
-family = "arithmetic"
-parameter_schema = "schemas/parameters.json"
-dataset_schemas = []
-result_schema = "schemas/result.json"
-metric_schema = "schemas/metrics.json"
-semantics_schema = "schemas/semantics.json"
-allowed_timing_scopes = ["prepare_and_execute"]
-supported_budgets = ["none"]
-
-[semantics.validity]
-finite = true
-
-[semantics.one_shot_completion]
-accepted = true
-
-[[reference_cases]]
-result = "fixtures/result.json"
-expected_metrics = "fixtures/metrics.json"
+version: 1
+name: "sum"
+family: "arithmetic"
+parameter_schema: "schemas/parameters.json"
+dataset_schemas: []
+result_schema: "schemas/result.json"
+metric_schema: "schemas/metrics.json"
+semantics_schema: "schemas/semantics.json"
+allowed_timing_scopes: ["prepare_and_execute"]
+supported_budgets: ["none"]
+semantics:
+  validity:
+    finite: true
+  one_shot_completion:
+    accepted: true
+reference_cases:
+  - result: "fixtures/result.json"
+    expected_metrics: "fixtures/metrics.json"
 "#;
 
 const MANIFEST: &str = r#"
-version = 1
-name = "read-only-fixture"
-
-[problems.sum]
-contract = "problem.toml"
-
-[problems.sum.evaluator]
-runner = "command"
-program = "sh"
-args = ["worker.sh"]
-sources = ["worker.sh"]
-environment = "local"
-
-[implementations.reference]
-runner = "command"
-program = "sh"
-args = ["worker.sh"]
-sources = ["worker.sh"]
-environment = "local"
-problem_contracts = ["sum"]
-capabilities = ["one_shot"]
-
-[environments.local]
-kind = "local"
-
-[[experiments]]
-name = "main"
-problem = "sum"
-implementations = ["reference"]
-execution_policy = "default"
-observation_policy = "final"
-implementation_repetitions = 1
-measurement_repetitions = 2
-seed = 7
-
-[execution_policies.default]
-version = 1
-
-[observation_policies.final]
-version = 1
-kind = "one_shot"
+version: 1
+name: "read-only-fixture"
+problems:
+  sum:
+    contract: "problem.yaml"
+    evaluator:
+      runner: "command"
+      program: "sh"
+      args: ["worker.sh"]
+      sources: ["worker.sh"]
+      environment: "local"
+implementations:
+  reference:
+    runner: "command"
+    program: "sh"
+    args: ["worker.sh"]
+    sources: ["worker.sh"]
+    environment: "local"
+    problem_contracts: ["sum"]
+    capabilities: ["one_shot"]
+environments:
+  local:
+    kind: "local"
+experiments:
+  - name: "main"
+    problem: "sum"
+    implementations: ["reference"]
+    execution_policy: "default"
+    observation_policy: "final"
+    implementation_repetitions: 1
+    measurement_repetitions: 2
+    seed: 7
+execution_policies:
+  default:
+    version: 1
+observation_policies:
+  final:
+    version: 1
+    kind: "one_shot"
 "#;
 
 fn metewand<I, S>(current_dir: &Path, arguments: I) -> Output
@@ -128,8 +126,8 @@ fn write(root: &Path, path: &str, contents: &str) {
 
 fn repository() -> TempDir {
     let repository = TempDir::new().unwrap();
-    write(repository.path(), "metewand.toml", MANIFEST);
-    write(repository.path(), "problem.toml", CONTRACT);
+    write(repository.path(), "metewand.yaml", MANIFEST);
+    write(repository.path(), "problem.yaml", CONTRACT);
     for schema in ["parameters", "result", "metrics"] {
         write(
             repository.path(),
@@ -407,15 +405,16 @@ fn check_and_plan_do_not_acquire_selected_remote_sources_or_launch_materializers
     let repository = repository();
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     listener.set_nonblocking(true).unwrap();
-    let manifest = MANIFEST.replace(
-        "problem = \"sum\"\n",
-        "problem = \"sum\"\ndatasets = [\"remote\"]\n",
+    let manifest = support::replace_yaml(
+        MANIFEST,
+        "problem: \"sum\"\n",
+        "problem: \"sum\"\ndatasets: [\"remote\"]\n",
     );
     write(
         repository.path(),
-        "metewand.toml",
+        "metewand.yaml",
         &format!(
-            "{manifest}\n[datasets.remote]\noutput_schema = \"schemas/dataset.json\"\nrunner = \"command\"\nprogram = \"sh\"\nargs = [\"worker.sh\"]\nsources = [\"worker.sh\"]\nenvironment = \"local\"\n[datasets.remote.source]\nurl = \"http://{}/data\"\nsha256 = \"{}\"\n",
+            "{manifest}\ndatasets:\n  remote:\n    output_schema: \"schemas/dataset.json\"\n    runner: \"command\"\n    program: \"sh\"\n    args: [\"worker.sh\"]\n    sources: [\"worker.sh\"]\n    environment: \"local\"\n    source:\n      url: \"http://{}/data\"\n      sha256: \"{}\"\n",
             listener.local_addr().unwrap(),
             "0".repeat(64),
         ),
@@ -424,15 +423,15 @@ fn check_and_plan_do_not_acquire_selected_remote_sources_or_launch_materializers
     write(repository.path(), "fixtures/dataset/input", "reference\n");
     write(
         repository.path(),
-        "problem.toml",
+        "problem.yaml",
         &CONTRACT
             .replace(
-                "dataset_schemas = []",
-                "dataset_schemas = [\"schemas/dataset.json\"]",
+                "dataset_schemas: []",
+                "dataset_schemas: [\"schemas/dataset.json\"]",
             )
             .replace(
-                "[[reference_cases]]",
-                "[[reference_cases]]\ndataset = \"fixtures/dataset\"",
+                "reference_cases:\n  - result:",
+                "reference_cases:\n  - dataset: \"fixtures/dataset\"\n    result:",
             ),
     );
     let before = files(repository.path());
@@ -477,7 +476,7 @@ fn check_and_plan_do_not_acquire_selected_remote_sources_or_launch_materializers
 fn check_and_plan_accept_an_explicit_manifest_path() {
     let repository = repository();
     let parent = repository.path().parent().unwrap();
-    let manifest = repository.path().join("metewand.toml");
+    let manifest = repository.path().join("metewand.yaml");
 
     for command in ["check", "plan", "status"] {
         let output = metewand(parent, [command, "--manifest", manifest.to_str().unwrap()]);
@@ -531,11 +530,7 @@ fn jsonl_output_is_one_schema_conforming_record_per_line() {
 #[test]
 fn machine_failures_have_stable_codes_spans_causes_and_stream_separation() {
     let repository = repository();
-    write(
-        repository.path(),
-        "metewand.toml",
-        "version = 1\nname = []\n",
-    );
+    write(repository.path(), "metewand.yaml", "version: 1\nname: []\n");
 
     let output = metewand(repository.path(), ["check", "--output", "json"]);
 
@@ -546,12 +541,12 @@ fn machine_failures_have_stable_codes_spans_causes_and_stream_separation() {
     assert_eq!(envelope["data"]["causes"][0]["code"], "invalid_manifest");
     assert_eq!(
         envelope["data"]["causes"][0]["source_span"]["path"],
-        "metewand.toml"
+        "metewand.yaml"
     );
     assert_eq!(envelope["data"]["causes"][0]["source_span"]["line"], 2);
     assert!(envelope["data"]["causes"][0]["remediation"].is_string());
     assert!(stderr(&output).contains("error[repository_check_failed]"));
-    assert!(stderr(&output).contains("metewand.toml:2:"));
+    assert!(stderr(&output).contains("metewand.yaml:2:"));
 }
 
 #[test]
@@ -565,7 +560,7 @@ fn usage_and_input_failures_have_distinct_stable_exit_codes() {
 
     let input = metewand(
         repository.path(),
-        ["check", "--manifest", "missing.toml", "--output", "json"],
+        ["check", "--manifest", "missing.yaml", "--output", "json"],
     );
     assert_eq!(input.status.code(), Some(4));
     let input = machine_output(&input);

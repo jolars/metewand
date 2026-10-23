@@ -3,11 +3,12 @@
 `metewand run` executes one measured slot at a time by default. The execution
 policy's `run_order` selects `sequential` (the version-1 default) or `randomized`:
 
-```toml
-[execution_policies.local]
-version = 1
-timing_scope = "prepare_and_execute"
-run_order = "randomized"
+```yaml
+execution_policies:
+  local:
+    version: 1
+    timing_scope: "prepare_and_execute"
+    run_order: "randomized"
 ```
 
 Sequential order follows the logical plan: experiments, expanded candidates,
@@ -39,12 +40,13 @@ Sequential order preserves the supplied order, including for empty selections.
 Set the execution policy's `max_concurrency` to a positive safe integer to
 allow that many attempts to overlap:
 
-```toml
-[execution_policies.local]
-version = 1
-timing_scope = "prepare_and_execute"
-run_order = "randomized"
-max_concurrency = 2
+```yaml
+execution_policies:
+  local:
+    version: 1
+    timing_scope: "prepare_and_execute"
+    run_order: "randomized"
+    max_concurrency: 2
 ```
 
 Omitting the setting means `1`, which keeps performance execution serial.
@@ -110,7 +112,7 @@ pin the canonical bytes and identities for bounds of one, two, and three.
 
 For one dataset and problem configuration, `A` implementation configurations
 and `M` measurement repetitions create exactly `A × M` measured attempt slots
-and observation slots when `implementation_repetitions = 1`. `A` counts expanded
+and observation slots when `implementation_repetitions: 1`. `A` counts expanded
 configurations: two parameter choices for one implementation and a parameterless
 second implementation contribute three configurations. An implementation's grid
 does not multiply the configurations of another implementation.

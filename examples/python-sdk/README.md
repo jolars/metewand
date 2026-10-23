@@ -12,7 +12,7 @@ demo_dir=$(mktemp -d)
 cp -R examples/python-sdk/. "$demo_dir/"
 cp -R sdk/python/src/metewand "$demo_dir/metewand"
 cargo run --locked -p metewand-cli -- run \
-  --manifest "$demo_dir/metewand.toml" \
+  --manifest "$demo_dir/metewand.yaml" \
   --output-dir "$demo_dir/run" --output jsonl
 ```
 

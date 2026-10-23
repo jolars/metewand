@@ -8,12 +8,12 @@ use std::{
 };
 
 use serde::{Deserialize, Deserializer, de};
-use serde_json::{Map as JsonMap, Number as JsonNumber, Value as JsonValue};
+use serde_json::Value as JsonValue;
 use thiserror::Error;
 
 use crate::{MANIFEST_VERSION, canonical::CanonicalValue};
 
-/// Parses a version-1 TOML manifest into core domain types.
+/// Parses a version-1 YAML manifest into core domain types.
 ///
 /// `source_path` identifies the document in diagnostics and does not cause any
 /// filesystem access. Parsing rejects unknown fields at every Metewand-owned
@@ -21,15 +21,12 @@ use crate::{MANIFEST_VERSION, canonical::CanonicalValue};
 ///
 /// # Errors
 ///
-/// Returns a path-aware, source-spanned diagnostic for malformed TOML or a
+/// Returns a path-aware, source-spanned diagnostic for malformed YAML or a
 /// value that cannot be represented by the version-1 manifest types.
 pub fn parse_manifest(source_path: &Path, source: &str) -> Result<Manifest, ManifestParseError> {
-    toml::from_str(source).map_err(|error: toml::de::Error| {
-        let byte_span = error.span().unwrap_or(source.len()..source.len());
-        ManifestParseError {
-            message: error.message().to_owned(),
-            source_span: SourceSpan::from_byte_range(source_path, source, byte_span),
-        }
+    crate::yaml::parse(source_path, source).map_err(|error| ManifestParseError {
+        message: error.message,
+        source_span: error.source_span,
     })
 }
 
@@ -275,8 +272,10 @@ pub struct ExecutionPolicyDefinition {
     #[serde(default, deserialize_with = "deserialize_optional_nonempty_string")]
     pub memory: Option<String>,
     /// Whether network access is requested.
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
     pub network: Option<bool>,
     /// Whether a worker may serve more than one operation.
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
     pub worker_reuse: Option<bool>,
     /// Number of untimed warm-up runs.
     #[serde(
@@ -288,10 +287,13 @@ pub struct ExecutionPolicyDefinition {
     #[serde(default, deserialize_with = "deserialize_optional_nonempty_string")]
     pub timeout: Option<String>,
     /// Phases included in the primary timing measurement.
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
     pub timing_scope: Option<TimingScope>,
     /// Primary executor-observed time measure.
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
     pub primary_time: Option<PrimaryTime>,
     /// Deterministic run-order policy.
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
     pub run_order: Option<RunOrder>,
     /// Maximum number of attempts that may execute concurrently.
     #[serde(
@@ -300,6 +302,7 @@ pub struct ExecutionPolicyDefinition {
     )]
     pub max_concurrency: Option<u64>,
     /// Required control-enforcement level.
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
     pub enforcement: Option<Enforcement>,
 }
 
@@ -770,7 +773,7 @@ impl SourceSpan {
     }
 }
 
-/// A TOML syntax or typed-manifest decoding failure.
+/// A YAML syntax or typed-manifest decoding failure.
 #[derive(Debug, Error)]
 #[error("failed to parse manifest at `{}`: {message}", source_span.path.display())]
 pub struct ManifestParseError {
@@ -785,7 +788,7 @@ impl ManifestParseError {
         &self.message
     }
 
-    /// Returns the location attributed by the TOML decoder.
+    /// Returns the location attributed by the YAML decoder.
     #[must_use]
     pub fn source_span(&self) -> Option<&SourceSpan> {
         Some(&self.source_span)
@@ -795,17 +798,26 @@ impl ManifestParseError {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawDatasetDefinition {
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
     parameter_schema: Option<RepositoryPath>,
     #[serde(default, deserialize_with = "deserialize_parameter_defaults")]
     parameter_defaults: Option<CanonicalValue>,
     output_schema: RepositoryPath,
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
     source: Option<RemoteSource>,
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
     runner: Option<Runner>,
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
     entrypoint: Option<RepositoryPath>,
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
     program: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
     args: Option<Vec<String>>,
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
     sources: Option<Vec<RepositoryPath>>,
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
     environment: Option<Name>,
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
     protocol_transport: Option<ProtocolTransport>,
 }
 
@@ -864,13 +876,20 @@ impl<'de> Deserialize<'de> for DatasetDefinition {
 #[serde(deny_unknown_fields)]
 struct RawImplementationDefinition {
     runner: Runner,
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
     entrypoint: Option<RepositoryPath>,
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
     program: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
     args: Option<Vec<String>>,
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
     sources: Option<Vec<RepositoryPath>>,
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
     environment: Option<Name>,
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
     protocol_transport: Option<ProtocolTransport>,
     problem_contracts: Vec<Name>,
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
     parameter_schema: Option<RepositoryPath>,
     #[serde(default, deserialize_with = "deserialize_parameter_defaults")]
     parameter_defaults: Option<CanonicalValue>,
@@ -887,7 +906,7 @@ impl<'de> Deserialize<'de> for ImplementationDefinition {
             .map_err(de::Error::custom)?;
         if raw.capabilities != [ImplementationCapability::OneShot] {
             return Err(de::Error::custom(
-                "version 1 requires `capabilities = [\"one_shot\"]`",
+                "version 1 requires `capabilities: [\"one_shot\"]`",
             ));
         }
         let worker = build_worker(
@@ -914,11 +933,17 @@ impl<'de> Deserialize<'de> for ImplementationDefinition {
 #[serde(deny_unknown_fields)]
 struct RawWorkerDefinition {
     runner: Runner,
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
     entrypoint: Option<RepositoryPath>,
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
     program: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
     args: Option<Vec<String>>,
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
     sources: Option<Vec<RepositoryPath>>,
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
     environment: Option<Name>,
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
     protocol_transport: Option<ProtocolTransport>,
 }
 
@@ -1081,8 +1106,7 @@ pub(crate) fn deserialize_manifest_value<'de, D>(
 where
     D: Deserializer<'de>,
 {
-    let value = toml::Value::deserialize(deserializer)?;
-    let value = toml_to_json(value).map_err(de::Error::custom)?;
+    let value = JsonValue::deserialize(deserializer)?;
     CanonicalValue::try_from(value).map_err(de::Error::custom)
 }
 
@@ -1090,43 +1114,11 @@ fn deserialize_manifest_values<'de, D>(deserializer: D) -> Result<Vec<CanonicalV
 where
     D: Deserializer<'de>,
 {
-    let values = Vec::<toml::Value>::deserialize(deserializer)?;
+    let values = Vec::<JsonValue>::deserialize(deserializer)?;
     values
         .into_iter()
-        .map(|value| {
-            toml_to_json(value)
-                .and_then(|value| {
-                    CanonicalValue::try_from(value).map_err(|error| error.to_string())
-                })
-                .map_err(de::Error::custom)
-        })
+        .map(|value| CanonicalValue::try_from(value).map_err(de::Error::custom))
         .collect()
-}
-
-fn toml_to_json(value: toml::Value) -> Result<JsonValue, String> {
-    match value {
-        toml::Value::String(value) => Ok(JsonValue::String(value)),
-        toml::Value::Integer(value) => Ok(JsonValue::Number(value.into())),
-        toml::Value::Float(value) => JsonNumber::from_f64(value)
-            .map(JsonValue::Number)
-            .ok_or_else(|| {
-                format!("TOML number {value} is outside the version-1 Metewand JSON domain")
-            }),
-        toml::Value::Boolean(value) => Ok(JsonValue::Bool(value)),
-        toml::Value::Datetime(_) => Err(
-            "TOML date and time values are outside the version-1 Metewand JSON domain".to_owned(),
-        ),
-        toml::Value::Array(values) => values
-            .into_iter()
-            .map(toml_to_json)
-            .collect::<Result<Vec<_>, _>>()
-            .map(JsonValue::Array),
-        toml::Value::Table(values) => values
-            .into_iter()
-            .map(|(key, value)| toml_to_json(value).map(|value| (key, value)))
-            .collect::<Result<JsonMap<_, _>, _>>()
-            .map(JsonValue::Object),
-    }
 }
 
 fn deserialize_safe_positive_integer<'de, D>(deserializer: D) -> Result<u64, D::Error>
@@ -1153,6 +1145,17 @@ where
             "integer {value} exceeds the version-1 safe-integer maximum"
         )))
     }
+}
+
+pub(crate) fn deserialize_optional_non_null<'de, D, T>(
+    deserializer: D,
+) -> Result<Option<T>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    // Optional typed fields may be omitted, but explicit nulls violate the schema.
+    T::deserialize(deserializer).map(Some)
 }
 
 fn deserialize_optional_safe_positive_integer<'de, D>(

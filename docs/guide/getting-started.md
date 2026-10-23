@@ -29,8 +29,8 @@ and implement the protocol directly.
 Validate the manifest and inspect its execution plan:
 
 ```sh
-target/release/metewand check --manifest examples/fixed-dataset/metewand.toml
-target/release/metewand plan --manifest examples/fixed-dataset/metewand.toml
+target/release/metewand check --manifest examples/fixed-dataset/metewand.yaml
+target/release/metewand plan --manifest examples/fixed-dataset/metewand.yaml
 ```
 
 These commands do not launch workers or create run files. Add `--output json` to
@@ -42,7 +42,7 @@ Choose a new output directory whose parent already exists:
 
 ```sh
 target/release/metewand run \
-  --manifest examples/fixed-dataset/metewand.toml \
+  --manifest examples/fixed-dataset/metewand.yaml \
   --output-dir /tmp/metewand-first-run \
   --output jsonl
 ```

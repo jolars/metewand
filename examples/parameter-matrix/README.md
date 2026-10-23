@@ -10,11 +10,11 @@ From the repository root, with Python 3 on `PATH`, inspect and run it:
 
 ```sh
 cargo run --locked -p metewand-cli -- plan \
-  --manifest examples/parameter-matrix/metewand.toml --output json
+  --manifest examples/parameter-matrix/metewand.yaml --output json
 cargo run --locked -p metewand-cli -- check --workers \
-  --manifest examples/parameter-matrix/metewand.toml
+  --manifest examples/parameter-matrix/metewand.yaml
 cargo run --locked -p metewand-cli -- run \
-  --manifest examples/parameter-matrix/metewand.toml \
+  --manifest examples/parameter-matrix/metewand.yaml \
   --output-dir "$(mktemp -d)/run" --output jsonl
 ```
 

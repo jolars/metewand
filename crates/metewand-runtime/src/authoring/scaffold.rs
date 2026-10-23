@@ -5,6 +5,7 @@ use std::{
     fs::{self, File, OpenOptions, TryLockError},
     io::{self, Read as _, Seek as _, Write as _},
     path::{Path, PathBuf},
+    str::FromStr as _,
 };
 
 use metewand_core::{
@@ -13,8 +14,9 @@ use metewand_core::{
     schema::DRAFT_2020_12_DIALECT,
 };
 use serde::Serialize;
+use serde_json::Value;
 use thiserror::Error;
-use toml_edit::{Document, DocumentMut, Item, Key, Table};
+use yaml_edit::{AsYaml as _, Document, Mapping, ScalarValue, SyntaxKind, YamlFile};
 
 use super::CreatedPathKind;
 
@@ -105,7 +107,7 @@ pub struct ScaffoldReport {
 /// Stable failure categories for scaffold operations.
 #[derive(Clone, Copy, Debug)]
 pub enum ScaffoldErrorKind {
-    /// A request omitted or misidentified an explicit component choice.
+    /// A request omitted explicit choices or targets a shared YAML mapping.
     InvalidRequest,
     /// The requested manifest component is already defined.
     ComponentExists,
@@ -374,45 +376,106 @@ fn add_definition(
     path: &Path,
     source: &str,
     request: &ScaffoldRequest,
-    definition: Table,
+    definition: Mapping,
 ) -> Result<String, ScaffoldError> {
-    let document = Document::parse(source).map_err(|error| {
-        ScaffoldError::new(ScaffoldErrorKind::InvalidManifest, path, error.to_string())
-    })?;
+    let invalid = |message| ScaffoldError::new(ScaffoldErrorKind::InvalidManifest, path, message);
+    let file = YamlFile::from_str(source).map_err(|error| invalid(error.to_string()))?;
+    let document = file
+        .document()
+        .expect("validated manifest has one document");
+    let root = document
+        .as_mapping()
+        .expect("validated manifest is a mapping");
     let namespace = request.component.namespace();
-    let mut updated = source.to_owned();
-    if let Some(inline) = document.get(namespace).and_then(Item::as_inline_table) {
-        let insertion = inline.span().expect("parsed inline table has a span").start + 1;
-        let separator = if inline.is_empty() { " " } else { ", " };
-        let value = definition.into_inline_table();
-        updated.insert_str(
-            insertion,
-            &format!(" {} = {value}{separator}", Key::new(&request.name)),
-        );
-    } else {
-        // Append an absolute table header without reformatting existing definitions.
-        let mut addition = DocumentMut::new();
-        let mut table = Table::new();
-        table.set_implicit(true);
-        table.insert(&request.name, Item::Table(definition));
-        addition[namespace] = Item::Table(table);
-        if !updated.ends_with('\n') {
-            updated.push('\n');
-        }
-        updated.push('\n');
-        updated.push_str(&addition.to_string());
+    let before = yaml_value(path, source)?;
+    let shared = || {
+        ScaffoldError::new(
+            ScaffoldErrorKind::InvalidRequest,
+            path,
+            format!(
+                "cannot scaffold into shared YAML mapping `{namespace}`; expand its anchors, aliases, and merge keys manually before scaffolding"
+            ),
+        )
+    };
+    if has_container_anchor(&root) {
+        return Err(shared());
     }
-    parse_manifest(path, &updated).map_err(|error| {
-        ScaffoldError::new(ScaffoldErrorKind::InvalidManifest, path, error.to_string())
-    })?;
+    let target = match root.get(namespace) {
+        Some(node) => {
+            if node.as_alias().is_some() {
+                return Err(shared());
+            }
+            let mapping = root.get_mapping(namespace).ok_or_else(shared)?;
+            if has_container_anchor(&mapping) || mapping.contains_key("<<") {
+                return Err(shared());
+            }
+            Some(mapping)
+        }
+        None => {
+            if before.get(namespace).is_some() {
+                return Err(shared());
+            }
+            None
+        }
+    };
+    let definition_value = yaml_value(path, &definition.to_string())?;
+    // YAML readers differ on whether numeric-looking names are strings.
+    let name = ScalarValue::double_quoted(&request.name);
+    if let Some(mapping) = target {
+        mapping.set(&name, &definition);
+    } else {
+        let mapping = Mapping::new();
+        mapping.set(&name, &definition);
+        root.set(namespace, mapping);
+    }
+    let updated = file.to_string();
+    parse_manifest(path, &updated).map_err(|error| invalid(error.to_string()))?;
+    let mut expected = before;
+    expected
+        .as_object_mut()
+        .expect("validated manifest is a mapping")
+        .entry(namespace)
+        .or_insert_with(|| Value::Object(serde_json::Map::new()))
+        .as_object_mut()
+        .expect("validated namespace is a mapping")
+        .insert(request.name.clone(), definition_value);
+    if yaml_value(path, &updated)? != expected {
+        return Err(invalid(
+            "YAML edit changed values outside the requested definition".to_owned(),
+        ));
+    }
     Ok(updated)
+}
+
+fn has_container_anchor(mapping: &Mapping) -> bool {
+    mapping
+        .as_node()
+        .expect("mapping has a syntax node")
+        .ancestors()
+        .any(|node| {
+            node.children_with_tokens()
+                .any(|child| child.kind() == SyntaxKind::ANCHOR)
+        })
+}
+
+fn yaml_value(path: &Path, source: &str) -> Result<Value, ScaffoldError> {
+    let options = serde_saphyr::options! {
+        duplicate_keys: serde_saphyr::DuplicateKeyPolicy::Error,
+        reject_unsupported_tags: true,
+        strict_booleans: true,
+        non_finite_float_policy: serde_saphyr::NonFiniteFloatPolicy::Reject,
+        with_snippet: false,
+    };
+    serde_saphyr::from_str_with_options(source, options).map_err(|error| {
+        ScaffoldError::new(ScaffoldErrorKind::InvalidManifest, path, error.to_string())
+    })
 }
 
 type TemplateFiles = Vec<(PathBuf, String)>;
 
-fn templates(request: &ScaffoldRequest) -> (Table, TemplateFiles) {
+fn templates(request: &ScaffoldRequest) -> (Mapping, TemplateFiles) {
     let directory = format!("{}/{}", request.component.namespace(), request.name);
-    let quote = |text: &str| toml_edit::Value::from(text).to_string();
+    let quote = |text: &str| serde_json::to_string(text).expect("strings can be serialized");
     let schema_path = |role: &str| format!("{directory}/{role}.schema.json");
     let worker_name = match request.component {
         ScaffoldComponent::Dataset => "materializer.sh",
@@ -421,7 +484,7 @@ fn templates(request: &ScaffoldRequest) -> (Table, TemplateFiles) {
     };
     let worker = format!("{directory}/{worker_name}");
     let launch = format!(
-        "runner = \"command\"\nprogram = \"sh\"\nargs = [{}]\nsources = [{}]\nenvironment = {}\n",
+        "runner: command\nprogram: sh\nargs: [{}]\nsources: [{}]\nenvironment: {}\n",
         quote(&format!("{{sources}}/{worker}")),
         quote(&worker),
         quote(&request.environment),
@@ -429,22 +492,26 @@ fn templates(request: &ScaffoldRequest) -> (Table, TemplateFiles) {
     let mut files = Vec::new();
     let definition = match request.component {
         ScaffoldComponent::Dataset => format!(
-            "parameter_schema = {}\noutput_schema = {}\n{launch}",
+            "parameter_schema: {}\noutput_schema: {}\n{launch}",
             quote(&schema_path("parameters")),
             quote(&schema_path("dataset"))
         ),
         ScaffoldComponent::Problem => {
-            files.push((PathBuf::from(format!("{directory}/contract.toml")), format!(
-                "# TODO: Define the scientific contract before checking or running this problem.\nversion = {MANIFEST_VERSION}\nname = {}\nparameter_schema = {}\nresult_schema = {}\nmetric_schema = {}\nsemantics_schema = {}\nsupported_budgets = [\"none\"]\n\n# TODO: Add a family name, dataset_schemas (or [] for a dataset-free problem),\n# and allowed_timing_scopes chosen for your measurement contract.\n\n[semantics.preprocessing]\n# TODO: Define preprocessing and any work allowed outside the timed scope.\n\n[semantics.validity]\n# TODO: Define what makes a result scientifically valid.\n\n[semantics.one_shot_completion]\n# TODO: Define when a valid result completes the computation.\n\n# TODO: Add reference cases with author-supplied results and expected metrics.\n# [[reference_cases]]\n# Include a dataset path only when dataset_schemas is nonempty.\n# Required fields: result, expected_metrics.\n",
+            files.push((PathBuf::from(format!("{directory}/contract.yaml")), format!(
+                "# TODO: Define the scientific contract before checking or running this problem.\nversion: {MANIFEST_VERSION}\nname: {}\nparameter_schema: {}\nresult_schema: {}\nmetric_schema: {}\nsemantics_schema: {}\nsupported_budgets: [none]\n\n# TODO: Add a family name, dataset_schemas (or [] for a dataset-free problem),\n# and allowed_timing_scopes chosen for your measurement contract.\n\nsemantics:\n  # TODO: Define preprocessing and any work allowed outside the timed scope.\n  preprocessing: {{}}\n  # TODO: Define what makes a result scientifically valid.\n  validity: {{}}\n  # TODO: Define when a valid result completes the computation.\n  one_shot_completion: {{}}\n\n# TODO: Add reference cases with author-supplied results and expected metrics.\n# reference_cases:\n#   - result: ...\n#     expected_metrics: ...\n# Include a dataset path only when dataset_schemas is nonempty.\n",
                 quote(&request.name), quote(&schema_path("parameters")), quote(&schema_path("result")), quote(&schema_path("metrics")), quote(&schema_path("semantics")),
             )));
+            let launch = launch
+                .lines()
+                .map(|line| format!("  {line}\n"))
+                .collect::<String>();
             format!(
-                "contract = {}\n\n[evaluator]\n{launch}",
-                quote(&format!("{directory}/contract.toml"))
+                "contract: {}\nevaluator:\n{launch}",
+                quote(&format!("{directory}/contract.yaml"))
             )
         }
         ScaffoldComponent::Implementation => format!(
-            "parameter_schema = {}\nproblem_contracts = [{}]\ncapabilities = [\"one_shot\"]\n{launch}",
+            "parameter_schema: {}\nproblem_contracts: [{}]\ncapabilities: [one_shot]\n{launch}",
             quote(&schema_path("parameters")),
             quote(
                 request
@@ -467,12 +534,11 @@ fn templates(request: &ScaffoldRequest) -> (Table, TemplateFiles) {
     files.push((PathBuf::from(worker), format!(
         "#!/bin/sh\n# Fail explicitly until the author supplies a version-1 protocol worker.\nprintf '%s\\n' 'TODO: Implement {worker_name} using the Metewand worker protocol or an SDK.' >&2\nexit 1\n"
     )));
-    let table = definition
-        .parse::<DocumentMut>()
-        .expect("scaffold templates contain valid TOML")
-        .as_table()
-        .clone();
-    (table, files)
+    let mapping = Document::from_str(&definition)
+        .expect("scaffold templates contain valid YAML")
+        .as_mapping()
+        .expect("scaffold definitions are mappings");
+    (mapping, files)
 }
 
 fn require_absent(path: &Path) -> Result<(), ScaffoldError> {
@@ -602,8 +668,8 @@ mod tests {
     #[test]
     fn late_file_conflicts_preserve_the_manifest_and_report_prior_changes() {
         let root = tempfile::TempDir::new().unwrap();
-        let manifest = root.path().join("metewand.toml");
-        let original = "version = 1\nname = 'benchmark'\n";
+        let manifest = root.path().join("metewand.yaml");
+        let original = "version: 1\nname: benchmark\n";
         fs::write(&manifest, original).unwrap();
         let mut file = open_manifest(&manifest, false).unwrap();
         let directory = root.path().join("created");
@@ -637,15 +703,15 @@ mod tests {
     fn intervening_manifest_edits_are_preserved_and_created_files_are_reported() {
         for replace in [false, true] {
             let root = tempfile::TempDir::new().unwrap();
-            let manifest = root.path().join("metewand.toml");
-            let original = "version = 1\nname = 'benchmark'\n";
+            let manifest = root.path().join("metewand.yaml");
+            let original = "version: 1\nname: benchmark\n";
             fs::write(&manifest, original).unwrap();
             let mut file = open_manifest(&manifest, false).unwrap();
             let current = if replace {
                 fs::remove_file(&manifest).unwrap();
                 original
             } else {
-                "version = 1\nname = 'author edit'\n"
+                "version: 1\nname: author edit\n"
             };
             fs::write(&manifest, current).unwrap();
             let created = root.path().join("worker.sh");

@@ -4,7 +4,7 @@
   "data": {
     "command": "plan",
     "benchmark": "read-only-fixture",
-    "manifest_hash": "df24121cfe01b93baf27c26174ffc802277c8a2bc515dd83bb3c7abe53eada47",
+    "manifest_hash": "11cd7a4ab056fad5b0f22c092d6c8f5d0d8a5d0598f1d916cf18846f01ead4d5",
     "definitions": {
       "environments": [
         {

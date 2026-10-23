@@ -16,12 +16,12 @@ metewand status
 metewand status --output-dir results --output json
 ```
 
-`check` and `plan` use `metewand.toml` in the current directory by default. An
+`check` and `plan` use `metewand.yaml` in the current directory by default. An
 explicit manifest establishes its parent directory as the repository root:
 
 ```sh
-metewand check --manifest benchmarks/example/metewand.toml
-metewand plan --manifest benchmarks/example/metewand.toml
+metewand check --manifest benchmarks/example/metewand.yaml
+metewand plan --manifest benchmarks/example/metewand.yaml
 ```
 
 [`status` and `explain <id>`](inspection-cli.md) also inspect checked logical

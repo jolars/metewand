@@ -1,5 +1,7 @@
 #![cfg(unix)]
 
+mod support;
+
 use std::{
     collections::BTreeSet,
     fs,
@@ -92,29 +94,31 @@ fn repository(max_concurrency: Option<u64>, slots: usize, failed_offset: Option<
         .replace("assert role == \"implementation\" and prepared is not None", "assert role == \"implementation\" and prepared is not None\n            concurrency_probe(prepared_offset)")
         .replace("statistics={},", "statistics={\"cwd\": os.getcwd(), \"pid\": os.getpid()},");
     fs::write(benchmark.join("worker.py"), worker).unwrap();
-    let mut manifest = fs::read_to_string(benchmark.join("metewand.toml"))
+    let mut manifest = fs::read_to_string(benchmark.join("metewand.yaml"))
         .unwrap()
         .replace(
-            "args = [\"{sources}/worker.py\", \"implementation\"]",
+            "args: [\"{sources}/worker.py\", \"implementation\"]",
             &format!(
-                r#"args = ["{{sources}}/worker.py", "implementation", "{width}", "{slots}", "{}"]"#,
+                r#"args: ["{{sources}}/worker.py", "implementation", "{width}", "{slots}", "{}"]"#,
                 failed_offset.map_or(-1, |offset| offset as i64)
             ),
-        )
-        .replace(
-            "seed = 7",
-            &format!(
-                "seed = 7\n\n[experiments.problem_parameters]\noffset = {{ grid = {:?} }}",
-                (2..slots + 2).collect::<Vec<_>>()
-            ),
         );
+    manifest = support::replace_yaml(
+        &manifest,
+        "seed: 7",
+        &format!(
+            "seed: 7\nproblem_parameters:\n  offset: {{ grid: {:?} }}",
+            (2..slots + 2).collect::<Vec<_>>()
+        ),
+    );
     if let Some(limit) = max_concurrency {
-        manifest = manifest.replace(
-            "timing_scope =",
-            &format!("max_concurrency = {limit}\ntiming_scope ="),
+        manifest = support::replace_yaml(
+            &manifest,
+            "timing_scope:",
+            &format!("max_concurrency: {limit}\ntiming_scope:"),
         );
     }
-    fs::write(benchmark.join("metewand.toml"), manifest).unwrap();
+    fs::write(benchmark.join("metewand.yaml"), manifest).unwrap();
     root
 }
 
@@ -257,7 +261,7 @@ fn serial_defaults_and_explicit_bounds_enforce_real_overlap_and_deterministic_ev
         (Some(MAX_SAFE_INTEGER), 1, "prepare_and_execute"),
     ] {
         let root = repository(limit, slots, None);
-        for path in ["metewand.toml", "problem.toml"] {
+        for path in ["metewand.yaml", "problem.yaml"] {
             let path = root.path().join("benchmark").join(path);
             let source = fs::read_to_string(&path).unwrap();
             fs::write(path, source.replace("prepare_and_execute", scope)).unwrap();
@@ -282,7 +286,7 @@ fn event_sink_failure_joins_dispatched_attempts_and_stops_before_the_next_batch(
     use std::{cell::Cell, io, rc::Rc};
 
     let root = repository(Some(2), 5, None);
-    let repository = check_repository(&root.path().join("benchmark/metewand.toml")).unwrap();
+    let repository = check_repository(&root.path().join("benchmark/metewand.yaml")).unwrap();
     let plan = repository.logical_plan().unwrap();
     let terminal_events = Rc::new(Cell::new(0));
     let error = run_repository(&repository, &plan, &root.path().join("run"), |event| {

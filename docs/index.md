@@ -38,9 +38,9 @@ Metewand checks their contracts, expands the configurations into a deterministic
 plan, and runs workers through a versioned process protocol.
 
 ```sh
-metewand check --manifest benchmark/metewand.toml
-metewand plan --manifest benchmark/metewand.toml
-metewand run --manifest benchmark/metewand.toml --output-dir /tmp/metewand-run
+metewand check --manifest benchmark/metewand.yaml
+metewand plan --manifest benchmark/metewand.yaml
+metewand run --manifest benchmark/metewand.yaml --output-dir /tmp/metewand-run
 ```
 
 The benchmark author defines what counts as a valid result and how to measure

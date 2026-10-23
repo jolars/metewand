@@ -43,7 +43,7 @@ Commands:
 
 Options:
   --output FORMAT  Write human, json, or jsonl output (default: human).
-  --manifest PATH  Use PATH instead of ./metewand.toml.
+  --manifest PATH  Use PATH instead of ./metewand.yaml.
   --output-dir PATH  Publish a run in a new directory (parent must exist).
   -h, --help       Print help.
   -V, --version    Print the package version.
@@ -292,7 +292,7 @@ fn plan_command(arguments: &[OsString]) -> Result<CommandResult, CommandError> {
 
 fn manifest_argument(arguments: &[OsString]) -> Result<PathBuf, CommandError> {
     match arguments {
-        [] => Ok(PathBuf::from("metewand.toml")),
+        [] => Ok(PathBuf::from("metewand.yaml")),
         [flag, path] if flag == "--manifest" => {
             if path.is_empty() {
                 Err(CommandError::usage(

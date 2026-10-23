@@ -1,5 +1,7 @@
 #![cfg(unix)]
 
+mod support;
+
 use std::{
     collections::BTreeSet,
     fs,
@@ -30,8 +32,16 @@ fn copy_tree(source: &Path, destination: &Path) {
 fn replace(root: &Path, path: &str, before: &str, after: &str) {
     let path = root.join(path);
     let source = fs::read_to_string(&path).unwrap();
-    assert!(source.contains(before), "missing {before:?} in {path:?}");
-    fs::write(path, source.replace(before, after)).unwrap();
+    let updated = if path
+        .extension()
+        .is_some_and(|extension| extension == "yaml")
+    {
+        support::replace_yaml(&source, before, after)
+    } else {
+        assert!(source.contains(before), "missing {before:?} in {path:?}");
+        source.replace(before, after)
+    };
+    fs::write(path, updated).unwrap();
 }
 
 fn repository() -> TempDir {
@@ -103,9 +113,9 @@ fn shared_materialization_and_private_conversions_have_distinct_timing_boundarie
     let vector: Value = serde_json::from_str(PREPARATION_VECTOR).unwrap();
     replace(
         root.path(),
-        "metewand.toml",
-        "measurement_repetitions = 1",
-        "measurement_repetitions = 2",
+        "metewand.yaml",
+        "measurement_repetitions: 1",
+        "measurement_repetitions: 2",
     );
     let started = Instant::now();
     let output = metewand(
@@ -297,9 +307,9 @@ fn contract_permissions_change_identity_without_moving_the_selected_timing_bound
         if destination == "permitted" {
             replace(
                 root.path(),
-                "problem.toml",
-                "allowed_outside_timed_scope = []",
-                "allowed_outside_timed_scope = [\"integer_packing\"]",
+                "problem.yaml",
+                "allowed_outside_timed_scope: []",
+                "allowed_outside_timed_scope: [\"integer_packing\"]",
             );
         }
         let output = metewand(
@@ -386,17 +396,17 @@ fn preparation_cannot_bypass_dataset_schemas_or_contract_timing_scopes() {
             .unwrap();
             replace(
                 root.path(),
-                "metewand.toml",
-                "output_schema = \"schemas/dataset.json\"",
-                "output_schema = \"schemas/other.json\"",
+                "metewand.yaml",
+                "output_schema: \"schemas/dataset.json\"",
+                "output_schema: \"schemas/other.json\"",
             );
             "does not accept"
         } else {
             replace(
                 root.path(),
-                "metewand.toml",
-                "timing_scope = \"prepare_and_execute\"",
-                "timing_scope = \"execute_only\"",
+                "metewand.yaml",
+                "timing_scope: \"prepare_and_execute\"",
+                "timing_scope: \"execute_only\"",
             );
             "does not allow"
         };
@@ -428,21 +438,21 @@ fn a_contract_permission_enables_execute_only_timing() {
     let root = repository();
     replace(
         root.path(),
-        "metewand.toml",
-        "timing_scope = \"prepare_and_execute\"",
-        "timing_scope = \"execute_only\"",
+        "metewand.yaml",
+        "timing_scope: \"prepare_and_execute\"",
+        "timing_scope: \"execute_only\"",
     );
     replace(
         root.path(),
-        "problem.toml",
-        "allowed_timing_scopes = [\"prepare_and_execute\"]",
-        "allowed_timing_scopes = [\"prepare_and_execute\", \"execute_only\"]",
+        "problem.yaml",
+        "allowed_timing_scopes: [\"prepare_and_execute\"]",
+        "allowed_timing_scopes: [\"prepare_and_execute\", \"execute_only\"]",
     );
     replace(
         root.path(),
-        "problem.toml",
-        "allowed_outside_timed_scope = []",
-        "allowed_outside_timed_scope = [\"integer_packing\"]",
+        "problem.yaml",
+        "allowed_outside_timed_scope: []",
+        "allowed_outside_timed_scope: [\"integer_packing\"]",
     );
     for command in ["check", "plan"] {
         let output = metewand(root.path(), &[command]);

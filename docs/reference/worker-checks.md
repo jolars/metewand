@@ -6,7 +6,7 @@ and exercise each problem's independent evaluator:
 
 ```sh
 metewand check --workers
-metewand check --manifest path/to/metewand.toml --workers --output json
+metewand check --manifest path/to/metewand.yaml --workers --output json
 ```
 
 The command resolves every declared generated-dataset materializer,

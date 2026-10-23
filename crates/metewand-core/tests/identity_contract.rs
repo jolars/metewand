@@ -64,8 +64,8 @@ struct IdentityGraph {
 
 fn name(value: &str) -> Name {
     parse_manifest(
-        Path::new("metewand.toml"),
-        &format!("version = 1\nname = {value:?}\n"),
+        Path::new("metewand.yaml"),
+        &format!("version: 1\nname: {value:?}\n"),
     )
     .unwrap()
     .name
@@ -77,9 +77,9 @@ fn canonical(source: &str) -> CanonicalValue {
 
 fn repository_path(value: &str) -> RepositoryPath {
     let source = format!(
-        "version = 1\nname = \"path\"\n[datasets.path]\noutput_schema = {value:?}\nsources = [\"fixture\"]\n"
+        "version: 1\nname: \"path\"\ndatasets:\n  path:\n    output_schema: {value:?}\n    sources: [\"fixture\"]\n"
     );
-    let manifest = parse_manifest(Path::new("metewand.toml"), &source).unwrap();
+    let manifest = parse_manifest(Path::new("metewand.yaml"), &source).unwrap();
     let DatasetDefinition::Fixed(dataset) = &manifest.datasets["path"] else {
         panic!("expected a fixed dataset");
     };

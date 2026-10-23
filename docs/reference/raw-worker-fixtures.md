@@ -16,7 +16,7 @@ runtime and end-to-end conformance tests.
 The materializer accepts an integer `values` array in the dataset parameters.
 It writes `data.json`, computes its exact SHA-256 digest and size, and writes
 the complete `dataset-manifest.json` last. The implementation's `prepare`
-request reads that dataset and requires `algorithm = "sum"`; `execute` adds the
+request reads that dataset and requires `algorithm: "sum"`; `execute` adds the
 integer problem parameter `offset` to the values' sum and writes the canonical
 answer to `result.json`. `reset` clears the prepared state. The independent
 evaluator reads the dataset and result, recomputes the expected answer, and

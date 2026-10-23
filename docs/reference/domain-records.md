@@ -1,7 +1,7 @@
 # Gate 1 domain records
 
 `metewand-core::records` defines the data carried through the Gate 1 benchmark
-lifecycle. These records are separate from the authored TOML types: manifest
+lifecycle. These records are separate from the authored YAML types: manifest
 types retain source-facing syntax and optional fields, while domain records
 contain resolved references, canonical parameter values, and defaulted policies
 ready for identity assignment and planning.

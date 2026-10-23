@@ -12,80 +12,76 @@ use metewand_core::{
 };
 use serde_json::{Value, json};
 
-const CONTRACT: &str = include_str!("../../../fixtures/problem-contract/v1/complete.toml");
+const CONTRACT: &str = include_str!("../../../fixtures/problem-contract/v1/complete.yaml");
 
 const MATRIX_MANIFEST: &str = r#"
-version = 1
-name = "matrix"
-
-[datasets.generated]
-parameter_schema = "schemas/dataset-parameters.json"
-parameter_defaults = { nested = { inherited = true }, untouched = "default" }
-output_schema = "schemas/dataset.json"
-runner = "command"
-program = "generate"
-environment = "local"
-
-[datasets.fixed]
-output_schema = "schemas/dataset.json"
-sources = ["datasets/fixed.json"]
-
-[problems.regression]
-contract = "problems/regression.toml"
-parameter_defaults = { nested = { inherited = true } }
-[problems.regression.evaluator]
-runner = "command"
-program = "evaluate"
-environment = "local"
-
-[implementations.tuned]
-runner = "command"
-program = "solve-tuned"
-environment = "local"
-problem_contracts = ["regression"]
-parameter_schema = "schemas/implementation-parameters.json"
-parameter_defaults = { trace = false }
-capabilities = ["one_shot"]
-
-[implementations.plain]
-runner = "command"
-program = "solve-plain"
-environment = "local"
-problem_contracts = ["regression"]
-capabilities = ["one_shot"]
-
-[environments.local]
-kind = "local"
-
-[[experiments]]
-name = "main"
-problem = "regression"
-datasets = ["generated", "fixed"]
-implementations = ["tuned", "plain"]
-execution_policy = "default"
-observation_policy = "final"
-implementation_repetitions = 1
-measurement_repetitions = 1
-seed = 17
-
-[experiments.dataset_parameters.generated]
-payload = { value = [1, 2] }
-rows = { grid = [10, 20] }
-nested = { value = { supplied = "dataset" } }
-
-[experiments.problem_parameters]
-lambda = { grid = [0.1, 0.2] }
-nested = { value = { supplied = "problem" } }
-
-[experiments.implementation_parameters.tuned]
-method = { grid = ["a", "b"] }
-
-[execution_policies.default]
-version = 1
-
-[observation_policies.final]
-version = 1
-kind = "one_shot"
+version: 1
+name: "matrix"
+datasets:
+  generated:
+    parameter_schema: "schemas/dataset-parameters.json"
+    parameter_defaults: { nested: { inherited: true }, untouched: "default" }
+    output_schema: "schemas/dataset.json"
+    runner: "command"
+    program: "generate"
+    environment: "local"
+  fixed:
+    output_schema: "schemas/dataset.json"
+    sources: ["datasets/fixed.json"]
+problems:
+  regression:
+    contract: "problems/regression.yaml"
+    parameter_defaults: { nested: { inherited: true } }
+    evaluator:
+      runner: "command"
+      program: "evaluate"
+      environment: "local"
+implementations:
+  tuned:
+    runner: "command"
+    program: "solve-tuned"
+    environment: "local"
+    problem_contracts: ["regression"]
+    parameter_schema: "schemas/implementation-parameters.json"
+    parameter_defaults: { trace: false }
+    capabilities: ["one_shot"]
+  plain:
+    runner: "command"
+    program: "solve-plain"
+    environment: "local"
+    problem_contracts: ["regression"]
+    capabilities: ["one_shot"]
+environments:
+  local:
+    kind: "local"
+experiments:
+  - name: "main"
+    problem: "regression"
+    datasets: ["generated", "fixed"]
+    implementations: ["tuned", "plain"]
+    execution_policy: "default"
+    observation_policy: "final"
+    implementation_repetitions: 1
+    measurement_repetitions: 1
+    seed: 17
+    dataset_parameters:
+      generated:
+        payload: { value: [1, 2] }
+        rows: { grid: [10, 20] }
+        nested: { value: { supplied: "dataset" } }
+    problem_parameters:
+      lambda: { grid: [0.1, 0.2] }
+      nested: { value: { supplied: "problem" } }
+    implementation_parameters:
+      tuned:
+        method: { grid: ["a", "b"] }
+execution_policies:
+  default:
+    version: 1
+observation_policies:
+  final:
+    version: 1
+    kind: "one_shot"
 "#;
 
 fn schema_catalog() -> SchemaCatalog {
@@ -139,22 +135,22 @@ fn schema_catalog_with_parameter_schemas(
 }
 
 fn manifest(source: &str) -> Manifest {
-    parse_manifest(Path::new("metewand.toml"), source).unwrap()
+    parse_manifest(Path::new("metewand.yaml"), source).unwrap()
 }
 
 fn contracts(manifest: &Manifest, dataset_free: bool) -> BTreeMap<Name, ProblemContract> {
     let source = if dataset_free {
         CONTRACT
             .replace(
-                "dataset_schemas = [\"schemas/dataset.json\"]",
-                "dataset_schemas = []",
+                "dataset_schemas: [\"schemas/dataset.json\"]",
+                "dataset_schemas: []",
             )
-            .replace("dataset = \"fixtures/small/dataset\"\n", "")
+            .replace("    dataset: \"fixtures/small/dataset\"\n", "")
     } else {
         CONTRACT.to_owned()
     };
     let contract = parse_problem_contract(
-        Path::new("problems/regression.toml"),
+        Path::new("problems/regression.yaml"),
         &source,
         &schema_catalog(),
     )
@@ -224,29 +220,30 @@ fn expands_only_applicable_namespaces_in_a_stable_cartesian_order() {
 #[test]
 fn named_cases_are_unioned_and_keep_coupled_values_together() {
     let source = MATRIX_MANIFEST.replace(
-        "[execution_policies.default]",
-        r#"
-[[experiments.cases]]
-name = "tall_dense"
-[experiments.cases.dataset_parameters.generated]
-rows = { value = 10000 }
-density = { value = 1.0 }
-[experiments.cases.problem_parameters]
-lambda = { value = 0.01 }
-[experiments.cases.implementation_parameters.tuned]
-method = { value = "dense" }
-
-[[experiments.cases]]
-name = "wide_sparse"
-[experiments.cases.dataset_parameters.generated]
-rows = { value = 1000 }
-density = { value = 0.01 }
-[experiments.cases.problem_parameters]
-lambda = { value = 0.1 }
-[experiments.cases.implementation_parameters.tuned]
-method = { value = "sparse" }
-
-[execution_policies.default]"#,
+        "execution_policies:",
+        r#"    cases:
+      - name: "tall_dense"
+        dataset_parameters:
+          generated:
+            rows: { value: 10000 }
+            density: { value: 1.0 }
+        problem_parameters:
+          lambda: { value: 0.01 }
+        implementation_parameters:
+          tuned:
+            method: { value: "dense" }
+      - name: "wide_sparse"
+        dataset_parameters:
+          generated:
+            rows: { value: 1000 }
+            density: { value: 0.01 }
+        problem_parameters:
+          lambda: { value: 0.1 }
+        implementation_parameters:
+          tuned:
+            method: { value: "sparse" }
+execution_policies:
+"#,
     );
     let manifest = manifest(&source);
     let expansion =
@@ -300,26 +297,31 @@ method = { value = "sparse" }
 #[test]
 fn rejects_duplicate_candidates_from_overlapping_cases_after_resolution() {
     let source = MATRIX_MANIFEST
-        .replace("rows = { grid = [10, 20] }", "rows = { value = 10 }")
-        .replace("lambda = { grid = [0.1, 0.2] }", "lambda = { value = 0.1 }")
         .replace(
-            "method = { grid = [\"a\", \"b\"] }",
-            "method = { value = \"a\" }",
+            "        rows: { grid: [10, 20] }",
+            "        rows: { value: 10 }",
         )
         .replace(
-            "[execution_policies.default]",
-            r#"
-[[experiments.cases]]
-name = "first"
-[experiments.cases.dataset_parameters.generated]
-rows = { value = 10 }
-
-[[experiments.cases]]
-name = "overlap"
-[experiments.cases.dataset_parameters.generated]
-rows = { grid = [10, 11] }
-
-[execution_policies.default]"#,
+            "      lambda: { grid: [0.1, 0.2] }",
+            "      lambda: { value: 0.1 }",
+        )
+        .replace(
+            "        method: { grid: [\"a\", \"b\"] }",
+            "        method: { value: \"a\" }",
+        )
+        .replace(
+            "execution_policies:",
+            r#"    cases:
+      - name: "first"
+        dataset_parameters:
+          generated:
+            rows: { value: 10 }
+      - name: "overlap"
+        dataset_parameters:
+          generated:
+            rows: { grid: [10, 11] }
+execution_policies:
+"#,
         );
     let manifest = manifest(&source);
     let error =
@@ -350,11 +352,17 @@ rows = { grid = [10, 11] }
 #[test]
 fn rejects_repeated_grid_members_as_duplicate_candidates() {
     let source = MATRIX_MANIFEST
-        .replace("rows = { grid = [10, 20] }", "rows = { grid = [10, 10] }")
-        .replace("lambda = { grid = [0.1, 0.2] }", "lambda = { value = 0.1 }")
         .replace(
-            "method = { grid = [\"a\", \"b\"] }",
-            "method = { value = \"a\" }",
+            "        rows: { grid: [10, 20] }",
+            "        rows: { grid: [10, 10] }",
+        )
+        .replace(
+            "      lambda: { grid: [0.1, 0.2] }",
+            "      lambda: { value: 0.1 }",
+        )
+        .replace(
+            "        method: { grid: [\"a\", \"b\"] }",
+            "        method: { value: \"a\" }",
         );
     let manifest = manifest(&source);
 
@@ -369,9 +377,9 @@ fn rejects_repeated_grid_members_as_duplicate_candidates() {
 #[test]
 fn binds_one_explicit_unit_dataset_for_dataset_free_problems() {
     let source = MATRIX_MANIFEST
-        .replace("datasets = [\"generated\", \"fixed\"]\n", "")
+        .replace("    datasets: [\"generated\", \"fixed\"]\n", "")
         .replace(
-            "[experiments.dataset_parameters.generated]\npayload = { value = [1, 2] }\nrows = { grid = [10, 20] }\nnested = { value = { supplied = \"dataset\" } }\n\n",
+            "    dataset_parameters:\n      generated:\n        payload: { value: [1, 2] }\n        rows: { grid: [10, 20] }\n        nested: { value: { supplied: \"dataset\" } }\n",
             "",
         );
     let manifest = manifest(&source);
@@ -388,7 +396,10 @@ fn binds_one_explicit_unit_dataset_for_dataset_free_problems() {
 
 #[test]
 fn validates_every_resolved_configuration_with_its_own_schema() {
-    let source = MATRIX_MANIFEST.replace("rows = { grid = [10, 20] }", "rows = { grid = [10, 0] }");
+    let source = MATRIX_MANIFEST.replace(
+        "        rows: { grid: [10, 20] }",
+        "        rows: { grid: [10, 0] }",
+    );
     let manifest = manifest(&source);
     let schemas = schema_catalog_with_parameter_schemas(
         json!({
@@ -415,15 +426,15 @@ fn validates_every_resolved_configuration_with_its_own_schema() {
 }
 
 #[test]
-fn parameter_table_order_does_not_change_expansion_order() {
+fn parameter_mapping_order_does_not_change_expansion_order() {
     let reordered = MATRIX_MANIFEST
         .replace(
-            "payload = { value = [1, 2] }\nrows = { grid = [10, 20] }\nnested = { value = { supplied = \"dataset\" } }",
-            "nested = { value = { supplied = \"dataset\" } }\nrows = { grid = [10, 20] }\npayload = { value = [1, 2] }",
+            "        payload: { value: [1, 2] }\n        rows: { grid: [10, 20] }\n        nested: { value: { supplied: \"dataset\" } }",
+            "        nested: { value: { supplied: \"dataset\" } }\n        rows: { grid: [10, 20] }\n        payload: { value: [1, 2] }",
         )
         .replace(
-            "lambda = { grid = [0.1, 0.2] }\nnested = { value = { supplied = \"problem\" } }",
-            "nested = { value = { supplied = \"problem\" } }\nlambda = { grid = [0.1, 0.2] }",
+            "      lambda: { grid: [0.1, 0.2] }\n      nested: { value: { supplied: \"problem\" } }",
+            "      nested: { value: { supplied: \"problem\" } }\n      lambda: { grid: [0.1, 0.2] }",
         );
     let left = manifest(MATRIX_MANIFEST);
     let right = manifest(&reordered);
@@ -436,5 +447,5 @@ fn parameter_table_order_does_not_change_expansion_order() {
 }
 
 fn name(value: &str) -> Name {
-    manifest(&format!("version = 1\nname = {value:?}\n")).name
+    manifest(&format!("version: 1\nname: {value:?}\n")).name
 }

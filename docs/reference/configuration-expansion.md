@@ -34,7 +34,7 @@ The output order is stable:
 7. applicable implementation axes by parameter name, with grid members in
    manifest order.
 
-TOML table order therefore cannot perturb expansion. The order of selections,
+YAML mapping order therefore cannot perturb expansion. The order of selections,
 cases, and grid values remains meaningful and is preserved.
 
 ## Named cases and duplicates

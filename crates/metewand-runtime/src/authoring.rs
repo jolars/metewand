@@ -87,10 +87,10 @@ pub fn init_benchmark(directory: &Path, dry_run: bool) -> Result<InitReport, Ini
         ));
     }
 
-    let manifest = directory.join("metewand.toml");
+    let manifest = directory.join("metewand.yaml");
     let mut paths = Vec::new();
     let resolved_directory = plan_directory(directory, &mut paths)?;
-    match fs::symlink_metadata(resolved_directory.join("metewand.toml")) {
+    match fs::symlink_metadata(resolved_directory.join("metewand.yaml")) {
         Ok(_) => {
             return Err(fail(
                 &manifest,
@@ -201,8 +201,7 @@ fn create_paths(paths: Vec<CreatedPath>) -> Result<Vec<CreatedPath>, InitError> 
                         // Record creation before writing so a partial write remains visible.
                         created_paths.push(entry.clone());
                         file.write_all(
-                            format!("version = {MANIFEST_VERSION}\nname = \"benchmark\"\n")
-                                .as_bytes(),
+                            format!("version: {MANIFEST_VERSION}\nname: benchmark\n").as_bytes(),
                         )
                     }
                     Err(error) => Err(error),
@@ -231,7 +230,7 @@ mod tests {
     fn late_conflicts_preserve_existing_files_and_report_prior_creations() {
         let root = tempfile::TempDir::new().unwrap();
         let directory = root.path().join("created");
-        let manifest = root.path().join("metewand.toml");
+        let manifest = root.path().join("metewand.yaml");
         fs::write(&manifest, "preserve\n").unwrap();
         let error = create_paths(vec![
             CreatedPath {

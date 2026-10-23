@@ -14,7 +14,7 @@ fn expand_fixed_dataset(
     repository_root: &Path,
     manifest_source: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let manifest = parse_manifest(Path::new("metewand.toml"), manifest_source)?;
+    let manifest = parse_manifest(Path::new("metewand.yaml"), manifest_source)?;
     let DatasetDefinition::Fixed(dataset) = &manifest.datasets["fixed"] else {
         return Err("expected a fixed dataset".into());
     };

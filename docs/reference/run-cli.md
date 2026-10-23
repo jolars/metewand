@@ -6,7 +6,7 @@
 
 ```sh
 cargo run --locked -p metewand-cli -- run \
-  --manifest examples/fixed-dataset/metewand.toml \
+  --manifest examples/fixed-dataset/metewand.yaml \
   --output-dir /tmp/metewand-example \
   --output jsonl
 ```
@@ -44,11 +44,11 @@ contract-authorized wall-timing scopes, sequential or block-randomized order, an
 creation of the output directory. Overlapping resolved attempt slots across
 experiments are rejected; distinct experiment seeds select independent runs.
 
-The default `run_order = "sequential"` follows logical-plan order. Select
-`run_order = "randomized"` to interleave implementation configurations within
+The default `run_order: "sequential"` follows logical-plan order. Select
+`run_order: "randomized"` to interleave implementation configurations within
 comparison blocks defined by dataset instance, problem configuration,
 implementation repetition, and measurement index. Both modes execute serially
-by default. Set `max_concurrency = 2` in the execution policy to opt into
+by default. Set `max_concurrency: 2` in the execution policy to opt into
 bounded concurrent attempts. The bound is part of the policy and run identities
 and is recorded in every attempt's provenance. Dispatch batches preserve
 deterministic event order and never cross experiment boundaries.
@@ -56,7 +56,7 @@ Events and attempts follow execution order, and attempt provenance retains the
 block fields, seed, and deterministic priorities. See [Scheduling](scheduling.md)
 for the versioned ordering contract and warm-up behavior.
 
-Set `worker_reuse = true` to retain an eligible implementation process across
+Set `worker_reuse: true` to retain an eligible implementation process across
 measurement and implementation repetitions. Set `warmup_runs` to a nonnegative
 count to run validated, untimed warm-ups on that process first. Every boundary
 calls `reset` and clears private writable directories, including filesystem
@@ -118,8 +118,8 @@ resolution and shared materialization through those runtime APIs.
 ## Inputs and launches
 
 Fixed datasets are copied with their repository-relative paths intact. For
-example, `sources = ["data.json"]` exposes `data.json` directly under
-`dataset_dir`; `sources = ["data/train.json"]` exposes `data/train.json`.
+example, `sources: ["data.json"]` exposes `data.json` directly under
+`dataset_dir`; `sources: ["data/train.json"]` exposes `data/train.json`.
 Metewand adds a canonical `dataset-manifest.json` containing the complete file
 inventory and validates it against the dataset's output schema. That filename
 is reserved for the generated inventory. Dataset-free workers receive an empty
@@ -136,12 +136,12 @@ More complex shebangs require an explicit interpreter launch.
 Command arguments remain literal unless a separate argument starts with
 `{sources}/`, which explicitly refers to a normalized declared source path:
 
-```toml
-runner = "command"
-program = "python3"
-args = ["{sources}/worker.py", "implementation"]
-sources = ["worker.py"]
-environment = "local"
+```yaml
+runner: "command"
+program: "python3"
+args: ["{sources}/worker.py", "implementation"]
+sources: ["worker.py"]
+environment: "local"
 ```
 
 The same source-reference syntax is available in interpreted workers' additional

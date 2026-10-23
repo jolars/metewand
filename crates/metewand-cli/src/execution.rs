@@ -5,7 +5,7 @@ use std::{io, io::Write as _};
 
 use crate::output::{CommandError, CommandResult, OutputFormat};
 
-const HELP: &str = "Usage: metewand [--output FORMAT] run [--manifest PATH] --output-dir PATH [--cache-dir PATH] [--select ID] [--max-attempts N] [--resume] [--retry]\n\nExecute the selected supported logical plan using trusted local workers, fixed or unit datasets, and contract-authorized cold_end_to_end, prepare_and_execute, or execute_only wall timing. Publish results in a new directory whose parent exists. Use --resume to reopen a durable run and fill unsatisfied slots. Failed or active slots require --retry to authorize one new immutable attempt per slot. Repeated --select flags select the union of stable candidate, run, observation, slot, and recorded attempt IDs. --max-attempts bounds new attempts in this invocation. Accepted slots are always skipped. Optional --cache-dir assigns a separate Metewand-owned directory for verified dataset construction reuse; its parent must exist. Execution policies default to max_concurrency = 1; a larger positive bound opts into concurrent attempts. JSON Lines output streams versioned events; JSON output includes the same events in one terminal document.\n";
+const HELP: &str = "Usage: metewand [--output FORMAT] run [--manifest PATH] --output-dir PATH [--cache-dir PATH] [--select ID] [--max-attempts N] [--resume] [--retry]\n\nExecute the selected supported logical plan using trusted local workers, fixed or unit datasets, and contract-authorized cold_end_to_end, prepare_and_execute, or execute_only wall timing. Publish results in a new directory whose parent exists. Use --resume to reopen a durable run and fill unsatisfied slots. Failed or active slots require --retry to authorize one new immutable attempt per slot. Repeated --select flags select the union of stable candidate, run, observation, slot, and recorded attempt IDs. --max-attempts bounds new attempts in this invocation. Accepted slots are always skipped. Optional --cache-dir assigns a separate Metewand-owned directory for verified dataset construction reuse; its parent must exist. Execution policies default to max_concurrency: 1; a larger positive bound opts into concurrent attempts. JSON Lines output streams versioned events; JSON output includes the same events in one terminal document.\n";
 
 pub fn command(
     arguments: &[OsString],
@@ -130,7 +130,7 @@ pub fn command(
             "`run` requires an explicit `--output-dir PATH`",
         )
     })?;
-    let manifest = manifest.unwrap_or_else(|| PathBuf::from("metewand.toml"));
+    let manifest = manifest.unwrap_or_else(|| PathBuf::from("metewand.yaml"));
     execute(
         &manifest,
         &output_directory,

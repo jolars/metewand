@@ -45,7 +45,7 @@ identities](DESIGN.md#schemas-canonical-values-and-identities).
 - [x] Add JSON Schema 2020-12 validation with explicit dialect declarations,
   repository-local external `$ref` resolution, and no network retrieval.
 - [x] Implement recursive `parameter_defaults` merging before validation;
-  preserve literal arrays, tables, and `null`, and never apply JSON Schema
+  preserve literal arrays, mappings, and `null`, and never apply JSON Schema
   `default` annotations.
 - [x] Publish versioned schemas for machine output and the initial manifest,
   contract, one-shot observation policy, artifact-manifest, result-manifest,
@@ -56,10 +56,10 @@ identities](DESIGN.md#schemas-canonical-values-and-identities).
 See [User model](DESIGN.md#2-user-model) and [Problem and fairness
 contracts](DESIGN.md#problem-and-fairness-contracts).
 
-- [x] Parse the version-1 manifest into typed dataset, problem, implementation,
+- [x] Parse the version-1 YAML manifest into typed dataset, problem, implementation,
   environment, experiment, execution-policy, and observation-policy
   definitions with source-spanned diagnostics and unknown-field rejection.
-- [x] Parse problem contracts, validate their common envelope and
+- [x] Parse YAML problem contracts, validate their common envelope and
   family-specific `semantics` object, and require schemas, evaluator
   definitions, result-validity and one-shot completion rules, and reference
   cases.

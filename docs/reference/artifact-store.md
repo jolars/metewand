@@ -9,10 +9,10 @@ For persistent reuse from the CLI, select a separate cache directory:
 
 ```sh
 cargo run --locked -p metewand-cli -- run \
-  --manifest examples/generated-dataset/metewand.toml \
+  --manifest examples/generated-dataset/metewand.yaml \
   --output-dir /tmp/metewand-first --cache-dir /tmp/metewand-artifacts
 cargo run --locked -p metewand-cli -- run \
-  --manifest examples/generated-dataset/metewand.toml \
+  --manifest examples/generated-dataset/metewand.yaml \
   --output-dir /tmp/metewand-second --cache-dir /tmp/metewand-artifacts
 ```
 

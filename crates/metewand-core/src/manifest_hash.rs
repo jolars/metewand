@@ -56,7 +56,7 @@ pub fn hash_manifest(manifest: &Manifest) -> Result<ManifestHash, ManifestHashEr
 
 /// Returns the exact canonical bytes hashed by [`hash_manifest`].
 ///
-/// The representation is built from typed fields rather than through TOML
+/// The representation is built from typed fields rather than through YAML
 /// reserialization. Every optional collection and built-in execution-policy
 /// default is explicit. Manifest maps are canonical JSON objects, while
 /// experiments, cases, arguments, selections, source declarations, and grids

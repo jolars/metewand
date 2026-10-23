@@ -12,7 +12,7 @@ use metewand_core::{
 use serde_json::{Value, json};
 use tempfile::TempDir;
 
-const MANIFEST: &str = "version = 1\nname = \"benchmark\"\n";
+const MANIFEST: &str = "version: 1\nname: benchmark\n";
 
 fn command(root: &Path) -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_metewand"));
@@ -41,13 +41,13 @@ fn creates_only_a_minimal_versioned_manifest_that_checks_and_plans() {
     assert!(result.stderr.is_empty(), "{result:?}");
     assert_eq!(
         String::from_utf8(result.stdout.clone()).unwrap(),
-        "{\"schema_version\":1,\"kind\":\"result\",\"data\":{\"command\":\"init\",\"dry_run\":false,\"manifest\":\"./metewand.toml\",\"paths\":[{\"path\":\"./metewand.toml\",\"kind\":\"file\"}]}}\n"
+        "{\"schema_version\":1,\"kind\":\"result\",\"data\":{\"command\":\"init\",\"dry_run\":false,\"manifest\":\"./metewand.yaml\",\"paths\":[{\"path\":\"./metewand.yaml\",\"kind\":\"file\"}]}}\n"
     );
     envelope(&result, true);
     assert_eq!(fs::read_dir(root.path()).unwrap().count(), 1);
-    let source = fs::read_to_string(root.path().join("metewand.toml")).unwrap();
+    let source = fs::read_to_string(root.path().join("metewand.yaml")).unwrap();
     assert_eq!(source, MANIFEST);
-    let manifest = parse_manifest(Path::new("metewand.toml"), &source).unwrap();
+    let manifest = parse_manifest(Path::new("metewand.yaml"), &source).unwrap();
     assert!(manifest.datasets.is_empty());
     assert!(manifest.problems.is_empty());
     assert!(manifest.implementations.is_empty());
@@ -93,11 +93,11 @@ fn dry_run_reports_every_missing_path_without_creating_anything() {
         json!([
             {"path": "new", "kind": "directory"},
             {"path": "new/nested benchmark", "kind": "directory"},
-            {"path": "new/nested benchmark/metewand.toml", "kind": "file"}
+            {"path": "new/nested benchmark/metewand.yaml", "kind": "file"}
         ])
     );
     assert_eq!(
-        fs::read_to_string(root.path().join("new/nested benchmark/metewand.toml")).unwrap(),
+        fs::read_to_string(root.path().join("new/nested benchmark/metewand.yaml")).unwrap(),
         MANIFEST
     );
     assert_eq!(
@@ -116,13 +116,13 @@ fn existing_directories_and_unrelated_files_are_preserved() {
     assert!(preview.status.success(), "{preview:?}");
     assert_eq!(
         String::from_utf8(preview.stdout).unwrap(),
-        "Would create file: ./metewand.toml\n"
+        "Would create file: ./metewand.yaml\n"
     );
     let result = metewand(root.path(), &["init"]);
     assert!(result.status.success(), "{result:?}");
     assert_eq!(
         String::from_utf8(result.stdout).unwrap(),
-        "Created file: ./metewand.toml\n"
+        "Created file: ./metewand.yaml\n"
     );
     assert_eq!(
         fs::read_to_string(root.path().join("keep.txt")).unwrap(),
@@ -135,7 +135,7 @@ fn existing_directories_and_unrelated_files_are_preserved() {
 fn refuses_existing_manifest_files_and_directories_including_dry_run() {
     for directory in [false, true] {
         let root = TempDir::new().unwrap();
-        let target = root.path().join("metewand.toml");
+        let target = root.path().join("metewand.yaml");
         if directory {
             fs::create_dir(&target).unwrap();
         } else {
@@ -165,7 +165,7 @@ fn rejects_invalid_arguments_and_blocked_parent_paths_without_writes() {
         vec!["init", "one", "two"],
         vec!["init", "--dry-run", "--dry-run"],
         vec!["init", "--template", "python"],
-        vec!["init", "--manifest", "other.toml"],
+        vec!["init", "--manifest", "other.yaml"],
     ] {
         let mut arguments = arguments;
         arguments.extend(["--output", "json"]);
@@ -203,7 +203,7 @@ fn never_follows_existing_or_dangling_manifest_symlinks() {
         if !dangling {
             fs::write(&target, "keep\n").unwrap();
         }
-        symlink(&target, root.path().join("metewand.toml")).unwrap();
+        symlink(&target, root.path().join("metewand.yaml")).unwrap();
         for arguments in [
             vec!["init", "--output", "json"],
             vec!["init", "--dry-run", "--output", "json"],
@@ -211,7 +211,7 @@ fn never_follows_existing_or_dangling_manifest_symlinks() {
             let diagnostic = envelope(&metewand(root.path(), &arguments), false);
             assert_eq!(diagnostic["data"]["code"], "init_path_exists");
         }
-        assert!(root.path().join("metewand.toml").is_symlink());
+        assert!(root.path().join("metewand.yaml").is_symlink());
         if dangling {
             assert!(!target.exists());
         } else {
@@ -248,7 +248,7 @@ fn concurrent_initializers_publish_only_one_manifest() {
         envelope(result, result.status.success());
     }
     assert_eq!(
-        fs::read_to_string(root.path().join("metewand.toml")).unwrap(),
+        fs::read_to_string(root.path().join("metewand.yaml")).unwrap(),
         MANIFEST
     );
     assert_eq!(fs::read_dir(root.path()).unwrap().count(), 1);
@@ -275,10 +275,10 @@ fn accepts_absolute_paths_and_option_like_paths_after_the_separator() {
         let report = envelope(&output, true);
         assert_eq!(
             report["data"]["manifest"],
-            json!(path.join("metewand.toml"))
+            json!(path.join("metewand.yaml"))
         );
         assert_eq!(
-            fs::read_to_string(root.path().join(&path).join("metewand.toml")).unwrap(),
+            fs::read_to_string(root.path().join(&path).join("metewand.yaml")).unwrap(),
             MANIFEST
         );
     }
@@ -303,7 +303,7 @@ fn parent_components_resolve_without_creating_or_overwriting_existing_entries() 
     );
     assert_eq!(result["data"]["paths"], preview["data"]["paths"]);
     assert_eq!(
-        fs::read_to_string(root.path().join("destination/metewand.toml")).unwrap(),
+        fs::read_to_string(root.path().join("destination/metewand.yaml")).unwrap(),
         MANIFEST
     );
     let conflict = envelope(
@@ -381,10 +381,10 @@ fn resolves_parent_components_through_existing_directory_links() {
     let result = metewand(root.path(), &["init", "alias/..", "--output", "json"]);
     envelope(&result, true);
     assert_eq!(
-        fs::read_to_string(root.path().join("actual/metewand.toml")).unwrap(),
+        fs::read_to_string(root.path().join("actual/metewand.yaml")).unwrap(),
         MANIFEST
     );
-    assert!(!root.path().join("metewand.toml").exists());
+    assert!(!root.path().join("metewand.yaml").exists());
     let conflict = metewand(
         root.path(),
         &["init", "alias/..", "--dry-run", "--output", "json"],

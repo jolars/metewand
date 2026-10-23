@@ -1,5 +1,7 @@
 #![cfg(unix)]
 
+mod support;
+
 use std::{
     fs,
     io::{BufRead, BufReader},
@@ -67,8 +69,16 @@ fn envelopes(output: &Output) -> Vec<Value> {
 fn replace(root: &Path, path: &str, before: &str, after: &str) {
     let path = root.join(path);
     let contents = fs::read_to_string(&path).unwrap();
-    assert!(contents.contains(before));
-    fs::write(path, contents.replace(before, after)).unwrap();
+    let updated = if path
+        .extension()
+        .is_some_and(|extension| extension == "yaml")
+    {
+        support::replace_yaml(&contents, before, after)
+    } else {
+        assert!(contents.contains(before), "missing {before:?} in {path:?}");
+        contents.replace(before, after)
+    };
+    fs::write(path, updated).unwrap();
 }
 
 #[test]
@@ -81,15 +91,15 @@ fn run_publishes_each_authorized_timing_scope_with_its_accounting_boundary() {
         let root = repository();
         replace(
             root.path(),
-            "metewand.toml",
-            "timing_scope = \"prepare_and_execute\"",
-            &format!("timing_scope = {scope:?}"),
+            "metewand.yaml",
+            "timing_scope: \"prepare_and_execute\"",
+            &format!("timing_scope: {scope:?}"),
         );
         replace(
             root.path(),
-            "problem.toml",
-            "allowed_timing_scopes = [\"prepare_and_execute\"]",
-            &format!("allowed_timing_scopes = [{scope:?}]"),
+            "problem.yaml",
+            "allowed_timing_scopes: [\"prepare_and_execute\"]",
+            &format!("allowed_timing_scopes: [{scope:?}]"),
         );
         let output = metewand(
             root.path(),
@@ -130,15 +140,15 @@ fn execute_only_scientific_timeout_leaves_untimed_phases_their_operational_limit
     let root = repository();
     replace(
         root.path(),
-        "metewand.toml",
-        "timing_scope = \"prepare_and_execute\"",
-        "timing_scope = \"execute_only\"\ntimeout = \"300 ms\"",
+        "metewand.yaml",
+        "timing_scope: \"prepare_and_execute\"",
+        "timing_scope: \"execute_only\"\ntimeout: \"300 ms\"",
     );
     replace(
         root.path(),
-        "problem.toml",
-        "allowed_timing_scopes = [\"prepare_and_execute\"]",
-        "allowed_timing_scopes = [\"execute_only\"]",
+        "problem.yaml",
+        "allowed_timing_scopes: [\"prepare_and_execute\"]",
+        "allowed_timing_scopes: [\"execute_only\"]",
     );
     for phase in ["prepare", "evaluate"] {
         replace(
@@ -320,9 +330,9 @@ fn run_rejects_unsupported_policies_before_writing_output() {
     let root = repository();
     replace(
         root.path(),
-        "metewand.toml",
-        "version = 1\ntiming_scope",
-        "version = 1\nenforcement = \"required\"\ntiming_scope",
+        "metewand.yaml",
+        "version: 1\ntiming_scope",
+        "version: 1\nenforcement: \"required\"\ntiming_scope",
     );
     let output = metewand(
         root.path(),
@@ -432,21 +442,21 @@ fn grids_and_repetitions_execute_in_the_same_order_as_the_logical_plan() {
     let root = repository();
     replace(
         root.path(),
-        "metewand.toml",
-        "measurement_repetitions = 1",
-        "measurement_repetitions = 2",
+        "metewand.yaml",
+        "measurement_repetitions: 1",
+        "measurement_repetitions: 2",
     );
     replace(
         root.path(),
-        "metewand.toml",
-        "implementation_repetitions = 1",
-        "implementation_repetitions = 2",
+        "metewand.yaml",
+        "implementation_repetitions: 1",
+        "implementation_repetitions: 2",
     );
     replace(
         root.path(),
-        "metewand.toml",
-        "seed = 7",
-        "seed = 7\n\n[experiments.problem_parameters]\noffset = { grid = [2, 3] }",
+        "metewand.yaml",
+        "seed: 7",
+        "seed: 7\nproblem_parameters:\n  offset: { grid: [2, 3] }",
     );
     let plan = metewand(root.path(), &["plan", "--output", "json"]);
     assert!(plan.status.success());
@@ -494,40 +504,43 @@ fn randomized_runs_interleave_comparable_implementations_and_record_the_schedule
     let mut orders = Vec::new();
     for _ in 0..2 {
         let root = reuse_repository();
-        let path = root.path().join("metewand.toml");
+        let path = root.path().join("metewand.yaml");
         let manifest = fs::read_to_string(&path).unwrap();
         let implementation = manifest
-            .split_once("[implementations.reference]")
+            .split_once("  reference:")
             .unwrap()
             .1
-            .split_once("[environments.local]")
+            .split_once("environments:")
             .unwrap()
             .0;
-        fs::write(&path, format!("{manifest}\n[implementations.alternative]{implementation}\n[datasets.other]\noutput_schema = \"schemas/dataset.json\"\nsources = [\"data.json\"]\n")).unwrap();
+        let manifest = manifest
+            .replace("implementations:\n", &format!("implementations:\n  alternative:{implementation}"))
+            .replace("datasets:\n", "datasets:\n  other:\n    output_schema: \"schemas/dataset.json\"\n    sources: [\"data.json\"]\n");
+        fs::write(&path, manifest).unwrap();
         for (before, after) in [
             (
-                "implementations = [\"reference\"]",
-                "implementations = [\"reference\", \"alternative\"]",
+                "implementations: [\"reference\"]",
+                "implementations: [\"reference\", \"alternative\"]",
             ),
             (
-                "datasets = [\"numbers\"]",
-                "datasets = [\"numbers\", \"other\"]",
+                "datasets: [\"numbers\"]",
+                "datasets: [\"numbers\", \"other\"]",
             ),
             (
-                "implementation_repetitions = 1",
-                "implementation_repetitions = 2",
+                "implementation_repetitions: 1",
+                "implementation_repetitions: 2",
             ),
-            ("measurement_repetitions = 3", "measurement_repetitions = 2"),
+            ("measurement_repetitions: 3", "measurement_repetitions: 2"),
             (
-                "seed = 7",
-                "seed = 7\n\n[experiments.problem_parameters]\noffset = { grid = [2, 3] }",
+                "seed: 7",
+                "seed: 7\nproblem_parameters:\n  offset: { grid: [2, 3] }",
             ),
             (
-                "version = 1\nworker_reuse",
-                "version = 1\nrun_order = \"randomized\"\nworker_reuse",
+                "version: 1\nworker_reuse",
+                "version: 1\nrun_order: \"randomized\"\nworker_reuse",
             ),
         ] {
-            replace(root.path(), "metewand.toml", before, after);
+            replace(root.path(), "metewand.yaml", before, after);
         }
         let output = metewand(
             root.path(),
@@ -619,36 +632,39 @@ fn randomized_runs_interleave_comparable_implementations_and_record_the_schedule
 
 fn scheduling_contract_repository() -> TempDir {
     let root = repository();
-    let path = root.path().join("metewand.toml");
+    let path = root.path().join("metewand.yaml");
     let manifest = fs::read_to_string(&path).unwrap();
     let implementation = manifest
-        .split_once("[implementations.reference]")
+        .split_once("  reference:")
         .unwrap()
         .1
-        .split_once("[environments.local]")
+        .split_once("environments:")
         .unwrap()
         .0;
     fs::write(
         &path,
-        format!("{manifest}\n[implementations.alternative]{implementation}"),
+        manifest.replace(
+            "implementations:\n",
+            &format!("implementations:\n  alternative:{implementation}"),
+        ),
     )
     .unwrap();
     for (before, after) in [
         (
-            "[implementations.reference]",
-            "[implementations.reference]\nparameter_schema = \"schemas/implementation-parameters.json\"\nparameter_defaults = { method = 0 }",
+            "  reference:",
+            "  reference:\n    parameter_schema: \"schemas/implementation-parameters.json\"\n    parameter_defaults: { method: 0 }",
         ),
         (
-            "implementations = [\"reference\"]",
-            "implementations = [\"reference\", \"alternative\"]",
+            "implementations: [\"reference\"]",
+            "implementations: [\"reference\", \"alternative\"]",
         ),
-        ("measurement_repetitions = 1", "measurement_repetitions = 2"),
+        ("measurement_repetitions: 1", "measurement_repetitions: 2"),
         (
-            "version = 1\ntiming_scope",
-            "version = 1\nrun_order = \"randomized\"\ntiming_scope",
+            "version: 1\ntiming_scope",
+            "version: 1\nrun_order: \"randomized\"\ntiming_scope",
         ),
     ] {
-        replace(root.path(), "metewand.toml", before, after);
+        replace(root.path(), "metewand.yaml", before, after);
     }
     fs::write(
         root.path().join("schemas/implementation-parameters.json"),
@@ -813,71 +829,69 @@ fn unrelated_slots_preserve_existing_relative_execution_order_and_seeds() {
             "implementation configurations" => {
                 replace(
                     root.path(),
-                    "metewand.toml",
-                    "[implementations.alternative]",
-                    r#"[implementations.third]
-runner = "command"
-program = "python3"
-args = ["{sources}/worker.py", "implementation"]
-sources = ["worker.py"]
-environment = "local"
-problem_contracts = ["sum"]
-capabilities = ["one_shot"]
-
-[implementations.alternative]"#,
+                    "metewand.yaml",
+                    "  alternative:",
+                    r#"  third:
+    runner: "command"
+    program: "python3"
+    args: ["{sources}/worker.py", "implementation"]
+    sources: ["worker.py"]
+    environment: "local"
+    problem_contracts: ["sum"]
+    capabilities: ["one_shot"]
+  alternative:"#,
                 );
                 replace(
                     root.path(),
-                    "metewand.toml",
-                    "seed = 7",
-                    "seed = 7\n\n[experiments.implementation_parameters.reference]\nmethod = { grid = [1, 0] }",
+                    "metewand.yaml",
+                    "seed: 7",
+                    "seed: 7\nimplementation_parameters:\n  reference:\n    method: { grid: [1, 0] }",
                 );
                 (
-                    "implementations = [\"reference\", \"alternative\"]",
-                    "implementations = [\"alternative\", \"third\", \"reference\"]",
+                    "implementations: [\"reference\", \"alternative\"]",
+                    "implementations: [\"alternative\", \"third\", \"reference\"]",
                 )
             }
             "dataset" => {
                 replace(
                     root.path(),
-                    "metewand.toml",
-                    "[datasets.numbers]",
-                    "[datasets.other]\noutput_schema = \"schemas/dataset.json\"\nsources = [\"data.json\"]\n\n[datasets.numbers]",
+                    "metewand.yaml",
+                    "  numbers:",
+                    "  other:\n    output_schema: \"schemas/dataset.json\"\n    sources: [\"data.json\"]\n  numbers:",
                 );
                 (
-                    "datasets = [\"numbers\"]",
-                    "datasets = [\"other\", \"numbers\"]",
+                    "datasets: [\"numbers\"]",
+                    "datasets: [\"other\", \"numbers\"]",
                 )
             }
             "problem configuration" => (
-                "seed = 7",
-                "seed = 7\n\n[experiments.problem_parameters]\noffset = { grid = [3, 2] }",
+                "seed: 7",
+                "seed: 7\nproblem_parameters:\n  offset: { grid: [3, 2] }",
             ),
             "implementation repetition" => (
-                "implementation_repetitions = 1",
-                "implementation_repetitions = 2",
+                "implementation_repetitions: 1",
+                "implementation_repetitions: 2",
             ),
             "measurement repetition" => {
-                ("measurement_repetitions = 2", "measurement_repetitions = 3")
+                ("measurement_repetitions: 2", "measurement_repetitions: 3")
             }
             "experiment" => (
-                "[[experiments]]",
-                r#"[[experiments]]
-name = "unrelated"
-problem = "sum"
-datasets = ["numbers"]
-implementations = ["alternative", "reference"]
-execution_policy = "local"
-observation_policy = "final"
-implementation_repetitions = 1
-measurement_repetitions = 2
-seed = 8
-
-[[experiments]]"#,
+                "experiments:",
+                r#"experiments:
+  - name: "unrelated"
+    problem: "sum"
+    datasets: ["numbers"]
+    implementations: ["alternative", "reference"]
+    execution_policy: "local"
+    observation_policy: "final"
+    implementation_repetitions: 1
+    measurement_repetitions: 2
+    seed: 8
+"#,
             ),
             _ => unreachable!(),
         };
-        replace(root.path(), "metewand.toml", before, after);
+        replace(root.path(), "metewand.yaml", before, after);
         let expanded = scheduled_slot_snapshots(root.path(), expected_count);
         let retained = expanded
             .into_iter()
@@ -958,9 +972,9 @@ fn technical_failures_keep_distinct_codes_and_do_not_publish_observations() {
         if let Some(timeout) = timeout {
             replace(
                 root.path(),
-                "metewand.toml",
-                "version = 1\ntiming_scope",
-                &format!("version = 1\ntimeout = {timeout:?}\ntiming_scope"),
+                "metewand.yaml",
+                "version: 1\ntiming_scope",
+                &format!("version: 1\ntimeout: {timeout:?}\ntiming_scope"),
             );
         }
         let output = metewand(
@@ -1000,9 +1014,9 @@ fn input_mutation_fails_the_attempt_and_preserves_repository_files() {
     );
     replace(
         root.path(),
-        "metewand.toml",
-        "measurement_repetitions = 1",
-        "measurement_repetitions = 2",
+        "metewand.yaml",
+        "measurement_repetitions: 1",
+        "measurement_repetitions: 2",
     );
     let output = metewand(
         root.path(),
@@ -1037,9 +1051,9 @@ fn a_private_view_mutation_does_not_poison_the_next_attempt() {
     let views = root.path().join("views");
     replace(
         root.path(),
-        "metewand.toml",
-        "measurement_repetitions = 1",
-        "measurement_repetitions = 2",
+        "metewand.yaml",
+        "measurement_repetitions: 1",
+        "measurement_repetitions: 2",
     );
     replace(
         root.path(),
@@ -1220,9 +1234,9 @@ fn canonical_dataset_mutations_quarantine_the_object_before_another_attempt() {
     let operations = root.path().join("operations");
     replace(
         root.path(),
-        "metewand.toml",
-        "measurement_repetitions = 1",
-        "measurement_repetitions = 2",
+        "metewand.yaml",
+        "measurement_repetitions: 1",
+        "measurement_repetitions: 2",
     );
     replace(
         root.path(),
@@ -1283,14 +1297,19 @@ fn canonical_dataset_mutations_quarantine_the_object_before_another_attempt() {
 #[test]
 fn dataset_free_runs_receive_a_single_empty_unit_dataset() {
     let root = repository();
-    replace(root.path(), "metewand.toml", "datasets = [\"numbers\"]", "");
+    replace(root.path(), "metewand.yaml", "datasets: [\"numbers\"]", "");
     replace(
         root.path(),
-        "problem.toml",
-        "dataset_schemas = [\"schemas/dataset.json\"]",
-        "dataset_schemas = []",
+        "problem.yaml",
+        "dataset_schemas: [\"schemas/dataset.json\"]",
+        "dataset_schemas: []",
     );
-    replace(root.path(), "problem.toml", "dataset = \"data.json\"\n", "");
+    replace(
+        root.path(),
+        "problem.yaml",
+        "  - dataset: \"data.json\"\n    result:",
+        "  - result:",
+    );
     replace(
         root.path(),
         "worker.py",
@@ -1318,13 +1337,13 @@ fn every_selected_worker_is_preflighted_before_any_launch() {
     let root = repository();
     replace(
         root.path(),
-        "metewand.toml",
-        "implementations = [\"reference\"]",
-        "implementations = [\"reference\", \"later\"]",
+        "metewand.yaml",
+        "implementations: [\"reference\"]",
+        "implementations: [\"reference\", \"later\"]",
     );
-    let mut manifest = fs::read_to_string(root.path().join("metewand.toml")).unwrap();
-    manifest.push_str("\n[implementations.later]\nrunner = \"command\"\nprogram = \"python3\"\nargs = [\"worker.py\", \"implementation\"]\nsources = [\"worker.py\"]\nenvironment = \"local\"\nproblem_contracts = [\"sum\"]\ncapabilities = [\"one_shot\"]\nprotocol_transport = \"stdio\"\n");
-    fs::write(root.path().join("metewand.toml"), manifest).unwrap();
+    let manifest = fs::read_to_string(root.path().join("metewand.yaml")).unwrap();
+    let manifest = manifest.replace("implementations:\n", "implementations:\n  later:\n    runner: \"command\"\n    program: \"python3\"\n    args: [\"worker.py\", \"implementation\"]\n    sources: [\"worker.py\"]\n    environment: \"local\"\n    problem_contracts: [\"sum\"]\n    capabilities: [\"one_shot\"]\n    protocol_transport: \"stdio\"\n");
+    fs::write(root.path().join("metewand.yaml"), manifest).unwrap();
     let output = metewand(
         root.path(),
         &["run", "--output-dir", "run", "--output", "jsonl"],
@@ -1347,7 +1366,7 @@ fn manifest_paths_are_relative_to_the_invocation_and_inputs_to_the_manifest() {
             "--output-dir",
             "run",
             "--manifest",
-            root.path().join("metewand.toml").to_str().unwrap(),
+            root.path().join("metewand.yaml").to_str().unwrap(),
             "--output",
             "jsonl",
         ],
@@ -1370,16 +1389,16 @@ fn interpreted_entrypoints_and_repository_shebangs_use_declared_sources() {
         if interpreted {
             replace(
                 root.path(),
-                "metewand.toml",
-                "runner = \"command\"\nprogram = \"python3\"",
-                "runner = \"python\"\nentrypoint = \"worker.py\"",
+                "metewand.yaml",
+                "runner: \"command\"\nprogram: \"python3\"",
+                "runner: \"python\"\nentrypoint: \"worker.py\"",
             );
         } else {
             replace(
                 root.path(),
-                "metewand.toml",
-                "program = \"python3\"",
-                "program = \"./worker.py\"",
+                "metewand.yaml",
+                "program: \"python3\"",
+                "program: \"./worker.py\"",
             );
             let path = root.path().join("worker.py");
             let source = fs::read_to_string(&path).unwrap();
@@ -1388,7 +1407,7 @@ fn interpreted_entrypoints_and_repository_shebangs_use_declared_sources() {
         }
         replace(
             root.path(),
-            "metewand.toml",
+            "metewand.yaml",
             "\"{sources}/worker.py\", ",
             "",
         );
@@ -1413,7 +1432,7 @@ fn source_arguments_and_repository_programs_cannot_escape_their_roots() {
     let root = repository();
     replace(
         root.path(),
-        "metewand.toml",
+        "metewand.yaml",
         "{sources}/worker.py",
         "{sources}/../worker.py",
     );
@@ -1440,9 +1459,9 @@ fn source_arguments_and_repository_programs_cannot_escape_their_roots() {
     );
     replace(
         root.path(),
-        "metewand.toml",
-        "program = \"python3\"",
-        &format!("program = {relative:?}"),
+        "metewand.yaml",
+        "program: \"python3\"",
+        &format!("program: {relative:?}"),
     );
     let output = metewand(
         root.path(),
@@ -1465,9 +1484,9 @@ fn generated_datasets_record_derivation_and_share_materialization() {
     );
     replace(
         root.path(),
-        "metewand.toml",
-        "measurement_repetitions = 1",
-        "measurement_repetitions = 2",
+        "metewand.yaml",
+        "measurement_repetitions: 1",
+        "measurement_repetitions: 2",
     );
     let marker = root.path().join("materialization-count");
     replace(
@@ -1532,9 +1551,9 @@ fn persistent_cache_reuses_constructions_and_assigns_a_private_view_to_each_atte
     );
     replace(
         root.path(),
-        "metewand.toml",
-        "measurement_repetitions = 1",
-        "measurement_repetitions = 2",
+        "metewand.yaml",
+        "measurement_repetitions: 1",
+        "measurement_repetitions: 2",
     );
     let builds = root.path().join("build-count");
     let views = root.path().join("dataset-views");
@@ -1701,9 +1720,9 @@ fn cache_preflight_refuses_source_overlap_and_unsupported_policies_without_creat
     let root = repository();
     replace(
         root.path(),
-        "metewand.toml",
-        "timing_scope = \"prepare_and_execute\"",
-        "timing_scope = \"prepare_and_execute\"\nenforcement = \"required\"",
+        "metewand.yaml",
+        "timing_scope: \"prepare_and_execute\"",
+        "timing_scope: \"prepare_and_execute\"\nenforcement: \"required\"",
     );
     let output = metewand(
         root.path(),
@@ -1722,9 +1741,9 @@ fn cache_preflight_refuses_source_overlap_and_unsupported_policies_without_creat
     assert!(!root.path().join("run").exists());
     replace(
         root.path(),
-        "metewand.toml",
-        "enforcement = \"required\"",
-        "enforcement = \"best_effort\"",
+        "metewand.yaml",
+        "enforcement: \"required\"",
+        "enforcement: \"best_effort\"",
     );
     let output = metewand(
         root.path(),
@@ -1749,9 +1768,9 @@ fn cache_preflight_refuses_source_overlap_and_unsupported_policies_without_creat
     .unwrap();
     replace(
         root.path(),
-        "metewand.toml",
-        "sources = [\"data.json\"]",
-        "sources = [\"data\"]",
+        "metewand.yaml",
+        "sources: [\"data.json\"]",
+        "sources: [\"data\"]",
     );
     let output = metewand(
         root.path(),
@@ -1786,10 +1805,10 @@ fn pinned_transform_downloads_only_during_run() {
     let url = format!("http://{}/data", listener.local_addr().unwrap());
     replace(
         root.path(),
-        "metewand.toml",
-        "parameter_defaults = { values = [1, 2, 3] }",
+        "metewand.yaml",
+        "parameter_defaults: { values: [1, 2, 3] }",
         &format!(
-            "parameter_defaults = {{ values = [1, 2, 3] }}\nsource = {{ url = {url:?}, sha256 = \"4cf6ac7faa18ca1751f7b12a1391efef4e57a497c909157394ec9072d29f0641\" }}"
+            "parameter_defaults: {{ values: [1, 2, 3] }}\nsource: {{ url: {url:?}, sha256: \"4cf6ac7faa18ca1751f7b12a1391efef4e57a497c909157394ec9072d29f0641\" }}"
         ),
     );
     for command in ["check", "plan"] {
@@ -1873,15 +1892,15 @@ fn reuse_repository() -> TempDir {
     let root = repository();
     replace(
         root.path(),
-        "metewand.toml",
-        "version = 1\ntiming_scope",
-        "version = 1\nworker_reuse = true\nwarmup_runs = 2\ntiming_scope",
+        "metewand.yaml",
+        "version: 1\ntiming_scope",
+        "version: 1\nworker_reuse: true\nwarmup_runs: 2\ntiming_scope",
     );
     replace(
         root.path(),
-        "metewand.toml",
-        "measurement_repetitions = 1",
-        "measurement_repetitions = 3",
+        "metewand.yaml",
+        "measurement_repetitions: 1",
+        "measurement_repetitions: 3",
     );
     replace(
         root.path(),
@@ -1936,15 +1955,15 @@ fn concurrent_lanes_own_separate_reusable_workers_and_warmups() {
     let root = reuse_repository();
     replace(
         root.path(),
-        "metewand.toml",
-        "warmup_runs = 2",
-        "warmup_runs = 2\nmax_concurrency = 2\nrun_order = \"randomized\"",
+        "metewand.yaml",
+        "warmup_runs: 2",
+        "warmup_runs: 2\nmax_concurrency: 2\nrun_order: \"randomized\"",
     );
     replace(
         root.path(),
-        "metewand.toml",
-        "measurement_repetitions = 3",
-        "measurement_repetitions = 5",
+        "metewand.yaml",
+        "measurement_repetitions: 3",
+        "measurement_repetitions: 5",
     );
     let output = metewand(
         root.path(),
@@ -1986,29 +2005,28 @@ fn concurrency_batches_stop_at_experiment_and_policy_boundaries() {
     let root = reuse_repository();
     replace(
         root.path(),
-        "metewand.toml",
-        "warmup_runs = 2",
-        "warmup_runs = 2\nmax_concurrency = 2",
+        "metewand.yaml",
+        "warmup_runs: 2",
+        "warmup_runs: 2\nmax_concurrency: 2",
     );
-    let path = root.path().join("metewand.toml");
-    let mut manifest = fs::read_to_string(&path).unwrap();
-    manifest.push_str(
-        r#"
-[execution_policies.serial]
-version = 1
-worker_reuse = true
-warmup_runs = 2
-
-[[experiments]]
-name = "serial"
-problem = "sum"
-datasets = ["numbers"]
-implementations = ["reference"]
-execution_policy = "serial"
-observation_policy = "final"
-implementation_repetitions = 1
-measurement_repetitions = 2
-seed = 8
+    let path = root.path().join("metewand.yaml");
+    let manifest = fs::read_to_string(&path).unwrap();
+    let manifest = manifest.replace(
+        "execution_policies:",
+        r#"  - name: "serial"
+    problem: "sum"
+    datasets: ["numbers"]
+    implementations: ["reference"]
+    execution_policy: "serial"
+    observation_policy: "final"
+    implementation_repetitions: 1
+    measurement_repetitions: 2
+    seed: 8
+execution_policies:
+  serial:
+    version: 1
+    worker_reuse: true
+    warmup_runs: 2
 "#,
     );
     fs::write(path, manifest).unwrap();
@@ -2222,9 +2240,9 @@ fn timeout_and_protocol_failures_replace_workers_and_repeat_warmups() {
         let action = if fault == "timeout" {
             replace(
                 root.path(),
-                "metewand.toml",
-                "warmup_runs = 2",
-                "warmup_runs = 2\ntimeout = \"3 s\"",
+                "metewand.yaml",
+                "warmup_runs: 2",
+                "warmup_runs: 2\ntimeout: \"3 s\"",
             );
             "import time; time.sleep(5)"
         } else {
@@ -2275,9 +2293,9 @@ fn every_implementation_repetition_runs_its_own_planned_warmups() {
     let root = reuse_repository();
     replace(
         root.path(),
-        "metewand.toml",
-        "implementation_repetitions = 1",
-        "implementation_repetitions = 2",
+        "metewand.yaml",
+        "implementation_repetitions: 1",
+        "implementation_repetitions: 2",
     );
     let output = metewand(
         root.path(),
@@ -2317,9 +2335,9 @@ fn best_effort_runs_publish_every_requested_resource_control() {
     let root = repository();
     replace(
         root.path(),
-        "metewand.toml",
-        "version = 1\ntiming_scope",
-        "version = 1\ncpus = 2\nthreads = 4\nmemory = \"8 GiB\"\nnetwork = true\ntiming_scope",
+        "metewand.yaml",
+        "version: 1\ntiming_scope",
+        "version: 1\ncpus: 2\nthreads: 4\nmemory: \"8 GiB\"\nnetwork: true\ntiming_scope",
     );
     let output = metewand(
         root.path(),

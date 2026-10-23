@@ -5,7 +5,7 @@ evaluator, using Python's standard library and the raw worker protocol:
 
 ```sh
 cargo run --locked -p metewand-cli -- run \
-  --manifest examples/generated-dataset/metewand.toml \
+  --manifest examples/generated-dataset/metewand.yaml \
   --output-dir /tmp/metewand-generated --output jsonl
 ```
 

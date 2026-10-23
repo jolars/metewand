@@ -18,65 +18,63 @@ use metewand_core::{
 };
 use serde_json::Value;
 
-const CONTRACT: &str = include_str!("../../../fixtures/problem-contract/v1/complete.toml");
+const CONTRACT: &str = include_str!("../../../fixtures/problem-contract/v1/complete.yaml");
 
 const MANIFEST: &str = r#"
-version = 1
-name = "logical-plan"
-
-[datasets.fixed]
-output_schema = "schemas/dataset.json"
-sources = ["datasets/fixed.json"]
-
-[problems.regression]
-contract = "problems/regression.toml"
-[problems.regression.evaluator]
-runner = "command"
-program = "evaluate"
-environment = "local"
-
-[implementations.alpha]
-runner = "command"
-program = "alpha"
-environment = "local"
-problem_contracts = ["regression"]
-capabilities = ["one_shot"]
-
-[implementations.beta]
-runner = "command"
-program = "beta"
-environment = "local"
-problem_contracts = ["regression"]
-capabilities = ["one_shot"]
-
-[environments.local]
-kind = "local"
-
-[[experiments]]
-name = "main"
-problem = "regression"
-datasets = ["fixed"]
-implementations = ["alpha", "beta"]
-execution_policy = "reused"
-observation_policy = "final"
-implementation_repetitions = 2
-measurement_repetitions = 3
-seed = 17
-
-[execution_policies.reused]
-version = 1
-worker_reuse = true
-warmup_runs = 2
-
-[observation_policies.final]
-version = 1
-kind = "one_shot"
+version: 1
+name: "logical-plan"
+datasets:
+  fixed:
+    output_schema: "schemas/dataset.json"
+    sources: ["datasets/fixed.json"]
+problems:
+  regression:
+    contract: "problems/regression.yaml"
+    evaluator:
+      runner: "command"
+      program: "evaluate"
+      environment: "local"
+implementations:
+  alpha:
+    runner: "command"
+    program: "alpha"
+    environment: "local"
+    problem_contracts: ["regression"]
+    capabilities: ["one_shot"]
+  beta:
+    runner: "command"
+    program: "beta"
+    environment: "local"
+    problem_contracts: ["regression"]
+    capabilities: ["one_shot"]
+environments:
+  local:
+    kind: "local"
+experiments:
+  - name: "main"
+    problem: "regression"
+    datasets: ["fixed"]
+    implementations: ["alpha", "beta"]
+    execution_policy: "reused"
+    observation_policy: "final"
+    implementation_repetitions: 2
+    measurement_repetitions: 3
+    seed: 17
+execution_policies:
+  reused:
+    version: 1
+    worker_reuse: true
+    warmup_runs: 2
+observation_policies:
+  final:
+    version: 1
+    kind: "one_shot"
 "#;
 
 fn name(value: &str) -> Name {
     parse_manifest(
-        Path::new("name.toml"),
-        &format!("version = 1\nname = {value:?}\n"),
+        Path::new("name.yaml"),
+        &format!("version: 1\nname: {value:?}\n"),
     )
     .unwrap()
     .name
@@ -118,12 +116,12 @@ fn schemas() -> SchemaCatalog {
 }
 
 fn manifest(source: &str) -> Manifest {
-    parse_manifest(Path::new("metewand.toml"), source).unwrap()
+    parse_manifest(Path::new("metewand.yaml"), source).unwrap()
 }
 
 fn contracts(manifest: &Manifest) -> BTreeMap<Name, ProblemContract> {
     let contract =
-        parse_problem_contract(Path::new("problems/regression.toml"), CONTRACT, &schemas())
+        parse_problem_contract(Path::new("problems/regression.yaml"), CONTRACT, &schemas())
             .unwrap();
     BTreeMap::from([(manifest.problems.keys().next().unwrap().clone(), contract)])
 }
@@ -131,12 +129,12 @@ fn contracts(manifest: &Manifest) -> BTreeMap<Name, ProblemContract> {
 fn dataset_free_contracts(manifest: &Manifest) -> BTreeMap<Name, ProblemContract> {
     let source = CONTRACT
         .replace(
-            "dataset_schemas = [\"schemas/dataset.json\"]",
-            "dataset_schemas = []",
+            "dataset_schemas: [\"schemas/dataset.json\"]",
+            "dataset_schemas: []",
         )
-        .replace("dataset = \"fixtures/small/dataset\"\n", "");
+        .replace("    dataset: \"fixtures/small/dataset\"\n", "");
     let contract =
-        parse_problem_contract(Path::new("problems/regression.toml"), &source, &schemas()).unwrap();
+        parse_problem_contract(Path::new("problems/regression.yaml"), &source, &schemas()).unwrap();
     BTreeMap::from([(manifest.problems.keys().next().unwrap().clone(), contract)])
 }
 
@@ -364,34 +362,36 @@ fn concurrency_binds_run_identities_without_changing_scientific_seeds() {
 fn parameterized_matrices_have_exact_slot_counts_and_seed_sharing() {
     let source = MANIFEST
         .replace(
-            "[datasets.fixed]",
-            r#"[datasets.generated]
-parameter_schema = "schemas/parameters.json"
-output_schema = "schemas/dataset.json"
-runner = "command"
-program = "generate"
-environment = "local"
-
-[datasets.fixed]"#,
+            "  fixed:",
+            r#"  generated:
+    parameter_schema: "schemas/parameters.json"
+    output_schema: "schemas/dataset.json"
+    runner: "command"
+    program: "generate"
+    environment: "local"
+  fixed:
+"#,
         )
         .replace(
-            "[implementations.alpha]",
-            "[implementations.alpha]\nparameter_schema = \"schemas/parameters.json\"",
+            "  alpha:",
+            "  alpha:\n    parameter_schema: \"schemas/parameters.json\"",
         )
         .replace(
-            "datasets = [\"fixed\"]",
-            "datasets = [\"fixed\", \"generated\"]",
+            "    datasets: [\"fixed\"]",
+            "    datasets: [\"fixed\", \"generated\"]",
         )
         .replace(
-            "seed = 17",
-            r#"seed = 17
-
-[experiments.dataset_parameters.generated]
-replicate = { grid = [0, 1] }
-[experiments.problem_parameters]
-lambda = { grid = [0.1, 0.2] }
-[experiments.implementation_parameters.alpha]
-method = { grid = ["fast", "accurate"] }"#,
+            "    seed: 17",
+            r#"    seed: 17
+    dataset_parameters:
+      generated:
+        replicate: { grid: [0, 1] }
+    problem_parameters:
+      lambda: { grid: [0.1, 0.2] }
+    implementation_parameters:
+      alpha:
+        method: { grid: ["fast", "accurate"] }
+"#,
         );
     let mut catalog = catalog();
     catalog.dataset_definitions.insert(
@@ -552,21 +552,24 @@ fn existing_ids_survive_unrelated_candidates_and_more_measurements() {
 
     let expanded_source = MANIFEST
         .replace(
-            "[implementations.beta]",
-            r#"[implementations.gamma]
-runner = "command"
-program = "gamma"
-environment = "local"
-problem_contracts = ["regression"]
-capabilities = ["one_shot"]
-
-[implementations.beta]"#,
+            "  beta:",
+            r#"  gamma:
+    runner: "command"
+    program: "gamma"
+    environment: "local"
+    problem_contracts: ["regression"]
+    capabilities: ["one_shot"]
+  beta:
+"#,
         )
         .replace(
-            "implementations = [\"alpha\", \"beta\"]",
-            "implementations = [\"beta\", \"gamma\", \"alpha\"]",
+            "    implementations: [\"alpha\", \"beta\"]",
+            "    implementations: [\"beta\", \"gamma\", \"alpha\"]",
         )
-        .replace("measurement_repetitions = 3", "measurement_repetitions = 4");
+        .replace(
+            "    measurement_repetitions: 3",
+            "    measurement_repetitions: 4",
+        );
     let expanded_manifest = manifest(&expanded_source);
     let mut expanded_catalog = catalog();
     expanded_catalog
@@ -609,11 +612,14 @@ capabilities = ["one_shot"]
 #[test]
 fn identifies_the_built_in_unit_dataset_configuration() {
     let source = MANIFEST
-        .replace("datasets = [\"fixed\"]\n", "")
-        .replace("measurement_repetitions = 3", "measurement_repetitions = 1")
+        .replace("    datasets: [\"fixed\"]\n", "")
         .replace(
-            "implementation_repetitions = 2",
-            "implementation_repetitions = 1",
+            "    measurement_repetitions: 3",
+            "    measurement_repetitions: 1",
+        )
+        .replace(
+            "    implementation_repetitions: 2",
+            "    implementation_repetitions: 1",
         );
     let manifest = manifest(&source);
     let mut catalog = catalog();
@@ -655,8 +661,8 @@ fn reports_a_missing_typed_definition_identity() {
 #[test]
 fn required_local_controls_fail_during_logical_planning() {
     let manifest = manifest(&MANIFEST.replace(
-        "worker_reuse = true",
-        "worker_reuse = true\nenforcement = \"required\"",
+        "    worker_reuse: true",
+        "    worker_reuse: true\n    enforcement: \"required\"",
     ));
     let error =
         expand_manifest_logical_plan(&manifest, &contracts(&manifest), &schemas(), &catalog())
@@ -671,8 +677,8 @@ fn required_local_controls_fail_during_logical_planning() {
 #[test]
 fn best_effort_resource_requests_survive_planning_and_are_reported() {
     let manifest = manifest(&MANIFEST.replace(
-        "worker_reuse = true",
-        "worker_reuse = true\ncpus = 2\nthreads = 4\nmemory = \"8 GiB\"",
+        "    worker_reuse: true",
+        "    worker_reuse: true\n    cpus: 2\n    threads: 4\n    memory: \"8 GiB\"",
     ));
     let plan =
         expand_manifest_logical_plan(&manifest, &contracts(&manifest), &schemas(), &catalog())

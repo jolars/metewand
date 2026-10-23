@@ -74,14 +74,14 @@ schemas, and a generated lockfile:
 
 ```text
 benchmark/
-├── metewand.toml
+├── metewand.yaml
 ├── metewand.lock
 ├── flake.nix                 # optional root-scoped Nix environment
 ├── flake.lock
 ├── datasets/
 │   └── leukemia.py
 ├── problems/
-│   ├── lasso.toml
+│   ├── lasso.yaml
 │   ├── lasso.py               # independent result evaluator
 │   └── fixtures/
 │       └── lasso-small/
@@ -91,7 +91,7 @@ benchmark/
 ├── implementations/
 │   ├── glmnet.R
 │   ├── sklearn.py
-│   └── native.toml
+│   └── native.yaml
 ├── environments/
 │   ├── r/
 │   │   ├── renv.lock
@@ -129,160 +129,154 @@ because that flake builds sources across the repository; its adjacent
 provide several language runtimes or commands from one resolved software
 context.
 
+Benchmark manifests and problem contracts use YAML. Each document contains one
+mapping, and explicit keys are unique strings. Anchors, aliases, and merge keys
+are supported with bounded alias expansion. Explicit fields override merged
+fields; earlier mappings in a merge sequence take precedence. Unsupported tags,
+external includes, unsafe integers, and non-finite numbers are rejected. Literal
+nulls remain available in canonical parameter values, while typed fields must
+satisfy their declared shape. Native ecosystem files keep their own formats.
+
 A representative manifest is:
 
-```toml
-version = 1
-name = "lasso-comparison"
-
-[problems.lasso]
-contract = "problems/lasso.toml"
-
-[problems.lasso.evaluator]
-runner = "python"
-entrypoint = "problems/lasso.py"
-sources = ["problems/lasso.py"]
-environment = "python"
-
-[datasets.leukemia]
-parameter_schema = "schemas/leukemia-dataset-parameters.json"
-output_schema = "schemas/regression-dataset.json"
-runner = "python"
-entrypoint = "datasets/leukemia.py"
-sources = ["datasets/leukemia.py"]
-environment = "python"
-
-[datasets.leukemia.source]
-url = "https://example.org/leukemia.tar.zst"
-sha256 = "..."
-
-[environments.r]
-kind = "renv"
-project = "environments/r"
-lockfile = "environments/r/renv.lock"
-
-[environments.python]
-kind = "uv"
-project = "environments/python"
-lockfile = "environments/python/uv.lock"
-
-[environments.native]
-kind = "nix"
-flake = "."
-installable = ".#native-lasso"
-system = "x86_64-linux"
-output_kind = "package"
-output = "out"
-
-[implementations.glmnet]
-runner = "r"
-entrypoint = "implementations/glmnet.R"
-sources = ["implementations/glmnet.R"]
-environment = "r"
-problem_contracts = ["lasso"]
-parameter_schema = "schemas/glmnet-parameters.json"
-capabilities = ["one_shot"]
-
-[implementations.sklearn]
-runner = "python"
-entrypoint = "implementations/sklearn.py"
-sources = ["implementations/sklearn.py"]
-environment = "python"
-problem_contracts = ["lasso"]
-parameter_schema = "schemas/sklearn-parameters.json"
-capabilities = ["one_shot"]
-
-[implementations.native]
-runner = "command"
-program = "bin/native-lasso"
-args = ["--metewand-worker"]
-environment = "native"
-problem_contracts = ["lasso"]
-capabilities = ["one_shot"]
-
-[[experiments]]
-name = "main"
-problem = "lasso"
-datasets = ["leukemia"]
-implementations = ["glmnet", "sklearn", "native"]
-execution_policy = "controlled"
-observation_policy = "final"
-implementation_repetitions = 5
-measurement_repetitions = 2
-seed = 2025
-
-[experiments.dataset_parameters.leukemia]
-fold = { grid = [1, 2, 3] }
-standardize = { value = true }
-
-[experiments.problem_parameters]
-lambda = { grid = [0.001, 0.01, 0.1] }
-fit_intercept = { value = true }
-
-[experiments.implementation_parameters.glmnet]
-tolerance = { value = 1e-7 }
-
-[experiments.implementation_parameters.sklearn]
-selection = { grid = ["cyclic", "random"] }
-
-[execution_policies.controlled]
-version = 1
-cpus = 1
-threads = 1
-memory = "8 GiB"
-network = false
-worker_reuse = false
-warmup_runs = 0
-timeout = "10 min"
-timing_scope = "prepare_and_execute"
-primary_time = "timed_wall_time"
-run_order = "randomized"
-max_concurrency = 1
-enforcement = "best_effort"
-
-[observation_policies.final]
-version = 1
-kind = "one_shot"
+```yaml
+version: 1
+name: "lasso-comparison"
+problems:
+  lasso:
+    contract: "problems/lasso.yaml"
+    evaluator:
+      runner: "python"
+      entrypoint: "problems/lasso.py"
+      sources: ["problems/lasso.py"]
+      environment: "python"
+datasets:
+  leukemia:
+    parameter_schema: "schemas/leukemia-dataset-parameters.json"
+    output_schema: "schemas/regression-dataset.json"
+    runner: "python"
+    entrypoint: "datasets/leukemia.py"
+    sources: ["datasets/leukemia.py"]
+    environment: "python"
+    source:
+      url: "https://example.org/leukemia.tar.zst"
+      sha256: "..."
+environments:
+  r:
+    kind: "renv"
+    project: "environments/r"
+    lockfile: "environments/r/renv.lock"
+  python:
+    kind: "uv"
+    project: "environments/python"
+    lockfile: "environments/python/uv.lock"
+  native:
+    kind: "nix"
+    flake: "."
+    installable: ".#native-lasso"
+    system: "x86_64-linux"
+    output_kind: "package"
+    output: "out"
+implementations:
+  glmnet:
+    runner: "r"
+    entrypoint: "implementations/glmnet.R"
+    sources: ["implementations/glmnet.R"]
+    environment: "r"
+    problem_contracts: ["lasso"]
+    parameter_schema: "schemas/glmnet-parameters.json"
+    capabilities: ["one_shot"]
+  sklearn:
+    runner: "python"
+    entrypoint: "implementations/sklearn.py"
+    sources: ["implementations/sklearn.py"]
+    environment: "python"
+    problem_contracts: ["lasso"]
+    parameter_schema: "schemas/sklearn-parameters.json"
+    capabilities: ["one_shot"]
+  native:
+    runner: "command"
+    program: "bin/native-lasso"
+    args: ["--metewand-worker"]
+    environment: "native"
+    problem_contracts: ["lasso"]
+    capabilities: ["one_shot"]
+experiments:
+  - name: "main"
+    problem: "lasso"
+    datasets: ["leukemia"]
+    implementations: ["glmnet", "sklearn", "native"]
+    execution_policy: "controlled"
+    observation_policy: "final"
+    implementation_repetitions: 5
+    measurement_repetitions: 2
+    seed: 2025
+    dataset_parameters:
+      leukemia:
+        fold: { grid: [1, 2, 3] }
+        standardize: { value: true }
+    problem_parameters:
+      lambda: { grid: [0.001, 0.01, 0.1] }
+      fit_intercept: { value: true }
+    implementation_parameters:
+      glmnet:
+        tolerance: { value: 1e-7 }
+      sklearn:
+        selection: { grid: ["cyclic", "random"] }
+execution_policies:
+  controlled:
+    version: 1
+    cpus: 1
+    threads: 1
+    memory: "8 GiB"
+    network: false
+    worker_reuse: false
+    warmup_runs: 0
+    timeout: "10 min"
+    timing_scope: "prepare_and_execute"
+    primary_time: "timed_wall_time"
+    run_order: "randomized"
+    max_concurrency: 1
+    enforcement: "best_effort"
+observation_policies:
+  final:
+    version: 1
+    kind: "one_shot"
 ```
 
 The referenced problem contract is also concrete and reviewable. For example:
 
-```toml
-version = 1
-name = "lasso"
-family = "optimization"
-parameter_schema = "schemas/lasso-problem-parameters.json"
-dataset_schemas = ["schemas/regression-dataset.json"]
-result_schema = "schemas/lasso-result.json"
-metric_schema = "schemas/lasso-metrics.json"
-semantics_schema = "schemas/lasso-semantics.json"
-allowed_timing_scopes = ["cold_end_to_end", "prepare_and_execute"]
-supported_budgets = ["none"]
-
-[semantics.objective]
-family = "least_squares_l1"
-loss_scale = "1/(2*n)"
-penalty = "lambda*sum(abs(coefficients))"
-intercept_penalized = false
-
-[semantics.data_conventions]
-standardization = "encoded_in_dataset_instance"
-intercept_column = "absent"
-
-[semantics.preprocessing]
-allowed_outside_timed_scope = []
-
-[semantics.validity]
-nonfinite = "reject"
-
-[semantics.one_shot_completion]
-objective_relative_tolerance = 1e-8
-maximum_kkt_violation = 1e-6
-
-[[reference_cases]]
-dataset = "problems/fixtures/lasso-small/dataset"
-result = "problems/fixtures/lasso-small/result"
-expected_metrics = "problems/fixtures/lasso-small/metrics.json"
+```yaml
+version: 1
+name: "lasso"
+family: "optimization"
+parameter_schema: "schemas/lasso-problem-parameters.json"
+dataset_schemas: ["schemas/regression-dataset.json"]
+result_schema: "schemas/lasso-result.json"
+metric_schema: "schemas/lasso-metrics.json"
+semantics_schema: "schemas/lasso-semantics.json"
+allowed_timing_scopes: ["cold_end_to_end", "prepare_and_execute"]
+supported_budgets: ["none"]
+semantics:
+  objective:
+    family: "least_squares_l1"
+    loss_scale: "1/(2*n)"
+    penalty: "lambda*sum(abs(coefficients))"
+    intercept_penalized: false
+  data_conventions:
+    standardization: "encoded_in_dataset_instance"
+    intercept_column: "absent"
+  preprocessing:
+    allowed_outside_timed_scope: []
+  validity:
+    nonfinite: "reject"
+  one_shot_completion:
+    objective_relative_tolerance: 1e-8
+    maximum_kkt_violation: 1e-6
+reference_cases:
+  - dataset: "problems/fixtures/lasso-small/dataset"
+    result: "problems/fixtures/lasso-small/result"
+    expected_metrics: "problems/fixtures/lasso-small/metrics.json"
 ```
 
 Primary commands:
@@ -323,13 +317,21 @@ boilerplate, but it must not choose problem semantics, validity criteria,
 completion criteria, parameter meanings, reference results, or library-specific
 translations. Those choices remain visible work for the benchmark author.
 
+Scaffolding preserves YAML comments and formatting in block and flow mappings.
+It refuses an anchored document root, an anchored or aliased target namespace,
+merge keys in that namespace, or a namespace inherited through a root merge
+before creating files. The diagnostic directs the author to expand the mapping
+manually. Anchors on unrelated definitions and unrelated root merges remain
+supported. The proposed manifest is reparsed to verify that only the requested
+definition changes.
+
 Metewand does not replace native environment initialization commands such as
 `uv init` or `renv::init()`. Complete runnable benchmarks, including examples
 such as a Python lasso comparison, are distributed under `examples/` rather than
 exposed as privileged built-in templates.
 
 Each parameter entry is either a literal `value` or an expansion `grid`. This
-distinction permits arrays and tables to be literal parameter values. Grids form
+distinction permits arrays and mappings to be literal parameter values. Grids form
 a Cartesian product across the dataset, problem, and applicable implementation
 namespaces.
 
@@ -346,22 +348,21 @@ fields.
 For example, these two cases select two coupled dataset shapes rather than four
 independent grid combinations:
 
-```toml
-[[experiments.cases]]
-name = "tall_dense"
-
-[experiments.cases.dataset_parameters.generated]
-n = { value = 10000 }
-p = { value = 100 }
-density = { value = 1.0 }
-
-[[experiments.cases]]
-name = "wide_sparse"
-
-[experiments.cases.dataset_parameters.generated]
-n = { value = 1000 }
-p = { value = 10000 }
-density = { value = 0.01 }
+```yaml
+experiments:
+  cases:
+    - name: "tall_dense"
+      dataset_parameters:
+        generated:
+          n: { value: 10000 }
+          p: { value: 100 }
+          density: { value: 1.0 }
+    - name: "wide_sparse"
+      dataset_parameters:
+        generated:
+          n: { value: 1000 }
+          p: { value: 10000 }
+          density: { value: 0.01 }
 ```
 
 ### Schemas, canonical values, and identities
@@ -403,8 +404,15 @@ the executor definition, the wire-protocol version, and a Metewand
 execution-semantics version. The exact Metewand build remains attempt provenance;
 a behavior change that can affect execution increments the semantics version.
 
+The YAML migration retains the unreleased version-1 typed manifest,
+public-schema, identity, and wire contracts and version-2 execution semantics
+after explicit compatibility review. Alias resolution and equivalent merge expansions do not
+change canonical values. Referenced resource renames from `.toml` to `.yaml`
+can change hashes or identities that contain those paths. Existing run-store
+records remain readable.
+
 The whole-manifest hash is computed from the versioned typed manifest after
-built-in defaults, path normalization, and name resolution, not from TOML
+built-in defaults, path normalization, and name resolution, not from YAML
 spelling or comments. In `metewand.lock` it proves that the lock belongs to the
 current manifest, but it is not a dependency of each component identity.
 Consequently, adding an unrelated experiment invalidates the lockfile until it
@@ -469,7 +477,7 @@ match a schema accepted by the selected problem contract. Cross-schema
 conversion requires an explicit dataset materializer; it is never inferred from
 field names or shapes.
 
-A problem may declare `dataset_schemas = []` when it requires no external
+A problem may declare `dataset_schemas: []` when it requires no external
 dataset. Such an experiment must omit `datasets`; the planner binds one
 versioned, built-in unit dataset definition, configuration, and instance rather
 than producing zero runs or requiring a dummy user file. A problem that requires
@@ -883,17 +891,17 @@ Exports label `execute_only` observations as operation-scope benchmarks rather
 than end-to-end software measurements, and compatibility readers never pool
 different timing scopes implicitly.
 
-`cold_end_to_end` requires `worker_reuse = false` and `warmup_runs = 0`, because
+`cold_end_to_end` requires `worker_reuse: false` and `warmup_runs: 0`, because
 every measured slot must launch a fresh process. Process-local warm-ups require
 worker reuse and execute on the same worker before its measured slots. Version 1
-rejects `warmup_runs > 0` with `worker_reuse = false`; system-cache or thermal
+rejects `warmup_runs > 0` with `worker_reuse: false`; system-cache or thermal
 conditioning must instead be an explicitly named later policy feature. A
 discarded worker's warm-ups never satisfy a replacement worker. These rules make
 the timing claim mechanically observable, while the independent evaluator makes
 the result checkable.
 
-When omitted, the version-1 timing fields default to `worker_reuse = false`,
-`warmup_runs = 0`, and `timing_scope = "prepare_and_execute"`. Compatibility
+When omitted, the version-1 timing fields default to `worker_reuse: false`,
+`warmup_runs: 0`, and `timing_scope: "prepare_and_execute"`. Compatibility
 validation applies these defaults before checking the invariants above and the
 problem contract's allowed timing scopes.
 
@@ -923,29 +931,28 @@ compatibility version when extended.
 For example, one profile may bind heterogeneous SLOPE adapters without treating
 their controls as a common budget:
 
-```toml
-[observation_policies.target_gap]
-version = 1
-kind = "profile"
-metric = "relative_duality_gap"
-direction = "at_most"
-threshold = 1e-7
-max_observations = 100
-max_active_time = "30 s"
-
-[observation_policies.target_gap.implementations.iterative]
-delivery = "fresh_sequence"
-control_schema = "schemas/iteration-control.json"
-schedule = { kind = "linear", field = "iterations", start = 1, step = 1, count = 100 }
-
-[observation_policies.target_gap.implementations.tolerance]
-delivery = "fresh_sequence"
-control_schema = "schemas/tolerance-control.json"
-schedule = { kind = "geometric", field = "tolerance", start = 0.1, ratio = 0.1, count = 12 }
-
-[observation_policies.target_gap.implementations.callback]
-delivery = "streaming_profile"
-control_schema = "schemas/callback-progress.json"
+```yaml
+observation_policies:
+  target_gap:
+    version: 1
+    kind: "profile"
+    metric: "relative_duality_gap"
+    direction: "at_most"
+    threshold: 1e-7
+    max_observations: 100
+    max_active_time: "30 s"
+    implementations:
+      iterative:
+        delivery: "fresh_sequence"
+        control_schema: "schemas/iteration-control.json"
+        schedule: { kind: "linear", field: "iterations", start: 1, step: 1, count: 100 }
+      tolerance:
+        delivery: "fresh_sequence"
+        control_schema: "schemas/tolerance-control.json"
+        schedule: { kind: "geometric", field: "tolerance", start: 0.1, ratio: 0.1, count: 12 }
+      callback:
+        delivery: "streaming_profile"
+        control_schema: "schemas/callback-progress.json"
 ```
 
 An observation policy may run a fixed number of observations or stop when a
@@ -1003,31 +1010,32 @@ record observations directly, or invoke a local observer from its iteration
 loop. Both interfaces produce the same buffered artifacts and use the same
 negotiated worker capability; a callback is not a separate transport mode.
 
-The profile binding explicitly selects `measurement_basis = "instrumented"`
+The profile binding explicitly selects `measurement_basis: "instrumented"`
 and a contract-defined `instrumented_scope`. Problem contracts must opt in to
 instrumented measurements and define each permitted scope's clock origin,
 included work, and excluded preparation. Contracts that omit this permission
 allow only executor-observed profile measurements. For example:
 
-```toml
-[observation_policies.internal_gap]
-version = 1
-kind = "profile"
-metric = "relative_duality_gap"
-direction = "at_most"
-threshold = 1e-8
-record_thresholds = [1e-4, 1e-6, 1e-8]
-max_observations = 3
-max_trace_points = 10000
-max_buffer_bytes = 67108864
-max_active_time = "30 s"
-
-[observation_policies.internal_gap.implementations.hybrid]
-delivery = "buffered_profile"
-measurement_basis = "instrumented"
-instrumented_scope = "complete_solver_call"
-instrumentation_schema = "schemas/hybrid-observer.json"
-instrumentation = { check_every = 5, observer = "duality_gap" }
+```yaml
+observation_policies:
+  internal_gap:
+    version: 1
+    kind: "profile"
+    metric: "relative_duality_gap"
+    direction: "at_most"
+    threshold: 1e-8
+    record_thresholds: [1e-4, 1e-6, 1e-8]
+    max_observations: 3
+    max_trace_points: 10000
+    max_buffer_bytes: 67108864
+    max_active_time: "30 s"
+    implementations:
+      hybrid:
+        delivery: "buffered_profile"
+        measurement_basis: "instrumented"
+        instrumented_scope: "complete_solver_call"
+        instrumentation_schema: "schemas/hybrid-observer.json"
+        instrumentation: { check_every: 5, observer: "duality_gap" }
 ```
 
 The optional `record_thresholds` list requests snapshots at the first locally
@@ -1311,7 +1319,7 @@ are not authoritative.
 
 Workers may be persistent according to the execution policy so interpreter
 startup and package loading can be separated from problem execution.
-`worker_reuse = false` provides a fresh process but is called process freshness,
+`worker_reuse: false` provides a fresh process but is called process freshness,
 not strong sandbox isolation. The reuse key includes role, definition, source
 bundle, resolved environment, launch program, and policy. The orchestrator calls
 `reset` between slots, clears slot-scoped writable directories, and requires
@@ -1428,7 +1436,7 @@ Environment resolution and execution isolation are independent dimensions. A
 digest-pinned image does not by itself prove that networking, memory, CPU use,
 or filesystem writes were constrained. Each executor advertises its controls,
 and each run records every control as requested, enforced, best-effort, or
-unsupported. With `enforcement = "required"`, planning fails if a declared
+unsupported. With `enforcement: "required"`, planning fails if a declared
 executor capability is known to be insufficient; runtime preflight or
 enforcement failure still produces a typed failed attempt because host
 permissions and facilities may change after planning. Best-effort execution
@@ -1631,7 +1639,7 @@ backend may provide stronger enforcement. Do not build a generic sandbox or
 scheduler in v1; preserve an executor interface so stronger isolation or an HPC
 backend can be integrated later.
 
-Performance runs are serial by default. `run_order = "randomized"` forms
+Performance runs are serial by default. `run_order: "randomized"` forms
 comparison blocks by dataset instance, problem configuration,
 implementation-replication index, and measurement index; it orders
 implementation configurations within each block and the blocks themselves by
@@ -2170,7 +2178,7 @@ The following automated tests are release-blocking:
 
 - canonicalization, identity, and seed golden vectors agree in Rust, R, Python,
   and Julia;
-- reordering tables or files does not change identities, while changing any
+- reordering mappings or files does not change identities, while changing any
   transitive dependency does;
 - adding an unrelated experiment leaves existing component and run identities
   unchanged;

@@ -1,0 +1,33 @@
+version: 1
+name: "argmin"
+family: "arithmetic"
+parameter_schema: "schemas/parameters.json"
+dataset_schemas: ["schemas/dataset.json"]
+result_schema: "schemas/result.json"
+metric_schema: "schemas/metrics.json"
+semantics_schema: "schemas/semantics.json"
+allowed_timing_scopes: ["prepare_and_execute"]
+supported_budgets: ["none"]
+semantics:
+  computation:
+    operation: "minimum"
+    input_file: "data.json"
+    input_field: "values"
+    input_domain: "nonempty_finite_number_array"
+    result_field: "value"
+  preprocessing:
+    values: "preserve_values_and_order"
+    allowed_outside_timed_scope: []
+  validity:
+    index_base: 0
+    ties: "first_minimum"
+    index: "in_bounds_and_minimal"
+  one_shot_completion:
+    absolute_error: 0
+reference_cases:
+  - dataset: "fixtures/ties/dataset"
+    result: "fixtures/ties/result"
+    expected_metrics: "fixtures/ties/metrics/metrics.json"
+  - dataset: "fixtures/unique/dataset"
+    result: "fixtures/unique/result"
+    expected_metrics: "fixtures/unique/metrics/metrics.json"

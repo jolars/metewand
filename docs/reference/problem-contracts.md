@@ -21,7 +21,7 @@ fn load_contract(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let schemas = SchemaCatalog::try_new(schema_documents)?;
     let contract = parse_problem_contract(
-        Path::new("problems/example.toml"),
+        Path::new("problems/example.yaml"),
         source,
         &schemas,
     )?;
@@ -39,14 +39,14 @@ semantics schemas; a nonempty, duplicate-free set of timing scopes; the Gate 1
 present in the supplied catalog. Dataset-backed reference cases require a
 dataset path, while dataset-free cases must omit it.
 
-The `semantics` table is otherwise family-owned, but it always separates two
+The `semantics` mapping is otherwise family-owned, but it always separates two
 operational concerns:
 
 - `validity` defines whether a schema-valid result is semantically usable; and
 - `one_shot_completion` defines whether a valid final result completes a
   one-shot attempt.
 
-Both rule tables must be present and nonempty. Their exact fields, along with
+Both rule mappings must be present and nonempty. Their exact fields, along with
 all other family-specific semantics, are validated against `semantics_schema`.
 This separation lets later profile observations remain valid without implying
 that a one-shot completion threshold has been reached.
@@ -60,7 +60,7 @@ contract permission alone does not exclude work from that policy's timer. See
 for the boundary, a concrete contract, and executable conformance cases.
 
 An evaluator is not embedded in the language-neutral contract. The owning
-problem definition in `metewand.toml` must declare its evaluator worker,
+problem definition in `metewand.yaml` must declare its evaluator worker,
 including its environment and, for interpreted workers, its complete source
 bundle. The manifest parser rejects problem definitions without an evaluator.
 

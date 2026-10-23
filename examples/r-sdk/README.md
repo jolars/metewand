@@ -13,7 +13,7 @@ cp -R examples/r-sdk/. "$demo_dir/"
 mkdir "$demo_dir/library"
 R CMD INSTALL --library="$demo_dir/library" sdk/r
 cargo run --locked -p metewand-cli -- run \
-  --manifest "$demo_dir/metewand.toml" \
+  --manifest "$demo_dir/metewand.yaml" \
   --output-dir "$demo_dir/run" --output jsonl
 ```
 

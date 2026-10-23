@@ -7,7 +7,7 @@ each lane applies reset, cleanup, replacement, and warm-up rules independently.
 Its eligibility key compares the protocol role, authored worker definition,
 resolved source bundle, resolved environment, exact launch identity, and complete
 effective execution policy. A changed key replaces the process. A policy with
-`worker_reuse = false` drops the process after each slot.
+`worker_reuse: false` drops the process after each slot.
 
 Before another slot uses a retained process, the runtime clears the previous
 scientific deadline, calls `reset` under its operational timeout, removes all

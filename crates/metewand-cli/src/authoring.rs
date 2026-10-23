@@ -7,7 +7,7 @@ use metewand_runtime::authoring::{
 
 use crate::output::{CommandError, CommandResult};
 
-const INIT_HELP: &str = "Usage: metewand [--output FORMAT] init [PATH] [--dry-run]\n\nCreate only PATH/metewand.toml (default PATH: .), containing a version and a neutral benchmark name. Report every created path, including missing directories. Refuse an existing manifest, including symlinks. Use --dry-run to validate and report proposed paths without writing. Use -- before a path beginning with a hyphen.\n";
+const INIT_HELP: &str = "Usage: metewand [--output FORMAT] init [PATH] [--dry-run]\n\nCreate only PATH/metewand.yaml (default PATH: .), containing a version and a neutral benchmark name. Report every created path, including missing directories. Refuse an existing manifest, including symlinks. Use --dry-run to validate and report proposed paths without writing. Use -- before a path beginning with a hyphen.\n";
 
 const SCAFFOLD_HELP: &str = "\
 Usage: metewand [--output FORMAT] scaffold <dataset|problem|implementation> NAME
@@ -15,7 +15,7 @@ Usage: metewand [--output FORMAT] scaffold <dataset|problem|implementation> NAME
 
 Add one named component and report every created or modified path. Select an
 existing environment explicitly. Implementation scaffolds also require an
-existing --problem. Default manifest: ./metewand.toml.
+existing --problem. Default manifest: ./metewand.yaml.
 
 Generate raw-command worker stubs and rejecting schema placeholders. Problem
 contracts require author-supplied scientific semantics and reference cases.
@@ -117,7 +117,7 @@ pub fn scaffold_command(arguments: &[OsString]) -> Result<CommandResult, Command
         problem,
     };
     scaffold_component(
-        &PathBuf::from(manifest.unwrap_or_else(|| "metewand.toml".to_owned())),
+        &PathBuf::from(manifest.unwrap_or_else(|| "metewand.yaml".to_owned())),
         &request,
         dry_run,
     )

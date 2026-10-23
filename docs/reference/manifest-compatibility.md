@@ -41,13 +41,13 @@ conversion from fields, dimensions, or similar structure.
 
 The compatibility pass applies the version-1 defaults relevant to timing:
 
-- `worker_reuse = false`;
-- `warmup_runs = 0`; and
-- `timing_scope = "prepare_and_execute"`.
+- `worker_reuse: false`;
+- `warmup_runs: 0`; and
+- `timing_scope: "prepare_and_execute"`.
 
-Process-local warm-ups require `worker_reuse = true`. The
-`cold_end_to_end` scope instead requires `worker_reuse = false` and
-`warmup_runs = 0`, because every measured slot must include a fresh worker
+Process-local warm-ups require `worker_reuse: true`. The
+`cold_end_to_end` scope instead requires `worker_reuse: false` and
+`warmup_runs: 0`, because every measured slot must include a fresh worker
 launch.
 
 ```rust

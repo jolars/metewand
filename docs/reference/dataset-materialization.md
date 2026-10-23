@@ -83,11 +83,12 @@ The problem contract defines allowed implementation preparation in its
 schema-validated, hashed family semantics. For example, the generated dataset
 contract declares:
 
-```toml
-[semantics.preprocessing]
-shared_materialization = "canonical_integer_json"
-implementation_conversion = "preserve_integer_values_and_order"
-allowed_outside_timed_scope = []
+```yaml
+semantics:
+  preprocessing:
+    shared_materialization: "canonical_integer_json"
+    implementation_conversion: "preserve_integer_values_and_order"
+    allowed_outside_timed_scope: []
 ```
 
 These field names belong to this problem family. Metewand validates and hashes

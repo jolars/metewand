@@ -123,7 +123,7 @@ pub fn check_repository(manifest_path: &Path) -> Result<CheckedRepository, Repos
     let manifest_source = read_utf8_file(&manifest_path, &manifest_path)?;
     let manifest_diagnostic_path = manifest_path
         .file_name()
-        .map_or_else(|| PathBuf::from("metewand.toml"), PathBuf::from);
+        .map_or_else(|| PathBuf::from("metewand.yaml"), PathBuf::from);
     let manifest = parse_manifest(&manifest_diagnostic_path, &manifest_source)?;
     let manifest_hash = hash_manifest(&manifest)?;
 

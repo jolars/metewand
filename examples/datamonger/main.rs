@@ -74,7 +74,7 @@ fn compare(
     private_root: &Path,
 ) -> Result<Comparison> {
     let repository = check_repository(
-        &Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/datamonger/metewand.toml"),
+        &Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/datamonger/metewand.yaml"),
     )?;
     let plan = repository.logical_plan()?;
     let candidates = &plan.experiments[0].candidates;

@@ -14,94 +14,90 @@ use metewand_core::{
 };
 
 const IMPLICIT_DEFAULTS: &str = r#"
-version = 1
-name = "stable"
-
-[environments.local]
-kind = "local"
-
-[problems.example]
-contract = "problems/example.toml"
-
-[problems.example.evaluator]
-runner = "command"
-program = "evaluate"
-environment = "local"
-
-[implementations.solver]
-runner = "command"
-program = "solve"
-environment = "local"
-problem_contracts = ["example"]
-capabilities = ["one_shot"]
-
-[[experiments]]
-name = "main"
-problem = "example"
-implementations = ["solver"]
-execution_policy = "default"
-observation_policy = "final"
-implementation_repetitions = 1
-measurement_repetitions = 1
-seed = 17
-
-[execution_policies.default]
-version = 1
-
-[observation_policies.final]
-version = 1
-kind = "one_shot"
+version: 1
+name: "stable"
+environments:
+  local:
+    kind: "local"
+problems:
+  example:
+    contract: "problems/example.yaml"
+    evaluator:
+      runner: "command"
+      program: "evaluate"
+      environment: "local"
+implementations:
+  solver:
+    runner: "command"
+    program: "solve"
+    environment: "local"
+    problem_contracts: ["example"]
+    capabilities: ["one_shot"]
+experiments:
+  - name: "main"
+    problem: "example"
+    implementations: ["solver"]
+    execution_policy: "default"
+    observation_policy: "final"
+    implementation_repetitions: 1
+    measurement_repetitions: 1
+    seed: 17
+execution_policies:
+  default:
+    version: 1
+observation_policies:
+  final:
+    version: 1
+    kind: "one_shot"
 "#;
 
 const EXPLICIT_DEFAULTS_REORDERED: &str = r#"
-# Formatting, comments, and table order are not hash inputs.
-name = "stable"
-version = 1
-
-[observation_policies.final]
-kind = "one_shot"
-version = 1
-
-[execution_policies.default]
-enforcement = "best_effort"
-max_concurrency = 1
-run_order = "sequential"
-primary_time = "timed_wall_time"
-timing_scope = "prepare_and_execute"
-warmup_runs = 0
-worker_reuse = false
-network = false
-version = 1
-
-[implementations.solver]
-capabilities = ["one_shot"]
-problem_contracts = ["example"]
-environment = "local"
-args = []
-program = "solve"
-runner = "command"
-
-[problems.example]
-contract = "problems/example.toml"
-
-[problems.example.evaluator]
-environment = "local"
-args = []
-program = "evaluate"
-runner = "command"
-
-[environments.local]
-kind = "local"
-
-[[experiments]]
-seed = 17
-measurement_repetitions = 1
-implementation_repetitions = 1
-observation_policy = "final"
-execution_policy = "default"
-implementations = ["solver"]
-problem = "example"
-name = "main"
+# Formatting, comments, and mapping order are not hash inputs.
+name: "stable"
+version: 1
+observation_policies:
+  final:
+    kind: "one_shot"
+    version: 1
+execution_policies:
+  default:
+    enforcement: "best_effort"
+    max_concurrency: 1
+    run_order: "sequential"
+    primary_time: "timed_wall_time"
+    timing_scope: "prepare_and_execute"
+    warmup_runs: 0
+    worker_reuse: false
+    network: false
+    version: 1
+implementations:
+  solver:
+    capabilities: ["one_shot"]
+    problem_contracts: ["example"]
+    environment: "local"
+    args: []
+    program: "solve"
+    runner: "command"
+problems:
+  example:
+    contract: "problems/example.yaml"
+    evaluator:
+      environment: "local"
+      args: []
+      program: "evaluate"
+      runner: "command"
+environments:
+  local:
+    kind: "local"
+experiments:
+  - seed: 17
+    measurement_repetitions: 1
+    implementation_repetitions: 1
+    observation_policy: "final"
+    execution_policy: "default"
+    implementations: ["solver"]
+    problem: "example"
+    name: "main"
 "#;
 
 fn parse(path: &str, source: &str) -> Manifest {
@@ -165,7 +161,7 @@ fn component_ids(manifest: &Manifest) -> Vec<String> {
 
 #[test]
 fn pins_the_version_one_manifest_hash_bytes() {
-    let manifest = parse("metewand.toml", "version = 1\nname = \"empty\"\n");
+    let manifest = parse("metewand.yaml", "version: 1\nname: \"empty\"\n");
 
     assert_eq!(
         canonical_manifest_bytes(&manifest).unwrap(),
@@ -178,9 +174,9 @@ fn pins_the_version_one_manifest_hash_bytes() {
 }
 
 #[test]
-fn hashes_the_defaulted_typed_manifest_instead_of_toml_spelling() {
-    let implicit = parse("metewand.toml", IMPLICIT_DEFAULTS);
-    let explicit = parse("bench/renamed-input.toml", EXPLICIT_DEFAULTS_REORDERED);
+fn hashes_the_defaulted_typed_manifest_instead_of_yaml_spelling() {
+    let implicit = parse("metewand.yaml", IMPLICIT_DEFAULTS);
+    let explicit = parse("bench/renamed-input.yaml", EXPLICIT_DEFAULTS_REORDERED);
 
     assert_eq!(
         hash_manifest(&implicit).unwrap(),
@@ -191,26 +187,20 @@ fn hashes_the_defaulted_typed_manifest_instead_of_toml_spelling() {
     assert!(canonical.contains(
         r#""default":{"cpus":null,"enforcement":"best_effort","max_concurrency":1,"memory":null,"network":false,"primary_time":"timed_wall_time","run_order":"sequential","threads":null,"timeout":null,"timing_scope":"prepare_and_execute","version":1,"warmup_runs":0,"worker_reuse":false}"#
     ));
-    assert!(!canonical.contains("metewand.toml"));
+    assert!(!canonical.contains("metewand.yaml"));
     assert!(!canonical.contains("Formatting"));
 }
 
 #[test]
 fn concurrency_is_an_explicit_default_and_a_manifest_hash_dependency() {
-    let serial = parse("metewand.toml", IMPLICIT_DEFAULTS);
+    let serial = parse("metewand.yaml", IMPLICIT_DEFAULTS);
     let explicit = parse(
-        "metewand.toml",
-        &IMPLICIT_DEFAULTS.replace(
-            "[execution_policies.default]",
-            "[execution_policies.default]\nmax_concurrency = 1",
-        ),
+        "metewand.yaml",
+        &IMPLICIT_DEFAULTS.replace("  default:", "  default:\n    max_concurrency: 1"),
     );
     let concurrent = parse(
-        "metewand.toml",
-        &IMPLICIT_DEFAULTS.replace(
-            "[execution_policies.default]",
-            "[execution_policies.default]\nmax_concurrency = 2",
-        ),
+        "metewand.yaml",
+        &IMPLICIT_DEFAULTS.replace("  default:", "  default:\n    max_concurrency: 2"),
     );
     assert_eq!(
         hash_manifest(&serial).unwrap(),
@@ -227,8 +217,8 @@ fn concurrency_is_an_explicit_default_and_a_manifest_hash_dependency() {
 #[test]
 fn hashes_every_version_one_manifest_variant() {
     let manifest = parse(
-        "metewand.toml",
-        include_str!("../../../fixtures/manifest/v1/complete.toml"),
+        "metewand.yaml",
+        include_str!("../../../fixtures/manifest/v1/complete.yaml"),
     );
 
     let canonical = canonical_manifest_bytes(&manifest).unwrap();
@@ -240,17 +230,17 @@ fn hashes_every_version_one_manifest_variant() {
 #[test]
 fn refuses_to_hash_a_manifest_before_name_resolution() {
     let manifest = parse(
-        "metewand.toml",
+        "metewand.yaml",
         r#"
-version = 1
-name = "unresolved"
-
-[problems.example]
-contract = "problems/example.toml"
-[problems.example.evaluator]
-runner = "command"
-program = "evaluate"
-environment = "missing"
+version: 1
+name: "unresolved"
+problems:
+  example:
+    contract: "problems/example.yaml"
+    evaluator:
+      runner: "command"
+      program: "evaluate"
+      environment: "missing"
 "#,
     );
 
@@ -270,23 +260,23 @@ fn resolves_every_manifest_reference_namespace_before_hashing() {
         (
             "implementation contract",
             IMPLICIT_DEFAULTS.replace(
-                "problem_contracts = [\"example\"]",
-                "problem_contracts = [\"missing\"]",
+                "    problem_contracts: [\"example\"]",
+                "    problem_contracts: [\"missing\"]",
             ),
             "problem_contracts",
             "missing",
         ),
         (
             "experiment problem",
-            IMPLICIT_DEFAULTS.replace("problem = \"example\"", "problem = \"missing\""),
+            IMPLICIT_DEFAULTS.replace("    problem: \"example\"", "    problem: \"missing\""),
             "problem",
             "missing",
         ),
         (
             "experiment dataset",
             IMPLICIT_DEFAULTS.replace(
-                "problem = \"example\"\nimplementations",
-                "problem = \"example\"\ndatasets = [\"missing\"]\nimplementations",
+                "    problem: \"example\"\n    implementations: [\"solver\"]",
+                "    problem: \"example\"\n    datasets: [\"missing\"]\n    implementations: [\"solver\"]",
             ),
             "datasets",
             "missing",
@@ -294,8 +284,8 @@ fn resolves_every_manifest_reference_namespace_before_hashing() {
         (
             "experiment implementation",
             IMPLICIT_DEFAULTS.replace(
-                "implementations = [\"solver\"]",
-                "implementations = [\"missing\"]",
+                "    implementations: [\"solver\"]",
+                "    implementations: [\"missing\"]",
             ),
             "implementations",
             "missing",
@@ -303,8 +293,8 @@ fn resolves_every_manifest_reference_namespace_before_hashing() {
         (
             "execution policy",
             IMPLICIT_DEFAULTS.replace(
-                "execution_policy = \"default\"",
-                "execution_policy = \"missing\"",
+                "    execution_policy: \"default\"",
+                "    execution_policy: \"missing\"",
             ),
             "execution_policy",
             "missing",
@@ -312,8 +302,8 @@ fn resolves_every_manifest_reference_namespace_before_hashing() {
         (
             "observation policy",
             IMPLICIT_DEFAULTS.replace(
-                "observation_policy = \"final\"",
-                "observation_policy = \"missing\"",
+                "    observation_policy: \"final\"",
+                "    observation_policy: \"missing\"",
             ),
             "observation_policy",
             "missing",
@@ -321,8 +311,8 @@ fn resolves_every_manifest_reference_namespace_before_hashing() {
         (
             "dataset parameter namespace",
             IMPLICIT_DEFAULTS.replace(
-                "seed = 17",
-                "seed = 17\n\n[experiments.dataset_parameters.missing]\nrows = { value = 1 }",
+                "    seed: 17",
+                "    seed: 17\n    dataset_parameters:\n      missing:\n        rows: { value: 1 }",
             ),
             "dataset_parameters",
             "missing",
@@ -330,8 +320,8 @@ fn resolves_every_manifest_reference_namespace_before_hashing() {
         (
             "implementation parameter namespace",
             IMPLICIT_DEFAULTS.replace(
-                "seed = 17",
-                "seed = 17\n\n[experiments.implementation_parameters.missing]\ntolerance = { value = 1 }",
+                "    seed: 17",
+                "    seed: 17\n    implementation_parameters:\n      missing:\n        tolerance: { value: 1 }",
             ),
             "implementation_parameters",
             "missing",
@@ -339,7 +329,7 @@ fn resolves_every_manifest_reference_namespace_before_hashing() {
     ];
 
     for (description, source, expected_field, expected_target) in cases {
-        let manifest = parse("metewand.toml", &source);
+        let manifest = parse("metewand.yaml", &source);
         let error = hash_manifest(&manifest).expect_err(description);
         assert!(
             matches!(
@@ -357,22 +347,21 @@ fn resolves_every_manifest_reference_namespace_before_hashing() {
 
 #[test]
 fn unrelated_experiments_change_only_the_whole_manifest_hash() {
-    let original = parse("metewand.toml", IMPLICIT_DEFAULTS);
+    let original = parse("metewand.yaml", IMPLICIT_DEFAULTS);
     let extended = parse(
-        "metewand.toml",
-        &format!(
-            "{IMPLICIT_DEFAULTS}\n{}",
-            r#"
-[[experiments]]
-name = "additional"
-problem = "example"
-implementations = ["solver"]
-execution_policy = "default"
-observation_policy = "final"
-implementation_repetitions = 1
-measurement_repetitions = 1
-seed = 99
-"#
+        "metewand.yaml",
+        &IMPLICIT_DEFAULTS.replace(
+            "execution_policies:",
+            r#"  - name: "additional"
+    problem: "example"
+    implementations: ["solver"]
+    execution_policy: "default"
+    observation_policy: "final"
+    implementation_repetitions: 1
+    measurement_repetitions: 1
+    seed: 99
+execution_policies:
+"#,
         ),
     );
 

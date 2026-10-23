@@ -293,7 +293,7 @@ pub enum ManifestCompatibilityError {
 
     /// An execution policy requests warm-ups without worker reuse.
     #[error(
-        "execution policy `{execution_policy}` requests {warmup_runs} warm-up runs with `worker_reuse = false`"
+        "execution policy `{execution_policy}` requests {warmup_runs} warm-up runs with `worker_reuse: false`"
     )]
     WarmupsRequireWorkerReuse {
         /// Execution-policy name.
@@ -304,7 +304,7 @@ pub enum ManifestCompatibilityError {
 
     /// A cold end-to-end policy does not use fresh, non-warmed workers.
     #[error(
-        "execution policy `{execution_policy}` uses `cold_end_to_end`, which requires `worker_reuse = false` and `warmup_runs = 0`"
+        "execution policy `{execution_policy}` uses `cold_end_to_end`, which requires `worker_reuse: false` and `warmup_runs: 0`"
     )]
     ColdEndToEndRequiresFreshWorker {
         /// Execution-policy name.
