@@ -12,6 +12,7 @@ they do not provide container isolation or a locked publication environment.
 | Python-only | [Python SDK](python-sdk) | Python 3.11+, staged in-tree SDK | Two answers of 8 |
 | R-only | [R SDK](r-sdk) | R, digest, C++17 compiler, installed in-tree SDK | Two answers of 8 |
 | Dataset-free | [Integer sum](dataset-free) | Python 3, standard library only | Answers 6 and 55 |
+| Scientific workflows | [Motivating workflow smoke cases](workflow-smoke) | Python 3, standard library only | Three independently evaluated regression fits |
 | Parameter matrix | [Grids and coupled cases](parameter-matrix) | Python 3, standard library only | Ten answers across five configurations and two representations |
 
 Each linked README provides complete setup and run commands. Python-only and

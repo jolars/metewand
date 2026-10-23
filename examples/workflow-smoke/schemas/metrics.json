@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "objective": {
+      "type": "number"
+    },
+    "objective_error": {
+      "type": "number",
+      "minimum": 0
+    },
+    "coefficient_error": {
+      "type": "number",
+      "minimum": 0
+    },
+    "intercept_error": {
+      "type": "number",
+      "minimum": 0
+    }
+  },
+  "required": [
+    "objective",
+    "objective_error",
+    "coefficient_error",
+    "intercept_error"
+  ],
+  "additionalProperties": false
+}

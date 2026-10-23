@@ -1,0 +1,19 @@
+version: 1
+name: slope
+family: penalized-regression
+parameter-schema: schemas/parameters.json
+dataset-schemas: [schemas/dataset.json]
+result-schema: schemas/result.json
+metric-schema: schemas/metrics.json
+semantics-schema: schemas/semantics.json
+allowed-timing-scopes: [prepare_and_execute]
+supported-budgets: [none]
+semantics:
+  validity:
+    finite_coefficients: true
+  one_shot_completion:
+    absolute_tolerance: 1.0e-8
+reference-cases:
+  - dataset: slope/data.json
+    result: slope/reference/result.json
+    expected-metrics: slope/reference/metrics.json

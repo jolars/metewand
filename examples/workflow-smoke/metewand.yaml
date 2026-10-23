@@ -1,0 +1,85 @@
+version: 1
+name: workflow-smoke
+datasets:
+  intercepts:
+    output-schema: schemas/dataset.json
+    sources: [intercepts/data.json]
+  slope:
+    output-schema: schemas/dataset.json
+    sources: [slope/data.json]
+  clustered-lasso:
+    output-schema: schemas/dataset.json
+    sources: [clustered-lasso/data.json]
+problems:
+  intercepts:
+    contract: intercepts/problem.yaml
+    evaluator:
+      runner: command
+      program: python3
+      args: ['{sources}/worker.py', problem_evaluator]
+      sources: [worker.py, evaluator.py]
+      environment: local
+  slope:
+    contract: slope/problem.yaml
+    evaluator:
+      runner: command
+      program: python3
+      args: ['{sources}/worker.py', problem_evaluator]
+      sources: [worker.py, evaluator.py]
+      environment: local
+  clustered-lasso:
+    contract: clustered-lasso/problem.yaml
+    evaluator:
+      runner: command
+      program: python3
+      args: ['{sources}/worker.py', problem_evaluator]
+      sources: [worker.py, evaluator.py]
+      environment: local
+implementations:
+  reference:
+    runner: command
+    program: python3
+    args: ['{sources}/worker.py', implementation]
+    sources: [worker.py, solver.py]
+    environment: local
+    problem-contracts: [intercepts, slope, clustered-lasso]
+    capabilities: [one_shot]
+environments:
+  local:
+    kind: local
+experiments:
+  - name: intercepts
+    problem: intercepts
+    datasets: [intercepts]
+    implementations: [reference]
+    execution-policy: local
+    observation-policy: final
+    implementation-repetitions: 1
+    measurement-repetitions: 1
+    seed: 7
+  - name: slope
+    problem: slope
+    datasets: [slope]
+    implementations: [reference]
+    execution-policy: local
+    observation-policy: final
+    implementation-repetitions: 1
+    measurement-repetitions: 1
+    seed: 7
+  - name: clustered-lasso
+    problem: clustered-lasso
+    datasets: [clustered-lasso]
+    implementations: [reference]
+    execution-policy: local
+    observation-policy: final
+    implementation-repetitions: 1
+    measurement-repetitions: 1
+    seed: 7
+execution-policies:
+  local:
+    version: 1
+    timing-scope: prepare_and_execute
+observation-policies:
+  final:
+    version: 1
+    kind: one_shot

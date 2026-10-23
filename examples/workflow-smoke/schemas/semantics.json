@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "validity": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "finite_coefficients": {
+          "const": true
+        }
+      },
+      "required": [
+        "finite_coefficients"
+      ],
+      "additionalProperties": false
+    },
+    "one_shot_completion": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "absolute_tolerance": {
+          "const": 1e-08
+        }
+      },
+      "required": [
+        "absolute_tolerance"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "validity",
+    "one_shot_completion"
+  ],
+  "additionalProperties": false
+}

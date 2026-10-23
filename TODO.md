@@ -353,10 +353,11 @@ user-facing documentation before the next delivery mode begins.
 See [Problem and fairness contracts](DESIGN.md#problem-and-fairness-contracts)
 and [Main domain types](DESIGN.md#main-domain-types).
 
-- [ ] Extract smoke-sized inputs, independent evaluators, expected results, and
+- [x] Extract smoke-sized inputs, independent evaluators, expected results, and
   acceptance cases from the intercept-strategy, SLOPE, and internal
   clustered-lasso workflows. Run their one-shot portions on the Gate 2
   foundation, and document the missing applicability and profile behavior.
+  See [workflow smoke cases](examples/workflow-smoke/README.md).
 - [ ] Review the manifest, public-schema, wire-protocol, identity, and
   execution-semantics compatibility constants before introducing new fields or
   capabilities. Add conformance vectors with each slice; the design-only

@@ -1,0 +1,19 @@
+version: 1
+name: clustered-lasso
+family: penalized-regression
+parameter-schema: schemas/parameters.json
+dataset-schemas: [schemas/dataset.json]
+result-schema: schemas/result.json
+metric-schema: schemas/metrics.json
+semantics-schema: schemas/semantics.json
+allowed-timing-scopes: [prepare_and_execute]
+supported-budgets: [none]
+semantics:
+  validity:
+    finite_coefficients: true
+  one_shot_completion:
+    absolute_tolerance: 1.0e-8
+reference-cases:
+  - dataset: clustered-lasso/data.json
+    result: clustered-lasso/reference/result.json
+    expected-metrics: clustered-lasso/reference/metrics.json

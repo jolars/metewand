@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "sources": [
+    {
+      "repository": "intercepts",
+      "revision": "cadaba9c1fb549135d142e694e8b74587f848da8",
+      "files": {
+        "test/gd.jl": {
+          "sha256": "4e570f6017392fc8e1b78a0cd70b4036f3d7092b754bccbb29575ef63ab5c477",
+          "locally_modified": false
+        },
+        "src/loss.jl": {
+          "sha256": "578e91d69b363e2b6369e36c75df5e6eff2489c7ee8ad40066347b96675d0d67",
+          "locally_modified": false
+        },
+        "experiments/sim-cold-start.jl": {
+          "sha256": "0f990e44c3eef0f4dd9ef010edbb7b60109c986796a576f1edf011af379dda90",
+          "locally_modified": false
+        }
+      }
+    },
+    {
+      "repository": "benchmark_slope",
+      "revision": "4a12de89672c26f55e0292b5c425417c52903682",
+      "files": {
+        "objective.py": {
+          "sha256": "8fd45d5c590972a3b3465b15c721607feae7d656066216f9002b4fc817aa78ae",
+          "locally_modified": false
+        }
+      }
+    },
+    {
+      "repository": "slope-package-paper",
+      "revision": "bc16206095d41e5ce8d76f1f78b8d4ecb45e1b72",
+      "files": {
+        "bench_config_smoke_single.yml": {
+          "sha256": "5f8f6d63470a4248fcad5a413cb77a6ae456b51a4a18707abe2f42e87ff3d0a8",
+          "locally_modified": false
+        }
+      }
+    },
+    {
+      "repository": "clustlasso-cd",
+      "revision": "baf7617f064ba35f4318387819306886a0170845",
+      "files": {
+        "experiments/general_design_check.py": {
+          "sha256": "baab6d856e25dcfc8f4e201bbaed0868989559a0ea5aa15115f3b95676e8794f",
+          "locally_modified": false
+        },
+        "experiments/prox_pilot.py": {
+          "sha256": "da3d0a369737ee82aa1642a46ddf140b8e00e71089d6aa8bf8f746db2d051c02",
+          "locally_modified": false
+        },
+        "README.md": {
+          "sha256": "2c598b6af1456340d4102881325a6b82bec2481d0fea729fe29328bd4296a987",
+          "locally_modified": false
+        }
+      }
+    }
+  ]
+}
