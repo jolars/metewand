@@ -312,10 +312,11 @@ versioned manifest and no scientific definitions. It does not create datasets,
 problem semantics, evaluators, fixtures, implementations, or software
 environments.
 
-Component scaffolding is explicit and incremental. `metewand scaffold dataset`,
-`metewand scaffold problem`, and `metewand scaffold implementation` create only
-the structural files required for the requested component and update the
-manifest accordingly. Generated code may implement protocol and schema
+Current component scaffolding is explicit and incremental.
+`metewand scaffold dataset`, `metewand scaffold problem`, and
+`metewand scaffold implementation` create only the structural files required
+for the requested component and update the manifest accordingly. Generated
+code may implement protocol and schema
 boilerplate, but it must not choose problem semantics, validity criteria,
 completion criteria, parameter meanings, reference results, or library-specific
 translations. Those choices remain visible work for the benchmark author.
@@ -332,6 +333,35 @@ Metewand does not replace native environment initialization commands such as
 `uv init` or `renv::init()`. Complete runnable benchmarks, including examples
 such as a Python lasso comparison, are distributed under `examples/` rather than
 exposed as privileged built-in templates.
+
+The local MVP simplifies authoring around the Basin and clustlasso-cd
+integrations. This compact form is planned; the current parser and scaffolds
+still require the external files documented in the
+[authoring reference](docs/reference/authoring-cli.md).
+
+- A problem contract and its schemas may be inline or referenced from reusable
+  repository files. A small benchmark can use one manifest, worker code, and
+  scientific reference fixtures without separate schema documents.
+- An omitted parameter schema means a closed empty object, so unused parameter
+  namespaces need no boilerplate and unexpected parameters still fail. Local
+  environments and one-shot policies may use unambiguous documented defaults;
+  profiles and scientific choices remain explicit. The resolved declarations
+  record every effective default.
+- Family semantics remain explicit and hashed, including preprocessing,
+  validity, and completion rules. A separate `semantics-schema` is optional;
+  the independent evaluator and reference cases establish scientific behavior.
+  Authors may supply a schema when machine validation of those declarations is
+  useful, without restating every contract constant in a second document.
+- Inline schemas use the same offline catalog and Draft 2020-12 dialect as
+  referenced resources. Resolve references relative to the owning document,
+  normalize the effective declarations, and hash resolved schema contents.
+  External references and existing benchmark files remain supported.
+
+Scaffolds should emit the compact form once implemented. Keep the actual
+scientific rules and adapter translations visible; defaults supply mechanical
+settings. New public schemas should reuse authoritative boundary types where
+practical. Rewriting the existing schema catalog is not a prerequisite for
+these integrations.
 
 Each parameter entry is either a literal `value` or an expansion `grid`. This
 distinction permits arrays and mappings to be literal parameter values. Grids form
@@ -370,11 +400,13 @@ experiments:
 
 ### Schemas, canonical values, and identities
 
-Version 1 uses JSON Schema 2020-12. Every schema declares its dialect, and every
-external `$ref` must resolve to another repository file named in the lockfile;
-schema validation never retrieves a remote reference. JSON Schema's `default`
-keyword remains an annotation and is never inserted by Metewand. A definition
-may instead declare a literal `parameter-defaults` object in the manifest;
+Version 1 uses JSON Schema 2020-12. Standalone schemas declare their dialect;
+the planned inline form inherits it from the owning format. Every external
+`$ref` must resolve to an admitted repository resource, recorded in the lockfile
+when locked execution is selected; schema validation never retrieves a remote
+reference. JSON Schema's `default` keyword remains an annotation and is never
+inserted by Metewand. A definition may instead declare a literal
+`parameter-defaults` object in the manifest;
 defaults cannot contain grids. Defaults are merged recursively by object key,
 while a supplied scalar, array, or `null` replaces the default at that key.
 Metewand performs this merge before validation, records the resolved object, and
@@ -847,9 +879,8 @@ dependency of the run identity.
 
 ### Problem and fairness contracts
 
-A problem definition references the required versioned contract and owns its
-executable evaluator rather than using a name as a semantic assertion. Together,
-they bind:
+A problem definition owns a versioned contract and its executable evaluator.
+The planned compact form can inline the contract. Together, they bind:
 
 - accepted dataset and problem-parameter schemas;
 - canonical result and metric schemas;
@@ -863,7 +894,7 @@ implemented in any supported language and runs through the worker protocol. This
 is a runtime boundary, not another experiment axis: an evaluator is owned by
 exactly one problem definition and cannot be selected independently.
 
-Every experiment also selects a versioned execution policy. The policy specifies
+Every experiment resolves a versioned execution policy. The policy specifies
 worker reuse, permitted caching, warm-up runs, run ordering, concurrency,
 timeouts, resource requirements, and one timing scope:
 
@@ -912,7 +943,7 @@ When omitted, the version-1 timing fields default to `worker-reuse: false`,
 validation applies these defaults before checking the invariants above and the
 problem contract's allowed timing scopes.
 
-Every experiment also selects an observation policy. A `one_shot` policy
+Every experiment also resolves an observation policy. A `one_shot` policy
 produces one canonical result per run under an optional problem-defined
 scientific budget. A `profile` policy produces a time-quality curve; each
 selected implementation binds a delivery mode under the same policy:
@@ -927,13 +958,13 @@ selected implementation binds a delivery mode under the same policy:
   result snapshots, and returns them for independent evaluation after execution.
   It supports direct recording and a local measurement-and-stopping callback.
 
-Buffered profiles and local observers are planned extensions. Their examples
-below specify intended interfaces, not capabilities of the current CLI or SDKs.
-Implementation must review the manifest, public-schema, wire-protocol, identity,
-and execution-semantics versions and add conformance vectors before exposing
-these fields. This design change leaves the implemented compatibility constants
-and schemas unchanged; existing strict schema entry points require a new
-compatibility version when extended.
+All three profile modes are required by the local MVP. Their examples below
+specify intended interfaces, not capabilities of the current CLI or SDKs.
+Implement each mode with its actual producer, consumer, and focused behavioral
+tests. Apply the [pre-MVP compatibility policy](docs/reference/compatibility-versions.md)
+only to affected boundaries. This design change does not change current
+constants or accepted inputs; strict schemas must agree with the implemented
+readers when the features arrive.
 
 For example, one profile may bind heterogeneous SLOPE adapters without treating
 their controls as a common budget:
@@ -1179,8 +1210,9 @@ artifacts are passed as paths to private artifact views, never embedded in JSON.
 
 Protocol JSON uses the same numeric and Unicode subset as canonical parameters.
 Messages are UTF-8 without a byte-order mark, contain no duplicate keys, end in
-one newline, and are limited to 1 MiB in version 1. Schemas reject unknown
-fields; adding a field therefore requires a negotiated protocol version.
+one newline, and are limited to 1 MiB in version 1. Current schemas reject
+unknown fields. Extensions must use compatible capability negotiation or a
+protocol version supported by both peers before sending new fields.
 Oversized lines, invalid encoding, malformed JSON, early EOF, extra responses,
 and mismatched request IDs are typed protocol failures. Logs have policy-defined
 byte limits. Once a limit is reached, Metewand records truncation and continues
@@ -1759,9 +1791,9 @@ payload version 2 records the corresponding CPU accounting scopes.
 
 The generic source-resolution boundary introduces no new manifest syntax,
 serialized public schema, identity transcript, wire message, or execution timing
-rule. Existing compatibility constants remain unchanged. Manifest support for
-external providers and serialized source receipts require their own compatibility review
-and conformance vectors. An explicitly selected HTTP(S) backend now supports
+rule. Existing compatibility constants remain unchanged. Changes to provider
+syntax or serialized source receipts follow the same compatibility policy as
+other external boundaries. An explicitly selected HTTP(S) backend now supports
 bounded pinned downloads.
 A separate extraction API admits tar and tar.gz regular files and directories
 with mandatory entry-count and expanded-size limits. It rejects all links,
@@ -1922,8 +1954,8 @@ export schema and tool versions, and a content hash of each emitted file. This
 manifest gives a committed CSV or Parquet figure table an exact lineage without
 making the downstream statistical transformation part of Metewand.
 
-`metewand snapshot create` packages a selected result set as a portable,
-content-addressed directory or archive. A snapshot contains its export manifest,
+After the local MVP, `metewand snapshot create` will package a selected result
+set as a portable, content-addressed directory or archive. A snapshot contains its export manifest,
 the selected applicability, attempt, and observation records, referenced
 canonical results and metrics, required schemas and contracts, selected lock
 state when available, and the resolved dependency and provenance records needed
@@ -1961,8 +1993,10 @@ tool.
 
 ## 7. Initial SDK APIs
 
-The R, Python, and Julia packages should be intentionally small and usable
-without knowledge of the orchestrator internals.
+The R and Python packages should be intentionally small and usable without
+knowledge of the orchestrator internals. Add callbacks as adopter workflows
+need them. The Julia SDK follows the local MVP; raw executables, including
+Rust workers, can use the protocol directly.
 
 R sketch:
 
@@ -2003,9 +2037,10 @@ class SklearnImplementation(Implementation):
 serve_implementation(SklearnImplementation())
 ```
 
-The Julia API provides the same callbacks using ordinary Julia functions and
-structs; it is covered by the same canonicalization, seed, protocol, and error
-golden vectors as R and Python.
+The later Julia API will provide the same callbacks using ordinary Julia
+functions and structs and share the canonicalization, seed, protocol, and error
+vectors used by R and Python. Its implementation and conformance suite do not
+block the local MVP.
 
 For the planned buffered API, `trace.record` accepts measurements supplied by
 existing instrumentation; `trace.observe(progress, measure, snapshot)` is the
@@ -2042,216 +2077,127 @@ establishes accepted target attainment.
 
 ## 8. MVP and acceptance criteria
 
-Implementation proceeds through explicit acceptance gates.
+The immediate goal is useful local benchmarks in Basin and clustlasso-cd.
+The completed foundation remains available while the remaining modes are added.
+[TODO.md](TODO.md) gives the active implementation order.
 
 ### Gate 1: conformance kernel
 
-1. Parse and validate manifests, problem contracts, schemas, canonical parameter
-   values, source bundles, one-shot observation policies, identities, and seed
-   derivations.
-2. Expand a deterministic run matrix into logical candidates, one-shot run
-   specifications, observation slots, and attempt slots.
-3. Implement the bounded version-1 protocol and raw fixture workers for dataset
-   materializer, implementation, and problem evaluator roles.
-4. Run a fixed local dataset through one raw implementation and its problem's
-   independent evaluator under `prepare_and_execute` timing.
-5. Finalize one self-describing observation and attempt directory and emit
-   versioned machine-readable command output.
-
-This gate proves the riskiest architectural proposition without environment
-provisioning, downloads, SDKs, resume, or a general cache.
+The implemented kernel parses and validates manifests, contracts, canonical
+values, source bundles, identities, and deterministic plans. The bounded worker
+protocol runs a fixed dataset through an implementation and independent
+evaluator and publishes a self-describing observation and attempt.
 
 ### Gate 2: reliable local foundation
 
-1. Add pinned downloads, safe extraction, generated datasets, the
-   content-addressed cache, private dataset views, and mutation checks.
-2. Add the transactional attempt-slot database, durable finalization, crash
-   recovery, explicit retries, cache leases, and rebuildable indexes.
-3. Add the local process executor, capability preflight, complete timing scopes,
-   process-tree termination where supported, and explicit unsupported-control
-   reporting.
-4. Add small R and Python SDKs, raw command workers, and reference
-   problem-contract conformance suites.
-5. Add deterministic block-randomized scheduling, implementation and measurement
-   replication, selected-ID execution, status, explanation, and JSONL/CSV export
-   containing all outcomes.
-
-This gate supports reliable one-shot execution and is intentionally not called
-the general MVP. It proves the durable execution substrate before profile and
-applicability semantics add more state transitions.
+The implemented local runner adds verified source acquisition and generated
+datasets, private artifact views, durable records and recovery, explicit retries,
+timing policies, worker reuse, scheduling, inspection, and JSONL and CSV exports.
+Python and R SDKs and runnable examples exercise the process boundary.
+Existing foundation regressions continue to run.
 
 ### Gate 3: comparative local MVP
 
-1. Add configuration-dependent applicability checks, hashed decision records,
-   explicit unchecked plan states, and exported not-applicable candidates.
-2. Add canonical problem-defined scientific budgets, fixed and target-based
-   observation policies, implementation-specific control schemas and schedules,
-   fresh-sequence execution, the bounded streaming checkpoint subprotocol, and
-   buffered instrumented profiles with direct recording and local observers.
-3. Add durable observation publication, evaluator-controlled continuation,
-   active-time accounting, target and bound censoring, and crash recovery that
-   retains valid observations without claiming implementation-state recovery.
-4. Add the Julia SDK for implementations, dataset materializers, evaluators,
-   applicability checks, streaming checkpoints, and buffered local observers,
-   including all cross-language golden vectors.
-5. Add export lineage manifests and portable snapshot creation, offline
-   verification, and atomic import.
-6. Port representative experiments from the motivating intercept-strategy and
-   SLOPE-package studies and the internal clustered-lasso solver comparison, and
-   make their smoke-sized forms release-blocking.
+All three profile delivery modes are required. The scope around them is kept
+small enough to use the system in the two adopter projects:
 
-This is the first release called an MVP. It can run final-result comparisons and
-evaluator-controlled and instrumented convergence profiles locally with
-reproducible data artifacts, durable execution records, and explicit
-observed-control claims. It still makes only development-environment guarantees
-until Gate 4.
+1. Run small Basin and clustlasso-cd comparisons through the existing one-shot
+   runner. Simplify authoring with inline contracts and schemas, mechanical
+   defaults, and an optional family semantics schema. Keep scientific choices,
+   independent evaluators, and reference cases explicit.
+2. Add configuration-dependent applicability with checked-input evidence and
+   visible exclusions that do not become failed attempts.
+3. Add buffered instrumented profiles first, reusing native local traces with
+   selected immutable snapshots, direct recording, and local observers.
+   Independently evaluate saved results and attribute local timing and stopping
+   claims to their instrumentation.
+4. Add fresh sequences of implementation-specific controls from clean
+   algorithmic state, with fixed-count or evaluator-owned target completion.
+5. Add streaming checkpoints with durable observations, evaluator-controlled
+   continuation, active-time accounting, and partial-curve recovery.
+6. Qualify small real comparisons through checking, planning, selected execution,
+   interruption, resume, inspection, and usable exports. Add the SDK
+   callbacks and scientific budgets those comparisons actually need.
+
+| Adopter | Required use |
+| --- | --- |
+| Basin | Run a Rust optimization method and an existing competitor on shared cases. Retain final parameters, independently checked accuracy or feasibility, repeated solve timings, and separately labeled instrumented curves. Reuse the existing competitor harness and local observation points. |
+| clustlasso-cd | Refresh the existing Python and R package integration for the current CLI, then run internal native trajectories with selected coefficient snapshots. Reuse fixed inputs and independent evaluation, keep package and internal tracks separate, and preserve each track's declared scientific criteria. |
+
+The native trace path must not require a Python or R callback at every check.
+Existing metric-only traces can remain diagnostics; independently accepted
+profile observations require saved results that the evaluator can inspect.
+Several instrumented thresholds may share one unchanged trajectory under the
+timing and snapshot rules in
+[Instrumented profiles and local observers](#instrumented-profiles-and-local-observers).
+
+Local use can begin with the one-shot integrations and grow with each mode.
+The MVP is complete when the two adopter workflows are practical and all three
+modes satisfy their behavioral tests. It provides development-environment and
+observed-control guarantees. It does not depend on the Julia SDK, complete
+ports of the earlier intercept and SLOPE studies, portable result archives, or
+environment provisioning.
+
+#### MVP verification
+
+Keep the existing foundation tests and add focused evidence for new behavior:
+
+- canonicalization, identities, and seed vectors agree across the implemented
+  Rust, R, and Python boundaries; unrelated definitions do not invalidate
+  existing runs, and actual dependency changes invalidate their dependents;
+- configuration expansion preserves namespaces, coupled cases, repetitions,
+  seed sharing, and deterministic scheduling;
+- compact and external declarations validate offline, reject invalid input,
+  and record normalized schemas and effective defaults;
+- independent evaluators accept reference solutions and reject malformed,
+  numerically wrong, and semantically invalid results;
+- applicability retains exact inputs and reasons, protects dataset views, and
+  distinguishes exclusions from execution failures;
+- fresh sequences reset algorithmic state, preserve process-reuse and warm-up
+  rules, and stop from common evaluator metrics;
+- streaming checkpoints enforce ordering and bounds, include serialization in
+  active time, exclude evaluator pauses, and retain published observations
+  after a later failure;
+- buffered profiles preserve snapshots, bound collection, include measurement
+  and callback costs, distinguish provisional from independent metrics, and
+  never accept observations from an unreturned buffer or splice retries;
+- timing probes verify the selected scope, failure evidence, and scientific
+  deadlines; instrumented curves remain distinct from executor-observed curves;
+- interruption and recovery do not manufacture success or duplicate selected
+  observations, including profile publication and decision boundaries;
+- status and exports retain valid observations, exclusions, censored attempts,
+  retries, and failures with their original timing and guarantee classes;
+- small Basin and clustlasso-cd runs exercise the public commands and feed a
+  usable downstream summary.
+
+Use byte-level vectors where canonical bytes are the contract. Match other
+tests to the behavior at risk. Extend supported SDK callbacks as needed without
+requiring every language to implement every mode or a separate public schema for
+each internal helper. Exhaustive durability testing follows the existing
+change-scoped policy in [AGENTS.md](AGENTS.md).
 
 ### Gate 4: locked environments
 
-Add `metewand.lock` and the Nix package/app backend first, followed by `uv` and
-`renv`; Julia `Pkg` may follow later. Nix is the reference closure-locked
-backend but remains optional for benchmark users. Locked mode is accepted only
-after transitive source-bundle and environment-closure mismatch tests pass.
+After the local MVP, add `metewand.lock` and the Nix package and app backend,
+followed by `uv` and `renv` as adopter demand warrants. Keep environment
+fingerprints separate from exact worker launch identities, and keep Nix optional.
+Qualify locked execution with transitive source, lock, realized-environment,
+closure, and executable mismatch tests. Development runs retain their weaker
+recorded guarantees.
 
 ### Gate 5: isolated archival execution
 
-Add OCI images by digest, enforceable resource and network controls, read-only
-mounts, complete process-tree accounting, and comprehensive machine provenance.
-This gate, not the comparative local MVP, supports the strongest
-publication-archive claim.
+Add digest-pinned OCI images, enforceable resource and network controls,
+read-only mounts, complete process-tree accounting, and archival machine
+provenance. Docker and Podman on Linux must pass control-loss and accounting
+tests before stronger publication-archive claims are made. These claims remain
+separate from local MVP acceptance.
 
-Additional problem-defined scientific budget types, checkpoint state
-restoration, distributed execution, and richer scheduling remain later
-extensions.
-
-The user-facing architecture is accepted when these examples require no special
-cases:
-
-- **R-only:** compare `glmnet` and `ncvreg` under `renv`;
-- **Python-only:** compare scikit-learn and `skglm` under `uv`;
-- **Nix-locked:** resolve a flake installable once, launch its worker directly
-  from the realized output, and reject source, lock, derivation, or closure
-  mismatches;
-- **Mixed:** compare an R package under `renv`, a Python package under `uv`, and
-  a native executable from Nix;
-- **Cross-language environment:** launch Python, R, and Julia workers from one
-  Nix closure or pinned OCI image, reuse its environment identity, and bind each
-  exact interpreter and command into a distinct launch identity; a Devenv-based
-  repository exercises this through standard flake outputs without requiring a
-  separate Devenv backend;
-- **Posterior sampling:** compare implementations that return canonical draws
-  under a problem contract defining the target distribution, chain semantics,
-  sample budget, and evaluator-owned diagnostics;
-- **Dataset-free computation:** compare implementations that integrate a
-  contract-defined function over problem-parameterized domains; omitting
-  `datasets` produces one run per remaining configuration through the built-in
-  unit dataset;
-- **Parameterized matrix:** dataset, problem, and implementation grids and named
-  coupled cases expand deterministically, preserve their namespaces, reject
-  duplicates, and produce stable candidate, run, observation, slot, and attempt
-  IDs;
-- **Conditional applicability:** an implementation may reject an unsupported
-  intercept, sparse layout, or unsafe dimension with a structured,
-  reproducible not-applicable decision that remains visible without becoming a
-  failed attempt;
-- **Convergence profile:** iteration-, tolerance-, and callback-controlled
-  implementations produce time-quality curves under one evaluator-owned target;
-  target completion and timeout censoring retain every valid observation;
-- **Internal solver profile:** one trajectory yields several instrumented
-  threshold observations through direct recording or a local callback, with
-  independent snapshot evaluation and explicitly attributed timing evidence;
-- **Semantic equivalence:** every implementation receives the same problem
-  instance, and its independent evaluator rejects results that violate the
-  problem contract;
-- **Locked failure:** modifying a parameter, dataset, schema, contract fixture,
-  adapter or imported helper, native lockfile, local flake input or lock,
-  realized Nix closure, resolved program, or image reference causes
-  `run --locked` to refuse execution;
-- **Control failure:** a statically unsupported required control fails planning,
-  while lost runtime capability or enforcement produces a typed failed attempt;
-- **Failure records:** crashes, timeouts, invalid results, and evaluator errors
-  remain visible in exports;
-- **Publication snapshot:** a selected result set can be snapshotted, verified
-  without the originating cache, imported without overwriting existing objects,
-  and traced exactly to a committed CSV or Parquet export;
-- **Agent loop:** a noninteractive client can inspect a JSON plan, run selected
-  stable IDs, diagnose structured failures, modify an adapter, and resume
-  without duplicating an accepted slot;
-- **Provenance:** every result identifies all declared software and dataset
-  artifacts, the machine on which it ran, and any control that could not prevent
-  undeclared access.
-
-The following automated tests are release-blocking:
-
-- canonicalization, identity, and seed golden vectors agree in Rust, R, Python,
-  and Julia;
-- reordering mappings or files does not change identities, while changing any
-  transitive dependency does;
-- adding an unrelated experiment leaves existing component and run identities
-  unchanged;
-- named cases express coupled parameter combinations without unintended
-  Cartesian products and reject duplicate logical candidates;
-- an `A x M` implementation-by-measurement design creates exactly `A x M` slots,
-  shares seeds only where specified, and preserves every retry;
-- timing fixtures that sleep or work in startup, `prepare`, `execute`, and
-  result writing are included or excluded exactly according to each timing
-  scope; streaming fixtures additionally prove that active wall time includes
-  checkpoint serialization but excludes evaluator pauses while elapsed wall time
-  retains them;
-- reference problem instances produce expected metrics, and deliberately
-  malformed, numerically wrong, or semantically invalid results are rejected;
-- one multi-runtime fixture launches workers through at least two different
-  runners from the same resolved environment, shares the environment
-  fingerprint, and records distinct exact launch programs;
-- a dataset-free problem expands through exactly one built-in unit dataset and
-  rejects selected dataset definitions, while a dataset-requiring problem
-  rejects zero selections and expands multiple selections into separate
-  single-dataset problem instances;
-- protocol tests cover fragmented input, duplicate keys, invalid UTF-8,
-  oversized messages, early EOF, extra responses, log floods, timeouts, and
-  escaped child processes, plus checkpoint sequence violations, continuation
-  after stop, and observation-count bounds;
-- applicability fixtures cover parameter-, sparse-layout-, and dimension-based
-  exclusions, decision changes, locked re-verification, and attempts to mutate
-  the dataset during a check;
-- fresh-sequence fixtures reset algorithmic state between controls, while
-  streaming fixtures preserve state, stop on an evaluator metric, retain valid
-  observations before failure, and never treat work-unit values as comparable
-  across implementations;
-- buffered fixtures obtain several threshold points from one trajectory,
-  preserve checked iterates after subsequent mutation, and agree across direct
-  recording and local callbacks, including native loops without host-language
-  transitions or per-check protocol traffic;
-- instrumented timing fixtures include measurement and callback work, include
-  earlier snapshot copies in later timestamps, and retain executor-observed
-  serialization and evaluation costs under their separate timing fields;
-- local observer fixtures cover terminal checks, stop decisions, provisional
-  metric disagreement, bound exits, malformed traces, byte limits, and crash
-  recovery without treating unreturned buffers as accepted observations;
-- fault injection terminates the process at every database, file-sync, rename,
-  and finalization boundary, after which resume yields no false success and no
-  duplicate accepted slot;
-- concurrent writers publishing the same content converge on one verified
-  object, and garbage collection never removes a referenced or leased object;
-- archive and manifest tests cover traversal, escaping links, special files,
-  decompression limits, undeclared files, and dataset mutation;
-- plans distinguish declared from verified capabilities, and runtime capability
-  or enforcement loss produces a typed failure;
-- Nix package and app fixtures reject changes to any local flake input, lock,
-  derivation, resolved program, output NAR, or recursive closure;
-- exports retain not-applicable candidates, valid observations, and invalid,
-  censored, superseded, and failed attempts and refuse to silently pool
-  incompatible timing, measurement evidence, instrumented scopes, environment,
-  or control classes;
-- snapshot round trips preserve every selected identity and artifact, and
-  verification rejects a changed manifest, result, metric, schema, contract, or
-  provenance record;
-- smoke-sized ports of the intercept-strategy grid, the SLOPE convergence
-  benchmark, and the internal clustered-lasso comparison exercise Julia/R/Python
-  data interchange, per-cell resume, pinned implementation variants, conditional
-  applicability, fresh controls, streaming callbacks, buffered local observers,
-  and independent target
-  confirmation.
+The Julia SDK and full intercept-strategy and SLOPE workflow ports follow the
+local MVP, along with portable result archive creation, verification, and import.
+Later extensions include richer scientific-budget schedules, checkpoint-state
+restoration, and remote execution. Result snapshots within profiles remain part
+of the MVP; portable archives of selected runs are a separate feature.
 
 ### Explicit non-goals for v1
 

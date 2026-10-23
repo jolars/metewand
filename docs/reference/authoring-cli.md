@@ -1,5 +1,10 @@
 # Benchmark authoring
 
+This page describes the implemented CLI. Compact inline contracts and schemas,
+mechanical defaults, and an optional family semantics schema are planned MVP
+work; see the [roadmap](https://github.com/jolars/metewand/blob/main/TODO.md).
+The file requirements below still apply until that authoring slice lands.
+
 ## Initialization
 
 `metewand init [PATH]` creates `PATH/metewand.yaml`. The destination defaults to

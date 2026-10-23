@@ -11,8 +11,10 @@ manifest version, wire-protocol version, identity version, and execution-semanti
 version. A reader must select the schema version declared by the record rather
 than infer it from the Metewand release that produced the record.
 
-See [compatibility versions](compatibility-versions.md) for the Gate 3 baseline
-review and the requirements for extending strict entry points.
+See [compatibility versions](compatibility-versions.md) for the pre-MVP
+development policy and current accepted inputs. Version externally consumed
+boundaries; nested records can share their enclosing format's version, and
+internal helper types do not need public schemas.
 
 ## Entry points
 
@@ -75,11 +77,11 @@ design so definitions can be inspected before their runtime backends exist. Its
 observation policies and implementation capabilities are intentionally narrower:
 version 1 of this public schema set admits only `one_shot` and the `none`
 scientific budget. Applicability, profiles, observation-control schedules,
-checkpoint messages, and portable snapshots receive their own versioned schemas
-in later gates. The worker protocol entry point initially covers session
-negotiation; work-method messages are added with their execution slices. A later
-change to an existing strict entry point requires a new public schema
-compatibility version.
+and checkpoint messages will extend the relevant public boundaries with their
+implementations. Portable result archives follow the local MVP. The worker
+protocol entry point initially covers session negotiation; work-method messages
+are added with their execution slices. Keep the schemas and readers in agreement
+and apply the development policy to affected versions.
 
 JSON Schema enforces the portable record shape. The typed parser requires
 normalized lexical repository paths, and the runtime performs

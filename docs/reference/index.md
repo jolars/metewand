@@ -23,8 +23,7 @@ and [scheduling](scheduling.md) define how a manifest becomes an ordered set of
 attempts.
 
 [Compatibility versions](compatibility-versions.md) records the current contract
-versions, the Gate 3 baseline review, and the conformance requirements for
-extensions.
+versions, the pre-MVP stability policy, and verification guidance for extensions.
 
 ## Sources, execution, and storage
 

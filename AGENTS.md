@@ -3,7 +3,7 @@
 This file is the operational repository guide for AI agents. Read the relevant
 parts of `DESIGN.md` before changing architecture or public behavior;
 `DESIGN.md` is the source of truth for semantics and interfaces, while `TODO.md`
-defines the implementation order and acceptance slices.
+defines the active MVP work and acceptance criteria.
 
 ## Project priorities
 
@@ -11,14 +11,19 @@ Metewand is a reproducible, language-neutral computational benchmark system.
 Preserve these properties throughout the implementation:
 
 - Processes, not language-specific FFI, are the universal worker boundary.
-- Machine-readable interfaces are versioned from their introduction.
+- Public machine-readable boundaries are versioned from their introduction;
+  internal records inherit their enclosing format's version.
 - Identities, expansion, scheduling, and emitted records are deterministic.
 - Human output is rendered from the same typed records as machine output.
 - Commands are noninteractive and read-only unless mutation is explicitly
   authorized.
 
-Implement roadmap slices from top to bottom. Do not check off a slice until its
-tests and user-facing documentation are complete.
+Prioritize useful local benchmarks in Basin and clustlasso-cd. Follow the active
+roadmap, adapting the next small step to what those integrations need. All three
+profile modes belong in the MVP; the Julia SDK, portable result archives, and
+environment provisioning follow it. Complete each behavior with focused tests
+and enough documentation to use it. A feature does not need every SDK callback
+or a separate reference page before an adopter can use it.
 
 ## Architecture and dependency direction
 
@@ -39,6 +44,10 @@ concerns out of core and protocol.
 
 - Public JSON Schemas belong in `schemas/` and declare their dialect and
   compatibility version.
+- Publish schemas for externally consumed boundaries. Keep internal helper
+  records private, and reuse the enclosing format's version for nested records.
+  Prefer deriving new schemas from authoritative boundary types when practical;
+  converting the existing schema catalog is not an MVP prerequisite.
 - Contract conformance fixtures live beside the contract under a `fixtures/`
   directory; shared protocol vectors may live in a repository-level fixture tree
   once they exist.
@@ -56,9 +65,18 @@ schema, fixture, example, SDK, or document.
 
 Package SemVer is shared across the workspace and managed by Versionary from
 Conventional Commits. It is separate from the public compatibility constants for
-the manifest, schemas, identities, execution semantics, and wire protocol. Any
-change that alters one of those contracts must review the corresponding constant
-explicitly and add or update its conformance vectors.
+the manifest, schemas, identities, execution semantics, and wire protocol.
+Consider only the versions affected by a change, and record a consequential
+compatibility decision in the change description. Do not require a standalone
+review, a decision table for unchanged versions, or fixtures for speculative
+interfaces. See [Compatibility versions](docs/reference/compatibility-versions.md)
+for the pre-MVP stability policy.
+
+Preserve supported persisted records and canonical identity rules. Update
+relevant conformance vectors when their actual contract changes; use byte-level
+vectors where canonical bytes matter. New authoring syntax and profile APIs may
+evolve together with their current consumers before the MVP. Do not silently
+reinterpret existing results or promise readers for every development revision.
 
 The crates are not published to a registry yet. Versionary creates release PRs,
 tags, changelogs, and GitHub Releases; registry publication requires a separate,
@@ -76,8 +94,11 @@ for the complete Rust suite. These commands use Nextest and accept its filters.
 Keep combinatorial planning and scheduling assertions in core tests, with small
 CLI cases covering worker execution, emitted records, and provenance.
 
-Run focused tests while developing, then run the normal local CI checks once
-with `devenv test` or the equivalent commands:
+Run focused tests while developing, then verify the changed scope once. Rust
+changes require formatting, Clippy, and the complete Rust suite below. Website
+or documentation changes require the documentation checks; documentation-only
+changes do not require rebuilding or retesting Rust. Use `devenv test` for the
+full local CI run when both scopes change. The equivalent commands are:
 
 - `cargo fmt --all -- --check`
 - `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`
