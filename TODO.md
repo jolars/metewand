@@ -56,34 +56,69 @@ coverage; full ports of those studies do not block this MVP.
 ### 3.1 Useful one-shot runs and compact authoring
 
 Start the adopter integrations on the existing runner while simplifying the
-declarations they actually need. Neither a generic schema-generation rewrite nor
-a new compatibility review is a prerequisite.
+declarations they actually need. Reduce authoring effort before expanding the
+comparison suite. Neither a generic schema-generation rewrite nor a new
+compatibility review is a prerequisite. Keep Criterion for kernel timings and
+small performance regressions; use the Metewand pilots for independently
+evaluated solver comparisons.
 
-- [ ] Run one Basin method and an existing competitor through the process
+- [x] Run one Basin method and an existing competitor through the process
   boundary on a small shared case. Retain final parameters, independently
   checked objective or feasibility metrics, settings, repeats, and failures.
+  Basin's `../basin/metewand.yaml` compares Basin and argmin Nelder–Mead on
+  Rosenbrock, retaining three repeats at each of two iteration caps. Its
+  `crates/competitor-bench/metewand/` directory contains the independent evaluator,
+  reference cases, reproduction commands, and a verified run with six accepted
+  results and six scientific completion failures.
+- [ ] Exercise one realistic existing Basin LM comparison with a release-built
+  Metewand runner, validated worker warm-ups, and more measurement repetitions.
+  Reuse shared case definitions and solver settings across Criterion and
+  Metewand. Retain actual iterations and objective or residual evaluation
+  counts, labeling the callback units and stopping rules for each library.
+- [ ] Measure runner and result-serialization overhead on the Basin pilot.
+  Keep the primary wall timing and worker diagnostics separately labeled with
+  their measured scopes. Distinguish endpoint accuracy from time to accuracy.
+  Use profiles to identify the first saved result that independently meets a
+  target.
 - [ ] Refresh the existing clustlasso-cd package integration for the current
   YAML CLI. Reuse its fixed inputs, Python and R adapters, and independent
   evaluator, and retain the original package track's scientific criteria.
 - [ ] Allow schemas and problem contracts inline as well as through reusable
   file references. Resolve references offline, validate the same effective
   declarations, and hash their normalized contents.
+- [ ] Add concise declarations for parameters, result fields, and metrics that
+  generate normalized JSON Schemas. Declare parameter types, defaults, and
+  bounds together, keeping experiment grids separate from the full valid
+  parameter domain. Retain explicit schemas for complex or reusable contracts.
 - [ ] Default an omitted parameter schema to a closed empty object. Allow
   unambiguous local-environment and one-shot-policy defaults, recording all
-  resolved values. Keep profile selection and scientific choices explicit.
+  resolved values and exposing effective settings through planning. Keep profile
+  selection, preprocessing, validity, completion, and timing choices explicit.
 - [ ] Make a separately authored family `semantics-schema` optional. Keep
   preprocessing, validity, and completion rules explicit in the problem
   declaration, with an independent evaluator and reference cases.
+- [ ] Provide small Rust worker helpers for Basin and improve the Python and R
+  helpers where adopters still write protocol boilerplate. Keep preparation,
+  solving, and scientific result conversion in adapters; handle handshakes,
+  protocol transport, errors, and standard artifact envelopes in the helpers.
+  Preserve native process workers without requiring a Python host.
 - [ ] Update scaffolding and one small example so a benchmark needs one
-  manifest, worker code, and scientific reference fixtures. Separate
+  manifest, small adapters, and scientific reference fixtures. Separate
   contract and schema files remain available for reuse. Test invalid
   declarations and normalized defaults without duplicating the example into
   a fixture matrix.
+- [ ] Verify the authoring workflow with two existing methods, an independent
+  evaluator, and reference data. Configure three measurement repetitions per
+  method and include a case that misses its completion target. Run and inspect
+  the comparison using one manifest and small adapters, without hand-written
+  protocol handling or separate JSON Schema files. Check that metrics, effective
+  settings, timings, and failure reasons are understandable from the public CLI.
 
-The planned authoring rules are in [Authoring and
-scaffolding](DESIGN.md#authoring-and-scaffolding). They are not implemented by
-this roadmap change. Existing external contract and schema files remain
-supported.
+The existing authoring design is in [Authoring and
+scaffolding](DESIGN.md#authoring-and-scaffolding). These roadmap items remain
+planned until implemented. Judge ergonomics by the declarations, adapter code,
+and commands needed for the complete comparison, including native workers.
+Existing external contract and schema files remain supported.
 
 ### 3.2 Configuration-dependent applicability
 
@@ -176,6 +211,17 @@ every language is not a release prerequisite.
   metrics, and timing and guarantee classes through durable records and
   exports. Add only problem-defined scientific budgets needed by these
   pilots.
+- [ ] Bind native build provenance to the measured executable. Capture source
+  revision and dirty state, compiler version, enabled features, build profile,
+  flags, and dependency lockfile hashes during the build, and retain a receipt
+  tied to the executable's digest. Pin the Metewand revision and record the
+  runner's build profile and executable hash. Keep post-run environment
+  observations separate from evidence of how the binaries were built.
+- [ ] Provide a useful default comparison summary and a table for analysis with
+  methods, effective settings, repetition indices, evaluator metrics, durations,
+  timing scopes, and failure reasons. Keep individual repetitions and failed
+  attempts visible. Make routine execution, inspection, and export usable without
+  a benchmark-specific driver or knowledge of internal record formats.
 - [ ] Document runnable commands and measured scopes beside the examples.
   Confirm that adapters reuse the adopters' scientific code and that authors
   do not need separate schema files for mechanical declarations.
