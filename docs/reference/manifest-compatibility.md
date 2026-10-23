@@ -8,12 +8,12 @@ The caller supplies parsed problem contracts keyed by their manifest-local
 problem names. The validator requires a contract for every problem definition,
 then checks that:
 
-- every implementation's `problem_contracts` entry names a defined problem;
+- every implementation's `problem-contracts` entry names a defined problem;
 - every experiment selects defined datasets, implementations, execution
   policies, and observation policies;
 - every selected implementation declares the experiment's problem contract;
-- every selected dataset's `output_schema` is one of the problem contract's
-  accepted `dataset_schemas`;
+- every selected dataset's `output-schema` is one of the problem contract's
+  accepted `dataset-schemas`;
 - the selected timing scope is allowed by the problem contract;
 - the observation policy's scientific budget is supported by the problem; and
 - each implementation declares the capability required by the observation
@@ -26,7 +26,7 @@ individual document to those values.
 
 ## Dataset binding
 
-A contract with an empty `dataset_schemas` list is dataset-free. Its experiments
+A contract with an empty `dataset-schemas` list is dataset-free. Its experiments
 must omit `datasets`; that empty selection instructs the later planner to bind
 exactly one versioned, built-in unit dataset. Selecting a user dataset for such
 a problem is an error.
@@ -41,13 +41,13 @@ conversion from fields, dimensions, or similar structure.
 
 The compatibility pass applies the version-1 defaults relevant to timing:
 
-- `worker_reuse: false`;
-- `warmup_runs: 0`; and
-- `timing_scope: "prepare_and_execute"`.
+- `worker-reuse: false`;
+- `warmup-runs: 0`; and
+- `timing-scope: "prepare_and_execute"`.
 
-Process-local warm-ups require `worker_reuse: true`. The
-`cold_end_to_end` scope instead requires `worker_reuse: false` and
-`warmup_runs: 0`, because every measured slot must include a fresh worker
+Process-local warm-ups require `worker-reuse: true`. The
+`cold_end_to_end` scope instead requires `worker-reuse: false` and
+`warmup-runs: 0`, because every measured slot must include a fresh worker
 launch.
 
 ```rust

@@ -114,8 +114,8 @@ fn shared_materialization_and_private_conversions_have_distinct_timing_boundarie
     replace(
         root.path(),
         "metewand.yaml",
-        "measurement_repetitions: 1",
-        "measurement_repetitions: 2",
+        "measurement-repetitions: 1",
+        "measurement-repetitions: 2",
     );
     let started = Instant::now();
     let output = metewand(
@@ -397,16 +397,16 @@ fn preparation_cannot_bypass_dataset_schemas_or_contract_timing_scopes() {
             replace(
                 root.path(),
                 "metewand.yaml",
-                "output_schema: \"schemas/dataset.json\"",
-                "output_schema: \"schemas/other.json\"",
+                "output-schema: \"schemas/dataset.json\"",
+                "output-schema: \"schemas/other.json\"",
             );
             "does not accept"
         } else {
             replace(
                 root.path(),
                 "metewand.yaml",
-                "timing_scope: \"prepare_and_execute\"",
-                "timing_scope: \"execute_only\"",
+                "timing-scope: \"prepare_and_execute\"",
+                "timing-scope: \"execute_only\"",
             );
             "does not allow"
         };
@@ -439,14 +439,14 @@ fn a_contract_permission_enables_execute_only_timing() {
     replace(
         root.path(),
         "metewand.yaml",
-        "timing_scope: \"prepare_and_execute\"",
-        "timing_scope: \"execute_only\"",
+        "timing-scope: \"prepare_and_execute\"",
+        "timing-scope: \"execute_only\"",
     );
     replace(
         root.path(),
         "problem.yaml",
-        "allowed_timing_scopes: [\"prepare_and_execute\"]",
-        "allowed_timing_scopes: [\"prepare_and_execute\", \"execute_only\"]",
+        "allowed-timing-scopes: [\"prepare_and_execute\"]",
+        "allowed-timing-scopes: [\"prepare_and_execute\", \"execute_only\"]",
     );
     replace(
         root.path(),

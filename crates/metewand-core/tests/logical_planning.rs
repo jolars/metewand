@@ -27,7 +27,7 @@ version: 1
 name: "logical-plan"
 datasets:
   fixed:
-    output_schema: "schemas/dataset.json"
+    output-schema: "schemas/dataset.json"
     sources: ["datasets/fixed.json"]
 problems:
   regression:
@@ -41,13 +41,13 @@ implementations:
     runner: "command"
     program: "alpha"
     environment: "local"
-    problem_contracts: ["regression"]
+    problem-contracts: ["regression"]
     capabilities: ["one_shot"]
   beta:
     runner: "command"
     program: "beta"
     environment: "local"
-    problem_contracts: ["regression"]
+    problem-contracts: ["regression"]
     capabilities: ["one_shot"]
 environments:
   local:
@@ -57,17 +57,17 @@ experiments:
     problem: "regression"
     datasets: ["fixed"]
     implementations: ["alpha", "beta"]
-    execution_policy: "reused"
-    observation_policy: "final"
-    implementation_repetitions: 2
-    measurement_repetitions: 3
+    execution-policy: "reused"
+    observation-policy: "final"
+    implementation-repetitions: 2
+    measurement-repetitions: 3
     seed: 17
-execution_policies:
+execution-policies:
   reused:
     version: 1
-    worker_reuse: true
-    warmup_runs: 2
-observation_policies:
+    worker-reuse: true
+    warmup-runs: 2
+observation-policies:
   final:
     version: 1
     kind: "one_shot"
@@ -131,8 +131,8 @@ fn contracts(manifest: &Manifest) -> BTreeMap<Name, ProblemContract> {
 fn dataset_free_contracts(manifest: &Manifest) -> BTreeMap<Name, ProblemContract> {
     let source = CONTRACT
         .replace(
-            "dataset_schemas: [\"schemas/dataset.json\"]",
-            "dataset_schemas: []",
+            "dataset-schemas: [\"schemas/dataset.json\"]",
+            "dataset-schemas: []",
         )
         .replace("    dataset: \"fixtures/small/dataset\"\n", "");
     let contract =
@@ -366,8 +366,8 @@ fn parameterized_matrices_have_exact_slot_counts_and_seed_sharing() {
         .replace(
             "  fixed:",
             r#"  generated:
-    parameter_schema: "schemas/parameters.json"
-    output_schema: "schemas/dataset.json"
+    parameter-schema: "schemas/parameters.json"
+    output-schema: "schemas/dataset.json"
     runner: "command"
     program: "generate"
     environment: "local"
@@ -376,7 +376,7 @@ fn parameterized_matrices_have_exact_slot_counts_and_seed_sharing() {
         )
         .replace(
             "  alpha:",
-            "  alpha:\n    parameter_schema: \"schemas/parameters.json\"",
+            "  alpha:\n    parameter-schema: \"schemas/parameters.json\"",
         )
         .replace(
             "    datasets: [\"fixed\"]",
@@ -385,12 +385,12 @@ fn parameterized_matrices_have_exact_slot_counts_and_seed_sharing() {
         .replace(
             "    seed: 17",
             r#"    seed: 17
-    dataset_parameters:
+    dataset-parameters:
       generated:
         replicate: { grid: [0, 1] }
-    problem_parameters:
+    problem-parameters:
       lambda: { grid: [0.1, 0.2] }
-    implementation_parameters:
+    implementation-parameters:
       alpha:
         method: { grid: ["fast", "accurate"] }
 "#,
@@ -559,7 +559,7 @@ fn existing_ids_survive_unrelated_candidates_and_more_measurements() {
     runner: "command"
     program: "gamma"
     environment: "local"
-    problem_contracts: ["regression"]
+    problem-contracts: ["regression"]
     capabilities: ["one_shot"]
   beta:
 "#,
@@ -569,8 +569,8 @@ fn existing_ids_survive_unrelated_candidates_and_more_measurements() {
             "    implementations: [\"beta\", \"gamma\", \"alpha\"]",
         )
         .replace(
-            "    measurement_repetitions: 3",
-            "    measurement_repetitions: 4",
+            "    measurement-repetitions: 3",
+            "    measurement-repetitions: 4",
         );
     let expanded_manifest = manifest(&expanded_source);
     let mut expanded_catalog = catalog();
@@ -669,13 +669,13 @@ fn schedule_and_seeds_survive_each_unrelated_expansion() {
     let source = MANIFEST
         .replace(
             "  alpha:",
-            "  alpha:\n    parameter_schema: \"schemas/parameters.json\"\n    parameter_defaults: { method: 0 }",
+            "  alpha:\n    parameter-schema: \"schemas/parameters.json\"\n    parameter-defaults: { method: 0 }",
         )
         .replace(
             "    seed: 17",
-            "    seed: 17\n    problem_parameters:\n      lambda: { value: 0.1 }",
+            "    seed: 17\n    problem-parameters:\n      lambda: { value: 0.1 }",
         )
-        .replace("    worker_reuse: true", "    worker_reuse: true\n    run_order: \"randomized\"");
+        .replace("    worker-reuse: true", "    worker-reuse: true\n    run-order: \"randomized\"");
     let schemas = schemas();
     let baseline_manifest = manifest(&source);
     let contracts = contracts(&baseline_manifest);
@@ -702,7 +702,7 @@ fn schedule_and_seeds_survive_each_unrelated_expansion() {
             "implementation configuration" => source.replace(
                 "    seed: 17",
                 r#"    seed: 17
-    implementation_parameters:
+    implementation-parameters:
       alpha:
         method: { grid: [1, 0] }"#,
             ),
@@ -713,7 +713,7 @@ fn schedule_and_seeds_survive_each_unrelated_expansion() {
     runner: "command"
     program: "gamma"
     environment: "local"
-    problem_contracts: ["regression"]
+    problem-contracts: ["regression"]
     capabilities: ["one_shot"]
   beta:"#,
                 )
@@ -726,7 +726,7 @@ fn schedule_and_seeds_survive_each_unrelated_expansion() {
                     "datasets:\n",
                     r#"datasets:
   other:
-    output_schema: "schemas/dataset.json"
+    output-schema: "schemas/dataset.json"
     sources: ["datasets/other.json"]
 "#,
                 )
@@ -735,11 +735,11 @@ fn schedule_and_seeds_survive_each_unrelated_expansion() {
                 source.replace("lambda: { value: 0.1 }", "lambda: { grid: [0.2, 0.1] }")
             }
             "implementation repetition" => source.replace(
-                "implementation_repetitions: 2",
-                "implementation_repetitions: 3",
+                "implementation-repetitions: 2",
+                "implementation-repetitions: 3",
             ),
             "measurement repetition" => {
-                source.replace("measurement_repetitions: 3", "measurement_repetitions: 4")
+                source.replace("measurement-repetitions: 3", "measurement-repetitions: 4")
             }
             "experiment" => source.replace(
                 "experiments:\n",
@@ -748,10 +748,10 @@ fn schedule_and_seeds_survive_each_unrelated_expansion() {
     problem: "regression"
     datasets: ["fixed"]
     implementations: ["beta", "alpha"]
-    execution_policy: "reused"
-    observation_policy: "final"
-    implementation_repetitions: 2
-    measurement_repetitions: 3
+    execution-policy: "reused"
+    observation-policy: "final"
+    implementation-repetitions: 2
+    measurement-repetitions: 3
     seed: 18
 "#,
             ),
@@ -788,12 +788,12 @@ fn identifies_the_built_in_unit_dataset_configuration() {
     let source = MANIFEST
         .replace("    datasets: [\"fixed\"]\n", "")
         .replace(
-            "    measurement_repetitions: 3",
-            "    measurement_repetitions: 1",
+            "    measurement-repetitions: 3",
+            "    measurement-repetitions: 1",
         )
         .replace(
-            "    implementation_repetitions: 2",
-            "    implementation_repetitions: 1",
+            "    implementation-repetitions: 2",
+            "    implementation-repetitions: 1",
         );
     let manifest = manifest(&source);
     let mut catalog = catalog();
@@ -835,8 +835,8 @@ fn reports_a_missing_typed_definition_identity() {
 #[test]
 fn required_local_controls_fail_during_logical_planning() {
     let manifest = manifest(&MANIFEST.replace(
-        "    worker_reuse: true",
-        "    worker_reuse: true\n    enforcement: \"required\"",
+        "    worker-reuse: true",
+        "    worker-reuse: true\n    enforcement: \"required\"",
     ));
     let error =
         expand_manifest_logical_plan(&manifest, &contracts(&manifest), &schemas(), &catalog())
@@ -851,8 +851,8 @@ fn required_local_controls_fail_during_logical_planning() {
 #[test]
 fn best_effort_resource_requests_survive_planning_and_are_reported() {
     let manifest = manifest(&MANIFEST.replace(
-        "    worker_reuse: true",
-        "    worker_reuse: true\n    cpus: 2\n    threads: 4\n    memory: \"8 GiB\"",
+        "    worker-reuse: true",
+        "    worker-reuse: true\n    cpus: 2\n    threads: 4\n    memory: \"8 GiB\"",
     ));
     let plan =
         expand_manifest_logical_plan(&manifest, &contracts(&manifest), &schemas(), &catalog())

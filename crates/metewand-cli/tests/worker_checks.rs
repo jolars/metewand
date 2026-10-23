@@ -163,7 +163,7 @@ fn checks_dataset_free_problem_references() {
     let manifest = fs::read_to_string(&manifest_path).unwrap();
     let manifest = support::replace_yaml(
         &manifest,
-        "datasets:\n  numbers:\n    output_schema: \"schemas/dataset.json\"\n    sources: [\"data.json\"]\n",
+        "datasets:\n  numbers:\n    output-schema: \"schemas/dataset.json\"\n    sources: [\"data.json\"]\n",
         "",
     )
     .replace("    datasets: [\"numbers\"]\n", "");
@@ -172,8 +172,8 @@ fn checks_dataset_free_problem_references() {
     let contract = fs::read_to_string(&contract_path)
         .unwrap()
         .replace(
-            "dataset_schemas: [\"schemas/dataset.json\"]",
-            "dataset_schemas: []",
+            "dataset-schemas: [\"schemas/dataset.json\"]",
+            "dataset-schemas: []",
         )
         .replace("  - dataset: \"data.json\"\n    result:", "  - result:");
     fs::write(contract_path, contract).unwrap();

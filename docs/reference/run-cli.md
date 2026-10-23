@@ -44,11 +44,11 @@ contract-authorized wall-timing scopes, sequential or block-randomized order, an
 creation of the output directory. Overlapping resolved attempt slots across
 experiments are rejected; distinct experiment seeds select independent runs.
 
-The default `run_order: "sequential"` follows logical-plan order. Select
-`run_order: "randomized"` to interleave implementation configurations within
+The default `run-order: "sequential"` follows logical-plan order. Select
+`run-order: "randomized"` to interleave implementation configurations within
 comparison blocks defined by dataset instance, problem configuration,
 implementation repetition, and measurement index. Both modes execute serially
-by default. Set `max_concurrency: 2` in the execution policy to opt into
+by default. Set `max-concurrency: 2` in the execution policy to opt into
 bounded concurrent attempts. The bound is part of the policy and run identities
 and is recorded in every attempt's provenance. Dispatch batches preserve
 deterministic event order and never cross experiment boundaries.
@@ -56,8 +56,8 @@ Events and attempts follow execution order, and attempt provenance retains the
 block fields, seed, and deterministic priorities. See [Scheduling](scheduling.md)
 for the versioned ordering contract and warm-up behavior.
 
-Set `worker_reuse: true` to retain an eligible implementation process across
-measurement and implementation repetitions. Set `warmup_runs` to a nonnegative
+Set `worker-reuse: true` to retain an eligible implementation process across
+measurement and implementation repetitions. Set `warmup-runs` to a nonnegative
 count to run validated, untimed warm-ups on that process first. Every boundary
 calls `reset` and clears private writable directories, including filesystem
 caches. A replacement repeats its warm-ups. Warm-up results and failures are

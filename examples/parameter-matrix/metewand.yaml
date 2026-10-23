@@ -2,18 +2,18 @@ version: 1
 name: "parameter-matrix"
 datasets:
   numbers:
-    output_schema: "schemas/dataset.json"
+    output-schema: "schemas/dataset.json"
     runner: "command"
     program: "python3"
     args: ["{sources}/worker.py", "dataset_materializer"]
     sources: ["worker.py"]
     environment: "local"
-    parameter_schema: "schemas/dataset-parameters.json"
-    parameter_defaults: { values: [1, 2, 3] }
+    parameter-schema: "schemas/dataset-parameters.json"
+    parameter-defaults: { values: [1, 2, 3] }
 problems:
   sum:
     contract: "problem.yaml"
-    parameter_defaults: { offset: 2 }
+    parameter-defaults: { offset: 2 }
     evaluator:
       runner: "command"
       program: "python3"
@@ -22,14 +22,14 @@ problems:
       environment: "local"
 implementations:
   reference:
-    parameter_schema: "schemas/implementation-parameters.json"
-    parameter_defaults: { representation: "list" }
+    parameter-schema: "schemas/implementation-parameters.json"
+    parameter-defaults: { representation: "list" }
     runner: "command"
     program: "python3"
     args: ["{sources}/worker.py", "implementation"]
     sources: ["worker.py"]
     environment: "local"
-    problem_contracts: ["sum"]
+    problem-contracts: ["sum"]
     capabilities: ["one_shot"]
 environments:
   local:
@@ -39,32 +39,32 @@ experiments:
     problem: "sum"
     datasets: ["numbers"]
     implementations: ["reference"]
-    execution_policy: "local"
-    observation_policy: "final"
-    implementation_repetitions: 1
-    measurement_repetitions: 1
+    execution-policy: "local"
+    observation-policy: "final"
+    implementation-repetitions: 1
+    measurement-repetitions: 1
     seed: 7
-    implementation_parameters:
+    implementation-parameters:
       reference:
         representation: { grid: ["list", "packed"] }
     cases:
       - name: "cartesian"
-        dataset_parameters:
+        dataset-parameters:
           numbers:
             values: { grid: [[1, 2, 3], [4, 6]] }
-        problem_parameters:
+        problem-parameters:
           offset: { grid: [0, 2] }
       - name: "coupled"
-        dataset_parameters:
+        dataset-parameters:
           numbers:
             values: { value: [10, 10] }
-        problem_parameters:
+        problem-parameters:
           offset: { value: 1 }
-execution_policies:
+execution-policies:
   local:
     version: 1
-    timing_scope: "prepare_and_execute"
-observation_policies:
+    timing-scope: "prepare_and_execute"
+observation-policies:
   final:
     version: 1
     kind: "one_shot"

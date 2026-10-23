@@ -32,7 +32,7 @@ fn repository() -> TempDir {
     let manifest = fs::read_to_string(&path).unwrap();
     fs::write(
         path,
-        manifest.replace("measurement_repetitions: 1", "measurement_repetitions: 3"),
+        manifest.replace("measurement-repetitions: 1", "measurement-repetitions: 3"),
     )
     .unwrap();
     root
@@ -199,8 +199,8 @@ fn invocation_bounds_shrink_concurrency_batches_without_changing_the_policy() {
         path,
         support::replace_yaml(
             &manifest,
-            "timing_scope:",
-            "max_concurrency: 3\ntiming_scope:",
+            "timing-scope:",
+            "max-concurrency: 3\ntiming-scope:",
         ),
     )
     .unwrap();

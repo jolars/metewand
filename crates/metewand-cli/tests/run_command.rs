@@ -92,14 +92,14 @@ fn run_publishes_each_authorized_timing_scope_with_its_accounting_boundary() {
         replace(
             root.path(),
             "metewand.yaml",
-            "timing_scope: \"prepare_and_execute\"",
-            &format!("timing_scope: {scope:?}"),
+            "timing-scope: \"prepare_and_execute\"",
+            &format!("timing-scope: {scope:?}"),
         );
         replace(
             root.path(),
             "problem.yaml",
-            "allowed_timing_scopes: [\"prepare_and_execute\"]",
-            &format!("allowed_timing_scopes: [{scope:?}]"),
+            "allowed-timing-scopes: [\"prepare_and_execute\"]",
+            &format!("allowed-timing-scopes: [{scope:?}]"),
         );
         let output = metewand(
             root.path(),
@@ -141,14 +141,14 @@ fn execute_only_scientific_timeout_leaves_untimed_phases_their_operational_limit
     replace(
         root.path(),
         "metewand.yaml",
-        "timing_scope: \"prepare_and_execute\"",
-        "timing_scope: \"execute_only\"\ntimeout: \"300 ms\"",
+        "timing-scope: \"prepare_and_execute\"",
+        "timing-scope: \"execute_only\"\ntimeout: \"300 ms\"",
     );
     replace(
         root.path(),
         "problem.yaml",
-        "allowed_timing_scopes: [\"prepare_and_execute\"]",
-        "allowed_timing_scopes: [\"execute_only\"]",
+        "allowed-timing-scopes: [\"prepare_and_execute\"]",
+        "allowed-timing-scopes: [\"execute_only\"]",
     );
     for phase in ["prepare", "evaluate"] {
         replace(
@@ -331,8 +331,8 @@ fn run_rejects_unsupported_policies_before_writing_output() {
     replace(
         root.path(),
         "metewand.yaml",
-        "version: 1\ntiming_scope",
-        "version: 1\nenforcement: \"required\"\ntiming_scope",
+        "version: 1\ntiming-scope",
+        "version: 1\nenforcement: \"required\"\ntiming-scope",
     );
     let output = metewand(
         root.path(),
@@ -443,20 +443,20 @@ fn grids_and_repetitions_execute_in_the_same_order_as_the_logical_plan() {
     replace(
         root.path(),
         "metewand.yaml",
-        "measurement_repetitions: 1",
-        "measurement_repetitions: 2",
+        "measurement-repetitions: 1",
+        "measurement-repetitions: 2",
     );
     replace(
         root.path(),
         "metewand.yaml",
-        "implementation_repetitions: 1",
-        "implementation_repetitions: 2",
+        "implementation-repetitions: 1",
+        "implementation-repetitions: 2",
     );
     replace(
         root.path(),
         "metewand.yaml",
         "seed: 7",
-        "seed: 7\nproblem_parameters:\n  offset: { grid: [2, 3] }",
+        "seed: 7\nproblem-parameters:\n  offset: { grid: [2, 3] }",
     );
     let plan = metewand(root.path(), &["plan", "--output", "json"]);
     assert!(plan.status.success());
@@ -515,7 +515,7 @@ fn randomized_runs_interleave_comparable_implementations_and_record_the_schedule
             .0;
         let manifest = manifest
             .replace("implementations:\n", &format!("implementations:\n  alternative:{implementation}"))
-            .replace("datasets:\n", "datasets:\n  other:\n    output_schema: \"schemas/dataset.json\"\n    sources: [\"data.json\"]\n");
+            .replace("datasets:\n", "datasets:\n  other:\n    output-schema: \"schemas/dataset.json\"\n    sources: [\"data.json\"]\n");
         fs::write(&path, manifest).unwrap();
         for (before, after) in [
             (
@@ -526,10 +526,10 @@ fn randomized_runs_interleave_comparable_implementations_and_record_the_schedule
                 "datasets: [\"numbers\"]",
                 "datasets: [\"numbers\", \"other\"]",
             ),
-            ("measurement_repetitions: 3", "measurement_repetitions: 2"),
+            ("measurement-repetitions: 3", "measurement-repetitions: 2"),
             (
-                "version: 1\nworker_reuse",
-                "version: 1\nrun_order: \"randomized\"\nworker_reuse",
+                "version: 1\nworker-reuse",
+                "version: 1\nrun-order: \"randomized\"\nworker-reuse",
             ),
         ] {
             replace(root.path(), "metewand.yaml", before, after);
@@ -644,16 +644,16 @@ fn scheduling_contract_repository() -> TempDir {
     for (before, after) in [
         (
             "  reference:",
-            "  reference:\n    parameter_schema: \"schemas/implementation-parameters.json\"\n    parameter_defaults: { method: 0 }",
+            "  reference:\n    parameter-schema: \"schemas/implementation-parameters.json\"\n    parameter-defaults: { method: 0 }",
         ),
         (
             "implementations: [\"reference\"]",
             "implementations: [\"reference\", \"alternative\"]",
         ),
-        ("measurement_repetitions: 1", "measurement_repetitions: 2"),
+        ("measurement-repetitions: 1", "measurement-repetitions: 2"),
         (
-            "version: 1\ntiming_scope",
-            "version: 1\nrun_order: \"randomized\"\ntiming_scope",
+            "version: 1\ntiming-scope",
+            "version: 1\nrun-order: \"randomized\"\ntiming-scope",
         ),
     ] {
         replace(root.path(), "metewand.yaml", before, after);
@@ -818,10 +818,10 @@ fn unrelated_slots_preserve_existing_relative_execution_order_and_seeds() {
     problem: "sum"
     datasets: ["numbers"]
     implementations: ["alternative", "reference"]
-    execution_policy: "local"
-    observation_policy: "final"
-    implementation_repetitions: 1
-    measurement_repetitions: 2
+    execution-policy: "local"
+    observation-policy: "final"
+    implementation-repetitions: 1
+    measurement-repetitions: 2
     seed: 8
 "#,
     );
@@ -904,8 +904,8 @@ fn technical_failures_keep_distinct_codes_and_do_not_publish_observations() {
             replace(
                 root.path(),
                 "metewand.yaml",
-                "version: 1\ntiming_scope",
-                &format!("version: 1\ntimeout: {timeout:?}\ntiming_scope"),
+                "version: 1\ntiming-scope",
+                &format!("version: 1\ntimeout: {timeout:?}\ntiming-scope"),
             );
         }
         let output = metewand(
@@ -946,8 +946,8 @@ fn input_mutation_fails_the_attempt_and_preserves_repository_files() {
     replace(
         root.path(),
         "metewand.yaml",
-        "measurement_repetitions: 1",
-        "measurement_repetitions: 2",
+        "measurement-repetitions: 1",
+        "measurement-repetitions: 2",
     );
     let output = metewand(
         root.path(),
@@ -983,8 +983,8 @@ fn a_private_view_mutation_does_not_poison_the_next_attempt() {
     replace(
         root.path(),
         "metewand.yaml",
-        "measurement_repetitions: 1",
-        "measurement_repetitions: 2",
+        "measurement-repetitions: 1",
+        "measurement-repetitions: 2",
     );
     replace(
         root.path(),
@@ -1166,8 +1166,8 @@ fn canonical_dataset_mutations_quarantine_the_object_before_another_attempt() {
     replace(
         root.path(),
         "metewand.yaml",
-        "measurement_repetitions: 1",
-        "measurement_repetitions: 2",
+        "measurement-repetitions: 1",
+        "measurement-repetitions: 2",
     );
     replace(
         root.path(),
@@ -1232,8 +1232,8 @@ fn dataset_free_runs_receive_a_single_empty_unit_dataset() {
     replace(
         root.path(),
         "problem.yaml",
-        "dataset_schemas: [\"schemas/dataset.json\"]",
-        "dataset_schemas: []",
+        "dataset-schemas: [\"schemas/dataset.json\"]",
+        "dataset-schemas: []",
     );
     replace(
         root.path(),
@@ -1273,7 +1273,7 @@ fn every_selected_worker_is_preflighted_before_any_launch() {
         "implementations: [\"reference\", \"later\"]",
     );
     let manifest = fs::read_to_string(root.path().join("metewand.yaml")).unwrap();
-    let manifest = manifest.replace("implementations:\n", "implementations:\n  later:\n    runner: \"command\"\n    program: \"python3\"\n    args: [\"worker.py\", \"implementation\"]\n    sources: [\"worker.py\"]\n    environment: \"local\"\n    problem_contracts: [\"sum\"]\n    capabilities: [\"one_shot\"]\n    protocol_transport: \"stdio\"\n");
+    let manifest = manifest.replace("implementations:\n", "implementations:\n  later:\n    runner: \"command\"\n    program: \"python3\"\n    args: [\"worker.py\", \"implementation\"]\n    sources: [\"worker.py\"]\n    environment: \"local\"\n    problem-contracts: [\"sum\"]\n    capabilities: [\"one_shot\"]\n    protocol-transport: \"stdio\"\n");
     fs::write(root.path().join("metewand.yaml"), manifest).unwrap();
     let output = metewand(
         root.path(),
@@ -1416,8 +1416,8 @@ fn generated_datasets_record_derivation_and_share_materialization() {
     replace(
         root.path(),
         "metewand.yaml",
-        "measurement_repetitions: 1",
-        "measurement_repetitions: 2",
+        "measurement-repetitions: 1",
+        "measurement-repetitions: 2",
     );
     let marker = root.path().join("materialization-count");
     replace(
@@ -1483,8 +1483,8 @@ fn persistent_cache_reuses_constructions_and_assigns_a_private_view_to_each_atte
     replace(
         root.path(),
         "metewand.yaml",
-        "measurement_repetitions: 1",
-        "measurement_repetitions: 2",
+        "measurement-repetitions: 1",
+        "measurement-repetitions: 2",
     );
     let builds = root.path().join("build-count");
     let views = root.path().join("dataset-views");
@@ -1652,8 +1652,8 @@ fn cache_preflight_refuses_source_overlap_and_unsupported_policies_without_creat
     replace(
         root.path(),
         "metewand.yaml",
-        "timing_scope: \"prepare_and_execute\"",
-        "timing_scope: \"prepare_and_execute\"\nenforcement: \"required\"",
+        "timing-scope: \"prepare_and_execute\"",
+        "timing-scope: \"prepare_and_execute\"\nenforcement: \"required\"",
     );
     let output = metewand(
         root.path(),
@@ -1737,9 +1737,9 @@ fn pinned_transform_downloads_only_during_run() {
     replace(
         root.path(),
         "metewand.yaml",
-        "parameter_defaults: { values: [1, 2, 3] }",
+        "parameter-defaults: { values: [1, 2, 3] }",
         &format!(
-            "parameter_defaults: {{ values: [1, 2, 3] }}\nsource: {{ url: {url:?}, sha256: \"4cf6ac7faa18ca1751f7b12a1391efef4e57a497c909157394ec9072d29f0641\" }}"
+            "parameter-defaults: {{ values: [1, 2, 3] }}\nsource: {{ url: {url:?}, sha256: \"4cf6ac7faa18ca1751f7b12a1391efef4e57a497c909157394ec9072d29f0641\" }}"
         ),
     );
     for command in ["check", "plan"] {
@@ -1824,14 +1824,14 @@ fn reuse_repository() -> TempDir {
     replace(
         root.path(),
         "metewand.yaml",
-        "version: 1\ntiming_scope",
-        "version: 1\nworker_reuse: true\nwarmup_runs: 2\ntiming_scope",
+        "version: 1\ntiming-scope",
+        "version: 1\nworker-reuse: true\nwarmup-runs: 2\ntiming-scope",
     );
     replace(
         root.path(),
         "metewand.yaml",
-        "measurement_repetitions: 1",
-        "measurement_repetitions: 3",
+        "measurement-repetitions: 1",
+        "measurement-repetitions: 3",
     );
     replace(
         root.path(),
@@ -1887,14 +1887,14 @@ fn concurrent_lanes_own_separate_reusable_workers_and_warmups() {
     replace(
         root.path(),
         "metewand.yaml",
-        "warmup_runs: 2",
-        "warmup_runs: 2\nmax_concurrency: 2\nrun_order: \"randomized\"",
+        "warmup-runs: 2",
+        "warmup-runs: 2\nmax-concurrency: 2\nrun-order: \"randomized\"",
     );
     replace(
         root.path(),
         "metewand.yaml",
-        "measurement_repetitions: 3",
-        "measurement_repetitions: 5",
+        "measurement-repetitions: 3",
+        "measurement-repetitions: 5",
     );
     let output = metewand(
         root.path(),
@@ -1937,27 +1937,27 @@ fn concurrency_batches_stop_at_experiment_and_policy_boundaries() {
     replace(
         root.path(),
         "metewand.yaml",
-        "warmup_runs: 2",
-        "warmup_runs: 2\nmax_concurrency: 2",
+        "warmup-runs: 2",
+        "warmup-runs: 2\nmax-concurrency: 2",
     );
     let path = root.path().join("metewand.yaml");
     let manifest = fs::read_to_string(&path).unwrap();
     let manifest = manifest.replace(
-        "execution_policies:",
+        "execution-policies:",
         r#"  - name: "serial"
     problem: "sum"
     datasets: ["numbers"]
     implementations: ["reference"]
-    execution_policy: "serial"
-    observation_policy: "final"
-    implementation_repetitions: 1
-    measurement_repetitions: 2
+    execution-policy: "serial"
+    observation-policy: "final"
+    implementation-repetitions: 1
+    measurement-repetitions: 2
     seed: 8
-execution_policies:
+execution-policies:
   serial:
     version: 1
-    worker_reuse: true
-    warmup_runs: 2
+    worker-reuse: true
+    warmup-runs: 2
 "#,
     );
     fs::write(path, manifest).unwrap();
@@ -2172,8 +2172,8 @@ fn timeout_and_protocol_failures_replace_workers_and_repeat_warmups() {
             replace(
                 root.path(),
                 "metewand.yaml",
-                "warmup_runs: 2",
-                "warmup_runs: 2\ntimeout: \"3 s\"",
+                "warmup-runs: 2",
+                "warmup-runs: 2\ntimeout: \"3 s\"",
             );
             "import time; time.sleep(5)"
         } else {
@@ -2225,8 +2225,8 @@ fn every_implementation_repetition_runs_its_own_planned_warmups() {
     replace(
         root.path(),
         "metewand.yaml",
-        "implementation_repetitions: 1",
-        "implementation_repetitions: 2",
+        "implementation-repetitions: 1",
+        "implementation-repetitions: 2",
     );
     let output = metewand(
         root.path(),
@@ -2267,8 +2267,8 @@ fn best_effort_runs_publish_every_requested_resource_control() {
     replace(
         root.path(),
         "metewand.yaml",
-        "version: 1\ntiming_scope",
-        "version: 1\ncpus: 2\nthreads: 4\nmemory: \"8 GiB\"\nnetwork: true\ntiming_scope",
+        "version: 1\ntiming-scope",
+        "version: 1\ncpus: 2\nthreads: 4\nmemory: \"8 GiB\"\nnetwork: true\ntiming-scope",
     );
     let output = metewand(
         root.path(),

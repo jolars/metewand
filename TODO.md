@@ -44,7 +44,7 @@ identities](DESIGN.md#schemas-canonical-values-and-identities).
   canonical bytes for hashing and transport.
 - [x] Add JSON Schema 2020-12 validation with explicit dialect declarations,
   repository-local external `$ref` resolution, and no network retrieval.
-- [x] Implement recursive `parameter_defaults` merging before validation;
+- [x] Implement recursive `parameter-defaults` merging before validation;
   preserve literal arrays, mappings, and `null`, and never apply JSON Schema
   `default` annotations.
 - [x] Publish versioned schemas for machine output and the initial manifest,

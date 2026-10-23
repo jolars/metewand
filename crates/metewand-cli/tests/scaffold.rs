@@ -300,7 +300,7 @@ fn supports_custom_manifests_and_flow_mappings_without_rewriting_other_fields() 
 fn preserves_existing_lines_in_block_mappings_and_missing_final_newlines() {
     for source in [
         include_str!("../../../fixtures/manifest/v1/complete.yaml"),
-        "version: 1\nname: 'benchmark'\nenvironments: {local: {kind: local}}\ndatasets:\n  first:\n    output_schema: schema.json\n    sources: [first.json]\n  second:\n    output_schema: schema.json\n    sources: [second.json] # Preserve order and comments.",
+        "version: 1\nname: 'benchmark'\nenvironments: {local: {kind: local}}\ndatasets:\n  first:\n    output-schema: schema.json\n    sources: [first.json]\n  second:\n    output-schema: schema.json\n    sources: [second.json] # Preserve order and comments.",
         "version: 1\nname: benchmark\nenvironments: {local: {kind: local}}\ndatasets: {}\n",
     ] {
         let root = TempDir::new().unwrap();
@@ -673,7 +673,7 @@ fn refuses_shared_yaml_containers_before_creating_files() {
 
 #[test]
 fn preserves_unrelated_anchors_and_aliases() {
-    let source = "version: 1\nname: benchmark\nenvironments:\n  local: &local {kind: local}\n  other: *local\ndatasets:\n  first: &first {output_schema: schema.json, sources: [first.json]}\n  second: *first\n";
+    let source = "version: 1\nname: benchmark\nenvironments:\n  local: &local {kind: local}\n  other: *local\ndatasets:\n  first: &first {output-schema: schema.json, sources: [first.json]}\n  second: *first\n";
     let root = TempDir::new().unwrap();
     fs::write(root.path().join("metewand.yaml"), source).unwrap();
     envelope(

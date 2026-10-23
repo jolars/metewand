@@ -16,7 +16,7 @@ version: 1
 name: "example"
 datasets:
   fixed:
-    output_schema: "schemas/dataset.json"
+    output-schema: "schemas/dataset.json"
     sources: ["datasets/fixed/**"]
 "#;
 
@@ -29,6 +29,13 @@ assert!(matches!(
 # Ok::<(), metewand_core::manifest::ManifestParseError>(())
 ```
 
+Metewand-owned YAML option keys use kebab-case, including `output-schema`,
+`execution-policies`, and `max-concurrency`. Underscore spellings are rejected.
+Enum values such as `one_shot` and `prepare_and_execute`, benchmark-defined
+names, parameter keys, and family-owned semantics keep their declared spelling.
+This unreleased version-1 spelling change preserves canonical internal records
+and content identities.
+
 The typed boundary enforces the version-1 manifest shape: required fields,
 runner and environment variants, version constants, name and path syntax,
 nonempty and unique lists required by the public schema, safe integer bounds,
@@ -36,7 +43,7 @@ and the one-shot capability and observation-policy restrictions. Every
 Metewand-owned object rejects unknown fields, including nested workers,
 parameter axes, and experiment cases.
 
-Execution policies accept `max_concurrency` as a positive safe integer. Its
+Execution policies accept `max-concurrency` as a positive safe integer. Its
 default is `1`, which keeps performance measurements serial. Zero, negative,
 fractional, string, and out-of-range values fail parsing before execution.
 
@@ -64,13 +71,13 @@ version: 1
 name: "shared-settings"
 environments:
   local: { kind: "local" }
-execution_policies:
+execution-policies:
   serial: &serial
     version: 1
-    max_concurrency: 1
+    max-concurrency: 1
   parallel:
     <<: *serial
-    max_concurrency: 2
+    max-concurrency: 2
 ```
 
 The CLI defaults to `metewand.yaml`. An explicit `--manifest` accepts any

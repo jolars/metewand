@@ -52,9 +52,9 @@ details, canonical results, and evaluator metrics may contain fields unknown to
 the common envelope.
 
 The `data` value in a result manifest is validated separately against the
-problem contract's `result_schema`. The `data` value in a metrics envelope is
-similarly validated against `metric_schema`, and a problem contract's
-`semantics` object is validated against `semantics_schema`. These referenced
+problem contract's `result-schema`. The `data` value in a metrics envelope is
+similarly validated against `metric-schema`, and a problem contract's
+`semantics` object is validated against `semantics-schema`. These referenced
 schemas are repository documents admitted to the same offline catalog; validation
 never retrieves them from the network.
 

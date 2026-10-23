@@ -1,13 +1,13 @@
 version: 1
 name: "sum"
 family: "arithmetic"
-parameter_schema: "schemas/parameters.json"
-dataset_schemas: ["schemas/dataset.json"]
-result_schema: "schemas/result.json"
-metric_schema: "schemas/metrics.json"
-semantics_schema: "schemas/semantics.json"
-allowed_timing_scopes: ["prepare_and_execute"]
-supported_budgets: ["none"]
+parameter-schema: "schemas/parameters.json"
+dataset-schemas: ["schemas/dataset.json"]
+result-schema: "schemas/result.json"
+metric-schema: "schemas/metrics.json"
+semantics-schema: "schemas/semantics.json"
+allowed-timing-scopes: ["prepare_and_execute"]
+supported-budgets: ["none"]
 semantics:
   computation:
     operation: "sum_plus_offset"
@@ -23,10 +23,10 @@ semantics:
     count: "input_length"
   one_shot_completion:
     absolute_error: 0
-reference_cases:
+reference-cases:
   - dataset: "fixtures/mixed/dataset"
     result: "fixtures/mixed/result"
-    expected_metrics: "fixtures/mixed/metrics/metrics.json"
+    expected-metrics: "fixtures/mixed/metrics/metrics.json"
   - dataset: "fixtures/empty/dataset"
     result: "fixtures/empty/result"
-    expected_metrics: "fixtures/empty/metrics/metrics.json"
+    expected-metrics: "fixtures/empty/metrics/metrics.json"

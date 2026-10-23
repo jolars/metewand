@@ -11,14 +11,14 @@ const COMPLETE_MANIFEST: &str = include_str!("../../../fixtures/manifest/v1/comp
 #[test]
 fn concurrency_is_serial_by_default_and_requires_a_positive_safe_integer() {
     let source =
-        "version: 1\nname: \"concurrency\"\nexecution_policies:\n  local:\n    version: 1\n";
+        "version: 1\nname: \"concurrency\"\nexecution-policies:\n  local:\n    version: 1\n";
     let manifest = parse_manifest(Path::new("metewand.yaml"), source).unwrap();
     assert_eq!(
         manifest.execution_policies["local"].resolved_max_concurrency(),
         1
     );
     for value in ["1", "2", "9007199254740991"] {
-        let source = format!("{source}    max_concurrency: {value}\n");
+        let source = format!("{source}    max-concurrency: {value}\n");
         let manifest = parse_manifest(Path::new("metewand.yaml"), &source).unwrap();
         assert_eq!(
             manifest.execution_policies["local"].resolved_max_concurrency(),
@@ -26,7 +26,7 @@ fn concurrency_is_serial_by_default_and_requires_a_positive_safe_integer() {
         );
     }
     for value in ["0", "-1", "1.5", "9007199254740992", "\"2\""] {
-        let source = format!("{source}    max_concurrency: {value}\n");
+        let source = format!("{source}    max-concurrency: {value}\n");
         let error = parse_manifest(Path::new("metewand.yaml"), &source).unwrap_err();
         assert!(error.source_span().is_some(), "{value}");
     }
@@ -130,14 +130,14 @@ fn rejects_unknown_fields_across_all_owned_manifest_objects() {
         r#"
 datasets:
   fixed:
-    output_schema: "schemas/dataset.json"
+    output-schema: "schemas/dataset.json"
     sources: ["datasets/fixed"]
     unexpected: true
 "#,
         r#"
 datasets:
   generated:
-    output_schema: "schemas/dataset.json"
+    output-schema: "schemas/dataset.json"
     runner: "command"
     program: "bin/generate"
     environment: "local"
@@ -162,7 +162,7 @@ implementations:
     runner: "command"
     program: "bin/solve"
     environment: "local"
-    problem_contracts: ["example"]
+    problem-contracts: ["example"]
     capabilities: ["one_shot"]
     unexpected: true
 "#,
@@ -177,10 +177,10 @@ experiments:
   - name: "main"
     problem: "example"
     implementations: ["example"]
-    execution_policy: "default"
-    observation_policy: "final"
-    implementation_repetitions: 1
-    measurement_repetitions: 1
+    execution-policy: "default"
+    observation-policy: "final"
+    implementation-repetitions: 1
+    measurement-repetitions: 1
     seed: 0
     unexpected: true
 "#,
@@ -189,23 +189,23 @@ experiments:
   - name: "main"
     problem: "example"
     implementations: ["example"]
-    execution_policy: "default"
-    observation_policy: "final"
-    implementation_repetitions: 1
-    measurement_repetitions: 1
+    execution-policy: "default"
+    observation-policy: "final"
+    implementation-repetitions: 1
+    measurement-repetitions: 1
     seed: 0
     cases:
       - name: "case"
         unexpected: true
 "#,
         r#"
-execution_policies:
+execution-policies:
   default:
     version: 1
     unexpected: true
 "#,
         r#"
-observation_policies:
+observation-policies:
   final:
     version: 1
     kind: "one_shot"
@@ -216,12 +216,12 @@ experiments:
   - name: "main"
     problem: "example"
     implementations: ["example"]
-    execution_policy: "default"
-    observation_policy: "final"
-    implementation_repetitions: 1
-    measurement_repetitions: 1
+    execution-policy: "default"
+    observation-policy: "final"
+    implementation-repetitions: 1
+    measurement-repetitions: 1
     seed: 0
-    problem_parameters:
+    problem-parameters:
       alpha: { value: 1, unexpected: true }
 "#,
     ];
@@ -269,7 +269,7 @@ version: 1
 name: "normalized-paths"
 datasets:
   fixed:
-    output_schema: "schemas/dataset.json"
+    output-schema: "schemas/dataset.json"
     sources: ["datasets/**/*.json"]
 "#;
     let manifest = parse_manifest(Path::new("metewand.yaml"), source).unwrap();
@@ -290,7 +290,7 @@ datasets:
         "datasets/data.json/",
     ] {
         let source = format!(
-            "version: 1\nname: \"invalid-path\"\ndatasets:\n  fixed:\n    output_schema: \"schemas/dataset.json\"\n    sources: [{path:?}]\n"
+            "version: 1\nname: \"invalid-path\"\ndatasets:\n  fixed:\n    output-schema: \"schemas/dataset.json\"\n    sources: [{path:?}]\n"
         );
         let error = parse_manifest(Path::new("metewand.yaml"), &source).unwrap_err();
         assert!(
@@ -309,14 +309,14 @@ fn rejects_unsupported_manifest_and_policy_versions() {
         r#"
 version: 1
 name: "future"
-execution_policies:
+execution-policies:
   default:
     version: 2
 "#,
         r#"
 version: 1
 name: "future"
-observation_policies:
+observation-policies:
   default:
     version: 2
     kind: "one_shot"
@@ -336,7 +336,7 @@ name: "bad-parameters"
 problems:
   example:
     contract: "problems/example.yaml"
-    parameter_defaults: { created: .nan }
+    parameter-defaults: { created: .nan }
     evaluator:
       runner: "command"
       program: "bin/evaluate"
@@ -357,12 +357,12 @@ experiments:
   - name: "main"
     problem: "example"
     implementations: ["example"]
-    execution_policy: "default"
-    observation_policy: "final"
-    implementation_repetitions: 1
-    measurement_repetitions: 1
+    execution-policy: "default"
+    observation-policy: "final"
+    implementation-repetitions: 1
+    measurement-repetitions: 1
     seed: 0
-    problem_parameters:
+    problem-parameters:
       "parameter with spaces": { value: 1 }
 "#;
 
@@ -381,7 +381,7 @@ version: 1
 name: "fixed-with-worker-field"
 datasets:
   fixed:
-    output_schema: "schemas/dataset.json"
+    output-schema: "schemas/dataset.json"
     sources: ["datasets/fixed"]
     args: []
 "#;

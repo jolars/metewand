@@ -12,24 +12,24 @@
     },
     "name": { "$ref": "common.schema.json#/$defs/name" },
     "family": { "$ref": "common.schema.json#/$defs/name" },
-    "parameter_schema": {
+    "parameter-schema": {
       "$ref": "common.schema.json#/$defs/schema_reference"
     },
-    "dataset_schemas": {
+    "dataset-schemas": {
       "type": "array",
       "items": { "$ref": "common.schema.json#/$defs/schema_reference" },
       "uniqueItems": true
     },
-    "result_schema": {
+    "result-schema": {
       "$ref": "common.schema.json#/$defs/schema_reference"
     },
-    "metric_schema": {
+    "metric-schema": {
       "$ref": "common.schema.json#/$defs/schema_reference"
     },
-    "semantics_schema": {
+    "semantics-schema": {
       "$ref": "common.schema.json#/$defs/schema_reference"
     },
-    "allowed_timing_scopes": {
+    "allowed-timing-scopes": {
       "type": "array",
       "items": {
         "type": "string",
@@ -38,7 +38,7 @@
       "minItems": 1,
       "uniqueItems": true
     },
-    "supported_budgets": {
+    "supported-budgets": {
       "type": "array",
       "const": ["none"]
     },
@@ -56,7 +56,7 @@
       },
       "required": ["validity", "one_shot_completion"]
     },
-    "reference_cases": {
+    "reference-cases": {
       "type": "array",
       "items": { "$ref": "#/$defs/reference_case" },
       "minItems": 1
@@ -66,34 +66,34 @@
     "version",
     "name",
     "family",
-    "parameter_schema",
-    "dataset_schemas",
-    "result_schema",
-    "metric_schema",
-    "semantics_schema",
-    "allowed_timing_scopes",
-    "supported_budgets",
+    "parameter-schema",
+    "dataset-schemas",
+    "result-schema",
+    "metric-schema",
+    "semantics-schema",
+    "allowed-timing-scopes",
+    "supported-budgets",
     "semantics",
-    "reference_cases"
+    "reference-cases"
   ],
   "allOf": [
     {
       "if": {
         "properties": {
-          "dataset_schemas": { "maxItems": 0 }
+          "dataset-schemas": { "maxItems": 0 }
         },
-        "required": ["dataset_schemas"]
+        "required": ["dataset-schemas"]
       },
       "then": {
         "properties": {
-          "reference_cases": {
+          "reference-cases": {
             "items": { "not": { "required": ["dataset"] } }
           }
         }
       },
       "else": {
         "properties": {
-          "reference_cases": {
+          "reference-cases": {
             "items": { "required": ["dataset"] }
           }
         }
@@ -107,11 +107,11 @@
       "properties": {
         "dataset": { "$ref": "common.schema.json#/$defs/repository_path" },
         "result": { "$ref": "common.schema.json#/$defs/repository_path" },
-        "expected_metrics": {
+        "expected-metrics": {
           "$ref": "common.schema.json#/$defs/repository_path"
         }
       },
-      "required": ["result", "expected_metrics"],
+      "required": ["result", "expected-metrics"],
       "additionalProperties": false
     }
   }

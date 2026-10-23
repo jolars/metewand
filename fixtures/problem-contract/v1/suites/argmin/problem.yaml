@@ -1,13 +1,13 @@
 version: 1
 name: "argmin"
 family: "arithmetic"
-parameter_schema: "schemas/parameters.json"
-dataset_schemas: ["schemas/dataset.json"]
-result_schema: "schemas/result.json"
-metric_schema: "schemas/metrics.json"
-semantics_schema: "schemas/semantics.json"
-allowed_timing_scopes: ["prepare_and_execute"]
-supported_budgets: ["none"]
+parameter-schema: "schemas/parameters.json"
+dataset-schemas: ["schemas/dataset.json"]
+result-schema: "schemas/result.json"
+metric-schema: "schemas/metrics.json"
+semantics-schema: "schemas/semantics.json"
+allowed-timing-scopes: ["prepare_and_execute"]
+supported-budgets: ["none"]
 semantics:
   computation:
     operation: "minimum"
@@ -24,10 +24,10 @@ semantics:
     index: "in_bounds_and_minimal"
   one_shot_completion:
     absolute_error: 0
-reference_cases:
+reference-cases:
   - dataset: "fixtures/ties/dataset"
     result: "fixtures/ties/result"
-    expected_metrics: "fixtures/ties/metrics/metrics.json"
+    expected-metrics: "fixtures/ties/metrics/metrics.json"
   - dataset: "fixtures/unique/dataset"
     result: "fixtures/unique/result"
-    expected_metrics: "fixtures/unique/metrics/metrics.json"
+    expected-metrics: "fixtures/unique/metrics/metrics.json"

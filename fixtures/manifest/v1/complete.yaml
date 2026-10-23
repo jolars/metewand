@@ -2,20 +2,20 @@ version: 1
 name: "complete-benchmark"
 datasets:
   fixed:
-    output_schema: "schemas/dataset.json"
+    output-schema: "schemas/dataset.json"
     sources: ["datasets/fixed/**"]
   generated:
-    parameter_schema: "schemas/generator.json"
-    parameter_defaults: { rows: 100 }
-    output_schema: "schemas/dataset.json"
+    parameter-schema: "schemas/generator.json"
+    parameter-defaults: { rows: 100 }
+    output-schema: "schemas/dataset.json"
     runner: "python"
     entrypoint: "datasets/generate.py"
     args: ["--quiet"]
     sources: ["datasets/generate.py"]
     environment: "python"
-    protocol_transport: "pipes"
+    protocol-transport: "pipes"
   command:
-    output_schema: "schemas/dataset.json"
+    output-schema: "schemas/dataset.json"
     runner: "command"
     program: "bin/generate"
     environment: "native"
@@ -25,22 +25,22 @@ datasets:
 problems:
   example:
     contract: "problems/example.yaml"
-    parameter_defaults: { centered: true }
+    parameter-defaults: { centered: true }
     evaluator:
       runner: "julia"
       entrypoint: "problems/evaluate.jl"
       sources: ["problems/evaluate.jl"]
       environment: "julia"
-      protocol_transport: "stdio"
+      protocol-transport: "stdio"
 implementations:
   interpreted:
     runner: "r"
     entrypoint: "implementations/solve.R"
     sources: ["implementations/solve.R"]
     environment: "r"
-    problem_contracts: ["example"]
-    parameter_schema: "schemas/implementation.json"
-    parameter_defaults: { tolerance: 1e-8 }
+    problem-contracts: ["example"]
+    parameter-schema: "schemas/implementation.json"
+    parameter-defaults: { tolerance: 1e-8 }
     capabilities: ["one_shot"]
   command:
     runner: "command"
@@ -48,7 +48,7 @@ implementations:
     args: ["--worker"]
     sources: ["implementations/config.toml"]
     environment: "native"
-    problem_contracts: ["example"]
+    problem-contracts: ["example"]
     capabilities: ["one_shot"]
 environments:
   local:
@@ -69,47 +69,47 @@ environments:
     flake: "."
     installable: ".#native"
     system: "x86_64-linux"
-    output_kind: "app"
+    output-kind: "app"
     output: "native"
 experiments:
   - name: "main"
     problem: "example"
     datasets: ["fixed", "generated", "command"]
     implementations: ["interpreted", "command"]
-    execution_policy: "controlled"
-    observation_policy: "final"
-    implementation_repetitions: 2
-    measurement_repetitions: 3
+    execution-policy: "controlled"
+    observation-policy: "final"
+    implementation-repetitions: 2
+    measurement-repetitions: 3
     seed: 2025
-    dataset_parameters:
+    dataset-parameters:
       generated:
         rows: { grid: [100, 200] }
-    problem_parameters:
+    problem-parameters:
       centered: { value: true }
-    implementation_parameters:
+    implementation-parameters:
       interpreted:
         tolerance: { value: 1e-7 }
     cases:
       - name: "small"
-        dataset_parameters:
+        dataset-parameters:
           generated:
             rows: { value: 50 }
-execution_policies:
+execution-policies:
   controlled:
     version: 1
     cpus: 1
     threads: 1
     memory: "8 GiB"
     network: false
-    worker_reuse: false
-    warmup_runs: 1
+    worker-reuse: false
+    warmup-runs: 1
     timeout: "10 min"
-    timing_scope: "prepare_and_execute"
-    primary_time: "timed_wall_time"
-    run_order: "randomized"
-    max_concurrency: 2
+    timing-scope: "prepare_and_execute"
+    primary-time: "timed_wall_time"
+    run-order: "randomized"
+    max-concurrency: 2
     enforcement: "best_effort"
-observation_policies:
+observation-policies:
   final:
     version: 1
     kind: "one_shot"

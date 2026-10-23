@@ -96,8 +96,8 @@ fn repository_loaders_can_parse_before_compiling_the_schema_catalog() {
 fn accepts_dataset_free_contracts_and_reference_cases() {
     let source = COMPLETE_CONTRACT
         .replace(
-            "dataset_schemas: [\"schemas/dataset.json\"]",
-            "dataset_schemas: []",
+            "dataset-schemas: [\"schemas/dataset.json\"]",
+            "dataset-schemas: []",
         )
         .replace("    dataset: \"fixtures/small/dataset\"\n", "");
 
@@ -234,14 +234,14 @@ fn enforces_common_envelope_constraints() {
     let mutations = [
         ("version: 1\n", "version: 2\n"),
         (
-            "dataset_schemas: [\"schemas/dataset.json\"]",
-            "dataset_schemas: [\"schemas/dataset.json\", \"schemas/dataset.json\"]",
+            "dataset-schemas: [\"schemas/dataset.json\"]",
+            "dataset-schemas: [\"schemas/dataset.json\", \"schemas/dataset.json\"]",
         ),
         (
-            "allowed_timing_scopes: [\"cold_end_to_end\", \"prepare_and_execute\"]",
-            "allowed_timing_scopes: []",
+            "allowed-timing-scopes: [\"cold_end_to_end\", \"prepare_and_execute\"]",
+            "allowed-timing-scopes: []",
         ),
-        ("supported_budgets: [\"none\"]", "supported_budgets: []"),
+        ("supported-budgets: [\"none\"]", "supported-budgets: []"),
     ];
 
     for (from, to) in mutations {
@@ -269,8 +269,8 @@ fn requires_reference_case_datasets_exactly_when_the_contract_uses_datasets() {
     assert!(error.to_string().contains("requires `dataset`"), "{error}");
 
     let dataset_free_with_dataset = COMPLETE_CONTRACT.replace(
-        "dataset_schemas: [\"schemas/dataset.json\"]",
-        "dataset_schemas: []",
+        "dataset-schemas: [\"schemas/dataset.json\"]",
+        "dataset-schemas: []",
     );
     let error = parse_problem_contract(
         Path::new("problems/regression.yaml"),

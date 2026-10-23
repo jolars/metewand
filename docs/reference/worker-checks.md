@@ -18,7 +18,7 @@ and also records additional reported capabilities without selecting them.
 Fixed datasets have no worker to negotiate.
 
 For every problem, the command evaluates all reference cases in contract order.
-The evaluator receives the problem definition's `parameter_defaults`, or an
+The evaluator receives the problem definition's `parameter-defaults`, or an
 empty object when defaults are absent. These parameters must satisfy the
 contract's parameter schema. Reference cases therefore need to describe that
 configuration, independently of experiment parameter matrices.

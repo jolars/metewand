@@ -117,7 +117,7 @@ The [scheduler](docs/reference/scheduling.md) preserves logical-plan order by
 default. An execution policy can select deterministic block randomization to
 interleave comparable implementations by dataset instance, problem configuration,
 implementation repetition, and measurement index.
-Performance execution stays serial by default; an explicit `max_concurrency`
+Performance execution stays serial by default; an explicit `max-concurrency`
 in the execution policy enables bounded concurrent attempts with deterministic
 event order and separate worker ownership.
 The [read-only command-line workflow](docs/reference/read-only-cli.md) composes these

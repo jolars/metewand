@@ -21,8 +21,8 @@ version: 1
 name: "visible-ownership"
 datasets:
   generated:
-    parameter_schema: "schemas/dataset-parameters.json"
-    output_schema: "schemas/dataset.json"
+    parameter-schema: "schemas/dataset-parameters.json"
+    output-schema: "schemas/dataset.json"
     runner: "command"
     program: "generate"
     environment: "local"
@@ -38,25 +38,25 @@ implementations:
     runner: "command"
     program: "solve"
     environment: "local"
-    problem_contracts: ["example"]
-    parameter_schema: "schemas/implementation-parameters.json"
+    problem-contracts: ["example"]
+    parameter-schema: "schemas/implementation-parameters.json"
     capabilities: ["one_shot"]
 experiments:
   - name: "main"
     problem: "example"
     datasets: ["generated"]
     implementations: ["example"]
-    execution_policy: "default"
-    observation_policy: "final"
-    implementation_repetitions: 1
-    measurement_repetitions: 1
+    execution-policy: "default"
+    observation-policy: "final"
+    implementation-repetitions: 1
+    measurement-repetitions: 1
     seed: 0
-    dataset_parameters:
+    dataset-parameters:
       generated:
         scale: { value: 1 }
-    problem_parameters:
+    problem-parameters:
       scale: { value: 2 }
-    implementation_parameters:
+    implementation-parameters:
       example:
         scale: { value: 3 }
 "#,
@@ -73,8 +73,8 @@ version: 1
 name: "dataset-defaults"
 datasets:
   generated:
-    parameter_defaults: { rows: 100 }
-    output_schema: "schemas/dataset.json"
+    parameter-defaults: { rows: 100 }
+    output-schema: "schemas/dataset.json"
     runner: "command"
     program: "generate"
     environment: "local"
@@ -97,8 +97,8 @@ implementations:
     runner: "command"
     program: "solve"
     environment: "local"
-    problem_contracts: ["problem"]
-    parameter_defaults: { tolerance: 1e-8 }
+    problem-contracts: ["problem"]
+    parameter-defaults: { tolerance: 1e-8 }
     capabilities: ["one_shot"]
 "#,
     );
@@ -119,14 +119,14 @@ version: 1
 name: "unselected"
 datasets:
   selected:
-    parameter_schema: "schemas/dataset-parameters.json"
-    output_schema: "schemas/dataset.json"
+    parameter-schema: "schemas/dataset-parameters.json"
+    output-schema: "schemas/dataset.json"
     runner: "command"
     program: "generate"
     environment: "local"
   spare:
-    parameter_schema: "schemas/dataset-parameters.json"
-    output_schema: "schemas/dataset.json"
+    parameter-schema: "schemas/dataset-parameters.json"
+    output-schema: "schemas/dataset.json"
     runner: "command"
     program: "generate"
     environment: "local"
@@ -135,12 +135,12 @@ experiments:
     problem: "problem"
     datasets: ["selected"]
     implementations: ["implementation"]
-    execution_policy: "default"
-    observation_policy: "final"
-    implementation_repetitions: 1
-    measurement_repetitions: 1
+    execution-policy: "default"
+    observation-policy: "final"
+    implementation-repetitions: 1
+    measurement-repetitions: 1
     seed: 0
-    dataset_parameters:
+    dataset-parameters:
       spare:
         rows: { value: 100 }
 "#,
@@ -166,26 +166,26 @@ implementations:
     runner: "command"
     program: "solve"
     environment: "local"
-    problem_contracts: ["problem"]
-    parameter_schema: "schemas/implementation-parameters.json"
+    problem-contracts: ["problem"]
+    parameter-schema: "schemas/implementation-parameters.json"
     capabilities: ["one_shot"]
   spare:
     runner: "command"
     program: "solve"
     environment: "local"
-    problem_contracts: ["problem"]
-    parameter_schema: "schemas/implementation-parameters.json"
+    problem-contracts: ["problem"]
+    parameter-schema: "schemas/implementation-parameters.json"
     capabilities: ["one_shot"]
 experiments:
   - name: "main"
     problem: "problem"
     implementations: ["selected"]
-    execution_policy: "default"
-    observation_policy: "final"
-    implementation_repetitions: 1
-    measurement_repetitions: 1
+    execution-policy: "default"
+    observation-policy: "final"
+    implementation-repetitions: 1
+    measurement-repetitions: 1
     seed: 0
-    implementation_parameters:
+    implementation-parameters:
       spare:
         tolerance: { value: 1e-8 }
 "#,
@@ -212,14 +212,14 @@ experiments:
     problem: "problem"
     datasets: ["missing"]
     implementations: ["implementation"]
-    execution_policy: "default"
-    observation_policy: "final"
-    implementation_repetitions: 1
-    measurement_repetitions: 1
+    execution-policy: "default"
+    observation-policy: "final"
+    implementation-repetitions: 1
+    measurement-repetitions: 1
     seed: 0
     cases:
       - name: "small"
-        dataset_parameters:
+        dataset-parameters:
           missing:
             rows: { value: 100 }
 "#,
@@ -245,19 +245,19 @@ version: 1
 name: "fixed"
 datasets:
   fixed:
-    output_schema: "schemas/dataset.json"
+    output-schema: "schemas/dataset.json"
     sources: ["datasets/fixed.json"]
 experiments:
   - name: "main"
     problem: "problem"
     datasets: ["fixed"]
     implementations: ["implementation"]
-    execution_policy: "default"
-    observation_policy: "final"
-    implementation_repetitions: 1
-    measurement_repetitions: 1
+    execution-policy: "default"
+    observation-policy: "final"
+    implementation-repetitions: 1
+    measurement-repetitions: 1
     seed: 0
-    dataset_parameters:
+    dataset-parameters:
       fixed:
         fold: { value: 1 }
 "#,
@@ -277,7 +277,7 @@ version: 1
 name: "parameterless-generated"
 datasets:
   generated:
-    output_schema: "schemas/dataset.json"
+    output-schema: "schemas/dataset.json"
     runner: "command"
     program: "generate"
     environment: "local"
@@ -286,12 +286,12 @@ experiments:
     problem: "problem"
     datasets: ["generated"]
     implementations: ["implementation"]
-    execution_policy: "default"
-    observation_policy: "final"
-    implementation_repetitions: 1
-    measurement_repetitions: 1
+    execution-policy: "default"
+    observation-policy: "final"
+    implementation-repetitions: 1
+    measurement-repetitions: 1
     seed: 0
-    dataset_parameters:
+    dataset-parameters:
       generated:
         fold: { value: 1 }
 "#,
@@ -314,20 +314,20 @@ implementations:
     runner: "command"
     program: "solve"
     environment: "local"
-    problem_contracts: ["problem"]
+    problem-contracts: ["problem"]
     capabilities: ["one_shot"]
 experiments:
   - name: "main"
     problem: "problem"
     implementations: ["example"]
-    execution_policy: "default"
-    observation_policy: "final"
-    implementation_repetitions: 1
-    measurement_repetitions: 1
+    execution-policy: "default"
+    observation-policy: "final"
+    implementation-repetitions: 1
+    measurement-repetitions: 1
     seed: 0
     cases:
       - name: "strict"
-        implementation_parameters:
+        implementation-parameters:
           example:
             tolerance: { value: 1e-8 }
 "#,

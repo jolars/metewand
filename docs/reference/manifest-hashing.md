@@ -55,12 +55,12 @@ grids.
 The complete version-one execution-policy defaults are applied before hashing:
 
 - `network: false`;
-- `worker_reuse: false`;
-- `warmup_runs: 0`;
-- `timing_scope: "prepare_and_execute"`;
-- `primary_time: "timed_wall_time"`;
-- `run_order: "sequential"`;
-- `max_concurrency: 1`; and
+- `worker-reuse: false`;
+- `warmup-runs: 0`;
+- `timing-scope: "prepare_and_execute"`;
+- `primary-time: "timed_wall_time"`;
+- `run-order: "sequential"`;
+- `max-concurrency: 1`; and
 - `enforcement: "best_effort"`.
 
 Therefore, omitting one of these fields produces the same hash as spelling its

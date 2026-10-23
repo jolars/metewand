@@ -437,13 +437,13 @@
         "name": "lasso-comparison",
         "datasets": {
           "fixed": {
-            "output_schema": "schemas/regression-dataset.json",
+            "output-schema": "schemas/regression-dataset.json",
             "sources": ["datasets/fixed/**"]
           },
           "generated": {
-            "parameter_schema": "schemas/generated-parameters.json",
-            "parameter_defaults": { "standardize": true },
-            "output_schema": "schemas/regression-dataset.json",
+            "parameter-schema": "schemas/generated-parameters.json",
+            "parameter-defaults": { "standardize": true },
+            "output-schema": "schemas/regression-dataset.json",
             "runner": "python",
             "entrypoint": "datasets/generate.py",
             "sources": ["datasets/generate.py"],
@@ -457,7 +457,7 @@
         "problems": {
           "lasso": {
             "contract": "problems/lasso.yaml",
-            "parameter_defaults": { "fit_intercept": true },
+            "parameter-defaults": { "fit_intercept": true },
             "evaluator": {
               "runner": "python",
               "entrypoint": "problems/lasso.py",
@@ -472,7 +472,7 @@
             "program": "bin/native-lasso",
             "args": ["--metewand-worker"],
             "environment": "native",
-            "problem_contracts": ["lasso"],
+            "problem-contracts": ["lasso"],
             "capabilities": ["one_shot"]
           },
           "sklearn": {
@@ -480,9 +480,9 @@
             "entrypoint": "implementations/sklearn.py",
             "sources": ["implementations/sklearn.py"],
             "environment": "python",
-            "problem_contracts": ["lasso"],
-            "parameter_schema": "schemas/sklearn-parameters.json",
-            "parameter_defaults": { "selection": "cyclic" },
+            "problem-contracts": ["lasso"],
+            "parameter-schema": "schemas/sklearn-parameters.json",
+            "parameter-defaults": { "selection": "cyclic" },
             "capabilities": ["one_shot"]
           }
         },
@@ -498,7 +498,7 @@
             "flake": ".",
             "installable": ".#native-lasso",
             "system": "x86_64-linux",
-            "output_kind": "package",
+            "output-kind": "package",
             "output": "out"
           }
         },
@@ -508,21 +508,21 @@
             "problem": "lasso",
             "datasets": ["fixed", "generated"],
             "implementations": ["native", "sklearn"],
-            "execution_policy": "controlled",
-            "observation_policy": "final",
-            "implementation_repetitions": 5,
-            "measurement_repetitions": 2,
+            "execution-policy": "controlled",
+            "observation-policy": "final",
+            "implementation-repetitions": 5,
+            "measurement-repetitions": 2,
             "seed": 2025,
-            "dataset_parameters": {
+            "dataset-parameters": {
               "generated": {
                 "fold": { "grid": [1, 2, 3] },
                 "columns": { "value": ["x", "y"] }
               }
             },
-            "problem_parameters": {
+            "problem-parameters": {
               "lambda": { "grid": [0.001, 0.01, 0.1] }
             },
-            "implementation_parameters": {
+            "implementation-parameters": {
               "sklearn": {
                 "tolerance": { "value": 1e-7 }
               }
@@ -530,30 +530,30 @@
             "cases": [
               {
                 "name": "intercept",
-                "problem_parameters": {
+                "problem-parameters": {
                   "fit_intercept": { "value": true }
                 }
               }
             ]
           }
         ],
-        "execution_policies": {
+        "execution-policies": {
           "controlled": {
             "version": 1,
             "cpus": 1,
             "threads": 1,
             "memory": "8 GiB",
             "network": false,
-            "worker_reuse": false,
-            "warmup_runs": 0,
+            "worker-reuse": false,
+            "warmup-runs": 0,
             "timeout": "10 min",
-            "timing_scope": "prepare_and_execute",
-            "primary_time": "timed_wall_time",
-            "run_order": "randomized",
+            "timing-scope": "prepare_and_execute",
+            "primary-time": "timed_wall_time",
+            "run-order": "randomized",
             "enforcement": "best_effort"
           }
         },
-        "observation_policies": {
+        "observation-policies": {
           "final": {
             "version": 1,
             "kind": "one_shot"
@@ -568,13 +568,13 @@
         "version": 1,
         "name": "lasso",
         "family": "optimization",
-        "parameter_schema": "schemas/lasso-problem-parameters.json",
-        "dataset_schemas": ["schemas/regression-dataset.json"],
-        "result_schema": "schemas/lasso-result.json",
-        "metric_schema": "schemas/lasso-metrics.json",
-        "semantics_schema": "schemas/lasso-semantics.json",
-        "allowed_timing_scopes": ["cold_end_to_end", "prepare_and_execute"],
-        "supported_budgets": ["none"],
+        "parameter-schema": "schemas/lasso-problem-parameters.json",
+        "dataset-schemas": ["schemas/regression-dataset.json"],
+        "result-schema": "schemas/lasso-result.json",
+        "metric-schema": "schemas/lasso-metrics.json",
+        "semantics-schema": "schemas/lasso-semantics.json",
+        "allowed-timing-scopes": ["cold_end_to_end", "prepare_and_execute"],
+        "supported-budgets": ["none"],
         "semantics": {
           "objective": { "family": "least_squares_l1" },
           "validity": { "nonfinite": "reject" },
@@ -583,11 +583,11 @@
             "maximum_kkt_violation": 1e-6
           }
         },
-        "reference_cases": [
+        "reference-cases": [
           {
             "dataset": "problems/fixtures/lasso-small/dataset",
             "result": "problems/fixtures/lasso-small/result",
-            "expected_metrics": "problems/fixtures/lasso-small/metrics.json"
+            "expected-metrics": "problems/fixtures/lasso-small/metrics.json"
           }
         ]
       }
@@ -599,22 +599,22 @@
         "version": 1,
         "name": "pi",
         "family": "numerical-integration",
-        "parameter_schema": "schemas/pi-parameters.json",
-        "dataset_schemas": [],
-        "result_schema": "schemas/pi-result.json",
-        "metric_schema": "schemas/pi-metrics.json",
-        "semantics_schema": "schemas/pi-semantics.json",
-        "allowed_timing_scopes": ["prepare_and_execute"],
-        "supported_budgets": ["none"],
+        "parameter-schema": "schemas/pi-parameters.json",
+        "dataset-schemas": [],
+        "result-schema": "schemas/pi-result.json",
+        "metric-schema": "schemas/pi-metrics.json",
+        "semantics-schema": "schemas/pi-semantics.json",
+        "allowed-timing-scopes": ["prepare_and_execute"],
+        "supported-budgets": ["none"],
         "semantics": {
           "integrand": "unit-circle",
           "validity": { "nonfinite": "reject" },
           "one_shot_completion": { "absolute_error": 1e-12 }
         },
-        "reference_cases": [
+        "reference-cases": [
           {
             "result": "problems/fixtures/pi/result",
-            "expected_metrics": "problems/fixtures/pi/metrics.json"
+            "expected-metrics": "problems/fixtures/pi/metrics.json"
           }
         ]
       }
@@ -1230,10 +1230,10 @@
       "instance": {
         "version": 1,
         "name": "concurrency",
-        "execution_policies": {
+        "execution-policies": {
           "local": {
             "version": 1,
-            "max_concurrency": 1
+            "max-concurrency": 1
           }
         }
       }
@@ -1244,10 +1244,10 @@
       "instance": {
         "version": 1,
         "name": "concurrency",
-        "execution_policies": {
+        "execution-policies": {
           "local": {
             "version": 1,
-            "max_concurrency": 2
+            "max-concurrency": 2
           }
         }
       }
@@ -1258,10 +1258,10 @@
       "instance": {
         "version": 1,
         "name": "concurrency",
-        "execution_policies": {
+        "execution-policies": {
           "local": {
             "version": 1,
-            "max_concurrency": 9007199254740991
+            "max-concurrency": 9007199254740991
           }
         }
       }
@@ -2209,7 +2209,7 @@
       "instance": {
         "version": 1,
         "name": "null-enforcement",
-        "execution_policies": {
+        "execution-policies": {
           "local": { "version": 1, "enforcement": null }
         }
       }
@@ -2220,7 +2220,7 @@
       "instance": {
         "version": 1,
         "name": "null-network",
-        "execution_policies": {
+        "execution-policies": {
           "local": { "version": 1, "network": null }
         }
       }
@@ -2231,8 +2231,8 @@
       "instance": {
         "version": 1,
         "name": "null-timing",
-        "execution_policies": {
-          "local": { "version": 1, "timing_scope": null }
+        "execution-policies": {
+          "local": { "version": 1, "timing-scope": null }
         }
       }
     },
@@ -2242,7 +2242,7 @@
       "instance": {
         "version": 1,
         "name": "profile",
-        "observation_policies": {
+        "observation-policies": {
           "curve": { "version": 1, "kind": "profile" }
         }
       }
@@ -2258,7 +2258,7 @@
             "runner": "command",
             "program": "worker",
             "environment": "local",
-            "problem_contracts": ["problem"],
+            "problem-contracts": ["problem"],
             "capabilities": ["one_shot", "applicability"]
           }
         }
@@ -2271,21 +2271,21 @@
         "version": 1,
         "name": "lasso",
         "family": "optimization",
-        "parameter_schema": "schemas/parameters.json",
-        "dataset_schemas": ["schemas/dataset.json"],
-        "result_schema": "schemas/result.json",
-        "metric_schema": "schemas/metrics.json",
-        "semantics_schema": "schemas/semantics.json",
-        "allowed_timing_scopes": ["prepare_and_execute"],
-        "supported_budgets": ["none"],
+        "parameter-schema": "schemas/parameters.json",
+        "dataset-schemas": ["schemas/dataset.json"],
+        "result-schema": "schemas/result.json",
+        "metric-schema": "schemas/metrics.json",
+        "semantics-schema": "schemas/semantics.json",
+        "allowed-timing-scopes": ["prepare_and_execute"],
+        "supported-budgets": ["none"],
         "semantics": {
           "validity": { "nonfinite": "reject" },
           "one_shot_completion": { "maximum_error": 1e-8 }
         },
-        "reference_cases": [
+        "reference-cases": [
           {
             "result": "fixtures/result",
-            "expected_metrics": "fixtures/metrics.json"
+            "expected-metrics": "fixtures/metrics.json"
           }
         ]
       }
@@ -2297,21 +2297,21 @@
         "version": 1,
         "name": "lasso",
         "family": "optimization",
-        "parameter_schema": "schemas/parameters.json",
-        "dataset_schemas": [],
-        "result_schema": "schemas/result.json",
-        "metric_schema": "schemas/metrics.json",
-        "semantics_schema": "schemas/semantics.json",
-        "allowed_timing_scopes": ["prepare_and_execute"],
-        "supported_budgets": ["iterations"],
+        "parameter-schema": "schemas/parameters.json",
+        "dataset-schemas": [],
+        "result-schema": "schemas/result.json",
+        "metric-schema": "schemas/metrics.json",
+        "semantics-schema": "schemas/semantics.json",
+        "allowed-timing-scopes": ["prepare_and_execute"],
+        "supported-budgets": ["iterations"],
         "semantics": {
           "validity": { "nonfinite": "reject" },
           "one_shot_completion": { "maximum_error": 1e-8 }
         },
-        "reference_cases": [
+        "reference-cases": [
           {
             "result": "fixtures/result",
-            "expected_metrics": "fixtures/metrics.json"
+            "expected-metrics": "fixtures/metrics.json"
           }
         ]
       }
@@ -2323,20 +2323,20 @@
         "version": 1,
         "name": "lasso",
         "family": "optimization",
-        "parameter_schema": "schemas/parameters.json",
-        "dataset_schemas": [],
-        "result_schema": "schemas/result.json",
-        "metric_schema": "schemas/metrics.json",
-        "semantics_schema": "schemas/semantics.json",
-        "allowed_timing_scopes": ["prepare_and_execute"],
-        "supported_budgets": ["none"],
+        "parameter-schema": "schemas/parameters.json",
+        "dataset-schemas": [],
+        "result-schema": "schemas/result.json",
+        "metric-schema": "schemas/metrics.json",
+        "semantics-schema": "schemas/semantics.json",
+        "allowed-timing-scopes": ["prepare_and_execute"],
+        "supported-budgets": ["none"],
         "semantics": {
           "validity": { "nonfinite": "reject" }
         },
-        "reference_cases": [
+        "reference-cases": [
           {
             "result": "fixtures/result",
-            "expected_metrics": "fixtures/metrics.json"
+            "expected-metrics": "fixtures/metrics.json"
           }
         ]
       }
@@ -3344,10 +3344,10 @@
       "instance": {
         "version": 1,
         "name": "concurrency",
-        "execution_policies": {
+        "execution-policies": {
           "local": {
             "version": 1,
-            "max_concurrency": 0
+            "max-concurrency": 0
           }
         }
       }
@@ -3358,10 +3358,10 @@
       "instance": {
         "version": 1,
         "name": "concurrency",
-        "execution_policies": {
+        "execution-policies": {
           "local": {
             "version": 1,
-            "max_concurrency": -1
+            "max-concurrency": -1
           }
         }
       }
@@ -3372,10 +3372,10 @@
       "instance": {
         "version": 1,
         "name": "concurrency",
-        "execution_policies": {
+        "execution-policies": {
           "local": {
             "version": 1,
-            "max_concurrency": 1.5
+            "max-concurrency": 1.5
           }
         }
       }
@@ -3386,10 +3386,10 @@
       "instance": {
         "version": 1,
         "name": "concurrency",
-        "execution_policies": {
+        "execution-policies": {
           "local": {
             "version": 1,
-            "max_concurrency": "2"
+            "max-concurrency": "2"
           }
         }
       }

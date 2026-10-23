@@ -129,8 +129,11 @@ because that flake builds sources across the repository; its adjacent
 provide several language runtimes or commands from one resolved software
 context.
 
-Benchmark manifests and problem contracts use YAML. Each document contains one
-mapping, and explicit keys are unique strings. Anchors, aliases, and merge keys
+Benchmark manifests and problem contracts use YAML. Metewand-owned option keys
+use kebab-case, such as `execution-policies` and `parameter-schema`. Enum values,
+benchmark-defined names, parameter keys, and family-owned semantics retain their
+declared spelling. Each document contains one mapping, and explicit keys are
+unique strings. Anchors, aliases, and merge keys
 are supported with bounded alias expansion. Explicit fields override merged
 fields; earlier mappings in a merge sequence take precedence. Unsupported tags,
 external includes, unsafe integers, and non-finite numbers are rejected. Literal
@@ -152,8 +155,8 @@ problems:
       environment: "python"
 datasets:
   leukemia:
-    parameter_schema: "schemas/leukemia-dataset-parameters.json"
-    output_schema: "schemas/regression-dataset.json"
+    parameter-schema: "schemas/leukemia-dataset-parameters.json"
+    output-schema: "schemas/regression-dataset.json"
     runner: "python"
     entrypoint: "datasets/leukemia.py"
     sources: ["datasets/leukemia.py"]
@@ -175,7 +178,7 @@ environments:
     flake: "."
     installable: ".#native-lasso"
     system: "x86_64-linux"
-    output_kind: "package"
+    output-kind: "package"
     output: "out"
 implementations:
   glmnet:
@@ -183,62 +186,62 @@ implementations:
     entrypoint: "implementations/glmnet.R"
     sources: ["implementations/glmnet.R"]
     environment: "r"
-    problem_contracts: ["lasso"]
-    parameter_schema: "schemas/glmnet-parameters.json"
+    problem-contracts: ["lasso"]
+    parameter-schema: "schemas/glmnet-parameters.json"
     capabilities: ["one_shot"]
   sklearn:
     runner: "python"
     entrypoint: "implementations/sklearn.py"
     sources: ["implementations/sklearn.py"]
     environment: "python"
-    problem_contracts: ["lasso"]
-    parameter_schema: "schemas/sklearn-parameters.json"
+    problem-contracts: ["lasso"]
+    parameter-schema: "schemas/sklearn-parameters.json"
     capabilities: ["one_shot"]
   native:
     runner: "command"
     program: "bin/native-lasso"
     args: ["--metewand-worker"]
     environment: "native"
-    problem_contracts: ["lasso"]
+    problem-contracts: ["lasso"]
     capabilities: ["one_shot"]
 experiments:
   - name: "main"
     problem: "lasso"
     datasets: ["leukemia"]
     implementations: ["glmnet", "sklearn", "native"]
-    execution_policy: "controlled"
-    observation_policy: "final"
-    implementation_repetitions: 5
-    measurement_repetitions: 2
+    execution-policy: "controlled"
+    observation-policy: "final"
+    implementation-repetitions: 5
+    measurement-repetitions: 2
     seed: 2025
-    dataset_parameters:
+    dataset-parameters:
       leukemia:
         fold: { grid: [1, 2, 3] }
         standardize: { value: true }
-    problem_parameters:
+    problem-parameters:
       lambda: { grid: [0.001, 0.01, 0.1] }
       fit_intercept: { value: true }
-    implementation_parameters:
+    implementation-parameters:
       glmnet:
         tolerance: { value: 1e-7 }
       sklearn:
         selection: { grid: ["cyclic", "random"] }
-execution_policies:
+execution-policies:
   controlled:
     version: 1
     cpus: 1
     threads: 1
     memory: "8 GiB"
     network: false
-    worker_reuse: false
-    warmup_runs: 0
+    worker-reuse: false
+    warmup-runs: 0
     timeout: "10 min"
-    timing_scope: "prepare_and_execute"
-    primary_time: "timed_wall_time"
-    run_order: "randomized"
-    max_concurrency: 1
+    timing-scope: "prepare_and_execute"
+    primary-time: "timed_wall_time"
+    run-order: "randomized"
+    max-concurrency: 1
     enforcement: "best_effort"
-observation_policies:
+observation-policies:
   final:
     version: 1
     kind: "one_shot"
@@ -250,13 +253,13 @@ The referenced problem contract is also concrete and reviewable. For example:
 version: 1
 name: "lasso"
 family: "optimization"
-parameter_schema: "schemas/lasso-problem-parameters.json"
-dataset_schemas: ["schemas/regression-dataset.json"]
-result_schema: "schemas/lasso-result.json"
-metric_schema: "schemas/lasso-metrics.json"
-semantics_schema: "schemas/lasso-semantics.json"
-allowed_timing_scopes: ["cold_end_to_end", "prepare_and_execute"]
-supported_budgets: ["none"]
+parameter-schema: "schemas/lasso-problem-parameters.json"
+dataset-schemas: ["schemas/regression-dataset.json"]
+result-schema: "schemas/lasso-result.json"
+metric-schema: "schemas/lasso-metrics.json"
+semantics-schema: "schemas/lasso-semantics.json"
+allowed-timing-scopes: ["cold_end_to_end", "prepare_and_execute"]
+supported-budgets: ["none"]
 semantics:
   objective:
     family: "least_squares_l1"
@@ -273,10 +276,10 @@ semantics:
   one_shot_completion:
     objective_relative_tolerance: 1e-8
     maximum_kkt_violation: 1e-6
-reference_cases:
+reference-cases:
   - dataset: "problems/fixtures/lasso-small/dataset"
     result: "problems/fixtures/lasso-small/result"
-    expected_metrics: "problems/fixtures/lasso-small/metrics.json"
+    expected-metrics: "problems/fixtures/lasso-small/metrics.json"
 ```
 
 Primary commands:
@@ -352,13 +355,13 @@ independent grid combinations:
 experiments:
   cases:
     - name: "tall_dense"
-      dataset_parameters:
+      dataset-parameters:
         generated:
           n: { value: 10000 }
           p: { value: 100 }
           density: { value: 1.0 }
     - name: "wide_sparse"
-      dataset_parameters:
+      dataset-parameters:
         generated:
           n: { value: 1000 }
           p: { value: 10000 }
@@ -371,7 +374,7 @@ Version 1 uses JSON Schema 2020-12. Every schema declares its dialect, and every
 external `$ref` must resolve to another repository file named in the lockfile;
 schema validation never retrieves a remote reference. JSON Schema's `default`
 keyword remains an annotation and is never inserted by Metewand. A definition
-may instead declare a literal `parameter_defaults` object in the manifest;
+may instead declare a literal `parameter-defaults` object in the manifest;
 defaults cannot contain grids. Defaults are merged recursively by object key,
 while a supplied scalar, array, or `null` replaces the default at that key.
 Metewand performs this merge before validation, records the resolved object, and
@@ -406,7 +409,11 @@ a behavior change that can affect execution increments the semantics version.
 
 The YAML migration retains the unreleased version-1 typed manifest,
 public-schema, identity, and wire contracts and version-2 execution semantics
-after explicit compatibility review. Alias resolution and equivalent merge expansions do not
+after explicit compatibility review. The subsequent kebab-case option-key change
+also retains these versions: typed canonical records, identities, wire messages,
+and execution behavior keep their existing representations. Underscore option
+keys are rejected, and the public manifest and contract schemas describe the
+new spelling. Alias resolution and equivalent merge expansions do not
 change canonical values. Referenced resource renames from `.toml` to `.yaml`
 can change hashes or identities that contain those paths. Existing run-store
 records remain readable.
@@ -461,7 +468,7 @@ definition owns an independent evaluator worker, including its source bundle and
 environment; it is not a separately selectable benchmark component. The `family`
 value is an open, stable tag rather than a closed Metewand enumeration. A
 family-specific `semantics` object binds the remaining rules and is validated
-against the contract's `semantics_schema`. Metewand hashes this object but does
+against the contract's `semantics-schema`. Metewand hashes this object but does
 not need to understand it. For example, an optimization contract binds its
 objective, constraints, scaling, preprocessing, result-validity rules, and
 one-shot completion tolerances; other problem families bind their own
@@ -477,7 +484,7 @@ match a schema accepted by the selected problem contract. Cross-schema
 conversion requires an explicit dataset materializer; it is never inferred from
 field names or shapes.
 
-A problem may declare `dataset_schemas: []` when it requires no external
+A problem may declare `dataset-schemas: []` when it requires no external
 dataset. Such an experiment must omit `datasets`; the planner binds one
 versioned, built-in unit dataset definition, configuration, and instance rather
 than producing zero runs or requiring a dummy user file. A problem that requires
@@ -532,7 +539,7 @@ paired random streams.
 The role is exactly `dataset`, `implementation`, or `scheduling`. The canonical
 seed fields are the following restricted-domain JSON objects; identity values
 use their complete typed `mw1-<kind>-<sha256>` spelling, and
-`dataset_parameters` embeds the already resolved canonical value.
+`dataset-parameters` embeds the already resolved canonical value.
 
 ```text
 dataset = {
@@ -562,8 +569,8 @@ scheduling-seed field. Interpreting the digest as a big-endian bit string, the
 exposed value is bits 0 through 52, equivalently the leading big-endian `u64`
 shifted right by 11.
 
-`implementation_repetitions` creates distinct logical run specifications by
-varying the implementation seed. `measurement_repetitions` repeats the selected
+`implementation-repetitions` creates distinct logical run specifications by
+varying the implementation seed. `measurement-repetitions` repeats the selected
 observation policy for the same logical specification and seed. Each one-shot
 repetition creates one observation and attempt slot; each profile repetition
 creates its own bounded observation slots and one or more execution slots
@@ -891,17 +898,17 @@ Exports label `execute_only` observations as operation-scope benchmarks rather
 than end-to-end software measurements, and compatibility readers never pool
 different timing scopes implicitly.
 
-`cold_end_to_end` requires `worker_reuse: false` and `warmup_runs: 0`, because
+`cold_end_to_end` requires `worker-reuse: false` and `warmup-runs: 0`, because
 every measured slot must launch a fresh process. Process-local warm-ups require
 worker reuse and execute on the same worker before its measured slots. Version 1
-rejects `warmup_runs > 0` with `worker_reuse: false`; system-cache or thermal
+rejects `warmup_runs > 0` with `worker-reuse: false`; system-cache or thermal
 conditioning must instead be an explicitly named later policy feature. A
 discarded worker's warm-ups never satisfy a replacement worker. These rules make
 the timing claim mechanically observable, while the independent evaluator makes
 the result checkable.
 
-When omitted, the version-1 timing fields default to `worker_reuse: false`,
-`warmup_runs: 0`, and `timing_scope: "prepare_and_execute"`. Compatibility
+When omitted, the version-1 timing fields default to `worker-reuse: false`,
+`warmup-runs: 0`, and `timing-scope: "prepare_and_execute"`. Compatibility
 validation applies these defaults before checking the invariants above and the
 problem contract's allowed timing scopes.
 
@@ -932,7 +939,7 @@ For example, one profile may bind heterogeneous SLOPE adapters without treating
 their controls as a common budget:
 
 ```yaml
-observation_policies:
+observation-policies:
   target_gap:
     version: 1
     kind: "profile"
@@ -1017,7 +1024,7 @@ included work, and excluded preparation. Contracts that omit this permission
 allow only executor-observed profile measurements. For example:
 
 ```yaml
-observation_policies:
+observation-policies:
   internal_gap:
     version: 1
     kind: "profile"
@@ -1319,7 +1326,7 @@ are not authoritative.
 
 Workers may be persistent according to the execution policy so interpreter
 startup and package loading can be separated from problem execution.
-`worker_reuse: false` provides a fresh process but is called process freshness,
+`worker-reuse: false` provides a fresh process but is called process freshness,
 not strong sandbox isolation. The reuse key includes role, definition, source
 bundle, resolved environment, launch program, and policy. The orchestrator calls
 `reset` between slots, clears slot-scoped writable directories, and requires
@@ -1563,7 +1570,7 @@ images and Nix package outputs obey the same rule.
 ### Nix environments
 
 Nix is a first-class locked environment backend. A Nix environment names a flake
-reference, an installable, a target system, and an `output_kind` of `package` or
+reference, an installable, a target system, and an `output-kind` of `package` or
 `app`. The output kind selects the exact `packages.<system>` or `apps.<system>`
 attribute namespace; Metewand does not reproduce the Nix CLI's fallback search
 between namespaces. It may provide a shared environment for dataset
@@ -1639,7 +1646,7 @@ backend may provide stronger enforcement. Do not build a generic sandbox or
 scheduler in v1; preserve an executor interface so stronger isolation or an HPC
 backend can be integrated later.
 
-Performance runs are serial by default. `run_order: "randomized"` forms
+Performance runs are serial by default. `run-order: "randomized"` forms
 comparison blocks by dataset instance, problem configuration,
 implementation-replication index, and measurement index; it orders
 implementation configurations within each block and the blocks themselves by
@@ -1654,7 +1661,7 @@ remains available when explicitly requested. Concurrent execution is opt-in and
 becomes part of the run identity and provenance because contention changes the
 comparison conditions.
 
-The execution policy's `max_concurrency` is a positive safe integer with default
+The execution policy's `max-concurrency` is a positive safe integer with default
 `1`. It is an explicit member of the canonical policy even when omitted in the
 manifest. Execution semantics version 2 divides each experiment's selected
 schedule into consecutive batches of at most that many attempts. A batch

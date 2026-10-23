@@ -1,18 +1,18 @@
 version: 1
 name: "sum"
 family: "arithmetic"
-parameter_schema: "schemas/parameters.json"
-dataset_schemas: []
-result_schema: "schemas/result.json"
-metric_schema: "schemas/metrics.json"
-semantics_schema: "schemas/semantics.json"
-allowed_timing_scopes: ["prepare_and_execute"]
-supported_budgets: ["none"]
+parameter-schema: "schemas/parameters.json"
+dataset-schemas: []
+result-schema: "schemas/result.json"
+metric-schema: "schemas/metrics.json"
+semantics-schema: "schemas/semantics.json"
+allowed-timing-scopes: ["prepare_and_execute"]
+supported-budgets: ["none"]
 semantics:
   validity:
     exact_sum: true
   one_shot_completion:
     exact_sum: true
-reference_cases:
+reference-cases:
   - result: "reference/result.json"
-    expected_metrics: "reference/metrics.json"
+    expected-metrics: "reference/metrics.json"

@@ -6,9 +6,9 @@ ownership from library option names or move a parameter between namespaces.
 
 | Namespace | Owner | Effect |
 | --- | --- | --- |
-| `dataset_parameters.<dataset>` | One selected dataset definition | Acquires, generates, selects, or transforms a dataset artifact. |
-| `problem_parameters` | The experiment's selected problem contract | Determines the requested computation and result semantics. |
-| `implementation_parameters.<implementation>` | One selected implementation definition | Determines how that implementation performs the computation. |
+| `dataset-parameters.<dataset>` | One selected dataset definition | Acquires, generates, selects, or transforms a dataset artifact. |
+| `problem-parameters` | The experiment's selected problem contract | Determines the requested computation and result semantics. |
+| `implementation-parameters.<implementation>` | One selected implementation definition | Determines how that implementation performs the computation. |
 
 Budget and execution settings remain in their own policy structures. They do
 not become scientific parameters.
@@ -23,8 +23,8 @@ same structure and overlay the experiment-level axes during later expansion.
 `validate_parameter_namespaces` checks the parts of ownership that require no
 filesystem access, contract loading, or matrix expansion:
 
-- a dataset or implementation that declares `parameter_defaults` also declares
-  `parameter_schema`;
+- a dataset or implementation that declares `parameter-defaults` also declares
+  `parameter-schema`;
 - every name-qualified parameter mapping belongs to a definition selected by its
   enclosing experiment;
 - the selected definition exists; and

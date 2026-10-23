@@ -31,21 +31,21 @@ implementations:
     runner: "command"
     program: "solve"
     environment: "local"
-    problem_contracts: ["example"]
+    problem-contracts: ["example"]
     capabilities: ["one_shot"]
 experiments:
   - name: "main"
     problem: "example"
     implementations: ["solver"]
-    execution_policy: "default"
-    observation_policy: "final"
-    implementation_repetitions: 1
-    measurement_repetitions: 1
+    execution-policy: "default"
+    observation-policy: "final"
+    implementation-repetitions: 1
+    measurement-repetitions: 1
     seed: 17
-execution_policies:
+execution-policies:
   default:
     version: 1
-observation_policies:
+observation-policies:
   final:
     version: 1
     kind: "one_shot"
@@ -55,25 +55,25 @@ const EXPLICIT_DEFAULTS_REORDERED: &str = r#"
 # Formatting, comments, and mapping order are not hash inputs.
 name: "stable"
 version: 1
-observation_policies:
+observation-policies:
   final:
     kind: "one_shot"
     version: 1
-execution_policies:
+execution-policies:
   default:
     enforcement: "best_effort"
-    max_concurrency: 1
-    run_order: "sequential"
-    primary_time: "timed_wall_time"
-    timing_scope: "prepare_and_execute"
-    warmup_runs: 0
-    worker_reuse: false
+    max-concurrency: 1
+    run-order: "sequential"
+    primary-time: "timed_wall_time"
+    timing-scope: "prepare_and_execute"
+    warmup-runs: 0
+    worker-reuse: false
     network: false
     version: 1
 implementations:
   solver:
     capabilities: ["one_shot"]
-    problem_contracts: ["example"]
+    problem-contracts: ["example"]
     environment: "local"
     args: []
     program: "solve"
@@ -91,10 +91,10 @@ environments:
     kind: "local"
 experiments:
   - seed: 17
-    measurement_repetitions: 1
-    implementation_repetitions: 1
-    observation_policy: "final"
-    execution_policy: "default"
+    measurement-repetitions: 1
+    implementation-repetitions: 1
+    observation-policy: "final"
+    execution-policy: "default"
     implementations: ["solver"]
     problem: "example"
     name: "main"
@@ -196,11 +196,11 @@ fn concurrency_is_an_explicit_default_and_a_manifest_hash_dependency() {
     let serial = parse("metewand.yaml", IMPLICIT_DEFAULTS);
     let explicit = parse(
         "metewand.yaml",
-        &IMPLICIT_DEFAULTS.replace("  default:", "  default:\n    max_concurrency: 1"),
+        &IMPLICIT_DEFAULTS.replace("  default:", "  default:\n    max-concurrency: 1"),
     );
     let concurrent = parse(
         "metewand.yaml",
-        &IMPLICIT_DEFAULTS.replace("  default:", "  default:\n    max_concurrency: 2"),
+        &IMPLICIT_DEFAULTS.replace("  default:", "  default:\n    max-concurrency: 2"),
     );
     assert_eq!(
         hash_manifest(&serial).unwrap(),
@@ -260,8 +260,8 @@ fn resolves_every_manifest_reference_namespace_before_hashing() {
         (
             "implementation contract",
             IMPLICIT_DEFAULTS.replace(
-                "    problem_contracts: [\"example\"]",
-                "    problem_contracts: [\"missing\"]",
+                "    problem-contracts: [\"example\"]",
+                "    problem-contracts: [\"missing\"]",
             ),
             "problem_contracts",
             "missing",
@@ -293,8 +293,8 @@ fn resolves_every_manifest_reference_namespace_before_hashing() {
         (
             "execution policy",
             IMPLICIT_DEFAULTS.replace(
-                "    execution_policy: \"default\"",
-                "    execution_policy: \"missing\"",
+                "    execution-policy: \"default\"",
+                "    execution-policy: \"missing\"",
             ),
             "execution_policy",
             "missing",
@@ -302,8 +302,8 @@ fn resolves_every_manifest_reference_namespace_before_hashing() {
         (
             "observation policy",
             IMPLICIT_DEFAULTS.replace(
-                "    observation_policy: \"final\"",
-                "    observation_policy: \"missing\"",
+                "    observation-policy: \"final\"",
+                "    observation-policy: \"missing\"",
             ),
             "observation_policy",
             "missing",
@@ -312,7 +312,7 @@ fn resolves_every_manifest_reference_namespace_before_hashing() {
             "dataset parameter namespace",
             IMPLICIT_DEFAULTS.replace(
                 "    seed: 17",
-                "    seed: 17\n    dataset_parameters:\n      missing:\n        rows: { value: 1 }",
+                "    seed: 17\n    dataset-parameters:\n      missing:\n        rows: { value: 1 }",
             ),
             "dataset_parameters",
             "missing",
@@ -321,7 +321,7 @@ fn resolves_every_manifest_reference_namespace_before_hashing() {
             "implementation parameter namespace",
             IMPLICIT_DEFAULTS.replace(
                 "    seed: 17",
-                "    seed: 17\n    implementation_parameters:\n      missing:\n        tolerance: { value: 1 }",
+                "    seed: 17\n    implementation-parameters:\n      missing:\n        tolerance: { value: 1 }",
             ),
             "implementation_parameters",
             "missing",
@@ -351,16 +351,16 @@ fn unrelated_experiments_change_only_the_whole_manifest_hash() {
     let extended = parse(
         "metewand.yaml",
         &IMPLICIT_DEFAULTS.replace(
-            "execution_policies:",
+            "execution-policies:",
             r#"  - name: "additional"
     problem: "example"
     implementations: ["solver"]
-    execution_policy: "default"
-    observation_policy: "final"
-    implementation_repetitions: 1
-    measurement_repetitions: 1
+    execution-policy: "default"
+    observation-policy: "final"
+    implementation-repetitions: 1
+    measurement-repetitions: 1
     seed: 99
-execution_policies:
+execution-policies:
 "#,
         ),
     );

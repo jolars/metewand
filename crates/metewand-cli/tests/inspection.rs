@@ -29,7 +29,7 @@ fn repository() -> TempDir {
     let manifest = fs::read_to_string(&path).unwrap();
     fs::write(
         path,
-        manifest.replace("measurement_repetitions: 1", "measurement_repetitions: 3"),
+        manifest.replace("measurement-repetitions: 1", "measurement-repetitions: 3"),
     )
     .unwrap();
     root

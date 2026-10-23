@@ -24,10 +24,10 @@ are admitted to this catalog.
 
 ## Parameter resolution
 
-Definitions may provide a literal `parameter_defaults` object. Metewand resolves
+Definitions may provide a literal `parameter-defaults` object. Metewand resolves
 parameters in this order:
 
-1. Begin with `parameter_defaults`, or an empty object when it is absent.
+1. Begin with `parameter-defaults`, or an empty object when it is absent.
 2. Merge supplied parameters recursively when both values at a key are objects.
 3. Otherwise, replace the default with the supplied value.
 4. Validate the complete resolved object against its parameter schema.
@@ -37,7 +37,7 @@ merge. Scalars and explicit `null` values also replace their defaults. Both the
 defaults and supplied parameter roots must be objects.
 
 The JSON Schema `default` keyword remains an annotation. It never adds a value
-to the resolved parameters. Only an explicit manifest `parameter_defaults`
+to the resolved parameters. Only an explicit manifest `parameter-defaults`
 object contributes an omitted value. The resolved object remains in Metewand's
 [canonical JSON domain](canonical-json.md) and is the sole parameter object used
 by later identity and transport operations.

@@ -131,7 +131,7 @@ The problem contract deliberately omits a family, accepted dataset schemas,
 allowed timing scopes, validity rules, completion rules, and reference cases.
 Its comments identify each author responsibility. Choose these explicitly,
 including preprocessing rules and independently justified reference results
-and metrics. `dataset_schemas: []` is an author decision for a dataset-free
+and metrics. `dataset-schemas: []` is an author decision for a dataset-free
 problem. No reference data or results are generated, and the contract fails
 `check` until its required definitions are complete. Schema and worker stubs
 also require author edits before they can be used for execution. See

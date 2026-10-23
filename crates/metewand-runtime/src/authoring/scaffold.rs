@@ -492,13 +492,13 @@ fn templates(request: &ScaffoldRequest) -> (Mapping, TemplateFiles) {
     let mut files = Vec::new();
     let definition = match request.component {
         ScaffoldComponent::Dataset => format!(
-            "parameter_schema: {}\noutput_schema: {}\n{launch}",
+            "parameter-schema: {}\noutput-schema: {}\n{launch}",
             quote(&schema_path("parameters")),
             quote(&schema_path("dataset"))
         ),
         ScaffoldComponent::Problem => {
             files.push((PathBuf::from(format!("{directory}/contract.yaml")), format!(
-                "# TODO: Define the scientific contract before checking or running this problem.\nversion: {MANIFEST_VERSION}\nname: {}\nparameter_schema: {}\nresult_schema: {}\nmetric_schema: {}\nsemantics_schema: {}\nsupported_budgets: [none]\n\n# TODO: Add a family name, dataset_schemas (or [] for a dataset-free problem),\n# and allowed_timing_scopes chosen for your measurement contract.\n\nsemantics:\n  # TODO: Define preprocessing and any work allowed outside the timed scope.\n  preprocessing: {{}}\n  # TODO: Define what makes a result scientifically valid.\n  validity: {{}}\n  # TODO: Define when a valid result completes the computation.\n  one_shot_completion: {{}}\n\n# TODO: Add reference cases with author-supplied results and expected metrics.\n# reference_cases:\n#   - result: ...\n#     expected_metrics: ...\n# Include a dataset path only when dataset_schemas is nonempty.\n",
+                "# TODO: Define the scientific contract before checking or running this problem.\nversion: {MANIFEST_VERSION}\nname: {}\nparameter-schema: {}\nresult-schema: {}\nmetric-schema: {}\nsemantics-schema: {}\nsupported-budgets: [none]\n\n# TODO: Add a family name, dataset-schemas (or [] for a dataset-free problem),\n# and allowed-timing-scopes chosen for your measurement contract.\n\nsemantics:\n  # TODO: Define preprocessing and any work allowed outside the timed scope.\n  preprocessing: {{}}\n  # TODO: Define what makes a result scientifically valid.\n  validity: {{}}\n  # TODO: Define when a valid result completes the computation.\n  one_shot_completion: {{}}\n\n# TODO: Add reference cases with author-supplied results and expected metrics.\n# reference-cases:\n#   - result: ...\n#     expected-metrics: ...\n# Include a dataset path only when dataset-schemas is nonempty.\n",
                 quote(&request.name), quote(&schema_path("parameters")), quote(&schema_path("result")), quote(&schema_path("metrics")), quote(&schema_path("semantics")),
             )));
             let launch = launch
@@ -511,7 +511,7 @@ fn templates(request: &ScaffoldRequest) -> (Mapping, TemplateFiles) {
             )
         }
         ScaffoldComponent::Implementation => format!(
-            "parameter_schema: {}\nproblem_contracts: [{}]\ncapabilities: [one_shot]\n{launch}",
+            "parameter-schema: {}\nproblem-contracts: [{}]\ncapabilities: [one_shot]\n{launch}",
             quote(&schema_path("parameters")),
             quote(
                 request

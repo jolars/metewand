@@ -62,7 +62,7 @@ fn complete_agent_loop_preserves_identities_and_history() {
     let manifest_path = root.join("metewand.yaml");
     let manifest = fs::read_to_string(&manifest_path)
         .unwrap()
-        .replace("measurement_repetitions: 1", "measurement_repetitions: 3");
+        .replace("measurement-repetitions: 1", "measurement-repetitions: 3");
     fs::write(&manifest_path, &manifest).unwrap();
     let worker_path = root.join("worker.py");
     let marker = root.join("fail");

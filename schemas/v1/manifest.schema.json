@@ -35,12 +35,12 @@
       "type": "array",
       "items": { "$ref": "#/$defs/experiment" }
     },
-    "execution_policies": {
+    "execution-policies": {
       "type": "object",
       "propertyNames": { "$ref": "common.schema.json#/$defs/name" },
-      "additionalProperties": { "$ref": "#/$defs/execution_policy" }
+      "additionalProperties": { "$ref": "#/$defs/execution-policy" }
     },
-    "observation_policies": {
+    "observation-policies": {
       "type": "object",
       "propertyNames": { "$ref": "common.schema.json#/$defs/name" },
       "additionalProperties": {
@@ -83,7 +83,7 @@
         },
         "sources": { "$ref": "#/$defs/source_bundle" },
         "environment": { "$ref": "common.schema.json#/$defs/name" },
-        "protocol_transport": {
+        "protocol-transport": {
           "type": "string",
           "enum": ["pipes", "stdio"]
         }
@@ -107,7 +107,7 @@
         },
         "sources": { "$ref": "#/$defs/source_bundle" },
         "environment": { "$ref": "common.schema.json#/$defs/name" },
-        "protocol_transport": {
+        "protocol-transport": {
           "type": "string",
           "enum": ["pipes", "stdio"]
         }
@@ -133,20 +133,20 @@
     "dataset_base": {
       "type": "object",
       "properties": {
-        "parameter_schema": { "$ref": "common.schema.json#/$defs/schema_reference" },
-        "parameter_defaults": { "type": "object" },
-        "output_schema": { "$ref": "common.schema.json#/$defs/schema_reference" },
+        "parameter-schema": { "$ref": "common.schema.json#/$defs/schema_reference" },
+        "parameter-defaults": { "type": "object" },
+        "output-schema": { "$ref": "common.schema.json#/$defs/schema_reference" },
         "source": { "$ref": "#/$defs/remote_source" }
       },
-      "required": ["output_schema"]
+      "required": ["output-schema"]
     },
     "fixed_dataset": {
       "type": "object",
       "properties": {
-        "output_schema": { "$ref": "common.schema.json#/$defs/schema_reference" },
+        "output-schema": { "$ref": "common.schema.json#/$defs/schema_reference" },
         "sources": { "$ref": "#/$defs/source_bundle" }
       },
-      "required": ["output_schema", "sources"],
+      "required": ["output-schema", "sources"],
       "additionalProperties": false
     },
     "interpreted_dataset": {
@@ -174,7 +174,7 @@
       "type": "object",
       "properties": {
         "contract": { "$ref": "common.schema.json#/$defs/repository_path" },
-        "parameter_defaults": { "type": "object" },
+        "parameter-defaults": { "type": "object" },
         "evaluator": { "$ref": "#/$defs/worker" }
       },
       "required": ["contract", "evaluator"],
@@ -183,20 +183,20 @@
     "implementation_base": {
       "type": "object",
       "properties": {
-        "problem_contracts": {
+        "problem-contracts": {
           "type": "array",
           "items": { "$ref": "common.schema.json#/$defs/name" },
           "minItems": 1,
           "uniqueItems": true
         },
-        "parameter_schema": { "$ref": "common.schema.json#/$defs/schema_reference" },
-        "parameter_defaults": { "type": "object" },
+        "parameter-schema": { "$ref": "common.schema.json#/$defs/schema_reference" },
+        "parameter-defaults": { "type": "object" },
         "capabilities": {
           "type": "array",
           "const": ["one_shot"]
         }
       },
-      "required": ["problem_contracts", "capabilities"]
+      "required": ["problem-contracts", "capabilities"]
     },
     "interpreted_implementation": {
       "allOf": [
@@ -255,7 +255,7 @@
             "flake": { "$ref": "common.schema.json#/$defs/repository_root_path" },
             "installable": { "type": "string", "minLength": 1 },
             "system": { "type": "string", "minLength": 1 },
-            "output_kind": {
+            "output-kind": {
               "type": "string",
               "enum": ["package", "app"]
             },
@@ -266,7 +266,7 @@
             "flake",
             "installable",
             "system",
-            "output_kind",
+            "output-kind",
             "output"
           ],
           "additionalProperties": false
@@ -319,9 +319,9 @@
       "type": "object",
       "properties": {
         "name": { "$ref": "common.schema.json#/$defs/name" },
-        "dataset_parameters": { "$ref": "#/$defs/named_parameter_axes" },
-        "problem_parameters": { "$ref": "#/$defs/parameter_axes" },
-        "implementation_parameters": { "$ref": "#/$defs/named_parameter_axes" }
+        "dataset-parameters": { "$ref": "#/$defs/named_parameter_axes" },
+        "problem-parameters": { "$ref": "#/$defs/parameter_axes" },
+        "implementation-parameters": { "$ref": "#/$defs/named_parameter_axes" }
       },
       "required": ["name"],
       "additionalProperties": false
@@ -343,18 +343,18 @@
           "minItems": 1,
           "uniqueItems": true
         },
-        "execution_policy": { "$ref": "common.schema.json#/$defs/name" },
-        "observation_policy": { "$ref": "common.schema.json#/$defs/name" },
-        "implementation_repetitions": {
+        "execution-policy": { "$ref": "common.schema.json#/$defs/name" },
+        "observation-policy": { "$ref": "common.schema.json#/$defs/name" },
+        "implementation-repetitions": {
           "$ref": "common.schema.json#/$defs/safe_positive_integer"
         },
-        "measurement_repetitions": {
+        "measurement-repetitions": {
           "$ref": "common.schema.json#/$defs/safe_positive_integer"
         },
         "seed": { "$ref": "common.schema.json#/$defs/safe_nonnegative_integer" },
-        "dataset_parameters": { "$ref": "#/$defs/named_parameter_axes" },
-        "problem_parameters": { "$ref": "#/$defs/parameter_axes" },
-        "implementation_parameters": { "$ref": "#/$defs/named_parameter_axes" },
+        "dataset-parameters": { "$ref": "#/$defs/named_parameter_axes" },
+        "problem-parameters": { "$ref": "#/$defs/parameter_axes" },
+        "implementation-parameters": { "$ref": "#/$defs/named_parameter_axes" },
         "cases": {
           "type": "array",
           "items": { "$ref": "#/$defs/case" },
@@ -365,15 +365,15 @@
         "name",
         "problem",
         "implementations",
-        "execution_policy",
-        "observation_policy",
-        "implementation_repetitions",
-        "measurement_repetitions",
+        "execution-policy",
+        "observation-policy",
+        "implementation-repetitions",
+        "measurement-repetitions",
         "seed"
       ],
       "additionalProperties": false
     },
-    "execution_policy": {
+    "execution-policy": {
       "type": "object",
       "properties": {
         "version": {
@@ -384,22 +384,22 @@
         "threads": { "$ref": "common.schema.json#/$defs/safe_positive_integer" },
         "memory": { "type": "string", "minLength": 1 },
         "network": { "type": "boolean" },
-        "worker_reuse": { "type": "boolean" },
-        "warmup_runs": { "$ref": "common.schema.json#/$defs/safe_nonnegative_integer" },
+        "worker-reuse": { "type": "boolean" },
+        "warmup-runs": { "$ref": "common.schema.json#/$defs/safe_nonnegative_integer" },
         "timeout": { "type": "string", "minLength": 1 },
-        "timing_scope": {
+        "timing-scope": {
           "type": "string",
           "enum": ["cold_end_to_end", "prepare_and_execute", "execute_only"]
         },
-        "primary_time": {
+        "primary-time": {
           "type": "string",
           "enum": ["timed_wall_time", "cpu_time"]
         },
-        "run_order": {
+        "run-order": {
           "type": "string",
           "enum": ["sequential", "randomized"]
         },
-        "max_concurrency": { "$ref": "common.schema.json#/$defs/safe_positive_integer", "default": 1 },
+        "max-concurrency": { "$ref": "common.schema.json#/$defs/safe_positive_integer", "default": 1 },
         "enforcement": {
           "type": "string",
           "enum": ["best_effort", "required"]

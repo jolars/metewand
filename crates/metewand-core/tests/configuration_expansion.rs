@@ -19,19 +19,19 @@ version: 1
 name: "matrix"
 datasets:
   generated:
-    parameter_schema: "schemas/dataset-parameters.json"
-    parameter_defaults: { nested: { inherited: true }, untouched: "default" }
-    output_schema: "schemas/dataset.json"
+    parameter-schema: "schemas/dataset-parameters.json"
+    parameter-defaults: { nested: { inherited: true }, untouched: "default" }
+    output-schema: "schemas/dataset.json"
     runner: "command"
     program: "generate"
     environment: "local"
   fixed:
-    output_schema: "schemas/dataset.json"
+    output-schema: "schemas/dataset.json"
     sources: ["datasets/fixed.json"]
 problems:
   regression:
     contract: "problems/regression.yaml"
-    parameter_defaults: { nested: { inherited: true } }
+    parameter-defaults: { nested: { inherited: true } }
     evaluator:
       runner: "command"
       program: "evaluate"
@@ -41,15 +41,15 @@ implementations:
     runner: "command"
     program: "solve-tuned"
     environment: "local"
-    problem_contracts: ["regression"]
-    parameter_schema: "schemas/implementation-parameters.json"
-    parameter_defaults: { trace: false }
+    problem-contracts: ["regression"]
+    parameter-schema: "schemas/implementation-parameters.json"
+    parameter-defaults: { trace: false }
     capabilities: ["one_shot"]
   plain:
     runner: "command"
     program: "solve-plain"
     environment: "local"
-    problem_contracts: ["regression"]
+    problem-contracts: ["regression"]
     capabilities: ["one_shot"]
 environments:
   local:
@@ -59,26 +59,26 @@ experiments:
     problem: "regression"
     datasets: ["generated", "fixed"]
     implementations: ["tuned", "plain"]
-    execution_policy: "default"
-    observation_policy: "final"
-    implementation_repetitions: 1
-    measurement_repetitions: 1
+    execution-policy: "default"
+    observation-policy: "final"
+    implementation-repetitions: 1
+    measurement-repetitions: 1
     seed: 17
-    dataset_parameters:
+    dataset-parameters:
       generated:
         payload: { value: [1, 2] }
         rows: { grid: [10, 20] }
         nested: { value: { supplied: "dataset" } }
-    problem_parameters:
+    problem-parameters:
       lambda: { grid: [0.1, 0.2] }
       nested: { value: { supplied: "problem" } }
-    implementation_parameters:
+    implementation-parameters:
       tuned:
         method: { grid: ["a", "b"] }
-execution_policies:
+execution-policies:
   default:
     version: 1
-observation_policies:
+observation-policies:
   final:
     version: 1
     kind: "one_shot"
@@ -142,8 +142,8 @@ fn contracts(manifest: &Manifest, dataset_free: bool) -> BTreeMap<Name, ProblemC
     let source = if dataset_free {
         CONTRACT
             .replace(
-                "dataset_schemas: [\"schemas/dataset.json\"]",
-                "dataset_schemas: []",
+                "dataset-schemas: [\"schemas/dataset.json\"]",
+                "dataset-schemas: []",
             )
             .replace("    dataset: \"fixtures/small/dataset\"\n", "")
     } else {
@@ -220,29 +220,29 @@ fn expands_only_applicable_namespaces_in_a_stable_cartesian_order() {
 #[test]
 fn named_cases_are_unioned_and_keep_coupled_values_together() {
     let source = MATRIX_MANIFEST.replace(
-        "execution_policies:",
+        "execution-policies:",
         r#"    cases:
       - name: "tall_dense"
-        dataset_parameters:
+        dataset-parameters:
           generated:
             rows: { value: 10000 }
             density: { value: 1.0 }
-        problem_parameters:
+        problem-parameters:
           lambda: { value: 0.01 }
-        implementation_parameters:
+        implementation-parameters:
           tuned:
             method: { value: "dense" }
       - name: "wide_sparse"
-        dataset_parameters:
+        dataset-parameters:
           generated:
             rows: { value: 1000 }
             density: { value: 0.01 }
-        problem_parameters:
+        problem-parameters:
           lambda: { value: 0.1 }
-        implementation_parameters:
+        implementation-parameters:
           tuned:
             method: { value: "sparse" }
-execution_policies:
+execution-policies:
 "#,
     );
     let manifest = manifest(&source);
@@ -310,17 +310,17 @@ fn rejects_duplicate_candidates_from_overlapping_cases_after_resolution() {
             "        method: { value: \"a\" }",
         )
         .replace(
-            "execution_policies:",
+            "execution-policies:",
             r#"    cases:
       - name: "first"
-        dataset_parameters:
+        dataset-parameters:
           generated:
             rows: { value: 10 }
       - name: "overlap"
-        dataset_parameters:
+        dataset-parameters:
           generated:
             rows: { grid: [10, 11] }
-execution_policies:
+execution-policies:
 "#,
         );
     let manifest = manifest(&source);
@@ -379,7 +379,7 @@ fn binds_one_explicit_unit_dataset_for_dataset_free_problems() {
     let source = MATRIX_MANIFEST
         .replace("    datasets: [\"generated\", \"fixed\"]\n", "")
         .replace(
-            "    dataset_parameters:\n      generated:\n        payload: { value: [1, 2] }\n        rows: { grid: [10, 20] }\n        nested: { value: { supplied: \"dataset\" } }\n",
+            "    dataset-parameters:\n      generated:\n        payload: { value: [1, 2] }\n        rows: { grid: [10, 20] }\n        nested: { value: { supplied: \"dataset\" } }\n",
             "",
         );
     let manifest = manifest(&source);

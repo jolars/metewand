@@ -120,7 +120,7 @@ pub struct ProblemContract {
 }
 
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 struct RawProblemContract {
     #[serde(deserialize_with = "deserialize_version_one")]
     version: u32,
@@ -145,16 +145,16 @@ impl<'de> Deserialize<'de> for ParsedProblemContract {
         D: Deserializer<'de>,
     {
         let raw = RawProblemContract::deserialize(deserializer)?;
-        ensure_unique(&raw.dataset_schemas, "`dataset_schemas`").map_err(de::Error::custom)?;
-        ensure_nonempty_unique(&raw.allowed_timing_scopes, "`allowed_timing_scopes`")
+        ensure_unique(&raw.dataset_schemas, "`dataset-schemas`").map_err(de::Error::custom)?;
+        ensure_nonempty_unique(&raw.allowed_timing_scopes, "`allowed-timing-scopes`")
             .map_err(de::Error::custom)?;
         if raw.supported_budgets != [ScientificBudget::None] {
             return Err(de::Error::custom(
-                "version 1 requires `supported_budgets: [\"none\"]`",
+                "version 1 requires `supported-budgets: [\"none\"]`",
             ));
         }
         if raw.reference_cases.is_empty() {
-            return Err(de::Error::custom("`reference_cases` cannot be empty"));
+            return Err(de::Error::custom("`reference-cases` cannot be empty"));
         }
 
         let requires_dataset = !raw.dataset_schemas.is_empty();
@@ -245,7 +245,7 @@ impl<'de> Deserialize<'de> for ProblemSemantics {
 
 /// A problem/evaluator conformance case.
 #[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct ReferenceCase {
     /// Dataset artifact used by the case, when the problem accepts datasets.
     #[serde(default, deserialize_with = "deserialize_optional_non_null")]

@@ -32,7 +32,7 @@ pub fn parse_manifest(source_path: &Path, source: &str) -> Result<Manifest, Mani
 
 /// A parsed version-1 benchmark manifest.
 #[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct Manifest {
     /// Manifest compatibility version.
     #[serde(deserialize_with = "deserialize_version_one")]
@@ -97,7 +97,7 @@ pub struct GeneratedDatasetDefinition {
 
 /// A problem contract and its independent evaluator.
 #[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct ProblemDefinition {
     /// Repository-relative problem-contract path.
     pub contract: RepositoryPath,
@@ -125,7 +125,12 @@ pub struct ImplementationDefinition {
 
 /// A software environment definition.
 #[derive(Debug, Deserialize)]
-#[serde(tag = "kind", rename_all = "lowercase", deny_unknown_fields)]
+#[serde(
+    tag = "kind",
+    rename_all = "lowercase",
+    rename_all_fields = "kebab-case",
+    deny_unknown_fields
+)]
 pub enum EnvironmentDefinition {
     /// The existing host software context.
     Local {},
@@ -178,7 +183,7 @@ pub enum NixOutputKind {
 
 /// One experiment before deterministic matrix expansion.
 #[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct ExperimentDefinition {
     /// Experiment name.
     pub name: Name,
@@ -219,7 +224,7 @@ pub struct ExperimentDefinition {
 
 /// A named parameter-axis overlay within an experiment.
 #[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct ExperimentCase {
     /// Case name.
     pub name: Name,
@@ -251,7 +256,7 @@ pub enum ParameterAxis {
 
 /// Resource, timing, and scheduling settings selected by an experiment.
 #[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct ExecutionPolicyDefinition {
     /// Execution-policy compatibility version.
     #[serde(deserialize_with = "deserialize_version_one")]
@@ -428,7 +433,7 @@ pub enum Enforcement {
 
 /// The version-1 one-shot observation policy.
 #[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct ObservationPolicyDefinition {
     /// Observation-policy compatibility version.
     #[serde(deserialize_with = "deserialize_version_one")]
@@ -560,7 +565,7 @@ pub enum ImplementationCapability {
 
 /// A pinned remote input to a dataset materializer.
 #[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct RemoteSource {
     /// Remote resource URI.
     #[serde(deserialize_with = "deserialize_uri_string")]
@@ -796,7 +801,7 @@ impl ManifestParseError {
 }
 
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 struct RawDatasetDefinition {
     #[serde(default, deserialize_with = "deserialize_optional_non_null")]
     parameter_schema: Option<RepositoryPath>,
@@ -839,7 +844,7 @@ impl<'de> Deserialize<'de> for DatasetDefinition {
                     || raw.protocol_transport.is_some()
                 {
                     return Err(de::Error::custom(
-                        "a fixed dataset accepts only `output_schema` and `sources`",
+                        "a fixed dataset accepts only `output-schema` and `sources`",
                     ));
                 }
                 let sources = required_source_bundle(raw.sources, "fixed dataset")
@@ -873,7 +878,7 @@ impl<'de> Deserialize<'de> for DatasetDefinition {
 }
 
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 struct RawImplementationDefinition {
     runner: Runner,
     #[serde(default, deserialize_with = "deserialize_optional_non_null")]
@@ -902,7 +907,7 @@ impl<'de> Deserialize<'de> for ImplementationDefinition {
         D: Deserializer<'de>,
     {
         let raw = RawImplementationDefinition::deserialize(deserializer)?;
-        ensure_nonempty_unique(&raw.problem_contracts, "`problem_contracts`")
+        ensure_nonempty_unique(&raw.problem_contracts, "`problem-contracts`")
             .map_err(de::Error::custom)?;
         if raw.capabilities != [ImplementationCapability::OneShot] {
             return Err(de::Error::custom(
@@ -930,7 +935,7 @@ impl<'de> Deserialize<'de> for ImplementationDefinition {
 }
 
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 struct RawWorkerDefinition {
     runner: Runner,
     #[serde(default, deserialize_with = "deserialize_optional_non_null")]
@@ -1030,14 +1035,14 @@ enum RawParameterAxis {
 }
 
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 struct RawValueAxis {
     #[serde(deserialize_with = "deserialize_manifest_value")]
     value: CanonicalValue,
 }
 
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 struct RawGridAxis {
     #[serde(deserialize_with = "deserialize_manifest_values")]
     grid: Vec<CanonicalValue>,
@@ -1096,7 +1101,7 @@ where
     if value.as_json().is_object() {
         Ok(Some(value))
     } else {
-        Err(de::Error::custom("`parameter_defaults` must be an object"))
+        Err(de::Error::custom("`parameter-defaults` must be an object"))
     }
 }
 

@@ -107,15 +107,15 @@ fn repository(max_concurrency: Option<u64>, slots: usize, failed_offset: Option<
         &manifest,
         "seed: 7",
         &format!(
-            "seed: 7\nproblem_parameters:\n  offset: {{ grid: {:?} }}",
+            "seed: 7\nproblem-parameters:\n  offset: {{ grid: {:?} }}",
             (2..slots + 2).collect::<Vec<_>>()
         ),
     );
     if let Some(limit) = max_concurrency {
         manifest = support::replace_yaml(
             &manifest,
-            "timing_scope:",
-            &format!("max_concurrency: {limit}\ntiming_scope:"),
+            "timing-scope:",
+            &format!("max-concurrency: {limit}\ntiming-scope:"),
         );
     }
     fs::write(benchmark.join("metewand.yaml"), manifest).unwrap();

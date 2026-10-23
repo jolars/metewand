@@ -45,21 +45,21 @@ const CONTRACT: &str = r#"
 version: 1
 name: "sum"
 family: "arithmetic"
-parameter_schema: "schemas/parameters.json"
-dataset_schemas: []
-result_schema: "schemas/result.json"
-metric_schema: "schemas/metrics.json"
-semantics_schema: "schemas/semantics.json"
-allowed_timing_scopes: ["prepare_and_execute"]
-supported_budgets: ["none"]
+parameter-schema: "schemas/parameters.json"
+dataset-schemas: []
+result-schema: "schemas/result.json"
+metric-schema: "schemas/metrics.json"
+semantics-schema: "schemas/semantics.json"
+allowed-timing-scopes: ["prepare_and_execute"]
+supported-budgets: ["none"]
 semantics:
   validity:
     finite: true
   one_shot_completion:
     accepted: true
-reference_cases:
+reference-cases:
   - result: "fixtures/result.json"
-    expected_metrics: "fixtures/metrics.json"
+    expected-metrics: "fixtures/metrics.json"
 "#;
 
 const MANIFEST: &str = r#"
@@ -81,7 +81,7 @@ implementations:
     args: ["worker.sh"]
     sources: ["worker.sh"]
     environment: "local"
-    problem_contracts: ["sum"]
+    problem-contracts: ["sum"]
     capabilities: ["one_shot"]
 environments:
   local:
@@ -90,15 +90,15 @@ experiments:
   - name: "main"
     problem: "sum"
     implementations: ["reference"]
-    execution_policy: "default"
-    observation_policy: "final"
-    implementation_repetitions: 1
-    measurement_repetitions: 2
+    execution-policy: "default"
+    observation-policy: "final"
+    implementation-repetitions: 1
+    measurement-repetitions: 2
     seed: 7
-execution_policies:
+execution-policies:
   default:
     version: 1
-observation_policies:
+observation-policies:
   final:
     version: 1
     kind: "one_shot"
@@ -414,7 +414,7 @@ fn check_and_plan_do_not_acquire_selected_remote_sources_or_launch_materializers
         repository.path(),
         "metewand.yaml",
         &format!(
-            "{manifest}\ndatasets:\n  remote:\n    output_schema: \"schemas/dataset.json\"\n    runner: \"command\"\n    program: \"sh\"\n    args: [\"worker.sh\"]\n    sources: [\"worker.sh\"]\n    environment: \"local\"\n    source:\n      url: \"http://{}/data\"\n      sha256: \"{}\"\n",
+            "{manifest}\ndatasets:\n  remote:\n    output-schema: \"schemas/dataset.json\"\n    runner: \"command\"\n    program: \"sh\"\n    args: [\"worker.sh\"]\n    sources: [\"worker.sh\"]\n    environment: \"local\"\n    source:\n      url: \"http://{}/data\"\n      sha256: \"{}\"\n",
             listener.local_addr().unwrap(),
             "0".repeat(64),
         ),
@@ -426,12 +426,12 @@ fn check_and_plan_do_not_acquire_selected_remote_sources_or_launch_materializers
         "problem.yaml",
         &CONTRACT
             .replace(
-                "dataset_schemas: []",
-                "dataset_schemas: [\"schemas/dataset.json\"]",
+                "dataset-schemas: []",
+                "dataset-schemas: [\"schemas/dataset.json\"]",
             )
             .replace(
-                "reference_cases:\n  - result:",
-                "reference_cases:\n  - dataset: \"fixtures/dataset\"\n    result:",
+                "reference-cases:\n  - result:",
+                "reference-cases:\n  - dataset: \"fixtures/dataset\"\n    result:",
             ),
     );
     let before = files(repository.path());

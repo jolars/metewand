@@ -47,7 +47,7 @@ operational concerns:
   one-shot attempt.
 
 Both rule mappings must be present and nonempty. Their exact fields, along with
-all other family-specific semantics, are validated against `semantics_schema`.
+all other family-specific semantics, are validated against `semantics-schema`.
 This separation lets later profile observations remain valid without implying
 that a one-shot completion threshold has been reached.
 
