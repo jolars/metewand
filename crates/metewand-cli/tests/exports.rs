@@ -245,6 +245,125 @@ fn failures_and_invalid_results_remain_visible_beside_successful_retries() {
 }
 
 #[test]
+fn repeated_comparisons_retain_settings_endpoints_and_incomplete_results() {
+    let root = repository();
+    let manifest = root.path().join("metewand.yaml");
+    let source = fs::read_to_string(&manifest).unwrap();
+    fs::write(
+        &manifest,
+        source
+            .replace(
+                "implementations:\n  reference:",
+                "implementations:\n  reference:\n    parameter-schema: schemas/implementation.json\n    parameter-defaults: { bias: 0 }",
+            )
+            .replace("measurement-repetitions: 1", "measurement-repetitions: 3")
+            .replace(
+                "    seed: 7",
+                "    seed: 7\n    implementation-parameters:\n      reference:\n        bias: { grid: [0, 1] }",
+            ),
+    )
+    .unwrap();
+    fs::write(
+        root.path().join("schemas/implementation.json"),
+        r#"{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"bias":{"type":"integer"}},"required":["bias"],"additionalProperties":false}"#,
+    )
+    .unwrap();
+    let worker = root.path().join("worker.py");
+    fs::write(
+        &worker,
+        fs::read_to_string(&worker)
+            .unwrap()
+            .replace(
+                "prepared = sum(values) + request[\"problem_parameters\"][\"offset\"]",
+                "prepared = sum(values) + request[\"problem_parameters\"][\"offset\"] + request[\"implementation_parameters\"][\"bias\"]",
+            )
+            .replace("else \"invalid\"", "else \"not_reached\""),
+    )
+    .unwrap();
+
+    let (code, run) = command(root.path(), &["run", "--output-dir", "run"]);
+    assert_eq!(code, 5, "{run}");
+    assert_eq!(run["data"]["summary"]["accepted_attempts"], 3);
+    assert_eq!(run["data"]["summary"]["failed_attempts"], 3);
+    let attempts = run["data"]["attempts"].as_array().unwrap();
+    assert_eq!(attempts.len(), 6);
+    for attempt in attempts {
+        assert!(attempt["observation_id"].is_string());
+        assert_eq!(
+            attempt["diagnostic"]["code"],
+            if attempt["status"] == "accepted" {
+                Value::Null
+            } else {
+                Value::from("completion_target_not_reached")
+            }
+        );
+    }
+    let (code, report) = command(
+        root.path(),
+        &[
+            "export",
+            "--output-dir",
+            "run",
+            "--destination",
+            "table",
+            "--rebuild-index",
+        ],
+    );
+    assert_eq!(code, 0, "{report}");
+    let rows = lines(&root.path().join("table/results.jsonl"));
+    let observations = rows
+        .iter()
+        .filter(|row| row["record_type"] == "observation")
+        .collect::<Vec<_>>();
+    assert_eq!(observations.len(), 6);
+    let mut repetitions = BTreeMap::<i64, Vec<u64>>::new();
+    for row in observations {
+        let provenance = &row["provenance"]["data"];
+        let bias = provenance["execution"]["implementation_parameters"]["bias"]
+            .as_i64()
+            .unwrap();
+        let measurement =
+            provenance["context"]["scheduling"]["comparison_block"]["measurement_index"]
+                .as_u64()
+                .unwrap();
+        repetitions.entry(bias).or_default().push(measurement);
+        assert_eq!(row["metric_name"], "/absolute_error");
+        assert_eq!(row["metric_value"], bias);
+        assert_eq!(
+            row["evidence"]["result"]["document"]["data"]["answer"],
+            8 + bias
+        );
+        assert_eq!(row["valid"], true);
+        assert_eq!(row["selected"], bias == 0);
+        assert_eq!(
+            row["completion"],
+            if bias == 0 { "reached" } else { "not_reached" }
+        );
+        assert!(row["timed_wall_time_ns"].as_u64().unwrap() > 0);
+        assert_eq!(row["compatibility"]["timing_scope"], "prepare_and_execute");
+    }
+    for bias in [0, 1] {
+        repetitions.get_mut(&bias).unwrap().sort();
+        assert_eq!(repetitions[&bias], [0, 1, 2]);
+    }
+    let index = lines(&root.path().join("run/index.jsonl"));
+    assert_eq!(
+        index
+            .iter()
+            .filter(|row| row["record_type"] == "attempt")
+            .count(),
+        6
+    );
+    assert_eq!(
+        index
+            .iter()
+            .filter(|row| row["record_type"] == "observation")
+            .count(),
+        6
+    );
+}
+
+#[test]
 fn malformed_requests_and_empty_runs_do_not_initialize_or_recover_sources() {
     let root = tempfile::tempdir().unwrap();
     for (args, expected) in [
