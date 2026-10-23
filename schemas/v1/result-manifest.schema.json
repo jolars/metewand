@@ -19,6 +19,6 @@
       "uniqueItems": true
     }
   },
-  "required": ["schema_version", "schema", "data", "files"],
+  "required": ["schema_version", "data", "files"],
   "additionalProperties": false
 }

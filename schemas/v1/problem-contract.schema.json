@@ -13,21 +13,21 @@
     "name": { "$ref": "common.schema.json#/$defs/name" },
     "family": { "$ref": "common.schema.json#/$defs/name" },
     "parameter-schema": {
-      "$ref": "common.schema.json#/$defs/schema_reference"
+      "$ref": "common.schema.json#/$defs/schema_declaration"
     },
     "dataset-schemas": {
       "type": "array",
-      "items": { "$ref": "common.schema.json#/$defs/schema_reference" },
+      "items": { "$ref": "common.schema.json#/$defs/schema_declaration" },
       "uniqueItems": true
     },
     "result-schema": {
-      "$ref": "common.schema.json#/$defs/schema_reference"
+      "$ref": "common.schema.json#/$defs/schema_declaration"
     },
     "metric-schema": {
-      "$ref": "common.schema.json#/$defs/schema_reference"
+      "$ref": "common.schema.json#/$defs/schema_declaration"
     },
     "semantics-schema": {
-      "$ref": "common.schema.json#/$defs/schema_reference"
+      "$ref": "common.schema.json#/$defs/schema_declaration"
     },
     "allowed-timing-scopes": {
       "type": "array",

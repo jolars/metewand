@@ -8,8 +8,8 @@ use metewand_core::{
     canonical::CanonicalValue,
     identity::record_id,
     manifest::{
-        DatasetDefinition, Enforcement, ImplementationCapability, Name, ObservationKind,
-        PrimaryTime, ProtocolTransport, RepositoryPath, RunOrder, TimingScope, parse_manifest,
+        Enforcement, ImplementationCapability, Name, ObservationKind, PrimaryTime,
+        ProtocolTransport, RepositoryPath, RunOrder, TimingScope, parse_manifest,
     },
     problem_contract::ScientificBudget,
     records::{
@@ -41,14 +41,7 @@ fn value(source: &str) -> CanonicalValue {
 }
 
 fn repository_path(value: &str) -> RepositoryPath {
-    let source = format!(
-        "version: 1\nname: \"path\"\ndatasets:\n  path:\n    output-schema: {value:?}\n    sources: [\"fixture\"]\n"
-    );
-    let manifest = parse_manifest(Path::new("metewand.yaml"), &source).unwrap();
-    let DatasetDefinition::Fixed(dataset) = &manifest.datasets["path"] else {
-        panic!("expected a fixed dataset");
-    };
-    dataset.output_schema.clone()
+    serde_json::from_value(serde_json::json!(value)).unwrap()
 }
 
 fn id<T>(byte: u8) -> RecordId<T> {

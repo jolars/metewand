@@ -1,13 +1,15 @@
 //! Typed parsing and validation for version-1 problem contracts.
 
 use std::{
-    collections::BTreeSet,
     fmt,
     path::{Path, PathBuf},
 };
 
-use serde::{Deserialize, Deserializer, de};
-use serde_json::Value;
+use serde::{
+    Deserialize, Deserializer,
+    de::{self, MapAccess, Visitor, value::MapAccessDeserializer},
+};
+use serde_json::{Value, json};
 use thiserror::Error;
 
 use crate::{
@@ -16,8 +18,61 @@ use crate::{
         Name, RepositoryPath, SourceSpan, TimingScope, deserialize_manifest_value,
         deserialize_optional_non_null, deserialize_version_one, ensure_nonempty_unique,
     },
-    schema::{SchemaCatalog, SchemaValidationError},
+    schema::{SchemaCatalog, SchemaDeclaration, SchemaValidationError},
 };
+
+/// An inline problem contract or a reusable repository YAML document.
+#[derive(Debug)]
+pub enum ContractDeclaration {
+    /// A repository-relative contract path.
+    Reference(RepositoryPath),
+    /// A complete contract in the manifest.
+    Inline(Box<ProblemContract>),
+}
+
+impl ContractDeclaration {
+    /// Returns the source path for a referenced contract.
+    #[must_use]
+    pub fn reference_path(&self) -> Option<&Path> {
+        match self {
+            Self::Reference(path) => Some(path.as_path()),
+            Self::Inline(_) => None,
+        }
+    }
+
+    /// Returns the effective typed declaration for manifest hashing.
+    #[must_use]
+    pub fn declaration_value(&self) -> Value {
+        match self {
+            Self::Reference(path) => json!(path.as_path()),
+            Self::Inline(contract) => contract.declaration_value(),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for ContractDeclaration {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct ContractVisitor;
+        impl<'de> Visitor<'de> for ContractVisitor {
+            type Value = ContractDeclaration;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str("a repository contract path or an inline problem contract")
+            }
+
+            fn visit_str<E: de::Error>(self, value: &str) -> Result<Self::Value, E> {
+                RepositoryPath::deserialize(de::value::StrDeserializer::<E>::new(value))
+                    .map(ContractDeclaration::Reference)
+            }
+
+            fn visit_map<A: MapAccess<'de>>(self, map: A) -> Result<Self::Value, A::Error> {
+                ProblemContract::deserialize(MapAccessDeserializer::new(map))
+                    .map(|contract| ContractDeclaration::Inline(Box::new(contract)))
+            }
+        }
+        deserializer.deserialize_any(ContractVisitor)
+    }
+}
 
 /// Parses and validates one version-1 problem contract.
 ///
@@ -56,12 +111,13 @@ pub fn parse_problem_contract_document(
     source_path: &Path,
     source: &str,
 ) -> Result<ProblemContract, ProblemContractError> {
-    let parsed: ParsedProblemContract =
+    let mut contract: ProblemContract =
         crate::yaml::parse(source_path, source).map_err(|error| ProblemContractError::Parse {
             message: error.message,
             source_span: error.source_span,
         })?;
-    Ok(parsed.0)
+    contract.set_schema_owner(source_path);
+    Ok(contract)
 }
 
 /// Validates a parsed problem contract against a complete offline schema catalog.
@@ -90,7 +146,7 @@ pub fn validate_problem_contract(
 }
 
 /// A validated, language-neutral problem and fairness contract.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ProblemContract {
     /// Problem-contract compatibility version.
     pub version: u32,
@@ -99,16 +155,16 @@ pub struct ProblemContract {
     /// Open family tag whose meaning is owned by the benchmark.
     pub family: Name,
     /// Schema for problem-owned parameters.
-    pub parameter_schema: RepositoryPath,
+    pub parameter_schema: SchemaDeclaration,
     /// Dataset schemas accepted by this problem, or an empty list when the
     /// problem is dataset-free.
-    pub dataset_schemas: Vec<RepositoryPath>,
+    pub dataset_schemas: Vec<SchemaDeclaration>,
     /// Schema for canonical implementation results.
-    pub result_schema: RepositoryPath,
+    pub result_schema: SchemaDeclaration,
     /// Schema for independent evaluator metrics.
-    pub metric_schema: RepositoryPath,
+    pub metric_schema: SchemaDeclaration,
     /// Schema that owns the family-specific semantics object.
-    pub semantics_schema: RepositoryPath,
+    pub semantics_schema: SchemaDeclaration,
     /// Timing scopes under which the problem may be measured.
     pub allowed_timing_scopes: Vec<TimingScope>,
     /// Scientific budgets supported by the contract.
@@ -119,6 +175,52 @@ pub struct ProblemContract {
     pub reference_cases: Vec<ReferenceCase>,
 }
 
+impl ProblemContract {
+    /// Returns every schema declaration in the common envelope.
+    pub fn schemas(&self) -> impl Iterator<Item = &SchemaDeclaration> {
+        [
+            &self.parameter_schema,
+            &self.result_schema,
+            &self.metric_schema,
+            &self.semantics_schema,
+        ]
+        .into_iter()
+        .chain(&self.dataset_schemas)
+    }
+
+    pub(crate) fn set_schema_owner(&mut self, owner: &Path) {
+        for schema in [
+            &mut self.parameter_schema,
+            &mut self.result_schema,
+            &mut self.metric_schema,
+            &mut self.semantics_schema,
+        ]
+        .into_iter()
+        .chain(&mut self.dataset_schemas)
+        {
+            schema.set_owner(owner);
+        }
+    }
+
+    fn declaration_value(&self) -> Value {
+        json!({
+            "version": self.version, "name": self.name.as_str(), "family": self.family.as_str(),
+            "parameter_schema": self.parameter_schema.declaration_value(),
+            "dataset_schemas": self.dataset_schemas.iter().map(SchemaDeclaration::declaration_value).collect::<Vec<_>>(),
+            "result_schema": self.result_schema.declaration_value(),
+            "metric_schema": self.metric_schema.declaration_value(),
+            "semantics_schema": self.semantics_schema.declaration_value(),
+            "allowed_timing_scopes": self.allowed_timing_scopes.iter().map(ToString::to_string).collect::<Vec<_>>(),
+            "supported_budgets": self.supported_budgets.iter().map(ToString::to_string).collect::<Vec<_>>(),
+            "semantics": self.semantics.as_canonical().as_json(),
+            "reference_cases": self.reference_cases.iter().map(|case| json!({
+                "dataset": case.dataset.as_ref().map(RepositoryPath::as_path),
+                "result": case.result.as_path(), "expected_metrics": case.expected_metrics.as_path(),
+            })).collect::<Vec<_>>(),
+        })
+    }
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 struct RawProblemContract {
@@ -126,20 +228,18 @@ struct RawProblemContract {
     version: u32,
     name: Name,
     family: Name,
-    parameter_schema: RepositoryPath,
-    dataset_schemas: Vec<RepositoryPath>,
-    result_schema: RepositoryPath,
-    metric_schema: RepositoryPath,
-    semantics_schema: RepositoryPath,
+    parameter_schema: SchemaDeclaration,
+    dataset_schemas: Vec<SchemaDeclaration>,
+    result_schema: SchemaDeclaration,
+    metric_schema: SchemaDeclaration,
+    semantics_schema: SchemaDeclaration,
     allowed_timing_scopes: Vec<TimingScope>,
     supported_budgets: Vec<ScientificBudget>,
     semantics: ProblemSemantics,
     reference_cases: Vec<ReferenceCase>,
 }
 
-struct ParsedProblemContract(ProblemContract);
-
-impl<'de> Deserialize<'de> for ParsedProblemContract {
+impl<'de> Deserialize<'de> for ProblemContract {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
@@ -174,7 +274,7 @@ impl<'de> Deserialize<'de> for ParsedProblemContract {
             }
         }
 
-        Ok(Self(ProblemContract {
+        Ok(Self {
             version: raw.version,
             name: raw.name,
             family: raw.family,
@@ -187,12 +287,12 @@ impl<'de> Deserialize<'de> for ParsedProblemContract {
             supported_budgets: raw.supported_budgets,
             semantics: raw.semantics,
             reference_cases: raw.reference_cases,
-        }))
+        })
     }
 }
 
 /// Family-owned problem semantics with required operational rule groups.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ProblemSemantics {
     value: CanonicalValue,
 }
@@ -244,7 +344,7 @@ impl<'de> Deserialize<'de> for ProblemSemantics {
 }
 
 /// A problem/evaluator conformance case.
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct ReferenceCase {
     /// Dataset artifact used by the case, when the problem accepts datasets.
@@ -401,7 +501,7 @@ fn validate_schema_references(
 fn require_schema(
     contract_path: &Path,
     role: ProblemSchemaRole,
-    schema_path: &RepositoryPath,
+    schema_path: &SchemaDeclaration,
     schemas: &SchemaCatalog,
 ) -> Result<(), ProblemContractError> {
     if schemas.contains(schema_path.as_path()) {
@@ -417,9 +517,13 @@ fn require_schema(
 
 fn ensure_unique<T>(values: &[T], description: &str) -> Result<(), String>
 where
-    T: Ord,
+    T: PartialEq,
 {
-    if values.iter().collect::<BTreeSet<_>>().len() != values.len() {
+    if values
+        .iter()
+        .enumerate()
+        .any(|(index, value)| values[..index].contains(value))
+    {
         Err(format!("{description} cannot contain duplicates"))
     } else {
         Ok(())

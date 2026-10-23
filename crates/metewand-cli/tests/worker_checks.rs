@@ -124,15 +124,11 @@ fn rejects_invalid_reference_results_and_evaluator_input_mutation() {
 #[test]
 fn accepts_enveloped_reference_results_and_metrics() {
     let repository = repository();
-    for (file, schema, data) in [
-        ("result", "result", serde_json::json!({"answer": 8})),
-        (
-            "metrics",
-            "metrics",
-            serde_json::json!({"absolute_error": 0}),
-        ),
+    for (file, data) in [
+        ("result", serde_json::json!({"answer": 8})),
+        ("metrics", serde_json::json!({"absolute_error": 0})),
     ] {
-        let mut value = serde_json::json!({"schema_version": 1, "schema": format!("schemas/{schema}.json"), "data": data});
+        let mut value = serde_json::json!({"schema_version": 1, "data": data});
         if file == "result" {
             value["files"] = serde_json::json!([]);
         }
@@ -143,7 +139,7 @@ fn accepts_enveloped_reference_results_and_metrics() {
             serde_json::to_vec(&value).unwrap(),
         )
         .unwrap();
-        let contract = repository.path().join("problem.yaml");
+        let contract = repository.path().join("metewand.yaml");
         let text = fs::read_to_string(&contract).unwrap().replace(
             &format!("reference/{file}.json"),
             &format!("reference/{file}"),
@@ -193,12 +189,13 @@ fn accepts_existing_dataset_inventory_and_checks_each_case() {
     let source = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../fixtures/problem-contract/v1/suites/sum/fixtures/mixed/dataset");
     copy_tree(&source, &repository.path().join("reference/dataset"));
-    let path = repository.path().join("problem.yaml");
+    let path = repository.path().join("metewand.yaml");
     let contract = fs::read_to_string(&path)
         .unwrap()
-        .replace("dataset: \"data.json\"", "dataset: \"reference/dataset\"");
-    let case = &contract[contract.find("  - dataset:").unwrap()..];
-    fs::write(path, format!("{contract}\n{case}")).unwrap();
+        .replace("dataset: data.json", "dataset: reference/dataset");
+    let case = "        - dataset: reference/dataset\n          result: reference/result.json\n          expected-metrics: reference/metrics.json";
+    assert!(contract.contains(case));
+    fs::write(path, contract.replace(case, &format!("{case}\n{case}"))).unwrap();
     let output = check(repository.path());
     assert!(output.status.success(), "{output:?}");
     let report: Value = serde_json::from_slice(&output.stdout).unwrap();
@@ -235,7 +232,8 @@ fn records_additional_capabilities_without_selecting_or_executing_them() {
     let raw = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/fixed-dataset/worker.py");
     let worker = fs::read_to_string(raw).unwrap()
         .replace("capabilities=[\"one_shot\"] if role == \"implementation\" else [],", "capabilities=[\"one_shot\", \"fresh_sequence\"] if role == \"implementation\" else [],")
-        .replace("assert role == \"implementation\" and prepared is not None", "raise AssertionError(\"check must not execute implementations\")");
+        .replace("assert role == \"implementation\" and prepared is not None", "raise AssertionError(\"check must not execute implementations\")")
+        .replace("\"schema\": \"schemas/metrics.json\",", "");
     fs::write(repository.path().join("worker.py"), worker).unwrap();
     let output = check(repository.path());
     assert!(output.status.success(), "{output:?}");

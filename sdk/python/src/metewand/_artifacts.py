@@ -135,26 +135,23 @@ def write_dataset_manifest(directory, files, *, manifest="dataset-manifest.json"
     return manifest
 
 
-def write_result(directory, data, *, schema, files=(), manifest="result.json"):
+def write_result(directory, data, *, schema=None, files=(), manifest="result.json"):
     """Write a problem-owned result envelope and return its relative manifest path."""
     manifest = _relative_path(manifest)
     document = {
         "schema_version": 1,
-        "schema": _relative_path(schema),
         "data": _object(data, "Result data"),
         "files": _files(files, manifest),
     }
+    if schema is not None:
+        document["schema"] = _relative_path(schema)
     write_json(_output_path(directory, manifest), document)
     return manifest
 
 
-def write_metrics(path, data, *, schema):
+def write_metrics(path, data, *, schema=None):
     """Write evaluator-owned metrics at the exact path assigned by Metewand."""
-    write_json(
-        path,
-        {
-            "schema_version": 1,
-            "schema": _relative_path(schema),
-            "data": _object(data, "Metrics data"),
-        },
-    )
+    document = {"schema_version": 1, "data": _object(data, "Metrics data")}
+    if schema is not None:
+        document["schema"] = _relative_path(schema)
+    write_json(path, document)

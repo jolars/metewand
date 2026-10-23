@@ -13,8 +13,8 @@ read_json(path)
 write_json(path, value)
 file_entry(directory, path, media_type, representation = NULL)
 write_dataset_manifest(directory, files, manifest = "dataset-manifest.json")
-write_result(directory, data, schema, files = list(), manifest = "result.json")
-write_metrics(path, data, schema)
+write_result(directory, data, schema = NULL, files = list(), manifest = "result.json")
+write_metrics(path, data, schema = NULL)
 }
 \arguments{
   \item{path}{A document path, or a normalized relative inventory path.}
@@ -28,7 +28,8 @@ write_metrics(path, data, schema)
   \item{files}{An unnamed list of explicit file inventory entries.}
   \item{manifest}{A normalized manifest path relative to the output directory.}
   \item{data}{A problem-owned JSON object.}
-  \item{schema}{The repository-relative problem schema path.}
+  \item{schema}{An optional repository-relative problem schema path. Omit it to
+  use the selected problem contract's schema, including an inline schema.}
 }
 \details{Files are closed before write helpers return. Inventories are sorted by
 UTF-8 path bytes and cannot repeat paths or include their own manifest. Paths

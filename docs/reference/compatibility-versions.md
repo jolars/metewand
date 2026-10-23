@@ -52,7 +52,15 @@ constants, schemas, or accepted inputs.
 
 The manifest and standalone observation-policy schema currently admit only
 `one_shot`. Problem contracts require `supported-budgets: ["none"]`.
-Inline contracts and schemas, optional family semantics schemas, applicability
+Inline contracts and schemas are supported. Result and metric envelopes may
+omit `schema` to use the selected contract's schema. These additions retain the
+unreleased version-1 authoring and public-schema boundaries: existing canonical
+file declarations and persisted records keep their representations. Inline
+schemas inherit the dialect before hashing, and schema identities include their
+resolved dependencies. Moving a schema from a file to an inline declaration may
+change its path-bearing identity; see [schema normalization](schema-validation.md#inline-declarations).
+
+Optional family semantics schemas, applicability
 selection, profiles, scientific budgets, and instrumentation settings remain
 planned implementation work.
 

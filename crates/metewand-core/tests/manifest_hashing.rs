@@ -51,6 +51,46 @@ observation-policies:
     kind: "one_shot"
 "#;
 
+#[test]
+fn pins_normalized_inline_schema_bytes() {
+    let source = r#"
+version: 1
+name: inline
+datasets:
+  numbers:
+    output-schema: {type: object, additionalProperties: false}
+    sources: [data.json]
+"#;
+    let expected = concat!(
+        "{\"datasets\":{\"numbers\":{\"kind\":\"fixed\",\"output_schema\":{\"$schema\":",
+        "\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"type\":\"object\"},",
+        "\"sources\":[\"data.json\"]}},\"environments\":{},\"execution_policies\":{},\"experiments\":[],",
+        "\"implementations\":{},\"name\":\"inline\",\"observation_policies\":{},\"problems\":{},\"version\":1}"
+    );
+    let manifest = parse_manifest(Path::new("metewand.yaml"), source).unwrap();
+    let metewand_core::manifest::DatasetDefinition::Fixed(dataset) = &manifest.datasets["numbers"]
+    else {
+        panic!("expected a fixed dataset");
+    };
+    assert_eq!(
+        dataset.output_schema.as_path(),
+        Path::new(
+            ".metewand-inline-0315fc123cf5b3495e854ac63c47aaff76b34851a87baa07a783533f93acfe57.schema.json"
+        )
+    );
+    assert_eq!(
+        canonical_manifest_bytes(&manifest).unwrap(),
+        expected.as_bytes()
+    );
+    let explicit = source.replace("{type: object, additionalProperties: false}",
+        "{$schema: 'https://json-schema.org/draft/2020-12/schema', additionalProperties: false, type: object}");
+    let explicit = parse_manifest(Path::new("renamed.yaml"), &explicit).unwrap();
+    assert_eq!(
+        hash_manifest(&manifest).unwrap(),
+        hash_manifest(&explicit).unwrap()
+    );
+}
+
 const EXPLICIT_DEFAULTS_REORDERED: &str = r#"
 # Formatting, comments, and mapping order are not hash inputs.
 name: "stable"

@@ -4,6 +4,11 @@ This benchmark generates `[1, 2, 3]`, sums the values and adds two, then
 evaluates the answer independently. It exercises the three SDK worker roles, two
 measured slots, process reuse, and durable result publication.
 
+The problem contract and every scientific schema are inline in `metewand.yaml`.
+The dataset schema uses a YAML anchor so the dataset and problem share one
+declaration. The worker writes result and metric envelopes without schema paths;
+Metewand validates them against the selected problem contract.
+
 From the repository root, copy the example and SDK into a temporary benchmark
 directory and run it:
 

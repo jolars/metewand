@@ -7,7 +7,7 @@ repository root.
   | Example                                                                                      | What it demonstrates                                                      |
   | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
   | [Fixed dataset](https://github.com/jolars/metewand/tree/main/examples/fixed-dataset)         | A complete run with raw Python workers and a fixed input dataset.         |
-  | [Python SDK](https://github.com/jolars/metewand/tree/main/examples/python-sdk)               | Dataset, implementation, and evaluator callbacks, with process reuse.     |
+  | [Python SDK](https://github.com/jolars/metewand/tree/main/examples/python-sdk)               | Inline contracts and schemas, SDK callbacks, and process reuse.           |
   | [R SDK](https://github.com/jolars/metewand/tree/main/examples/r-sdk)                         | The same three worker roles using the R SDK.                              |
   | [Generated dataset](https://github.com/jolars/metewand/tree/main/examples/generated-dataset) | Materialization and implementation preparation with validated artifacts.  |
   | [Dataset-free](https://github.com/jolars/metewand/tree/main/examples/dataset-free)           | A problem using the built-in empty dataset.                               |

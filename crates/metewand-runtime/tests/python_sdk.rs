@@ -8,14 +8,16 @@ use std::{
     time::Duration,
 };
 
-use metewand_core::schema::SchemaCatalog;
+use metewand_core::{
+    manifest::parse_manifest, problem_contract::ContractDeclaration, schema::SchemaCatalog,
+};
 use metewand_protocol::{Capability, EvaluationVerdict, WorkerIdentity, WorkerRole};
 use metewand_runtime::{
     worker_output::WorkerOutputValidator,
     worker_process::{PosixWorkerProcess, WorkerLogLimits},
     worker_session::{PhaseTimeouts, WorkerSession},
 };
-use serde_json::{Value, json};
+use serde_json::json;
 use tempfile::TempDir;
 
 const WORKER_ID: &str =
@@ -39,13 +41,19 @@ fn python_sdk_roles_complete_a_validated_chain_over_dedicated_pipes() {
     let dataset = TempDir::new().unwrap();
     let result = TempDir::new().unwrap();
     let metrics = TempDir::new().unwrap();
-    let catalog = SchemaCatalog::try_new(["dataset", "result", "metrics"].map(|name| {
-        let path = PathBuf::from(format!("schemas/{name}.json"));
-        let value: Value = serde_json::from_slice(
-            &fs::read(root().join("examples/python-sdk").join(&path)).unwrap(),
+    let manifest = parse_manifest(
+        Path::new("metewand.yaml"),
+        &fs::read_to_string(root().join("examples/python-sdk/metewand.yaml")).unwrap(),
+    )
+    .unwrap();
+    let ContractDeclaration::Inline(contract) = &manifest.problems["sum"].contract else {
+        panic!("the Python SDK example has an inline contract");
+    };
+    let catalog = SchemaCatalog::try_new(contract.schemas().map(|schema| {
+        (
+            schema.as_path().to_path_buf(),
+            schema.inline_document().unwrap().as_json().clone(),
         )
-        .unwrap();
-        (path, value)
     }))
     .unwrap();
     let validator = WorkerOutputValidator::new(&catalog).unwrap();
@@ -60,7 +68,11 @@ fn python_sdk_roles_complete_a_validated_chain_over_dedicated_pipes() {
         )
         .unwrap();
     validator
-        .validate_materialized_dataset(dataset.path(), &response, Path::new("schemas/dataset.json"))
+        .validate_materialized_dataset(
+            dataset.path(),
+            &response,
+            contract.dataset_schemas[0].as_path(),
+        )
         .unwrap();
     assert_logs(materializer.shutdown().unwrap(), "dataset_materializer");
 
@@ -81,7 +93,7 @@ fn python_sdk_roles_complete_a_validated_chain_over_dedicated_pipes() {
         assert!(response.implementation_time_ns().is_some());
         assert_eq!(response.statistics(), &json!({"input_count": 3}));
         let validated = validator
-            .validate_execution_result(result.path(), &response, Path::new("schemas/result.json"))
+            .validate_execution_result(result.path(), &response, contract.result_schema.as_path())
             .unwrap();
         assert_eq!(validated.data().as_json(), &json!({"answer": 8}));
         implementation.reset().unwrap();
@@ -104,7 +116,7 @@ fn python_sdk_roles_complete_a_validated_chain_over_dedicated_pipes() {
         .validate_metrics(
             metrics.path(),
             Path::new("metrics.json"),
-            Path::new("schemas/metrics.json"),
+            contract.metric_schema.as_path(),
         )
         .unwrap();
     assert_eq!(validated.data().as_json(), &json!({"absolute_error": 0}));

@@ -51,6 +51,13 @@
     "schema_reference": {
       "$ref": "#/$defs/repository_path"
     },
+    "schema_declaration": {
+      "description": "A repository schema path or an inline Draft 2020-12 schema. Inline schemas inherit the dialect.",
+      "oneOf": [
+        { "$ref": "#/$defs/schema_reference" },
+        { "type": ["object", "boolean"] }
+      ]
+    },
     "file_representation": {
       "type": "object",
       "properties": {

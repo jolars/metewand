@@ -5,24 +5,111 @@
 //! can resolve only the repository documents admitted to the catalog.
 
 use std::{
-    collections::{BTreeMap, btree_map::Entry},
+    collections::{BTreeMap, BTreeSet, btree_map::Entry},
     path::{Path, PathBuf},
     sync::Arc,
 };
 
 use jsonschema::{Draft, Registry, Validator};
+use serde::{Deserialize, Deserializer, de};
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 use thiserror::Error;
+
+use crate::{canonical::CanonicalValue, manifest::RepositoryPath};
 
 /// The only JSON Schema dialect supported by the version-1 compatibility contract.
 pub const DRAFT_2020_12_DIALECT: &str = "https://json-schema.org/draft/2020-12/schema";
 
 const REPOSITORY_SCHEMA_BASE_URI: &str = "metewand://repository/";
 
+/// A reusable repository schema or an inline Draft 2020-12 schema.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SchemaDeclaration {
+    path: PathBuf,
+    document: Option<Box<CanonicalValue>>,
+}
+
+impl SchemaDeclaration {
+    /// Returns the catalog key, including a content-derived key for inline schemas.
+    #[must_use]
+    pub fn as_path(&self) -> &Path {
+        &self.path
+    }
+
+    /// Returns the normalized inline document, or `None` for a file reference.
+    #[must_use]
+    pub fn inline_document(&self) -> Option<&CanonicalValue> {
+        self.document.as_deref()
+    }
+
+    /// Returns the normalized authored declaration used by manifest hashing.
+    #[must_use]
+    pub fn declaration_value(&self) -> Value {
+        self.document.as_ref().map_or_else(
+            || Value::String(self.path.to_string_lossy().into_owned()),
+            |document| document.as_json().clone(),
+        )
+    }
+
+    pub(crate) fn set_owner(&mut self, owner: &Path) {
+        if self.document.is_some() {
+            // A virtual sibling keeps relative references rooted at the owning
+            // document without inserting schema files into the repository.
+            let filename = self.path.file_name().expect("inline schema has a key");
+            self.path = owner
+                .parent()
+                .unwrap_or_else(|| Path::new(""))
+                .join(filename);
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for SchemaDeclaration {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = CanonicalValue::try_from(Value::deserialize(deserializer)?)
+            .map_err(de::Error::custom)?;
+        let mut document = match value.as_json() {
+            Value::String(_) => {
+                let path = RepositoryPath::deserialize(value.as_json().clone())
+                    .map_err(de::Error::custom)?;
+                return Ok(Self {
+                    path: path.as_path().to_path_buf(),
+                    document: None,
+                });
+            }
+            Value::Object(_) => value.as_json().clone(),
+            Value::Bool(true) => serde_json::json!({}),
+            Value::Bool(false) => serde_json::json!({"allOf": [false]}),
+            _ => {
+                return Err(de::Error::custom(
+                    "expected a schema path, object, or boolean",
+                ));
+            }
+        };
+        document
+            .as_object_mut()
+            .expect("normalized schema is an object")
+            .entry("$schema")
+            .or_insert_with(|| Value::String(DRAFT_2020_12_DIALECT.to_owned()));
+        let document = CanonicalValue::try_from(document).map_err(de::Error::custom)?;
+        let bytes = document.to_canonical_bytes().map_err(de::Error::custom)?;
+        let digest = Sha256::digest(bytes)
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        Ok(Self {
+            path: PathBuf::from(format!(".metewand-inline-{digest}.schema.json")),
+            document: Some(Box::new(document)),
+        })
+    }
+}
+
 /// A collection of compiled schemas addressable by normalized repository path.
 #[derive(Clone, Debug)]
 pub struct SchemaCatalog {
     validators: Arc<BTreeMap<PathBuf, Validator>>,
+    normalized: Arc<BTreeMap<PathBuf, Value>>,
 }
 
 impl SchemaCatalog {
@@ -96,8 +183,15 @@ impl SchemaCatalog {
             validators.insert(path.clone(), validator);
         }
 
+        let normalized = documents_by_path
+            .iter()
+            .map(|(path, document)| {
+                Ok((path.clone(), schema_resources(path, document)?.normalized))
+            })
+            .collect::<Result<_, SchemaCatalogError>>()?;
         Ok(Self {
             validators: Arc::new(validators),
+            normalized: Arc::new(normalized),
         })
     }
 
@@ -148,6 +242,159 @@ impl SchemaCatalog {
     pub fn contains(&self, schema_path: &Path) -> bool {
         self.validators.contains_key(schema_path)
     }
+
+    /// Compares normalized declarations without attempting schema implication.
+    ///
+    /// Inline schemas can match reusable files by their contents. Two explicit
+    /// file references retain their existing path-based matching behavior.
+    #[must_use]
+    pub fn matches(&self, left: &SchemaDeclaration, right: &SchemaDeclaration) -> bool {
+        left == right
+            || ((left.inline_document().is_some() || right.inline_document().is_some())
+                && self
+                    .normalized
+                    .get(left.as_path())
+                    .is_some_and(|document| Some(document) == self.normalized.get(right.as_path())))
+    }
+}
+
+/// Schema resources and references interpreted under Draft 2020-12.
+pub struct SchemaResources {
+    /// Declared resource URIs, including nested `$id` declarations.
+    pub identifiers: BTreeSet<String>,
+    /// Resolved reference URIs without fragments.
+    pub references: BTreeSet<String>,
+    normalized: Value,
+}
+
+/// Resolves schema URIs without accessing the filesystem or network.
+///
+/// Only schema keywords are traversed, so literal data in `const`, `enum`,
+/// `default`, and examples never becomes a resource dependency.
+///
+/// # Errors
+///
+/// Returns an error for invalid schema URIs.
+pub fn schema_resources(
+    path: &Path,
+    document: &Value,
+) -> Result<SchemaResources, SchemaCatalogError> {
+    let mut resources = SchemaResources {
+        identifiers: BTreeSet::from([repository_uri(path)]),
+        references: BTreeSet::new(),
+        normalized: document.clone(),
+    };
+    normalize_schema_uris(
+        &mut resources.normalized,
+        &repository_uri(path),
+        &mut resources.identifiers,
+        &mut resources.references,
+    )
+    .map_err(|message| SchemaCatalogError::Compilation {
+        path: path.to_path_buf(),
+        message,
+    })?;
+    Ok(resources)
+}
+
+fn resolve_uri(reference: &str, base: &str) -> Result<String, String> {
+    let reference = fluent_uri::UriRef::parse(reference).map_err(|error| error.to_string())?;
+    let base = fluent_uri::Uri::parse(base).map_err(|error| error.to_string())?;
+    if base.as_str().starts_with(REPOSITORY_SCHEMA_BASE_URI)
+        && reference.scheme().is_none()
+        && reference.authority().is_none()
+    {
+        let path = reference.path().as_str();
+        if path.starts_with('/') {
+            return Err("schema references must stay relative to the repository".to_owned());
+        }
+        let mut depth = base
+            .path()
+            .as_str()
+            .split('/')
+            .filter(|part| !part.is_empty())
+            .count();
+        if !base.path().as_str().ends_with('/') {
+            depth = depth.saturating_sub(1);
+        }
+        for part in path.split('/') {
+            match part {
+                ".." => {
+                    depth = depth
+                        .checked_sub(1)
+                        .ok_or_else(|| "schema reference escapes the repository".to_owned())?
+                }
+                "" | "." => {}
+                _ => depth += 1,
+            }
+        }
+    }
+    reference
+        .resolve_against(&base)
+        .map(|uri| uri.to_string())
+        .map_err(|error| error.to_string())
+}
+
+fn normalize_schema_uris(
+    value: &mut Value,
+    base: &str,
+    identifiers: &mut BTreeSet<String>,
+    references: &mut BTreeSet<String>,
+) -> Result<(), String> {
+    let Some(object) = value.as_object_mut() else {
+        return Ok(());
+    };
+    let base = match object.get_mut("$id") {
+        Some(Value::String(id)) => {
+            *id = resolve_uri(id, base)?;
+            identifiers.insert(id.clone());
+            id.clone()
+        }
+        _ => base.to_owned(),
+    };
+    for keyword in ["$ref", "$dynamicRef"] {
+        if let Some(Value::String(reference)) = object.get_mut(keyword) {
+            let resolved = resolve_uri(reference, &base)?;
+            references.insert(resolved.split('#').next().unwrap_or_default().to_owned());
+            // Local fragments belong to this schema regardless of its catalog key.
+            if !reference.starts_with('#') {
+                *reference = resolved;
+            }
+        }
+    }
+    for (keyword, child) in object {
+        match keyword.as_str() {
+            "$defs" | "definitions" | "dependentSchemas" | "patternProperties" | "properties" => {
+                if let Some(children) = child.as_object_mut() {
+                    for child in children.values_mut() {
+                        normalize_schema_uris(child, &base, identifiers, references)?;
+                    }
+                }
+            }
+            "allOf" | "anyOf" | "oneOf" | "prefixItems" => {
+                if let Some(children) = child.as_array_mut() {
+                    for child in children {
+                        normalize_schema_uris(child, &base, identifiers, references)?;
+                    }
+                }
+            }
+            "additionalProperties"
+            | "unevaluatedProperties"
+            | "propertyNames"
+            | "items"
+            | "contains"
+            | "unevaluatedItems"
+            | "not"
+            | "if"
+            | "then"
+            | "else"
+            | "contentSchema" => {
+                normalize_schema_uris(child, &base, identifiers, references)?;
+            }
+            _ => {}
+        }
+    }
+    Ok(())
 }
 
 /// An error encountered while constructing a schema catalog.

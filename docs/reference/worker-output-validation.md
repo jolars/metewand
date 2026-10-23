@@ -42,9 +42,10 @@ public `artifact-manifest` schema—including its `complete: true` marker—and 
 dataset definition's output schema.
 
 Implementation results must satisfy the public `result-manifest` schema. The
-manifest's `schema` field must exactly name the result schema selected by the
-checked problem contract, and its `data` object is validated against that
-schema. Evaluator metrics follow the analogous rule for the public `metrics`
+manifest's optional `schema` field must exactly name the result schema selected
+by the checked problem contract. When omitted, Metewand uses the selected schema,
+including an inline declaration. Its `data` object is always validated against
+that schema. Evaluator metrics follow the analogous rule for the public `metrics`
 envelope and the selected metric schema. A worker cannot redirect validation by
 naming a different repository schema in its output.
 

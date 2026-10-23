@@ -3,7 +3,7 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs, io,
-    path::{Component, Path, PathBuf},
+    path::{Path, PathBuf},
 };
 
 use metewand_core::{
@@ -23,8 +23,8 @@ use metewand_core::{
         expand_manifest_logical_plan, identify_builtin_unit_dataset_definition,
     },
     problem_contract::{
-        ProblemContract, ProblemContractError, parse_problem_contract_document,
-        validate_problem_contract,
+        ContractDeclaration, ProblemContract, ProblemContractError,
+        parse_problem_contract_document, validate_problem_contract,
     },
     records::{
         ContentDigest, DatasetDefinitionKind, DatasetDefinitionRecord, EnvironmentDefinitionKind,
@@ -32,7 +32,7 @@ use metewand_core::{
         ProblemDefinitionRecord, RecordId, RemoteSourceRecord, SchemaResource,
         SourceBundleResource, WorkerDefinitionRecord, WorkerLaunch,
     },
-    schema::{SchemaCatalog, SchemaCatalogError},
+    schema::{SchemaCatalog, SchemaCatalogError, SchemaDeclaration, schema_resources},
 };
 use serde_json::{Value, json};
 use thiserror::Error;
@@ -129,8 +129,13 @@ pub fn check_repository(manifest_path: &Path) -> Result<CheckedRepository, Repos
 
     let mut problem_contracts = BTreeMap::new();
     for (name, definition) in &manifest.problems {
-        let source = read_repository_utf8(&root, definition.contract.as_path())?;
-        let contract = parse_problem_contract_document(definition.contract.as_path(), &source)?;
+        let contract = match &definition.contract {
+            ContractDeclaration::Reference(path) => {
+                let source = read_repository_utf8(&root, path.as_path())?;
+                parse_problem_contract_document(path.as_path(), &source)?
+            }
+            ContractDeclaration::Inline(contract) => (**contract).clone(),
+        };
         problem_contracts.insert(name.clone(), contract);
     }
 
@@ -143,15 +148,23 @@ pub fn check_repository(manifest_path: &Path) -> Result<CheckedRepository, Repos
     )?;
     for (name, contract) in &problem_contracts {
         validate_problem_contract(
-            manifest.problems[name].contract.as_path(),
+            manifest.problems[name]
+                .contract
+                .reference_path()
+                .unwrap_or(&manifest_diagnostic_path),
             contract,
             &schemas,
         )?;
     }
 
     expand_manifest_configurations(&manifest, &problem_contracts, &schemas)?;
-    let (planning_catalog, resources) =
-        build_planning_catalog(&root, &manifest, &problem_contracts, &schema_documents)?;
+    let (planning_catalog, resources) = build_planning_catalog(
+        &root,
+        &manifest_diagnostic_path,
+        &manifest,
+        &problem_contracts,
+        &schema_documents,
+    )?;
     let source_bundle_count = resources
         .source_bundles
         .values()
@@ -176,122 +189,136 @@ pub fn check_repository(manifest_path: &Path) -> Result<CheckedRepository, Repos
 fn schema_roots<'a>(
     manifest: &'a Manifest,
     contracts: impl IntoIterator<Item = &'a ProblemContract>,
-) -> BTreeSet<PathBuf> {
-    let mut roots = BTreeSet::new();
+) -> Vec<&'a SchemaDeclaration> {
+    let mut roots = Vec::new();
     for dataset in manifest.datasets.values() {
         match dataset {
             DatasetDefinition::Fixed(dataset) => {
-                roots.insert(dataset.output_schema.as_path().to_path_buf());
+                roots.push(&dataset.output_schema);
             }
             DatasetDefinition::Generated(dataset) => {
-                roots.extend(
-                    dataset
-                        .parameter_schema
-                        .iter()
-                        .map(|path| path.as_path().to_path_buf()),
-                );
-                roots.insert(dataset.output_schema.as_path().to_path_buf());
+                roots.extend(dataset.parameter_schema.iter());
+                roots.push(&dataset.output_schema);
             }
         }
     }
     for implementation in manifest.implementations.values() {
-        roots.extend(
-            implementation
-                .parameter_schema
-                .iter()
-                .map(|path| path.as_path().to_path_buf()),
-        );
+        roots.extend(implementation.parameter_schema.iter());
     }
     for contract in contracts {
-        roots.insert(contract.parameter_schema.as_path().to_path_buf());
-        roots.extend(
-            contract
-                .dataset_schemas
-                .iter()
-                .map(|path| path.as_path().to_path_buf()),
-        );
-        roots.insert(contract.result_schema.as_path().to_path_buf());
-        roots.insert(contract.metric_schema.as_path().to_path_buf());
-        roots.insert(contract.semantics_schema.as_path().to_path_buf());
+        roots.extend(contract.schemas());
     }
     roots
 }
 
 fn load_schema_documents(
     root: &Path,
-    mut pending: BTreeSet<PathBuf>,
+    declarations: Vec<&SchemaDeclaration>,
 ) -> Result<BTreeMap<PathBuf, CanonicalValue>, RepositoryCheckError> {
     let mut documents = BTreeMap::new();
-    while let Some(path) = pending.pop_first() {
-        if documents.contains_key(&path) {
-            continue;
+    let mut pending = BTreeSet::new();
+    for schema in declarations {
+        if let Some(document) = schema.inline_document() {
+            documents.insert(schema.as_path().to_path_buf(), document.clone());
+        } else {
+            pending.insert(schema.as_path().to_path_buf());
         }
-        let bytes = read_repository_file(root, &path)?;
-        let value = CanonicalValue::from_slice(&bytes).map_err(|source| {
-            RepositoryCheckError::InvalidSchemaJson {
-                path: path.clone(),
-                source,
+    }
+    let required_files = pending.clone();
+    loop {
+        let previous_count = documents.len();
+        let mut failures = BTreeMap::new();
+        while let Some(path) = pending.pop_first() {
+            if documents.contains_key(&path) {
+                continue;
             }
-        })?;
-        for reference in external_schema_references(&path, value.as_json())? {
-            if !documents.contains_key(&reference) {
-                pending.insert(reference);
-            }
+            // A reachable file can declare an identifier that looks like a
+            // missing file in this round. Resolve those aliases before failing.
+            let bytes = match read_repository_file(root, &path) {
+                Ok(bytes) => bytes,
+                Err(error) => {
+                    failures.insert(path, error);
+                    continue;
+                }
+            };
+            let value = CanonicalValue::from_slice(&bytes).map_err(|source| {
+                RepositoryCheckError::InvalidSchemaJson {
+                    path: path.clone(),
+                    source,
+                }
+            })?;
+            documents.insert(path, value);
         }
-        documents.insert(path, value);
+        pending.extend(
+            required_files
+                .iter()
+                .filter(|path| !documents.contains_key(*path))
+                .cloned(),
+        );
+        for references in schema_dependencies(&documents)?.values() {
+            pending.extend(
+                references
+                    .iter()
+                    .filter(|path| !documents.contains_key(*path))
+                    .cloned(),
+            );
+        }
+        if pending.is_empty() {
+            break;
+        }
+        if previous_count == documents.len()
+            && pending.iter().all(|path| failures.contains_key(path))
+        {
+            let path = pending.first().expect("pending references are nonempty");
+            return Err(failures
+                .remove(path)
+                .expect("every pending reference failed"));
+        }
     }
     Ok(documents)
 }
 
-fn external_schema_references(
-    document_path: &Path,
-    document: &Value,
-) -> Result<BTreeSet<PathBuf>, RepositoryCheckError> {
-    fn visit(value: &Value, references: &mut Vec<String>) {
-        match value {
-            Value::Object(object) => {
-                if let Some(reference) = object.get("$ref").and_then(Value::as_str) {
-                    references.push(reference.to_owned());
+fn schema_dependencies(
+    documents: &BTreeMap<PathBuf, CanonicalValue>,
+) -> Result<BTreeMap<PathBuf, BTreeSet<PathBuf>>, RepositoryCheckError> {
+    let resources = documents
+        .iter()
+        .map(|(path, document)| Ok((path, schema_resources(path, document.as_json())?)))
+        .collect::<Result<BTreeMap<_, _>, SchemaCatalogError>>()?;
+    let mut identifiers = BTreeMap::new();
+    for (path, resource) in &resources {
+        for uri in &resource.identifiers {
+            if let Some(previous) = identifiers.insert(uri, *path)
+                && documents[previous] != documents[*path]
+            {
+                return Err(SchemaCatalogError::Compilation {
+                    path: (*path).clone(),
+                    message: format!("schema resource `{uri}` is declared by multiple documents"),
                 }
-                for value in object.values() {
-                    visit(value, references);
-                }
+                .into());
             }
-            Value::Array(values) => {
-                for value in values {
-                    visit(value, references);
-                }
-            }
-            _ => {}
         }
     }
-
-    let mut references = Vec::new();
-    visit(document, &mut references);
-    references
-        .into_iter()
-        .filter_map(|reference| {
-            let path = reference.split('#').next().unwrap_or_default();
-            (!path.is_empty()
-                && !path.starts_with('/')
-                && !path.starts_with("//")
-                && !has_uri_scheme(path))
-            .then(|| path.to_owned())
+    resources
+        .iter()
+        .map(|(path, resource)| {
+            let references = resource
+                .references
+                .iter()
+                .filter_map(|uri| {
+                    if resource.identifiers.contains(uri) {
+                        None
+                    } else if let Some(target) = identifiers.get(uri) {
+                        (*target != *path).then(|| Ok((*target).clone()))
+                    } else {
+                        uri.strip_prefix("metewand://repository/")
+                            .map(|relative| resolve_schema_reference(path, relative))
+                    }
+                })
+                .collect::<Result<_, _>>()?;
+            Ok(((*path).clone(), references))
         })
-        .map(|reference| resolve_schema_reference(document_path, &reference))
         .collect()
-}
-
-fn has_uri_scheme(value: &str) -> bool {
-    value.find(':').is_some_and(|colon| {
-        value[..colon].bytes().enumerate().all(|(index, byte)| {
-            if index == 0 {
-                byte.is_ascii_alphabetic()
-            } else {
-                byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'-' | b'.')
-            }
-        })
-    })
 }
 
 fn resolve_schema_reference(
@@ -303,49 +330,20 @@ fn resolve_schema_reference(
             document: document_path.to_path_buf(),
             reference: reference.to_owned(),
         })?;
-    if decoded.contains('\\') || decoded.contains('?') {
+    if decoded.contains('?') {
         return Err(RepositoryCheckError::InvalidSchemaReference {
             document: document_path.to_path_buf(),
             reference: reference.to_owned(),
         });
     }
 
-    let mut components = document_path
-        .parent()
-        .unwrap_or_else(|| Path::new(""))
-        .components()
-        .filter_map(|component| match component {
-            Component::Normal(component) => Some(component.to_owned()),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    for component in Path::new(&decoded).components() {
-        match component {
-            Component::CurDir => {}
-            Component::ParentDir => {
-                if components.pop().is_none() {
-                    return Err(RepositoryCheckError::InvalidSchemaReference {
-                        document: document_path.to_path_buf(),
-                        reference: reference.to_owned(),
-                    });
-                }
-            }
-            Component::Normal(component) => components.push(component.to_owned()),
-            Component::RootDir | Component::Prefix(_) => {
-                return Err(RepositoryCheckError::InvalidSchemaReference {
-                    document: document_path.to_path_buf(),
-                    reference: reference.to_owned(),
-                });
-            }
-        }
-    }
-    if components.is_empty() {
-        return Err(RepositoryCheckError::InvalidSchemaReference {
+    let path: RepositoryPath = serde_json::from_value(Value::String(decoded)).map_err(|_| {
+        RepositoryCheckError::InvalidSchemaReference {
             document: document_path.to_path_buf(),
             reference: reference.to_owned(),
-        });
-    }
-    Ok(components.into_iter().collect())
+        }
+    })?;
+    Ok(path.as_path().to_path_buf())
 }
 
 fn percent_decode(value: &str) -> Option<String> {
@@ -383,14 +381,16 @@ struct SourceBundleCatalog {
 
 fn build_planning_catalog(
     root: &Path,
+    manifest_path: &Path,
     manifest: &Manifest,
     contracts: &BTreeMap<Name, ProblemContract>,
     schema_documents: &BTreeMap<PathBuf, CanonicalValue>,
 ) -> Result<(LogicalPlanningCatalog, RepositoryResources), RepositoryCheckError> {
     let mut records = BTreeMap::new();
     let mut schema_ids = BTreeMap::new();
+    let dependencies = schema_dependencies(schema_documents)?;
     for path in schema_documents.keys() {
-        let value = schema_identity_value(path, schema_documents)?;
+        let value = schema_identity_value(path, schema_documents, &dependencies)?;
         let id = identify_canonical(&value)?;
         let mut record = InspectionRecord::new(
             id.to_string(),
@@ -494,7 +494,8 @@ fn build_planning_catalog(
             record.paths.push(
                 manifest.problems[name]
                     .contract
-                    .as_path()
+                    .reference_path()
+                    .unwrap_or(manifest_path)
                     .to_string_lossy()
                     .into_owned(),
             );
@@ -718,6 +719,7 @@ fn decode_sha256(digest: &Sha256Digest) -> Result<[u8; 32], RepositoryCheckError
 fn schema_identity_value(
     root_path: &Path,
     documents: &BTreeMap<PathBuf, CanonicalValue>,
+    references: &BTreeMap<PathBuf, BTreeSet<PathBuf>>,
 ) -> Result<CanonicalValue, RepositoryCheckError> {
     let root =
         documents
@@ -725,7 +727,7 @@ fn schema_identity_value(
             .ok_or_else(|| RepositoryCheckError::MissingSchemaIdentity {
                 path: root_path.to_path_buf(),
             })?;
-    let mut pending = external_schema_references(root_path, root.as_json())?;
+    let mut pending = references[root_path].clone();
     let mut visited = BTreeSet::from([root_path.to_path_buf()]);
     let mut dependencies = Vec::new();
     while let Some(path) = pending.pop_first() {
@@ -735,7 +737,7 @@ fn schema_identity_value(
         let document = documents
             .get(&path)
             .ok_or_else(|| RepositoryCheckError::MissingSchemaIdentity { path: path.clone() })?;
-        pending.extend(external_schema_references(&path, document.as_json())?);
+        pending.extend(references[&path].iter().cloned());
         dependencies.push(json!({
             "document": document.as_json(),
             "path": path.to_str().expect("schema paths are validated as UTF-8"),

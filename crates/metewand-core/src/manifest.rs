@@ -11,23 +11,49 @@ use serde::{Deserialize, Deserializer, de};
 use serde_json::Value as JsonValue;
 use thiserror::Error;
 
-use crate::{MANIFEST_VERSION, canonical::CanonicalValue};
+use crate::{
+    MANIFEST_VERSION, canonical::CanonicalValue, problem_contract::ContractDeclaration,
+    schema::SchemaDeclaration,
+};
 
 /// Parses a version-1 YAML manifest into core domain types.
 ///
-/// `source_path` identifies the document in diagnostics and does not cause any
-/// filesystem access. Parsing rejects unknown fields at every Metewand-owned
-/// object boundary.
+/// `source_path` is the logical repository document path used in diagnostics
+/// and as the base for inline schema references. Parsing performs no filesystem
+/// access and rejects unknown fields at every Metewand-owned object boundary.
 ///
 /// # Errors
 ///
 /// Returns a path-aware, source-spanned diagnostic for malformed YAML or a
 /// value that cannot be represented by the version-1 manifest types.
 pub fn parse_manifest(source_path: &Path, source: &str) -> Result<Manifest, ManifestParseError> {
-    crate::yaml::parse(source_path, source).map_err(|error| ManifestParseError {
-        message: error.message,
-        source_span: error.source_span,
-    })
+    let mut manifest: Manifest =
+        crate::yaml::parse(source_path, source).map_err(|error| ManifestParseError {
+            message: error.message,
+            source_span: error.source_span,
+        })?;
+    for dataset in manifest.datasets.values_mut() {
+        match dataset {
+            DatasetDefinition::Fixed(dataset) => dataset.output_schema.set_owner(source_path),
+            DatasetDefinition::Generated(dataset) => {
+                dataset.output_schema.set_owner(source_path);
+                if let Some(schema) = &mut dataset.parameter_schema {
+                    schema.set_owner(source_path);
+                }
+            }
+        }
+    }
+    for implementation in manifest.implementations.values_mut() {
+        if let Some(schema) = &mut implementation.parameter_schema {
+            schema.set_owner(source_path);
+        }
+    }
+    for problem in manifest.problems.values_mut() {
+        if let ContractDeclaration::Inline(contract) = &mut problem.contract {
+            contract.set_schema_owner(source_path);
+        }
+    }
+    Ok(manifest)
 }
 
 /// A parsed version-1 benchmark manifest.
@@ -75,7 +101,7 @@ pub enum DatasetDefinition {
 #[derive(Debug)]
 pub struct FixedDatasetDefinition {
     /// Schema describing the materialized dataset.
-    pub output_schema: RepositoryPath,
+    pub output_schema: SchemaDeclaration,
     /// Files and patterns that constitute the dataset.
     pub sources: Vec<RepositoryPath>,
 }
@@ -84,11 +110,11 @@ pub struct FixedDatasetDefinition {
 #[derive(Debug)]
 pub struct GeneratedDatasetDefinition {
     /// Optional schema for dataset parameters.
-    pub parameter_schema: Option<RepositoryPath>,
+    pub parameter_schema: Option<SchemaDeclaration>,
     /// Literal defaults merged before parameter validation.
     pub parameter_defaults: Option<CanonicalValue>,
     /// Schema describing the materialized dataset.
-    pub output_schema: RepositoryPath,
+    pub output_schema: SchemaDeclaration,
     /// Optional pinned remote input.
     pub source: Option<RemoteSource>,
     /// Worker that materializes the dataset.
@@ -99,8 +125,8 @@ pub struct GeneratedDatasetDefinition {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct ProblemDefinition {
-    /// Repository-relative problem-contract path.
-    pub contract: RepositoryPath,
+    /// Repository-relative problem-contract path or inline contract.
+    pub contract: ContractDeclaration,
     /// Literal problem-parameter defaults.
     #[serde(default, deserialize_with = "deserialize_parameter_defaults")]
     pub parameter_defaults: Option<CanonicalValue>,
@@ -116,7 +142,7 @@ pub struct ImplementationDefinition {
     /// Manifest problem names implemented by this adapter.
     pub problem_contracts: Vec<Name>,
     /// Optional schema for implementation parameters.
-    pub parameter_schema: Option<RepositoryPath>,
+    pub parameter_schema: Option<SchemaDeclaration>,
     /// Literal implementation-parameter defaults.
     pub parameter_defaults: Option<CanonicalValue>,
     /// Capabilities declared by the implementation.
@@ -804,10 +830,10 @@ impl ManifestParseError {
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 struct RawDatasetDefinition {
     #[serde(default, deserialize_with = "deserialize_optional_non_null")]
-    parameter_schema: Option<RepositoryPath>,
+    parameter_schema: Option<SchemaDeclaration>,
     #[serde(default, deserialize_with = "deserialize_parameter_defaults")]
     parameter_defaults: Option<CanonicalValue>,
-    output_schema: RepositoryPath,
+    output_schema: SchemaDeclaration,
     #[serde(default, deserialize_with = "deserialize_optional_non_null")]
     source: Option<RemoteSource>,
     #[serde(default, deserialize_with = "deserialize_optional_non_null")]
@@ -895,7 +921,7 @@ struct RawImplementationDefinition {
     protocol_transport: Option<ProtocolTransport>,
     problem_contracts: Vec<Name>,
     #[serde(default, deserialize_with = "deserialize_optional_non_null")]
-    parameter_schema: Option<RepositoryPath>,
+    parameter_schema: Option<SchemaDeclaration>,
     #[serde(default, deserialize_with = "deserialize_parameter_defaults")]
     parameter_defaults: Option<CanonicalValue>,
     capabilities: Vec<ImplementationCapability>,

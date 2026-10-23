@@ -9,7 +9,7 @@ use thiserror::Error;
 use crate::{
     SCHEDULING_POLICY_VERSION,
     canonical::{CanonicalJsonError, CanonicalValue},
-    compatibility::{ManifestCompatibilityError, validate_manifest_compatibility},
+    compatibility::{ManifestCompatibilityError, validate_manifest_compatibility_with_schemas},
     identity::{IdentityError, identify_canonical, identify_record},
     manifest::{
         DatasetDefinition, ExecutionPolicyDefinition, ExperimentCase, ExperimentDefinition,
@@ -75,7 +75,7 @@ pub fn expand_manifest_configurations(
     schemas: &SchemaCatalog,
 ) -> Result<Vec<ExpandedExperiment>, ConfigurationExpansionError> {
     validate_parameter_namespaces(manifest)?;
-    validate_manifest_compatibility(manifest, problem_contracts)?;
+    validate_manifest_compatibility_with_schemas(manifest, problem_contracts, schemas)?;
 
     manifest
         .experiments

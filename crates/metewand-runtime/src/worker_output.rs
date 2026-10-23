@@ -96,7 +96,7 @@ impl<'a> WorkerOutputValidator<'a> {
         let manifest = output.read_document(&manifest_path)?;
         self.validate_public(PublicSchema::ResultManifest, &manifest, &manifest_path)?;
         let raw: RawResultManifest = decode_validated_document(&manifest, &manifest_path)?;
-        validate_schema_reference(&manifest_path, &raw.schema, result_schema)?;
+        validate_schema_reference(&manifest_path, raw.schema.as_deref(), result_schema)?;
         let files = validate_file_declarations(raw.files)?;
         output.validate_inventory(&manifest_path, &files)?;
         output.verify_files(&files)?;
@@ -124,8 +124,8 @@ impl<'a> WorkerOutputValidator<'a> {
     /// Validates the completed evaluator metrics document in its private output.
     ///
     /// The assigned metrics document must be the output's only regular file;
-    /// ancestor directories are permitted. Its schema reference must equal the
-    /// selected problem contract's metric schema before its data are validated.
+    /// ancestor directories are permitted. An explicit schema reference must
+    /// equal the selected contract's schema; omitted references use that schema.
     ///
     /// # Errors
     ///
@@ -149,7 +149,7 @@ impl<'a> WorkerOutputValidator<'a> {
         let metrics = output.read_document(&metrics_path)?;
         self.validate_public(PublicSchema::Metrics, &metrics, &metrics_path)?;
         let raw: RawMetrics = decode_validated_document(&metrics, &metrics_path)?;
-        validate_schema_reference(&metrics_path, &raw.schema, metric_schema)?;
+        validate_schema_reference(&metrics_path, raw.schema.as_deref(), metric_schema)?;
         self.repository_schemas
             .validate(metric_schema, &raw.data)
             .map_err(|source| WorkerOutputError::ScientificSchema {
@@ -309,14 +309,14 @@ struct RawArtifactManifest {
 
 #[derive(Debug, Deserialize)]
 struct RawResultManifest {
-    schema: String,
+    schema: Option<String>,
     data: Value,
     files: Vec<RawFile>,
 }
 
 #[derive(Debug, Deserialize)]
 struct RawMetrics {
-    schema: String,
+    schema: Option<String>,
     data: Value,
 }
 
@@ -346,9 +346,12 @@ where
 
 fn validate_schema_reference(
     document: &Path,
-    actual: &str,
+    actual: Option<&str>,
     expected: &Path,
 ) -> Result<(), WorkerOutputError> {
+    let Some(actual) = actual else {
+        return Ok(());
+    };
     if Path::new(actual) == expected {
         Ok(())
     } else {

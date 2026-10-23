@@ -75,7 +75,7 @@ a new compatibility review is a prerequisite.
   source-verified audit cover 24 oracle fits, four dense fits, 116 Python/R
   input round trips, five timing probes, and nine expected failures. See
   the adopter's `docs/package-integration.md` for reproduction commands.
-- [ ] Allow schemas and problem contracts inline as well as through reusable
+- [x] Allow schemas and problem contracts inline as well as through reusable
   file references. Resolve references offline, validate the same effective
   declarations, and hash their normalized contents.
 - [ ] Add concise declarations for parameters, result fields, and metrics that

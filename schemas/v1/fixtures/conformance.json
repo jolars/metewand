@@ -422,6 +422,48 @@
       }
     },
     {
+      "name": "manifest with an inline contract and schemas",
+      "schema": "manifest",
+      "instance": {
+        "version": 1,
+        "name": "inline",
+        "problems": {
+          "sum": {
+            "contract": {
+              "version": 1,
+              "name": "sum",
+              "family": "arithmetic",
+              "parameter-schema": { "type": "object", "additionalProperties": false },
+              "dataset-schemas": [],
+              "result-schema": { "type": "object" },
+              "metric-schema": true,
+              "semantics-schema": { "type": "object" },
+              "allowed-timing-scopes": ["prepare_and_execute"],
+              "supported-budgets": ["none"],
+              "semantics": {
+                "preprocessing": { "allowed_outside_timed_scope": [] },
+                "validity": { "finite": true },
+                "one_shot_completion": { "exact": true }
+              },
+              "reference-cases": [{ "result": "result.json", "expected-metrics": "metrics.json" }]
+            },
+            "evaluator": { "runner": "command", "program": "evaluate", "environment": "local" }
+          }
+        },
+        "environments": { "local": { "kind": "local" } }
+      }
+    },
+    {
+      "name": "result uses the selected contract schema",
+      "schema": "result-manifest",
+      "instance": { "schema_version": 1, "data": { "answer": 8 }, "files": [] }
+    },
+    {
+      "name": "metrics use the selected contract schema",
+      "schema": "metrics",
+      "instance": { "schema_version": 1, "data": { "absolute_error": 0 } }
+    },
+    {
       "name": "minimal authoring manifest",
       "schema": "manifest",
       "instance": {

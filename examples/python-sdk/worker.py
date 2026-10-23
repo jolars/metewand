@@ -42,9 +42,7 @@ class Sum(Implementation):
         return {"input_count": len(self.values)}
 
     def write_result(self, directory):
-        return write_result(
-            directory, {"answer": self.answer}, schema="schemas/result.json"
-        )
+        return write_result(directory, {"answer": self.answer})
 
     def reset(self):
         self.__dict__.clear()
@@ -56,9 +54,7 @@ def evaluate(
     values = read_json(dataset_instance / "data.json")["values"]
     answer = read_json(result_dir / "result.json")["data"]["answer"]
     error = abs(answer - (sum(values) + problem_parameters["offset"]))
-    write_metrics(
-        metrics_path, {"absolute_error": error}, schema="schemas/metrics.json"
-    )
+    write_metrics(metrics_path, {"absolute_error": error})
     return "reached" if error == 0 else "invalid"
 
 

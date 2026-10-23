@@ -146,6 +146,20 @@ class ArtifactTests(unittest.TestCase):
             )
             self.assertEqual(read_json(root / "metrics.json")["data"], {"error": 0})
 
+    def test_envelopes_can_use_the_selected_contract_schema(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            result = write_result(root, {"answer": 6})
+            self.assertEqual(
+                read_json(root / result),
+                {"schema_version": 1, "data": {"answer": 6}, "files": []},
+            )
+            write_metrics(root / "metrics.json", {"error": 0})
+            self.assertEqual(
+                read_json(root / "metrics.json"),
+                {"schema_version": 1, "data": {"error": 0}},
+            )
+
     def test_paths_and_metadata_are_explicit(self):
         with (
             tempfile.TemporaryDirectory() as directory,

@@ -130,15 +130,17 @@ write_dataset_manifest <- function(directory, files, manifest = "dataset-manifes
   manifest
 }
 
-write_result <- function(directory, data, schema, files = list(), manifest = "result.json") {
+write_result <- function(directory, data, schema = NULL, files = list(), manifest = "result.json") {
   manifest <- .relative_path(manifest)
-  write_json(.output_path(directory, manifest), list(
-    schema_version = 1, schema = .relative_path(schema),
-    data = .object(data, "Result data"), files = .files(files, manifest)))
+  document <- list(schema_version = 1, data = .object(data, "Result data"),
+                   files = .files(files, manifest))
+  if (!is.null(schema)) document$schema <- .relative_path(schema)
+  write_json(.output_path(directory, manifest), document)
   manifest
 }
 
-write_metrics <- function(path, data, schema) {
-  write_json(path, list(schema_version = 1, schema = .relative_path(schema),
-                       data = .object(data, "Metrics data")))
+write_metrics <- function(path, data, schema = NULL) {
+  document <- list(schema_version = 1, data = .object(data, "Metrics data"))
+  if (!is.null(schema)) document$schema <- .relative_path(schema)
+  write_json(path, document)
 }

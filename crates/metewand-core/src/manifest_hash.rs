@@ -293,20 +293,23 @@ fn dataset(dataset: &DatasetDefinition) -> Value {
     match dataset {
         DatasetDefinition::Fixed(dataset) => object([
             ("kind", json!("fixed")),
-            ("output_schema", repository_path(&dataset.output_schema)),
+            ("output_schema", dataset.output_schema.declaration_value()),
             ("sources", repository_paths(&dataset.sources)),
         ]),
         DatasetDefinition::Generated(dataset) => object([
             ("kind", json!("generated")),
             (
                 "parameter_schema",
-                optional_repository_path(dataset.parameter_schema.as_ref()),
+                dataset.parameter_schema.as_ref().map_or(
+                    Value::Null,
+                    crate::schema::SchemaDeclaration::declaration_value,
+                ),
             ),
             (
                 "parameter_defaults",
                 optional_canonical(dataset.parameter_defaults.as_ref()),
             ),
-            ("output_schema", repository_path(&dataset.output_schema)),
+            ("output_schema", dataset.output_schema.declaration_value()),
             (
                 "source",
                 dataset.source.as_ref().map_or(Value::Null, remote_source),
@@ -318,7 +321,7 @@ fn dataset(dataset: &DatasetDefinition) -> Value {
 
 fn problem(problem: &crate::manifest::ProblemDefinition) -> Value {
     object([
-        ("contract", repository_path(&problem.contract)),
+        ("contract", problem.contract.declaration_value()),
         (
             "parameter_defaults",
             optional_canonical(problem.parameter_defaults.as_ref()),
@@ -336,7 +339,10 @@ fn implementation(implementation: &ImplementationDefinition) -> Value {
         ),
         (
             "parameter_schema",
-            optional_repository_path(implementation.parameter_schema.as_ref()),
+            implementation.parameter_schema.as_ref().map_or(
+                Value::Null,
+                crate::schema::SchemaDeclaration::declaration_value,
+            ),
         ),
         (
             "parameter_defaults",
@@ -577,10 +583,6 @@ fn optional_canonical(value: Option<&CanonicalValue>) -> Value {
 
 fn repository_path(path: &RepositoryPath) -> Value {
     path_value(path.as_path())
-}
-
-fn optional_repository_path(path: Option<&RepositoryPath>) -> Value {
-    path.map_or(Value::Null, repository_path)
 }
 
 fn repository_root_path(path: &RepositoryRootPath) -> Value {

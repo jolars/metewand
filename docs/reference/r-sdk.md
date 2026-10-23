@@ -151,8 +151,11 @@ be converted explicitly before passing them to scientific libraries.
 | --- | --- |
 | `file_entry(directory, path, media_type, representation = NULL)` | Completed file's path, SHA-256, byte size, and explicit representation metadata. |
 | `write_dataset_manifest(directory, files, manifest = "dataset-manifest.json")` | Complete dataset inventory; returns its relative path. |
-| `write_result(directory, data, schema, files = list(), manifest = "result.json")` | Version-1 result envelope; returns its relative path. |
-| `write_metrics(path, data, schema)` | Version-1 metrics envelope at the exact assigned path. |
+| `write_result(directory, data, schema = NULL, files = list(), manifest = "result.json")` | Version-1 result envelope; returns its relative path. |
+| `write_metrics(path, data, schema = NULL)` | Version-1 metrics envelope at the exact assigned path. |
+
+Omit `schema` to use the selected problem contract's schema, including an inline
+declaration. An explicitly supplied schema path remains checked.
 
 Result and metrics data must be JSON objects. `files` is an unnamed list of
 explicit inventory entries sorted by UTF-8 path bytes. Authors supply media

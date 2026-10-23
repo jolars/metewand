@@ -10,6 +10,7 @@ use crate::{
         ObservationKind, TimingScope,
     },
     problem_contract::{ProblemContract, ScientificBudget},
+    schema::SchemaCatalog,
 };
 
 /// Validates references and compatibility across a manifest and its contracts.
@@ -31,11 +32,31 @@ pub fn validate_manifest_compatibility(
     manifest: &Manifest,
     problem_contracts: &BTreeMap<Name, ProblemContract>,
 ) -> Result<(), ManifestCompatibilityError> {
+    validate_compatibility(manifest, problem_contracts, None)
+}
+
+pub(crate) fn validate_manifest_compatibility_with_schemas(
+    manifest: &Manifest,
+    problem_contracts: &BTreeMap<Name, ProblemContract>,
+    schemas: &SchemaCatalog,
+) -> Result<(), ManifestCompatibilityError> {
+    validate_compatibility(manifest, problem_contracts, Some(schemas))
+}
+
+fn validate_compatibility(
+    manifest: &Manifest,
+    problem_contracts: &BTreeMap<Name, ProblemContract>,
+    schemas: Option<&SchemaCatalog>,
+) -> Result<(), ManifestCompatibilityError> {
     for (problem, definition) in &manifest.problems {
         if !problem_contracts.contains_key(problem) {
             return Err(ManifestCompatibilityError::MissingProblemContract {
                 problem: problem.clone(),
-                contract_path: definition.contract.as_path().to_path_buf(),
+                contract_path: definition
+                    .contract
+                    .reference_path()
+                    .unwrap_or_else(|| std::path::Path::new("<inline>"))
+                    .to_path_buf(),
             });
         }
     }
@@ -82,7 +103,7 @@ pub fn validate_manifest_compatibility(
             .get(&experiment.problem)
             .expect("every defined problem contract was checked above");
 
-        validate_dataset_selection(manifest, experiment, contract)?;
+        validate_dataset_selection(manifest, experiment, contract, schemas)?;
 
         let execution_policy = manifest
             .execution_policies
@@ -153,6 +174,7 @@ fn validate_dataset_selection(
     manifest: &Manifest,
     experiment: &ExperimentDefinition,
     contract: &ProblemContract,
+    schemas: Option<&SchemaCatalog>,
 ) -> Result<(), ManifestCompatibilityError> {
     if contract.dataset_schemas.is_empty() {
         if experiment.datasets.is_empty() {
@@ -181,7 +203,10 @@ fn validate_dataset_selection(
             DatasetDefinition::Fixed(definition) => &definition.output_schema,
             DatasetDefinition::Generated(definition) => &definition.output_schema,
         };
-        if !contract.dataset_schemas.contains(output_schema) {
+        if !contract.dataset_schemas.iter().any(|accepted| {
+            accepted == output_schema
+                || schemas.is_some_and(|schemas| schemas.matches(accepted, output_schema))
+        }) {
             return Err(ManifestCompatibilityError::IncompatibleDatasetSchema {
                 experiment: experiment.name.clone(),
                 dataset: dataset.clone(),

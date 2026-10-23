@@ -50,6 +50,10 @@ after `write_result` returns and that manifest exists. Callbacks must close all
 files before returning. An execution requires a successful preparation and
 consumes that prepared state, including when execution fails.
 
+`write_result` and `write_metrics` may omit `schema` to use the selected problem
+contract's schema. This supports inline schemas without duplicating their
+declarations in worker code. An explicitly supplied schema path remains checked.
+
 The SDK measures `implementation_time_ns` with `time.perf_counter_ns`
 immediately around `execute`. Preparation, statistics validation, result
 writing, and protocol serialization are outside that diagnostic interval. A
@@ -136,8 +140,8 @@ The output helpers use existing version-1 envelopes:
   | ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
   | `file_entry(directory, path, media_type, representation=None)`                | An inventory entry with the completed file's SHA-256 and byte size. Pass `representation` by keyword. |
   | `write_dataset_manifest(directory, files, manifest="dataset-manifest.json")`  | A complete artifact manifest and its relative path. Pass `manifest` by keyword.                       |
-  | `write_result(directory, data, schema=..., files=(), manifest="result.json")` | A result envelope and its relative path. Pass `schema`, `files`, and `manifest` by keyword.           |
-  | `write_metrics(path, data, schema=...)`                                       | A metrics envelope at the exact assigned path. Pass `schema` by keyword.                              |
+  | `write_result(directory, data, schema=None, files=(), manifest="result.json")` | A result envelope and its relative path. Pass `schema`, `files`, and `manifest` by keyword.           |
+  | `write_metrics(path, data, schema=None)`                                       | A metrics envelope at the exact assigned path. Pass `schema` by keyword.                              |
 
 The author supplies file media types and any representation metadata: `shape`,
 `data_type`, `byte_order`, and `sparse_layout`. Inventories use explicit file

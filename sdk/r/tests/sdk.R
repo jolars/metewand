@@ -45,6 +45,12 @@ stopifnot(read_json(file.path(directory, manifest))$complete)
 manifest <- write_result(directory, list(answer = 6), schema = "schemas/result.json")
 stopifnot(text(read_json(file.path(directory, manifest))) ==
             '{"data":{"answer":6},"files":[],"schema":"schemas/result.json","schema_version":1}')
+manifest <- write_result(directory, list(answer = 6))
+stopifnot(text(read_json(file.path(directory, manifest))) ==
+            '{"data":{"answer":6},"files":[],"schema_version":1}')
+write_metrics(file.path(directory, "metrics.json"), list(error = 0))
+stopifnot(text(read_json(file.path(directory, "metrics.json"))) ==
+            '{"data":{"error":0},"schema_version":1}')
 for (path in c("../escape", "/absolute", "a/./b", "a//b", "a\\b", "")) {
   fails(file_entry(directory, path, "text/plain"))
 }

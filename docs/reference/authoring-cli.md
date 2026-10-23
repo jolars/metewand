@@ -1,9 +1,10 @@
 # Benchmark authoring
 
-This page describes the implemented CLI. Compact inline contracts and schemas,
-mechanical defaults, and an optional family semantics schema are planned MVP
-work; see the [roadmap](https://github.com/jolars/metewand/blob/main/TODO.md).
-The file requirements below still apply until that authoring slice lands.
+This page describes the implemented CLI. Manually authored benchmarks may use
+[inline contracts](problem-contracts.md) and [schemas](schema-validation.md#inline-declarations).
+Scaffolds still emit the reusable external files listed below. Mechanical
+defaults and an optional family semantics schema remain planned MVP work; see
+the [roadmap](https://github.com/jolars/metewand/blob/main/TODO.md).
 
 ## Initialization
 

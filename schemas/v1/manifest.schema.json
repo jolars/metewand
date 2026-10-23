@@ -133,9 +133,9 @@
     "dataset_base": {
       "type": "object",
       "properties": {
-        "parameter-schema": { "$ref": "common.schema.json#/$defs/schema_reference" },
+        "parameter-schema": { "$ref": "common.schema.json#/$defs/schema_declaration" },
         "parameter-defaults": { "type": "object" },
-        "output-schema": { "$ref": "common.schema.json#/$defs/schema_reference" },
+        "output-schema": { "$ref": "common.schema.json#/$defs/schema_declaration" },
         "source": { "$ref": "#/$defs/remote_source" }
       },
       "required": ["output-schema"]
@@ -143,7 +143,7 @@
     "fixed_dataset": {
       "type": "object",
       "properties": {
-        "output-schema": { "$ref": "common.schema.json#/$defs/schema_reference" },
+        "output-schema": { "$ref": "common.schema.json#/$defs/schema_declaration" },
         "sources": { "$ref": "#/$defs/source_bundle" }
       },
       "required": ["output-schema", "sources"],
@@ -173,7 +173,12 @@
     "problem": {
       "type": "object",
       "properties": {
-        "contract": { "$ref": "common.schema.json#/$defs/repository_path" },
+        "contract": {
+          "oneOf": [
+            { "$ref": "common.schema.json#/$defs/repository_path" },
+            { "$ref": "problem-contract.schema.json" }
+          ]
+        },
         "parameter-defaults": { "type": "object" },
         "evaluator": { "$ref": "#/$defs/worker" }
       },
@@ -189,7 +194,7 @@
           "minItems": 1,
           "uniqueItems": true
         },
-        "parameter-schema": { "$ref": "common.schema.json#/$defs/schema_reference" },
+        "parameter-schema": { "$ref": "common.schema.json#/$defs/schema_declaration" },
         "parameter-defaults": { "type": "object" },
         "capabilities": {
           "type": "array",

@@ -302,6 +302,56 @@ fn validates_canonical_result_data_and_its_complete_file_inventory() {
 }
 
 #[test]
+fn omitted_schema_references_still_validate_selected_scientific_schemas() {
+    let output = TempDir::new().unwrap();
+    for (answer, valid) in [(json!(42), true), (json!("wrong"), false)] {
+        write_json(
+            output.path(),
+            "result.json",
+            &json!({
+                "schema_version": 1, "data": {"answer": answer}, "files": []
+            }),
+        );
+        let result = validator().validate_execution_result(
+            output.path(),
+            &execute_response("result.json"),
+            Path::new(RESULT_SCHEMA),
+        );
+        if valid {
+            result.unwrap();
+        } else {
+            assert!(matches!(
+                result,
+                Err(WorkerOutputError::ScientificSchema { .. })
+            ));
+        }
+    }
+    fs::remove_file(output.path().join("result.json")).unwrap();
+    for (error, valid) in [(json!(0), true), (json!("wrong"), false)] {
+        write_json(
+            output.path(),
+            "metrics.json",
+            &json!({
+                "schema_version": 1, "data": {"loss": error}
+            }),
+        );
+        let result = validator().validate_metrics(
+            output.path(),
+            Path::new("metrics.json"),
+            Path::new(METRIC_SCHEMA),
+        );
+        if valid {
+            result.unwrap();
+        } else {
+            assert!(matches!(
+                result,
+                Err(WorkerOutputError::ScientificSchema { .. })
+            ));
+        }
+    }
+}
+
+#[test]
 fn rejects_result_schema_mismatches_and_invalid_result_data() {
     for (schema, data, expected_schema_error) in [
         ("schemas/other.json", json!({"answer": 42.0}), true),

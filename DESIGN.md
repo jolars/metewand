@@ -335,20 +335,21 @@ such as a Python lasso comparison, are distributed under `examples/` rather than
 exposed as privileged built-in templates.
 
 The local MVP simplifies authoring around the Basin and clustlasso-cd
-integrations. This compact form is planned; the current parser and scaffolds
-still require the external files documented in the
-[authoring reference](docs/reference/authoring-cli.md).
+integrations. Inline contracts and schemas are supported; scaffolds still emit
+the reusable external files documented in the
+[authoring reference](docs/reference/authoring-cli.md). Further defaults remain
+planned below.
 
 - A problem contract and its schemas may be inline or referenced from reusable
   repository files. A small benchmark can use one manifest, worker code, and
   scientific reference fixtures without separate schema documents.
-- An omitted parameter schema means a closed empty object, so unused parameter
+- Planned: an omitted parameter schema means a closed empty object, so unused parameter
   namespaces need no boilerplate and unexpected parameters still fail. Local
   environments and one-shot policies may use unambiguous documented defaults;
   profiles and scientific choices remain explicit. The resolved declarations
   record every effective default.
 - Family semantics remain explicit and hashed, including preprocessing,
-  validity, and completion rules. A separate `semantics-schema` is optional;
+  validity, and completion rules. Planned: make a separate `semantics-schema` optional;
   the independent evaluator and reference cases establish scientific behavior.
   Authors may supply a schema when machine validation of those declarations is
   useful, without restating every contract constant in a second document.
@@ -356,6 +357,11 @@ still require the external files documented in the
   referenced resources. Resolve references relative to the owning document,
   normalize the effective declarations, and hash resolved schema contents.
   External references and existing benchmark files remain supported.
+
+Result and metric envelopes may omit `schema`; the selected problem contract
+provides the schema for validation. An explicit reference must still match the
+selected schema. This permits workers to emit standard envelopes without knowing
+an inline schema's internal catalog key.
 
 Scaffolds should emit the compact form once implemented. Keep the actual
 scientific rules and adapter translations visible; defaults supply mechanical
@@ -401,7 +407,7 @@ experiments:
 ### Schemas, canonical values, and identities
 
 Version 1 uses JSON Schema 2020-12. Standalone schemas declare their dialect;
-the planned inline form inherits it from the owning format. Every external
+the inline form inherits it from the owning format. Every external
 `$ref` must resolve to an admitted repository resource, recorded in the lockfile
 when locked execution is selected; schema validation never retrieves a remote
 reference. JSON Schema's `default` keyword remains an annotation and is never
@@ -880,7 +886,8 @@ dependency of the run identity.
 ### Problem and fairness contracts
 
 A problem definition owns a versioned contract and its executable evaluator.
-The planned compact form can inline the contract. Together, they bind:
+The manifest may inline the contract or reference a reusable YAML file.
+Together, they bind:
 
 - accepted dataset and problem-parameter schemas;
 - canonical result and metric schemas;

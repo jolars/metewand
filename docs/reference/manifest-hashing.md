@@ -44,6 +44,13 @@ source path do not affect the hash.
 Repository paths have already been restricted to normalized, relative UTF-8
 paths by the parser.
 
+Inline schemas contribute their normalized mappings, including the inherited
+Draft 2020-12 `$schema`. Inline contracts contribute their complete typed
+envelopes and normalized schema declarations. Omitting the inherited dialect
+or spelling it explicitly produces identical bytes. Referenced schemas and
+contracts retain their path representation here; their contents and resolved
+dependencies belong to resource and component identities.
+
 All top-level collections are present, including empty collections. Optional
 scalar and resource fields are represented as JSON `null`; omitted arguments,
 selections, parameter mappings, and cases are represented by their typed empty

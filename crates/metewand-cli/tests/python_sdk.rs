@@ -14,6 +14,19 @@ fn python_sdk_example_publishes_two_accepted_observations() {
         &root.join("sdk/python/src/metewand"),
         &benchmark.path().join("metewand"),
     );
+    assert!(!benchmark.path().join("schemas").exists());
+    assert!(!benchmark.path().join("problem.yaml").exists());
+    for command in [
+        vec!["check", "--workers", "--output", "json"],
+        vec!["plan", "--output", "json"],
+    ] {
+        let output = Command::new(env!("CARGO_BIN_EXE_metewand"))
+            .current_dir(benchmark.path())
+            .args(command)
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+    }
     let output = Command::new(env!("CARGO_BIN_EXE_metewand"))
         .current_dir(benchmark.path())
         .args(["run", "--output-dir", "run", "--output", "json"])
