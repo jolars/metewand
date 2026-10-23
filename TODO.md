@@ -341,37 +341,34 @@ portable publication handoff while retaining development-environment and
 observed-control guarantees. See [Gate
 3](DESIGN.md#gate-3-comparative-local-mvp).
 
-### 3.1 Applicability and profile schemas
+Implement this gate as vertical slices. Start the motivating workflow ports
+before extending the profile machinery, and grow their smoke tests with each
+slice. Publish each schema with its first producer and consumer rather than
+freezing all Gate 3 interfaces up front. Each execution slice includes its
+Rust fixtures, R and Python helpers, durable records, inspection, export, and
+user-facing documentation before the next delivery mode begins.
+
+### 3.1 Workflow fixtures and shared prerequisites
 
 See [Problem and fairness contracts](DESIGN.md#problem-and-fairness-contracts)
 and [Main domain types](DESIGN.md#main-domain-types).
 
-- [ ] Publish versioned schemas for applicability decisions, profile policies,
-  observation-control values and schedules, checkpoint events and decisions,
-  buffered traces and snapshot manifests, run observations, export lineage,
-  and result snapshots.
-- [ ] Validate `one_shot` and `profile` policies, metric names and directions
-  against problem metric schemas, finite explicit/linear/geometric
-  schedules, delivery capabilities, maximum observation counts, and active
-  time bounds.
-- [ ] Validate opt-in instrumented scopes and measurement bases, recording
-  thresholds, instrumentation schemas, check schedules, trace and byte bounds,
-  and reserved terminal-observation capacity. Keep provisional metrics distinct
-  from independent evaluator metrics.
+- [ ] Extract smoke-sized inputs, independent evaluators, expected results, and
+  acceptance cases from the intercept-strategy, SLOPE, and internal
+  clustered-lasso workflows. Run their one-shot portions on the Gate 2
+  foundation, and document the missing applicability and profile behavior.
 - [ ] Review the manifest, public-schema, wire-protocol, identity, and
-  execution-semantics compatibility constants before implementing the new
-  buffered fields and capability. Add conformance vectors for the selected
-  versions; the design-only extension does not change existing version-1 bytes.
+  execution-semantics compatibility constants before introducing new fields or
+  capabilities. Add conformance vectors with each slice; the design-only
+  extension does not change existing version-1 bytes.
+- [ ] Preserve the distinction between logical definitions and slots and their
+  resolved execution identities as applicability and profiles extend them.
+  Keep environment fingerprints separate from exact worker launch identities,
+  including development environments, so later locking adds verification
+  without redefining the identity model.
 - [ ] Validate canonical problem-defined scientific budget values against each
   contract's budget schema and every selected implementation's declared
   capability without conflating them with observation controls.
-- [ ] Represent applicability as `unchecked`, `applicable`, or `not_applicable`
-  with typed evidence; make a side-effect-free plan report candidate,
-  applicable, observation-slot, and execution-slot counts without claiming
-  that a worker was run.
-- [ ] Extend identities so applicability inputs and decisions, observation
-  policies, schedules, controls, and observation slots invalidate exactly
-  their dependent records.
 
 ### 3.2 Configuration-dependent applicability
 
@@ -379,6 +376,12 @@ See [Schemas, canonical values, and
 identities](DESIGN.md#schemas-canonical-values-and-identities) and [Worker
 protocol](DESIGN.md#4-worker-protocol).
 
+- [ ] Publish the versioned applicability-decision schema and extend identities
+  so checked inputs and decisions invalidate exactly their dependent records.
+- [ ] Represent applicability as `unchecked`, `applicable`, or `not_applicable`
+  with typed evidence; make a side-effect-free plan report candidate,
+  applicable, observation-slot, and execution-slot counts without claiming
+  that a worker was run.
 - [ ] Implement the optional `check_applicability` exchange before measured
   preparation, passing the immutable dataset view and manifest, exact
   contract and problem parameters, and implementation parameters.
@@ -391,11 +394,21 @@ protocol](DESIGN.md#4-worker-protocol).
   dimension/implementation-parameter combinations, plus fixtures proving
   that the exact checked inputs and reasons remain visible for scientific
   review.
+- [ ] Add R and Python applicability helpers and grow the motivating smoke
+  fixtures to cover structured exclusions through the public SDKs.
 
 ### 3.3 Fresh-sequence profiles
 
 See [Problem and fairness contracts](DESIGN.md#problem-and-fairness-contracts).
 
+- [ ] Publish versioned profile-policy, observation-control, schedule, and
+  extended run-observation schemas. Add conformance vectors proving that
+  policies, schedules, controls, and observation slots invalidate exactly their
+  dependent records.
+- [ ] Validate `one_shot` and fresh-sequence `profile` policies, metric names and
+  directions against problem metric schemas, finite explicit/linear/geometric
+  schedules, delivery capabilities, maximum observation counts, and active
+  time bounds.
 - [ ] Expand each implementation's explicit, linear, or geometric control
   schedule into stable observation slots without treating controls from
   different implementations as comparable budgets.
@@ -407,12 +420,17 @@ See [Problem and fairness contracts](DESIGN.md#problem-and-fairness-contracts).
 - [ ] Extend block-randomized scheduling with deterministic observation rounds
   that preserve each implementation's schedule order and stable relative
   ordering when unrelated candidates are added.
+- [ ] Add R and Python fresh-sequence helpers and exercise the SLOPE workflow's
+  iteration and tolerance schedules, target stopping, partial results, resume,
+  inspection, and exports before adding streaming.
 
 ### 3.4 Streaming profiles and durable observations
 
 See [Worker protocol](DESIGN.md#4-worker-protocol) and [Environments, execution,
 and artifacts](DESIGN.md#6-environments-execution-and-artifacts).
 
+- [ ] Publish versioned checkpoint event and decision schemas, validate streaming
+  delivery policies, and add identity and protocol conformance vectors.
 - [ ] Implement the bounded checkpoint event/decision subexchange inside one
   active `execute_stream` request, including strict sequence, count, path,
   and continuation-after-stop validation.
@@ -429,6 +447,8 @@ and artifacts](DESIGN.md#6-environments-execution-and-artifacts).
 - [ ] Add fault injection around every checkpoint publication and decision
   boundary, proving that resume selects at most one valid observation per
   slot and never manufactures an accepted attempt.
+- [ ] Add R and Python streaming callbacks and exercise the SLOPE smoke workflow
+  through the public SDKs, including partial-curve inspection and exports.
 
 ### 3.5 Buffered instrumented profiles and local observers
 
@@ -436,6 +456,11 @@ See [Instrumented profiles and local
 observers](DESIGN.md#instrumented-profiles-and-local-observers) and [Initial
 SDK APIs](DESIGN.md#7-initial-sdk-apis).
 
+- [ ] Publish versioned buffered-trace and snapshot-manifest schemas and their
+  identity and protocol conformance vectors. Validate opt-in instrumented
+  scopes, measurement bases, thresholds, instrumentation schemas, check
+  schedules, trace and byte bounds, and reserved terminal-observation capacity.
+  Keep provisional metrics distinct from independent evaluator metrics.
 - [ ] Implement the negotiated `buffered_profile` capability and bounded
   `execute_buffered` response, with one state-preserving solve, a trace, selected
   immutable canonical snapshots, clock metadata, and a provisional stop reason.
@@ -465,6 +490,8 @@ SDK APIs](DESIGN.md#7-initial-sdk-apis).
   no accepted points, independently finalized returned snapshots survive later
   failures, and retries never splice trajectories. Refuse silent pooling with
   executor-observed curves or different instrumented scopes.
+- [ ] Exercise the internal clustered-lasso smoke workflow through direct traces
+  and local observers before extending the same APIs to Julia.
 
 ### 3.6 Julia SDK and cross-language conformance
 
@@ -485,6 +512,7 @@ See [Initial SDK APIs](DESIGN.md#7-initial-sdk-apis).
 See [Environments, execution, and
 artifacts](DESIGN.md#6-environments-execution-and-artifacts).
 
+- [ ] Publish versioned export-lineage and portable result-snapshot schemas.
 - [ ] Emit an export manifest containing the canonical selector, ordered source
   identities, schema and compatibility identities, tool version, and hashes
   of every JSONL, CSV, or Parquet output.
@@ -498,18 +526,18 @@ artifacts](DESIGN.md#6-environments-execution-and-artifacts).
   object, and round-trip tests; prove that snapshotting preserves rather
   than upgrades recorded guarantee classes.
 
-### 3.8 Motivating workflow ports
+### 3.8 Complete motivating workflow ports and qualify the MVP
 
-- [ ] Port a smoke-sized intercept-strategy grid with a seeded Julia
+- [ ] Complete the smoke-sized intercept-strategy grid with a seeded Julia
   materializer, Julia/R/Python implementations, paired data across
   strategies, per-cell resume, pinned pre/post implementation variants, and
   an export used to compute a shared downstream summary.
-- [ ] Port a smoke-sized SLOPE comparison with dense and sparse datasets,
+- [ ] Complete the smoke-sized SLOPE comparison with dense and sparse datasets,
   coupled dataset cases, iteration and tolerance fresh schedules, one
   callback stream, conditional implementation applicability, a common
   evaluator-owned relative-duality-gap target, and timeout censoring.
-- [ ] Port a smoke-sized internal clustered-lasso comparison with shared inputs,
-  native local observers and direct traces, several gap thresholds from one
+- [ ] Complete the smoke-sized internal clustered-lasso comparison with shared
+  inputs, native local observers and direct traces, several gap thresholds from one
   trajectory, independent snapshot evaluation, and separate instrumented and
   executor-observed timing evidence. Keep internal and package-track conclusions
   separate, and preserve historical measurements under their original scopes.
@@ -530,13 +558,14 @@ environments](DESIGN.md#nix-environments), and [Gate
 
 ### 4.1 Resolution and lockfile model
 
-- [ ] Separate unresolved definitions and logical IDs from resolved
-  environments, launches, artifacts, runs, and attempt slots.
+- [ ] Extend the existing logical and resolved identity model with locked
+  environment evidence, preserving the separation of environment fingerprints
+  and exact worker launch identities established before this gate.
 - [ ] Define and validate `metewand.lock`, binding it to the normalized manifest
   while preserving identities for unaffected components.
-- [ ] Implement environment resolution separately from runner launch resolution;
-  allow one environment fingerprint to provide several distinct launch
-  programs.
+- [ ] Add backend environment resolution separately from runner launch
+  resolution; preserve one environment fingerprint across several distinct
+  launch programs.
 - [ ] Implement `metewand lock` with explicit network/build/write reporting and
   atomic lockfile replacement only when the command was directly requested.
 - [ ] Implement `metewand run --locked` so every definition, source, artifact,
@@ -602,16 +631,22 @@ treat benchmark code as trusted input. See [Gate
 
 ### 5.2 Archival provenance and qualification
 
+The earlier execution slices already record provenance and expose environment,
+control, and timing compatibility classes. This slice completes archival
+coverage and enforces the stronger policy requirements.
+
 - [ ] Record hardware, operating system, kernel, selected cores, memory,
   runtime, language, BLAS, thread settings, repository revision and dirty
   hash, plus optional governor, turbo, NUMA, accelerator, and
   background-load observations.
 - [ ] Represent unavailable provenance explicitly, and enforce policy-selected
   required fields before execution.
-- [ ] Keep attempt acceptance separate from environment reproducibility and
-  observed control classes; expose all three in records and exports.
-- [ ] Prevent compatibility readers from pooling different timing scopes,
-  environment classes, control classes, or incomplete accounting.
+- [ ] Verify that archival execution preserves the existing separation of
+  attempt acceptance, environment reproducibility, and observed control classes
+  in records and exports.
+- [ ] Extend compatibility readers to reject pooling across archival control
+  classes or incomplete accounting, preserving the existing timing-scope and
+  environment-class checks.
 - [ ] Add digest-mismatch, network-denial, resource-limit, read-only-mount,
   escaped-process, accounting, and provenance tests for Docker and Podman.
 - [ ] Exercise the archival path with an OCI-pinned mixed-language benchmark and
