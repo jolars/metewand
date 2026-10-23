@@ -67,9 +67,14 @@ a new compatibility review is a prerequisite.
   `crates/competitor-bench/metewand/` directory contains the independent evaluator,
   reference cases, reproduction commands, and a verified run with six accepted
   results and six scientific completion failures.
-- [ ] Refresh the existing clustlasso-cd package integration for the current
+- [x] Refresh the existing clustlasso-cd package integration for the current
   YAML CLI. Reuse its fixed inputs, Python and R adapters, and independent
   evaluator, and retain the original package track's scientific criteria.
+  Its `experiments/package_smoke.py` now stages YAML manifests and the YAML
+  problem contract. The retained `outputs/package-smoke-yaml-v4` run and
+  source-verified audit cover 24 oracle fits, four dense fits, 116 Python/R
+  input round trips, five timing probes, and nine expected failures. See
+  the adopter's `docs/package-integration.md` for reproduction commands.
 - [ ] Allow schemas and problem contracts inline as well as through reusable
   file references. Resolve references offline, validate the same effective
   declarations, and hash their normalized contents.
