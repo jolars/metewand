@@ -64,7 +64,6 @@ def main():
                 Path(request["result_dir"]) / "result.json",
                 {
                     "schema_version": 1,
-                    "schema": "schemas/result.json",
                     "data": {"answer": sum(values) + offset},
                     "files": [],
                 },
@@ -84,7 +83,6 @@ def main():
                 request["metrics_path"],
                 {
                     "schema_version": 1,
-                    "schema": "schemas/metrics.json",
                     "data": {"absolute_error": error},
                 },
             )

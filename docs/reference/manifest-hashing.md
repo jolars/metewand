@@ -51,6 +51,13 @@ or spelling it explicitly produces identical bytes. Referenced schemas and
 contracts retain their path representation here; their contents and resolved
 dependencies belong to resource and component identities.
 
+Compact fields contribute their generated inline schemas. Literal problem
+defaults in an inline contract normalize to the owning problem definition's
+`parameter_defaults`, matching equivalent explicit declarations. Nonempty
+declaration grids contribute `parameter_grids` beside their owning definition;
+they do not change generated schemas or component identities. Definitions
+without declaration grids retain their existing canonical representation.
+
 All top-level collections are present, including empty collections. Optional
 scalar and resource fields are represented as JSON `null`; omitted arguments,
 selections, parameter mappings, and cases are represented by their typed empty

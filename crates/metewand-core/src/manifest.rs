@@ -12,8 +12,11 @@ use serde_json::Value as JsonValue;
 use thiserror::Error;
 
 use crate::{
-    MANIFEST_VERSION, canonical::CanonicalValue, field_declaration::ParameterDeclarations,
-    problem_contract::ContractDeclaration, schema::SchemaDeclaration,
+    MANIFEST_VERSION,
+    canonical::CanonicalValue,
+    field_declaration::{ParameterBoundary, ParameterDeclarations},
+    problem_contract::{ContractDeclaration, ProblemContract},
+    schema::SchemaDeclaration,
 };
 
 /// Parses a version-1 YAML manifest into core domain types.
@@ -94,7 +97,7 @@ pub enum DatasetDefinition {
     /// A repository-owned, fixed source bundle.
     Fixed(FixedDatasetDefinition),
     /// A dataset produced by a worker, optionally from a pinned remote source.
-    Generated(GeneratedDatasetDefinition),
+    Generated(Box<GeneratedDatasetDefinition>),
 }
 
 /// A repository-owned fixed dataset.
@@ -113,6 +116,8 @@ pub struct GeneratedDatasetDefinition {
     pub parameter_schema: Option<SchemaDeclaration>,
     /// Literal defaults merged before parameter validation.
     pub parameter_defaults: Option<CanonicalValue>,
+    /// Default expansion axes, kept separate from the valid parameter domain.
+    pub parameter_grids: ParameterAxes,
     /// Schema describing the materialized dataset.
     pub output_schema: SchemaDeclaration,
     /// Optional pinned remote input.
@@ -122,16 +127,29 @@ pub struct GeneratedDatasetDefinition {
 }
 
 /// A problem contract and its independent evaluator.
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[derive(Debug)]
 pub struct ProblemDefinition {
     /// Repository-relative problem-contract path or inline contract.
     pub contract: ContractDeclaration,
     /// Literal problem-parameter defaults.
-    #[serde(default, deserialize_with = "deserialize_parameter_defaults")]
     pub parameter_defaults: Option<CanonicalValue>,
     /// Worker that evaluates implementation results.
     pub evaluator: WorkerDefinition,
+}
+
+impl ProblemDefinition {
+    /// Returns literal defaults from the definition or its compact contract.
+    ///
+    /// Compatibility validation rejects competing declarations before planning.
+    #[must_use]
+    pub fn resolved_parameter_defaults<'a>(
+        &'a self,
+        contract: &'a ProblemContract,
+    ) -> Option<&'a CanonicalValue> {
+        self.parameter_defaults
+            .as_ref()
+            .or(contract.parameter_defaults.as_ref())
+    }
 }
 
 /// An implementation adapter and its declared contract support.
@@ -145,6 +163,8 @@ pub struct ImplementationDefinition {
     pub parameter_schema: Option<SchemaDeclaration>,
     /// Literal implementation-parameter defaults.
     pub parameter_defaults: Option<CanonicalValue>,
+    /// Default expansion axes, kept separate from the valid parameter domain.
+    pub parameter_grids: ParameterAxes,
     /// Capabilities declared by the implementation.
     pub capabilities: Vec<ImplementationCapability>,
 }
@@ -272,7 +292,7 @@ pub type ParameterAxes = BTreeMap<String, ParameterAxis>;
 pub type NamedParameterAxes = BTreeMap<Name, ParameterAxes>;
 
 /// A fixed parameter value or an explicit expansion grid.
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum ParameterAxis {
     /// One literal value.
     Value(CanonicalValue),
@@ -830,6 +850,8 @@ impl ManifestParseError {
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 struct RawDatasetDefinition {
     #[serde(default, deserialize_with = "deserialize_optional_non_null")]
+    parameters: Option<ParameterDeclarations>,
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
     parameter_schema: Option<SchemaDeclaration>,
     #[serde(default, deserialize_with = "deserialize_parameter_defaults")]
     parameter_defaults: Option<CanonicalValue>,
@@ -861,6 +883,7 @@ impl<'de> Deserialize<'de> for DatasetDefinition {
         match raw.runner {
             None => {
                 if raw.parameter_schema.is_some()
+                    || raw.parameters.is_some()
                     || raw.parameter_defaults.is_some()
                     || raw.source.is_some()
                     || raw.entrypoint.is_some()
@@ -881,6 +904,12 @@ impl<'de> Deserialize<'de> for DatasetDefinition {
                 }))
             }
             Some(runner) => {
+                let parameters = ParameterBoundary::lower(
+                    raw.parameters,
+                    raw.parameter_schema,
+                    raw.parameter_defaults,
+                )
+                .map_err(de::Error::custom)?;
                 let worker = build_worker(
                     runner,
                     raw.entrypoint,
@@ -891,15 +920,43 @@ impl<'de> Deserialize<'de> for DatasetDefinition {
                     raw.protocol_transport,
                 )
                 .map_err(de::Error::custom)?;
-                Ok(Self::Generated(GeneratedDatasetDefinition {
-                    parameter_schema: raw.parameter_schema,
-                    parameter_defaults: raw.parameter_defaults,
+                Ok(Self::Generated(Box::new(GeneratedDatasetDefinition {
+                    parameter_schema: parameters.schema,
+                    parameter_defaults: parameters.defaults,
+                    parameter_grids: parameters.grids,
                     output_schema: raw.output_schema,
                     source: raw.source,
                     worker,
-                }))
+                })))
             }
         }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+struct RawProblemDefinition {
+    contract: ContractDeclaration,
+    #[serde(default, deserialize_with = "deserialize_parameter_defaults")]
+    parameter_defaults: Option<CanonicalValue>,
+    evaluator: WorkerDefinition,
+}
+
+impl<'de> Deserialize<'de> for ProblemDefinition {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let raw = RawProblemDefinition::deserialize(deserializer)?;
+        if raw.parameter_defaults.is_some()
+            && matches!(&raw.contract, ContractDeclaration::Inline(contract) if contract.compact_parameters)
+        {
+            return Err(de::Error::custom(
+                "contract `parameters` cannot be combined with problem `parameter-defaults`",
+            ));
+        }
+        Ok(Self {
+            contract: raw.contract,
+            parameter_defaults: raw.parameter_defaults,
+            evaluator: raw.evaluator,
+        })
     }
 }
 
@@ -935,17 +992,9 @@ impl<'de> Deserialize<'de> for ImplementationDefinition {
         D: Deserializer<'de>,
     {
         let raw = RawImplementationDefinition::deserialize(deserializer)?;
-        let (parameter_schema, parameter_defaults) = if let Some(parameters) = raw.parameters {
-            if raw.parameter_schema.is_some() || raw.parameter_defaults.is_some() {
-                return Err(de::Error::custom(
-                    "`parameters` cannot be combined with `parameter-schema` or `parameter-defaults`",
-                ));
-            }
-            let (schema, defaults) = parameters.into_parts().map_err(de::Error::custom)?;
-            (Some(schema), defaults)
-        } else {
-            (raw.parameter_schema, raw.parameter_defaults)
-        };
+        let parameters =
+            ParameterBoundary::lower(raw.parameters, raw.parameter_schema, raw.parameter_defaults)
+                .map_err(de::Error::custom)?;
         ensure_nonempty_unique(&raw.problem_contracts, "`problem-contracts`")
             .map_err(de::Error::custom)?;
         if raw.capabilities != [ImplementationCapability::OneShot] {
@@ -966,8 +1015,9 @@ impl<'de> Deserialize<'de> for ImplementationDefinition {
         Ok(Self {
             worker,
             problem_contracts: raw.problem_contracts,
-            parameter_schema,
-            parameter_defaults,
+            parameter_schema: parameters.schema,
+            parameter_defaults: parameters.defaults,
+            parameter_grids: parameters.grids,
             capabilities: raw.capabilities,
         })
     }

@@ -4,6 +4,108 @@
   "x-metewand-compatibility-version": 1,
   "title": "Metewand version 1 shared schema definitions",
   "$defs": {
+    "compact_type": {
+      "enum": ["number", "integer", "string", "boolean", "null", "array"]
+    },
+    "compact_field_schema": {
+      "type": "object",
+      "properties": {
+        "type": { "$ref": "#/$defs/compact_type" },
+        "enum": { "type": "array", "minItems": 1 },
+        "minimum": { "type": "number" },
+        "maximum": { "type": "number" },
+        "exclusiveMinimum": { "type": "number" },
+        "exclusiveMaximum": { "type": "number" },
+        "multipleOf": { "type": "number", "exclusiveMinimum": 0 },
+        "minLength": { "type": "integer", "minimum": 0 },
+        "maxLength": { "type": "integer", "minimum": 0 },
+        "pattern": { "type": "string" },
+        "items": { "$ref": "#/$defs/compact_item" },
+        "minItems": { "type": "integer", "minimum": 0 },
+        "maxItems": { "type": "integer", "minimum": 0 },
+        "uniqueItems": { "type": "boolean" }
+      },
+      "required": ["type"],
+      "allOf": [
+        {
+          "if": { "properties": { "type": { "enum": ["number", "integer"] } } },
+          "else": {
+            "not": { "anyOf": [
+              { "required": ["minimum"] }, { "required": ["maximum"] },
+              { "required": ["exclusiveMinimum"] }, { "required": ["exclusiveMaximum"] },
+              { "required": ["multipleOf"] }
+            ] }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "string" } } },
+          "else": {
+            "not": { "anyOf": [
+              { "required": ["minLength"] }, { "required": ["maxLength"] },
+              { "required": ["pattern"] }
+            ] }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "array" } } },
+          "then": { "required": ["items"] },
+          "else": {
+            "not": { "anyOf": [
+              { "required": ["items"] }, { "required": ["minItems"] },
+              { "required": ["maxItems"] }, { "required": ["uniqueItems"] }
+            ] }
+          }
+        }
+      ]
+    },
+    "compact_item": {
+      "oneOf": [
+        { "enum": ["number", "integer", "string", "boolean", "null"] },
+        {
+          "allOf": [{ "$ref": "#/$defs/compact_field_schema" }],
+          "unevaluatedProperties": false
+        }
+      ]
+    },
+    "compact_field": {
+      "oneOf": [
+        { "enum": ["number", "integer", "string", "boolean", "null"] },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/compact_field_schema" },
+            {
+              "properties": {
+                "default": true,
+                "grid": { "type": "array", "minItems": 1 },
+                "optional": { "type": "boolean" }
+              },
+              "not": { "required": ["default", "grid"] }
+            }
+          ],
+          "unevaluatedProperties": false
+        }
+      ]
+    },
+    "compact_parameters": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/compact_field" }
+    },
+    "compact_output_field": {
+      "oneOf": [
+        { "enum": ["number", "integer", "string", "boolean", "null"] },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/compact_field_schema" },
+            { "properties": { "optional": { "type": "boolean" } } }
+          ],
+          "unevaluatedProperties": false
+        }
+      ]
+    },
+    "compact_outputs": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/compact_output_field" }
+    },
     "schema_version": {
       "type": "integer",
       "const": 1

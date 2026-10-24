@@ -22,6 +22,14 @@ form a Cartesian product only for the selected dataset and implementation in a
 candidate; a grid for one implementation does not multiply candidates for a
 different implementation.
 
+Compact parameter declarations can provide default grids in dataset,
+problem-contract, and implementation definitions. Experiment axes replace
+matching declaration grids by parameter name, and named cases then replace
+matching experiment axes. Literal defaults merge with each expanded parameter
+object before validation. A grid selects runs without narrowing the field's
+valid domain, and all declaration grid members are validated even when an
+experiment overrides the selection.
+
 The output order is stable:
 
 1. experiments in manifest order;

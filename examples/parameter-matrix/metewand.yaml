@@ -8,12 +8,15 @@ datasets:
     args: ["{sources}/worker.py", "dataset_materializer"]
     sources: ["worker.py"]
     environment: "local"
-    parameter-schema: "schemas/dataset-parameters.json"
-    parameter-defaults: { values: [1, 2, 3] }
+    parameters:
+      values:
+        type: array
+        items: integer
+        minItems: 1
+        grid: [[1, 2, 3], [4, 6]]
 problems:
   sum:
     contract: "problem.yaml"
-    parameter-defaults: { offset: 2 }
     evaluator:
       runner: "command"
       program: "python3"
@@ -52,9 +55,6 @@ experiments:
         representation: { grid: ["list", "packed"] }
     cases:
       - name: "cartesian"
-        dataset-parameters:
-          numbers:
-            values: { grid: [[1, 2, 3], [4, 6]] }
         problem-parameters:
           offset: { grid: [0, 2] }
       - name: "coupled"

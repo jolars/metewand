@@ -2,6 +2,149 @@
   "version": 1,
   "valid": [
     {
+      "name": "manifest-with-compact-dataset-and-problem-boundaries",
+      "schema": "manifest",
+      "instance": {
+        "version": 1,
+        "name": "compact",
+        "datasets": {
+          "generated": {
+            "runner": "command",
+            "program": "generate",
+            "environment": "local",
+            "output-schema": "dataset.schema.json",
+            "parameters": {
+              "rows": {
+                "type": "integer",
+                "minimum": 1,
+                "grid": [
+                  10,
+                  20
+                ]
+              },
+              "values": {
+                "type": "array",
+                "items": "integer",
+                "default": [
+                  1,
+                  2
+                ]
+              }
+            }
+          }
+        },
+        "problems": {
+          "sum": {
+            "contract": {
+              "version": 1,
+              "name": "sum",
+              "family": "arithmetic",
+              "parameters": {
+                "offset": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "grid": [
+                    0,
+                    2
+                  ]
+                }
+              },
+              "dataset-schemas": [],
+              "result": {
+                "answer": "integer"
+              },
+              "metrics": {
+                "error": {
+                  "type": "number",
+                  "minimum": 0
+                }
+              },
+              "semantics-schema": {
+                "type": "object"
+              },
+              "allowed-timing-scopes": [
+                "prepare_and_execute"
+              ],
+              "supported-budgets": [
+                "none"
+              ],
+              "semantics": {
+                "validity": {
+                  "finite": true
+                },
+                "one_shot_completion": {
+                  "exact": true
+                }
+              },
+              "reference-cases": [
+                {
+                  "result": "result.json",
+                  "expected-metrics": "metrics.json"
+                }
+              ]
+            },
+            "evaluator": {
+              "runner": "command",
+              "program": "evaluate",
+              "environment": "local"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "compact-problem-contract-with-declaration-grid",
+      "schema": "problem-contract",
+      "instance": {
+        "version": 1,
+        "name": "sum",
+        "family": "arithmetic",
+        "parameters": {
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "grid": [
+              0,
+              2
+            ]
+          }
+        },
+        "dataset-schemas": [],
+        "result": {
+          "answer": "integer"
+        },
+        "metrics": {
+          "error": {
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        "semantics-schema": {
+          "type": "object"
+        },
+        "allowed-timing-scopes": [
+          "prepare_and_execute"
+        ],
+        "supported-budgets": [
+          "none"
+        ],
+        "semantics": {
+          "validity": {
+            "finite": true
+          },
+          "one_shot_completion": {
+            "exact": true
+          }
+        },
+        "reference-cases": [
+          {
+            "result": "result.json",
+            "expected-metrics": "metrics.json"
+          }
+        ]
+      }
+    },
+    {
       "name": "manifest-with-compact-implementation-parameters",
       "schema": "manifest",
       "instance": {
@@ -1537,6 +1680,300 @@
     }
   ],
   "invalid": [
+    {
+      "name": "compact-result-rejects-default",
+      "schema": "problem-contract",
+      "instance": {
+        "version": 1,
+        "name": "sum",
+        "family": "arithmetic",
+        "parameters": {
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "grid": [
+              0,
+              2
+            ]
+          }
+        },
+        "dataset-schemas": [],
+        "result": {
+          "invalid": {
+            "type": "number",
+            "default": 0
+          }
+        },
+        "metrics": {
+          "error": {
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        "semantics-schema": {
+          "type": "object"
+        },
+        "allowed-timing-scopes": [
+          "prepare_and_execute"
+        ],
+        "supported-budgets": [
+          "none"
+        ],
+        "semantics": {
+          "validity": {
+            "finite": true
+          },
+          "one_shot_completion": {
+            "exact": true
+          }
+        },
+        "reference-cases": [
+          {
+            "result": "result.json",
+            "expected-metrics": "metrics.json"
+          }
+        ]
+      }
+    },
+    {
+      "name": "compact-metrics-rejects-grid",
+      "schema": "problem-contract",
+      "instance": {
+        "version": 1,
+        "name": "sum",
+        "family": "arithmetic",
+        "parameters": {
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "grid": [
+              0,
+              2
+            ]
+          }
+        },
+        "dataset-schemas": [],
+        "result": {
+          "answer": "integer"
+        },
+        "metrics": {
+          "invalid": {
+            "type": "number",
+            "grid": [
+              0,
+              1
+            ]
+          }
+        },
+        "semantics-schema": {
+          "type": "object"
+        },
+        "allowed-timing-scopes": [
+          "prepare_and_execute"
+        ],
+        "supported-budgets": [
+          "none"
+        ],
+        "semantics": {
+          "validity": {
+            "finite": true
+          },
+          "one_shot_completion": {
+            "exact": true
+          }
+        },
+        "reference-cases": [
+          {
+            "result": "result.json",
+            "expected-metrics": "metrics.json"
+          }
+        ]
+      }
+    },
+    {
+      "name": "dataset-rejects-competing-compact-parameters",
+      "schema": "manifest",
+      "instance": {
+        "version": 1,
+        "name": "compact",
+        "datasets": {
+          "generated": {
+            "runner": "command",
+            "program": "generate",
+            "environment": "local",
+            "output-schema": "dataset.schema.json",
+            "parameters": {
+              "rows": {
+                "type": "integer",
+                "minimum": 1,
+                "grid": [
+                  10,
+                  20
+                ]
+              },
+              "values": {
+                "type": "array",
+                "items": "integer",
+                "default": [
+                  1,
+                  2
+                ]
+              }
+            },
+            "parameter-schema": "parameters.schema.json"
+          }
+        },
+        "problems": {
+          "sum": {
+            "contract": {
+              "version": 1,
+              "name": "sum",
+              "family": "arithmetic",
+              "parameters": {
+                "offset": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "grid": [
+                    0,
+                    2
+                  ]
+                }
+              },
+              "dataset-schemas": [],
+              "result": {
+                "answer": "integer"
+              },
+              "metrics": {
+                "error": {
+                  "type": "number",
+                  "minimum": 0
+                }
+              },
+              "semantics-schema": {
+                "type": "object"
+              },
+              "allowed-timing-scopes": [
+                "prepare_and_execute"
+              ],
+              "supported-budgets": [
+                "none"
+              ],
+              "semantics": {
+                "validity": {
+                  "finite": true
+                },
+                "one_shot_completion": {
+                  "exact": true
+                }
+              },
+              "reference-cases": [
+                {
+                  "result": "result.json",
+                  "expected-metrics": "metrics.json"
+                }
+              ]
+            },
+            "evaluator": {
+              "runner": "command",
+              "program": "evaluate",
+              "environment": "local"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "parameter-rejects-default-alongside-grid",
+      "schema": "manifest",
+      "instance": {
+        "version": 1,
+        "name": "compact",
+        "datasets": {
+          "generated": {
+            "runner": "command",
+            "program": "generate",
+            "environment": "local",
+            "output-schema": "dataset.schema.json",
+            "parameters": {
+              "rows": {
+                "type": "integer",
+                "minimum": 1,
+                "grid": [
+                  10,
+                  20
+                ],
+                "default": 10
+              },
+              "values": {
+                "type": "array",
+                "items": "integer",
+                "default": [
+                  1,
+                  2
+                ]
+              }
+            }
+          }
+        },
+        "problems": {
+          "sum": {
+            "contract": {
+              "version": 1,
+              "name": "sum",
+              "family": "arithmetic",
+              "parameters": {
+                "offset": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "grid": [
+                    0,
+                    2
+                  ]
+                }
+              },
+              "dataset-schemas": [],
+              "result": {
+                "answer": "integer"
+              },
+              "metrics": {
+                "error": {
+                  "type": "number",
+                  "minimum": 0
+                }
+              },
+              "semantics-schema": {
+                "type": "object"
+              },
+              "allowed-timing-scopes": [
+                "prepare_and_execute"
+              ],
+              "supported-budgets": [
+                "none"
+              ],
+              "semantics": {
+                "validity": {
+                  "finite": true
+                },
+                "one_shot_completion": {
+                  "exact": true
+                }
+              },
+              "reference-cases": [
+                {
+                  "result": "result.json",
+                  "expected-metrics": "metrics.json"
+                }
+              ]
+            },
+            "evaluator": {
+              "runner": "command",
+              "program": "evaluate",
+              "environment": "local"
+            }
+          }
+        }
+      }
+    },
     {
       "name": "manifest-with-competing-compact-and-explicit-parameters",
       "schema": "manifest",

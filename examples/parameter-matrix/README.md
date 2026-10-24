@@ -6,13 +6,21 @@ offset. It keeps dataset `values`, problem `offset`, and implementation
 either a Python list or packed signed 64-bit integers; the evaluator independently
 reads the canonical dataset and checks the mathematical answer.
 
-The implementation declares `representation` once under `parameters`, with type
-`string`, enum values `list` and `packed`, and default `list`. Metewand generates
-its closed parameter schema and applies the literal default; no separate
-implementation schema is needed. The experiment overrides that default with an
-explicit grid of both representations. `plan` displays the resolved parameters
-for each candidate. See [compact implementation parameters](../../docs/reference/parameter-namespaces.md#compact-implementation-parameters)
-for the supported field declarations.
+The dataset declares `values` once under `parameters`, with an array type,
+integer items, and a default grid of two whole arrays. The contract declares
+`offset` with a literal default of 2, plus compact result and metric fields.
+The implementation declares `representation` with type `string`, enum values
+`list` and `packed`, and default `list`. Metewand generates closed schemas with
+required fields from these declarations. The `schemas/` directory retains
+explicit equivalents for reuse, alongside the dataset and semantics schemas
+used by the benchmark.
+
+The experiment overrides the representation default with a grid of both
+representations. `plan` displays the resolved parameters for each candidate.
+See [compact declarations](../../docs/reference/parameter-namespaces.md#compact-implementation-parameters)
+for the supported fields and selection precedence. Result and metric envelopes
+use the selected contract's schemas without repeating schema paths in worker
+code.
 
 From the repository root, with Python 3 on `PATH`, inspect and run it:
 
@@ -34,8 +42,9 @@ observations: answers 6, 8, 10, and 12 twice each, plus 21 twice. Every evaluato
 metric is `absolute_error = 0`. Each candidate has one implementation repetition
 and one measurement repetition.
 
-The array entries use `grid` to select whole arrays in the first case and
-`value` to preserve a literal array in the second. All grids expand
+The `cartesian` case inherits the dataset declaration's grid. The `coupled`
+case overrides it with `value` to preserve a single literal array. The grid
+selects runs without restricting the valid array domain. All grids expand
 deterministically. Overlapping cases are errors rather than implicit statistical
 replications; use repetition fields for that purpose. See
 [configuration expansion](../../docs/reference/configuration-expansion.md).

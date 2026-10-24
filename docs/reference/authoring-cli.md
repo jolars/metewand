@@ -2,15 +2,16 @@
 
 This page describes the implemented CLI. Manually authored benchmarks may use
 [inline contracts](problem-contracts.md) and [schemas](schema-validation.md#inline-declarations).
-Scaffolds still emit the reusable external files listed below. Manually authored
-implementations may use [compact parameter declarations](parameter-namespaces.md#compact-implementation-parameters)
-with literal defaults. The planned
+Scaffolds still emit the reusable external files listed below. Implementations
+and generated datasets may use [compact parameter declarations](parameter-namespaces.md#compact-implementation-parameters)
+with literal defaults or default grids. Problem contracts accept the same
+`parameters` form and compact `result` and `metrics` declarations. Each boundary
+can independently use a compact declaration or an explicit schema. The planned
 [compact authoring design](https://github.com/jolars/metewand/blob/main/DESIGN.md#planned-compact-authoring)
-puts inline problem fields directly under the problem and introduces
-`parameters`, `result`, and `metrics` declarations. Implementation parameters
-keep their own mapping alongside worker settings; experiments already override
-literal defaults, while declaration grids remain planned. The remaining compact
-forms, language-specific SDK scaffolds,
+puts problem fields directly under the problem, without a `contract` wrapper.
+Implementation parameters keep their own mapping alongside worker settings.
+Experiment axes override declaration grids, and named cases override experiment
+axes. Plain scalar experiment overrides, language-specific SDK scaffolds,
 mechanical defaults, and an optional family semantics schema remain planned MVP
 work; see the [roadmap](https://github.com/jolars/metewand/blob/main/TODO.md).
 

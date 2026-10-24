@@ -158,6 +158,245 @@ fn inline_and_referenced_contracts_share_effective_identity() {
     );
 }
 
+fn compact_manifest() -> Value {
+    let mut manifest = manifest();
+    manifest["datasets"]["numbers"] = json!({
+        "runner": "command", "program": "generate", "environment": "local",
+        "output-schema": {"type": "object"},
+        "parameters": {"rows": {"type": "integer", "minimum": 1, "default": 10}}
+    });
+    let contract = manifest["problems"]["sum"]["contract"]
+        .as_object_mut()
+        .unwrap();
+    for key in ["parameter-schema", "result-schema", "metric-schema"] {
+        contract.remove(key);
+    }
+    contract.insert(
+        "parameters".into(),
+        json!({"offset": {"type": "integer", "minimum": 0, "default": 2}}),
+    );
+    contract.insert("result".into(), json!({"answer": "integer"}));
+    contract.insert(
+        "metrics".into(),
+        json!({"error": {"type": "number", "minimum": 0}}),
+    );
+    let implementation = manifest["implementations"]["sum"].as_object_mut().unwrap();
+    implementation.remove("parameter-schema");
+    implementation.remove("parameter-defaults");
+    implementation.insert(
+        "parameters".into(),
+        json!({"iterations": {"type": "integer", "minimum": 1, "default": 1}}),
+    );
+    manifest
+}
+
+fn closed_schema(name: &str, field: Value) -> Value {
+    json!({"type": "object", "properties": {name: field}, "required": [name], "additionalProperties": false})
+}
+
+#[test]
+fn compact_boundaries_preserve_effective_resource_and_configuration_identities() {
+    let mut manifest = compact_manifest();
+    let root = repository(&manifest);
+    let compact = check(root.path());
+
+    let dataset = manifest["datasets"]["numbers"].as_object_mut().unwrap();
+    dataset.remove("parameters");
+    dataset.insert(
+        "parameter-schema".into(),
+        closed_schema("rows", json!({"type": "integer", "minimum": 1})),
+    );
+    dataset.insert("parameter-defaults".into(), json!({"rows": 10}));
+    manifest["problems"]["sum"]["parameter-defaults"] = json!({"offset": 2});
+    let contract = manifest["problems"]["sum"]["contract"]
+        .as_object_mut()
+        .unwrap();
+    for key in ["parameters", "result", "metrics"] {
+        contract.remove(key);
+    }
+    contract.insert(
+        "parameter-schema".into(),
+        closed_schema("offset", json!({"type": "integer", "minimum": 0})),
+    );
+    contract.insert(
+        "result-schema".into(),
+        closed_schema("answer", json!({"type": "integer"})),
+    );
+    contract.insert(
+        "metric-schema".into(),
+        closed_schema("error", json!({"type": "number", "minimum": 0})),
+    );
+    let implementation = manifest["implementations"]["sum"].as_object_mut().unwrap();
+    implementation.remove("parameters");
+    implementation.insert(
+        "parameter-schema".into(),
+        closed_schema("iterations", json!({"type": "integer", "minimum": 1})),
+    );
+    implementation.insert("parameter-defaults".into(), json!({"iterations": 1}));
+    write(root.path(), "metewand.yaml", &manifest);
+    let explicit = check(root.path());
+    assert_eq!(compact.manifest_hash, explicit.manifest_hash);
+    assert_eq!(compact.resources.schemas, explicit.resources.schemas);
+    assert_eq!(
+        compact.resources.problem_contracts,
+        explicit.resources.problem_contracts
+    );
+    assert_eq!(
+        compact.planning_catalog.dataset_definitions,
+        explicit.planning_catalog.dataset_definitions
+    );
+    assert_eq!(
+        compact.planning_catalog.problem_definitions,
+        explicit.planning_catalog.problem_definitions
+    );
+    assert_eq!(
+        compact.planning_catalog.implementation_definitions,
+        explicit.planning_catalog.implementation_definitions
+    );
+    assert_eq!(
+        compact.logical_plan().unwrap(),
+        explicit.logical_plan().unwrap()
+    );
+}
+
+#[test]
+fn declaration_grids_preserve_definitions_and_match_experiment_axes() {
+    for (pointer, axis) in [
+        (
+            "/datasets/numbers/parameters/rows",
+            "/experiments/0/dataset-parameters",
+        ),
+        (
+            "/problems/sum/contract/parameters/offset",
+            "/experiments/0/problem-parameters",
+        ),
+        (
+            "/implementations/sum/parameters/iterations",
+            "/experiments/0/implementation-parameters",
+        ),
+    ] {
+        let mut manifest = compact_manifest();
+        let field = manifest
+            .pointer_mut(pointer)
+            .unwrap()
+            .as_object_mut()
+            .unwrap();
+        field.remove("default");
+        field.insert("grid".into(), json!([1, 2]));
+        let root = repository(&manifest);
+        let compact = check(root.path());
+        let original_plan = compact.logical_plan().unwrap();
+        assert_eq!(original_plan.experiments[0].candidates.len(), 2);
+
+        manifest.pointer_mut(pointer).unwrap()["grid"] = json!([1, 2, 3]);
+        write(root.path(), "metewand.yaml", &manifest);
+        let extended = check(root.path());
+        assert_eq!(compact.resources.schemas, extended.resources.schemas);
+        assert_eq!(
+            compact.resources.problem_contracts,
+            extended.resources.problem_contracts
+        );
+        assert_eq!(
+            compact.planning_catalog.dataset_definitions,
+            extended.planning_catalog.dataset_definitions
+        );
+        assert_eq!(
+            compact.planning_catalog.problem_definitions,
+            extended.planning_catalog.problem_definitions
+        );
+        assert_eq!(
+            compact.planning_catalog.implementation_definitions,
+            extended.planning_catalog.implementation_definitions
+        );
+        let extended_plan = extended.logical_plan().unwrap();
+        assert_eq!(extended_plan.experiments[0].candidates.len(), 3);
+        assert_eq!(
+            original_plan.experiments[0].candidates,
+            extended_plan.experiments[0].candidates[..2]
+        );
+
+        manifest
+            .pointer_mut(pointer)
+            .unwrap()
+            .as_object_mut()
+            .unwrap()
+            .remove("grid");
+        let (_, axis_name) = axis.rsplit_once('/').unwrap();
+        manifest["experiments"][0][axis_name] = match axis_name {
+            "dataset-parameters" => json!({"numbers": {"rows": {"grid": [1, 2]}}}),
+            "problem-parameters" => json!({"offset": {"grid": [1, 2]}}),
+            "implementation-parameters" => json!({"sum": {"iterations": {"grid": [1, 2]}}}),
+            _ => unreachable!(),
+        };
+        write(root.path(), "metewand.yaml", &manifest);
+        assert_eq!(original_plan, check(root.path()).logical_plan().unwrap());
+    }
+}
+
+#[test]
+fn referenced_compact_contract_defaults_reach_definitions_and_reject_competing_defaults() {
+    let mut manifest = compact_manifest();
+    let root = repository(&manifest);
+    let inline = check(root.path());
+    write(
+        root.path(),
+        "problem.yaml",
+        &manifest["problems"]["sum"]["contract"],
+    );
+    manifest["problems"]["sum"]["contract"] = json!("problem.yaml");
+    write(root.path(), "metewand.yaml", &manifest);
+    let referenced = check(root.path());
+    assert_eq!(
+        inline.resources.problem_contracts,
+        referenced.resources.problem_contracts
+    );
+    assert_eq!(
+        inline.planning_catalog.problem_definitions,
+        referenced.planning_catalog.problem_definitions
+    );
+    assert_eq!(
+        inline.logical_plan().unwrap(),
+        referenced.logical_plan().unwrap()
+    );
+    manifest["problems"]["sum"]["parameter-defaults"] = json!({});
+    write(root.path(), "metewand.yaml", &manifest);
+    let error = check_repository(&root.path().join("metewand.yaml"))
+        .err()
+        .unwrap();
+    assert!(error.to_string().contains("cannot be combined"), "{error}");
+}
+
+#[cfg(unix)]
+#[test]
+fn worker_checks_detect_changed_selections_in_referenced_contracts() {
+    use metewand_runtime::run::check_repository_workers;
+
+    for selection in ["default", "grid"] {
+        let mut manifest = compact_manifest();
+        let root = repository(&manifest);
+        let mut contract = manifest["problems"]["sum"]["contract"].take();
+        if selection == "grid" {
+            contract["parameters"]["offset"]
+                .as_object_mut()
+                .unwrap()
+                .remove("default");
+            contract["parameters"]["offset"]["grid"] = json!([1, 2]);
+        }
+        write(root.path(), "problem.yaml", &contract);
+        manifest["problems"]["sum"]["contract"] = json!("problem.yaml");
+        write(root.path(), "metewand.yaml", &manifest);
+        let checked = check(root.path());
+        contract["parameters"]["offset"][selection] = if selection == "grid" {
+            json!([3, 4])
+        } else {
+            json!(3)
+        };
+        write(root.path(), "problem.yaml", &contract);
+        let error = check_repository_workers(&checked).unwrap_err();
+        assert!(error.to_string().contains("inputs changed"), "{error}");
+    }
+}
+
 #[test]
 fn schema_dependencies_affect_identities_and_parameters_are_validated() {
     let mut manifest = manifest();

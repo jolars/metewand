@@ -106,7 +106,7 @@ pub enum WorkerCheckError {
 ///
 /// Sources and reference inputs are privately staged. No implementation is
 /// timed or executed, no remote dataset is acquired, and no run is published.
-/// Reference cases use the problem definition's parameter defaults (or `{}`).
+/// Reference cases use the problem's literal parameter defaults (or `{}`).
 ///
 /// # Errors
 /// Returns an error for unsupported resolution, missing selected capabilities,
@@ -178,8 +178,7 @@ pub fn check_repository_workers(
             let contract = &repository.problem_contracts[name.as_str()];
             let definition = &repository.manifest.problems[name.as_str()];
             let parameters = definition
-                .parameter_defaults
-                .as_ref()
+                .resolved_parameter_defaults(contract)
                 .map_or_else(|| json!({}), |value| value.as_json().clone());
             repository
                 .schemas
@@ -297,6 +296,11 @@ fn verify_repository(repository: &CheckedRepository) -> Result<(), WorkerCheckEr
         || current.resources.problem_contracts != repository.resources.problem_contracts
         || current.resources.schemas != repository.resources.schemas
         || current.resources.source_bundles != repository.resources.source_bundles
+        || current.problem_contracts.iter().any(|(name, contract)| {
+            let original = &repository.problem_contracts[name];
+            contract.parameter_defaults != original.parameter_defaults
+                || contract.parameter_grids != original.parameter_grids
+        })
     {
         return Err(RunError::ChangedInput.into());
     }

@@ -47,6 +47,12 @@ problems:
 
 Every schema field can mix [inline schemas and reusable JSON
 files](schema-validation.md#inline-declarations), including `semantics-schema`.
+The contract may independently replace `parameter-schema` with compact
+`parameters`, `result-schema` with `result`, and `metric-schema` with `metrics`.
+These [compact declarations](parameter-namespaces.md#dataset-and-problem-declarations)
+generate closed object schemas with required fields by default. Parameter
+fields accept validated literal defaults or default grids; result and metric
+fields accept neither. Competing forms for the same boundary are errors.
 Contract version, scientific semantics, reference cases, and validation rules
 are identical in both forms. File paths in the envelope remain relative to the
 repository root. Relative `$ref` values inside an inline schema use the owning
@@ -82,7 +88,8 @@ fn load_contract(
 The common envelope requires parameter, accepted-dataset, result, metric, and
 semantics schemas; a nonempty, duplicate-free set of timing scopes; the Gate 1
 `none` budget; and at least one reference case. Every referenced schema must be
-present in the supplied catalog. Dataset-backed reference cases require a
+present in the supplied catalog, including schemas generated from compact
+declarations. Dataset-backed reference cases require a
 dataset path, while dataset-free cases must omit it.
 
 The `semantics` mapping is otherwise family-owned, but it always separates two

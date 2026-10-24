@@ -1,10 +1,13 @@
 version: 1
 name: "sum"
 family: "arithmetic"
-parameter-schema: "schemas/parameters.json"
+parameters:
+  offset: {type: integer, default: 2}
 dataset-schemas: ["schemas/dataset.json"]
-result-schema: "schemas/result.json"
-metric-schema: "schemas/metrics.json"
+result:
+  answer: integer
+metrics:
+  absolute_error: {type: integer, minimum: 0}
 semantics-schema: "schemas/semantics.json"
 allowed-timing-scopes: ["prepare_and_execute"]
 supported-budgets: ["none"]

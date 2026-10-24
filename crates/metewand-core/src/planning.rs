@@ -787,9 +787,8 @@ fn expand_source(
     let problem_parameters = expand_resolved_parameters(
         schemas,
         contract.parameter_schema.as_path(),
-        manifest.problems[&experiment.problem]
-            .parameter_defaults
-            .as_ref(),
+        manifest.problems[&experiment.problem].resolved_parameter_defaults(contract),
+        &contract.parameter_grids,
         Some(&experiment.problem_parameters),
         case.map(|case| &case.problem_parameters),
     )
@@ -820,6 +819,7 @@ fn expand_source(
                                 schemas,
                                 schema.as_path(),
                                 definition.parameter_defaults.as_ref(),
+                                &definition.parameter_grids,
                                 experiment.dataset_parameters.get(name),
                                 case.and_then(|case| case.dataset_parameters.get(name)),
                             ),
@@ -854,6 +854,7 @@ fn expand_source(
                     schemas,
                     schema.as_path(),
                     definition.parameter_defaults.as_ref(),
+                    &definition.parameter_grids,
                     experiment.implementation_parameters.get(name),
                     case.and_then(|case| case.implementation_parameters.get(name)),
                 ),
@@ -911,14 +912,17 @@ fn expand_resolved_parameters(
     schemas: &SchemaCatalog,
     schema_path: &std::path::Path,
     defaults: Option<&CanonicalValue>,
+    grids: &ParameterAxes,
     base: Option<&ParameterAxes>,
     overlay: Option<&ParameterAxes>,
 ) -> Result<Vec<CanonicalValue>, ParameterResolutionError> {
-    let mut axes = base
-        .into_iter()
-        .flat_map(|axes| axes.iter())
+    let mut axes = grids
+        .iter()
         .map(|(name, axis)| (name.as_str(), axis))
         .collect::<BTreeMap<_, _>>();
+    if let Some(base) = base {
+        axes.extend(base.iter().map(|(name, axis)| (name.as_str(), axis)));
+    }
     if let Some(overlay) = overlay {
         axes.extend(overlay.iter().map(|(name, axis)| (name.as_str(), axis)));
     }

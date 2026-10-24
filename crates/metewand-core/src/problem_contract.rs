@@ -14,8 +14,9 @@ use thiserror::Error;
 
 use crate::{
     canonical::CanonicalValue,
+    field_declaration::{OutputDeclarations, ParameterBoundary, ParameterDeclarations},
     manifest::{
-        Name, RepositoryPath, SourceSpan, TimingScope, deserialize_manifest_value,
+        Name, ParameterAxes, RepositoryPath, SourceSpan, TimingScope, deserialize_manifest_value,
         deserialize_optional_non_null, deserialize_version_one, ensure_nonempty_unique,
     },
     schema::{SchemaCatalog, SchemaDeclaration, SchemaValidationError},
@@ -40,7 +41,10 @@ impl ContractDeclaration {
         }
     }
 
-    /// Returns the effective typed declaration for manifest hashing.
+    /// Returns the effective contract envelope for manifest hashing.
+    ///
+    /// The owning problem definition contributes parameter defaults and grids
+    /// separately because they select runs rather than change the contract.
     #[must_use]
     pub fn declaration_value(&self) -> Value {
         match self {
@@ -156,6 +160,11 @@ pub struct ProblemContract {
     pub family: Name,
     /// Schema for problem-owned parameters.
     pub parameter_schema: SchemaDeclaration,
+    /// Literal defaults authored in compact problem parameters.
+    pub parameter_defaults: Option<CanonicalValue>,
+    /// Default expansion axes, kept separate from the valid parameter domain.
+    pub parameter_grids: ParameterAxes,
+    pub(crate) compact_parameters: bool,
     /// Dataset schemas accepted by this problem, or an empty list when the
     /// problem is dataset-free.
     pub dataset_schemas: Vec<SchemaDeclaration>,
@@ -228,10 +237,19 @@ struct RawProblemContract {
     version: u32,
     name: Name,
     family: Name,
-    parameter_schema: SchemaDeclaration,
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
+    parameters: Option<ParameterDeclarations>,
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
+    parameter_schema: Option<SchemaDeclaration>,
     dataset_schemas: Vec<SchemaDeclaration>,
-    result_schema: SchemaDeclaration,
-    metric_schema: SchemaDeclaration,
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
+    result: Option<OutputDeclarations>,
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
+    result_schema: Option<SchemaDeclaration>,
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
+    metrics: Option<OutputDeclarations>,
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
+    metric_schema: Option<SchemaDeclaration>,
     semantics_schema: SchemaDeclaration,
     allowed_timing_scopes: Vec<TimingScope>,
     supported_budgets: Vec<ScientificBudget>,
@@ -245,6 +263,17 @@ impl<'de> Deserialize<'de> for ProblemContract {
         D: Deserializer<'de>,
     {
         let raw = RawProblemContract::deserialize(deserializer)?;
+        let compact_parameters = raw.parameters.is_some();
+        let parameters = ParameterBoundary::lower(raw.parameters, raw.parameter_schema, None)
+            .map_err(de::Error::custom)?;
+        let parameter_schema = parameters.schema.ok_or_else(|| {
+            de::Error::custom("a problem contract requires `parameters` or `parameter-schema`")
+        })?;
+        let result_schema = lower_output(raw.result, raw.result_schema, "result", "result-schema")
+            .map_err(de::Error::custom)?;
+        let metric_schema =
+            lower_output(raw.metrics, raw.metric_schema, "metrics", "metric-schema")
+                .map_err(de::Error::custom)?;
         ensure_unique(&raw.dataset_schemas, "`dataset-schemas`").map_err(de::Error::custom)?;
         ensure_nonempty_unique(&raw.allowed_timing_scopes, "`allowed-timing-scopes`")
             .map_err(de::Error::custom)?;
@@ -278,16 +307,37 @@ impl<'de> Deserialize<'de> for ProblemContract {
             version: raw.version,
             name: raw.name,
             family: raw.family,
-            parameter_schema: raw.parameter_schema,
+            parameter_schema,
+            parameter_defaults: parameters.defaults,
+            parameter_grids: parameters.grids,
+            compact_parameters,
             dataset_schemas: raw.dataset_schemas,
-            result_schema: raw.result_schema,
-            metric_schema: raw.metric_schema,
+            result_schema,
+            metric_schema,
             semantics_schema: raw.semantics_schema,
             allowed_timing_scopes: raw.allowed_timing_scopes,
             supported_budgets: raw.supported_budgets,
             semantics: raw.semantics,
             reference_cases: raw.reference_cases,
         })
+    }
+}
+
+fn lower_output(
+    compact: Option<OutputDeclarations>,
+    schema: Option<SchemaDeclaration>,
+    compact_name: &str,
+    schema_name: &str,
+) -> Result<SchemaDeclaration, String> {
+    match (compact, schema) {
+        (Some(_), Some(_)) => Err(format!(
+            "`{compact_name}` cannot be combined with `{schema_name}`"
+        )),
+        (Some(compact), None) => Ok(compact.compile()?.schema),
+        (None, Some(schema)) => Ok(schema),
+        (None, None) => Err(format!(
+            "a problem contract requires `{compact_name}` or `{schema_name}`"
+        )),
     }
 }
 

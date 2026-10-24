@@ -152,7 +152,7 @@ fn invalid_compact_fields_name_the_authored_parameter() {
         json!({"type": "number", "minimum": "zero"}),
         json!({"type": "string", "minimum": 0}),
         json!({"type": "string", "enum": []}),
-        json!({"type": "number", "grid": [1, 2]}),
+        json!({"type": "number", "grid": []}),
         json!({"type": "array"}),
         json!({"type": "array", "items": {"type": "number", "default": 1}}),
         json!({"type": "array", "items": "integer", "default": [1, "bad"]}),
@@ -214,6 +214,7 @@ fn public_manifest_schema_describes_compact_parameter_syntax() {
         json!({}),
         json!({"tolerance": "number"}),
         json!({"iterations": {"type": "integer", "minimum": 1, "default": 10}}),
+        json!({"iterations": {"type": "integer", "minimum": 1, "grid": [1, 2]}}),
     ] {
         catalog
             .validate(
@@ -225,7 +226,7 @@ fn public_manifest_schema_describes_compact_parameter_syntax() {
     for field in [
         json!({"default": 1}),
         json!({"type": "object"}),
-        json!({"type": "number", "grid": [1, 2]}),
+        json!({"type": "number", "grid": []}),
         json!({"type": "array"}),
     ] {
         assert!(

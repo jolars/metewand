@@ -12,6 +12,9 @@
     },
     "name": { "$ref": "common.schema.json#/$defs/name" },
     "family": { "$ref": "common.schema.json#/$defs/name" },
+    "parameters": { "$ref": "common.schema.json#/$defs/compact_parameters" },
+    "result": { "$ref": "common.schema.json#/$defs/compact_outputs" },
+    "metrics": { "$ref": "common.schema.json#/$defs/compact_outputs" },
     "parameter-schema": {
       "$ref": "common.schema.json#/$defs/schema_declaration"
     },
@@ -66,10 +69,7 @@
     "version",
     "name",
     "family",
-    "parameter-schema",
     "dataset-schemas",
-    "result-schema",
-    "metric-schema",
     "semantics-schema",
     "allowed-timing-scopes",
     "supported-budgets",
@@ -77,6 +77,9 @@
     "reference-cases"
   ],
   "allOf": [
+    { "oneOf": [{ "required": ["parameters"] }, { "required": ["parameter-schema"] }] },
+    { "oneOf": [{ "required": ["result"] }, { "required": ["result-schema"] }] },
+    { "oneOf": [{ "required": ["metrics"] }, { "required": ["metric-schema"] }] },
     {
       "if": {
         "properties": {

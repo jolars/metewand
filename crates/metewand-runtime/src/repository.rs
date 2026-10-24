@@ -515,7 +515,9 @@ fn build_planning_catalog(
         let identified = identify_record(ProblemDefinitionRecord {
             name: name.clone(),
             contract: contract_ids[name],
-            parameter_defaults: definition.parameter_defaults.clone(),
+            parameter_defaults: definition
+                .resolved_parameter_defaults(&contracts[name])
+                .cloned(),
             evaluator,
         })?;
         let mut record = InspectionRecord::identified(&identified)?;

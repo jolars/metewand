@@ -296,70 +296,93 @@ fn dataset(dataset: &DatasetDefinition) -> Value {
             ("output_schema", dataset.output_schema.declaration_value()),
             ("sources", repository_paths(&dataset.sources)),
         ]),
-        DatasetDefinition::Generated(dataset) => object([
-            ("kind", json!("generated")),
+        DatasetDefinition::Generated(dataset) => with_parameter_grids(
+            object([
+                ("kind", json!("generated")),
+                (
+                    "parameter_schema",
+                    dataset.parameter_schema.as_ref().map_or(
+                        Value::Null,
+                        crate::schema::SchemaDeclaration::declaration_value,
+                    ),
+                ),
+                (
+                    "parameter_defaults",
+                    optional_canonical(dataset.parameter_defaults.as_ref()),
+                ),
+                ("output_schema", dataset.output_schema.declaration_value()),
+                (
+                    "source",
+                    dataset.source.as_ref().map_or(Value::Null, remote_source),
+                ),
+                ("worker", worker(&dataset.worker)),
+            ]),
+            &dataset.parameter_grids,
+        ),
+    }
+}
+
+fn problem(problem: &crate::manifest::ProblemDefinition) -> Value {
+    let inline = match &problem.contract {
+        crate::problem_contract::ContractDeclaration::Inline(contract) => Some(contract.as_ref()),
+        crate::problem_contract::ContractDeclaration::Reference(_) => None,
+    };
+    let defaults = inline.map_or(problem.parameter_defaults.as_ref(), |contract| {
+        problem.resolved_parameter_defaults(contract)
+    });
+    let value = object([
+        ("contract", problem.contract.declaration_value()),
+        ("parameter_defaults", optional_canonical(defaults)),
+        ("evaluator", worker(&problem.evaluator)),
+    ]);
+    if let Some(contract) = inline {
+        with_parameter_grids(value, &contract.parameter_grids)
+    } else {
+        value
+    }
+}
+
+fn implementation(implementation: &ImplementationDefinition) -> Value {
+    with_parameter_grids(
+        object([
+            ("worker", worker(&implementation.worker)),
+            (
+                "problem_contracts",
+                names(&implementation.problem_contracts),
+            ),
             (
                 "parameter_schema",
-                dataset.parameter_schema.as_ref().map_or(
+                implementation.parameter_schema.as_ref().map_or(
                     Value::Null,
                     crate::schema::SchemaDeclaration::declaration_value,
                 ),
             ),
             (
                 "parameter_defaults",
-                optional_canonical(dataset.parameter_defaults.as_ref()),
+                optional_canonical(implementation.parameter_defaults.as_ref()),
             ),
-            ("output_schema", dataset.output_schema.declaration_value()),
             (
-                "source",
-                dataset.source.as_ref().map_or(Value::Null, remote_source),
+                "capabilities",
+                Value::Array(
+                    implementation
+                        .capabilities
+                        .iter()
+                        .copied()
+                        .map(|capability| json!(implementation_capability(capability)))
+                        .collect(),
+                ),
             ),
-            ("worker", worker(&dataset.worker)),
         ]),
+        &implementation.parameter_grids,
+    )
+}
+
+fn with_parameter_grids(mut value: Value, grids: &ParameterAxes) -> Value {
+    // Preserve canonical bytes for declarations predating default selections.
+    if !grids.is_empty() {
+        value["parameter_grids"] = parameter_axes(grids);
     }
-}
-
-fn problem(problem: &crate::manifest::ProblemDefinition) -> Value {
-    object([
-        ("contract", problem.contract.declaration_value()),
-        (
-            "parameter_defaults",
-            optional_canonical(problem.parameter_defaults.as_ref()),
-        ),
-        ("evaluator", worker(&problem.evaluator)),
-    ])
-}
-
-fn implementation(implementation: &ImplementationDefinition) -> Value {
-    object([
-        ("worker", worker(&implementation.worker)),
-        (
-            "problem_contracts",
-            names(&implementation.problem_contracts),
-        ),
-        (
-            "parameter_schema",
-            implementation.parameter_schema.as_ref().map_or(
-                Value::Null,
-                crate::schema::SchemaDeclaration::declaration_value,
-            ),
-        ),
-        (
-            "parameter_defaults",
-            optional_canonical(implementation.parameter_defaults.as_ref()),
-        ),
-        (
-            "capabilities",
-            Value::Array(
-                implementation
-                    .capabilities
-                    .iter()
-                    .copied()
-                    .map(|capability| json!(implementation_capability(capability)))
-                    .collect(),
-            ),
-        ),
-    ])
+    value
 }
 
 fn environment(environment: &EnvironmentDefinition) -> Value {

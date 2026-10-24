@@ -59,6 +59,14 @@ fn validate_compatibility(
                     .to_path_buf(),
             });
         }
+        if definition.parameter_defaults.is_some() && problem_contracts[problem].compact_parameters
+        {
+            return Err(
+                ManifestCompatibilityError::CompetingProblemParameterDefaults {
+                    problem: problem.clone(),
+                },
+            );
+        }
     }
 
     for (implementation, definition) in &manifest.implementations {
@@ -235,6 +243,15 @@ fn required_scientific_budget(kind: ObservationKind) -> ScientificBudget {
 #[derive(Debug, Error, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum ManifestCompatibilityError {
+    /// Compact contract parameters and a problem definition both supply defaults.
+    #[error(
+        "problem `{problem}`: contract `parameters` cannot be combined with problem `parameter-defaults`"
+    )]
+    CompetingProblemParameterDefaults {
+        /// Manifest-local problem name.
+        problem: Name,
+    },
+
     /// A manifest problem has no associated parsed contract.
     #[error("problem `{problem}` has no loaded contract from `{}`", contract_path.display())]
     MissingProblemContract {

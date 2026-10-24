@@ -361,21 +361,23 @@ provides the schema for validation. An explicit reference must still match the
 selected schema. This permits workers to emit standard envelopes without knowing
 an inline schema's internal catalog key.
 
-Implementations accept compact `parameters` declarations with explicit types,
-constraints, optional fields, and validated literal defaults. Parsing lowers
-them into the existing inline parameter schema and literal defaults, so an
-equivalent explicit inline declaration retains canonical bytes and identities.
-Plans expose resolved dataset, problem, and implementation parameters for each
-candidate. The [parameter reference](docs/reference/parameter-namespaces.md#compact-implementation-parameters)
-defines the supported fields. Other compact boundaries and declaration-level
-grids remain planned.
+Implementations, generated datasets, and problem contracts accept compact
+`parameters` declarations with explicit types, constraints, optional fields, and
+validated literal defaults or default grids. Contracts also accept compact
+`result` and `metrics` declarations. Parsing generates normalized inline schemas
+and literal defaults; declaration grids supply expansion axes without narrowing
+the valid domain. Equivalent explicit inline schemas and literal defaults
+retain canonical bytes and component identities. Plans expose resolved dataset,
+problem, and implementation parameters for each candidate. The
+[parameter reference](docs/reference/parameter-namespaces.md#compact-implementation-parameters)
+defines the supported fields.
 
 #### Planned compact authoring
 
-The following combined syntax is planned, not yet accepted by the CLI: the
-implementation declarations extend the supported literal defaults with a grid,
-and the problem fields use the planned flat compact form. These fragments show
-the intended authoring shape; complete benchmarks also declare their
+The following combined syntax uses the planned flat problem form. Compact
+implementation parameters and declaration grids are supported; problem fields
+currently live inside `contract` or a standalone contract document. These
+fragments show the intended authoring shape; complete benchmarks also declare their
 sources, environments, accepted datasets, scientific rules, reference cases,
 and experiments.
 
@@ -487,9 +489,9 @@ integrations.
 
 #### Parameter expansion
 
-In the existing explicit syntax, each experiment or case parameter entry is
-either a literal `value` or an expansion `grid`. The planned scalar shorthand
-and declaration selections lower to these same axes. This distinction permits
+Each experiment or case parameter entry is either a literal `value` or an
+expansion `grid`. Declaration grids lower to these same axes; plain scalar
+experiment and case shorthand remains planned. This distinction permits
 arrays and mappings to be literal parameter values. Grids form a Cartesian
 product across the dataset, problem, and applicable implementation namespaces.
 
@@ -530,10 +532,10 @@ the inline form inherits it from the owning format. Every external
 `$ref` must resolve to an admitted repository resource, recorded in the lockfile
 when locked execution is selected; schema validation never retrieves a remote
 reference. JSON Schema's `default` keyword inside an explicit schema remains an
-annotation and is never inserted by Metewand. Compact implementation parameter
-declarations extract the authoring-level `default` into `parameter-defaults`
-before schema generation. Declaration-level `grid` remains planned and will be
-used only for expansion. Neither becomes a new schema validation rule. A
+annotation and is never inserted by Metewand. Compact parameter declarations
+extract the authoring-level `default` into literal parameter defaults before
+schema generation. Declaration-level `grid` is used only for expansion.
+Neither becomes a new schema validation rule. A
 definition may instead declare a literal
 `parameter-defaults` object in the manifest;
 defaults cannot contain grids. Defaults are merged recursively by object key,

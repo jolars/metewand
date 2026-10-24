@@ -20,8 +20,13 @@ same structure and overlay the experiment-level axes during later expansion.
 
 ## Compact implementation parameters
 
-An implementation may declare its parameter types, constraints, and literal
-defaults together:
+Implementations and generated datasets accept compact `parameters` mappings.
+Problem contracts accept the same parameter declarations, plus compact `result`
+and `metrics` mappings. These forms generate normalized JSON Schemas; explicit
+schemas remain available for complex or reusable contracts.
+
+An implementation may declare its parameter types, constraints, literal
+defaults, and default grids together:
 
 ```yaml
 implementations:
@@ -40,7 +45,7 @@ implementations:
       max_iterations:
         type: integer
         minimum: 1
-        default: 1000
+        grid: [100, 1000]
       mode:
         type: string
         enum: [cyclic, random]
@@ -73,7 +78,7 @@ Fields are required unless marked `optional: true`, and undeclared parameter
 names are rejected. A default supplies a missing value before validation;
 `optional` permits absence without supplying a value. An explicit
 `default: null` is a literal null, subject to the field's type. Array item
-declarations cannot contain `default` or `optional`.
+declarations cannot contain `default`, `grid`, or `optional`.
 
 For example, an array can supply one literal default:
 
@@ -86,18 +91,25 @@ parameters:
     default: [1, 2, 3]
 ```
 
-Defaults are validated even when an experiment overrides them. Supplied values
-must also satisfy the declared constraints. Objects, schema references, and
-other advanced schema keywords use the existing `parameter-schema` form.
+Each parameter may declare either a literal `default` or a nonempty `grid`,
+but not both. A grid selects values to benchmark without narrowing the field's
+valid domain. For example, `max_iterations` above still accepts 500. Array grid
+members are whole literal arrays, so `grid: [[1, 2], [3, 4]]` selects two arrays.
+Defaults and every grid member are validated even when an experiment overrides
+them. Supplied values must also satisfy the declared constraints. Objects,
+schema references, and other advanced schema keywords use the existing
+`parameter-schema` form.
 `parameters` cannot be combined with `parameter-schema` or `parameter-defaults`
 on the same implementation, including empty declarations. `parameters: {}`
 accepts only an empty parameter object and adds no defaults.
 
 Metewand lowers this form into an inline object schema with `properties`, a
 sorted `required` array, and `additionalProperties: false`, plus the existing
-literal `parameter-defaults` mapping. It does not insert JSON Schema `default`
-annotations. Equivalent explicit inline schemas and defaults produce identical
-canonical manifest bytes, component identities, and run plans. Moving an
+literal `parameter-defaults` mapping and expansion axes. It does not insert JSON
+Schema `default` annotations or add grid members to a schema's `enum`.
+Equivalent explicit inline schemas and literal defaults produce identical
+canonical manifest bytes and component identities. Declaration grids produce
+the same run plans as equivalent experiment axes. Moving an
 external schema inline can change a path-bearing identity as described in
 [schema validation](schema-validation.md#inline-declarations).
 
@@ -105,11 +117,63 @@ external schema inline can change a path-bearing identity as described in
 candidate. Machine output places these mappings in the candidate's `parameters`
 object under `dataset`, `problem`, and `implementation`.
 
-Compact declarations currently apply only to implementation parameters with
-literal defaults. Keep sweeps in experiment or case `implementation-parameters`
-using the existing `value` and `grid` entries. Declaration-level grids, plain
-scalar experiment overrides, compact dataset and problem parameters, and compact
-results and metrics remain planned work.
+### Dataset and problem declarations
+
+Generated datasets use the same compact fields:
+
+```yaml
+datasets:
+  sample:
+    runner: python
+    entrypoint: generate.py
+    sources: [generate.py]
+    environment: local
+    output-schema: schemas/dataset.json
+    parameters:
+      rows: {type: integer, minimum: 1, grid: [10, 100]}
+```
+
+Inside a standalone problem contract or an inline `problems.<name>.contract`,
+the corresponding fields can be written as follows. The other contract fields,
+including scientific rules and reference cases, remain required:
+
+```yaml
+parameters:
+  offset: {type: integer, default: 2}
+result:
+  answer: integer
+metrics:
+  absolute_error: {type: integer, minimum: 0}
+```
+
+Results and metrics share the supported types, constraints, and `optional`
+marker. Their fields are required and their objects are closed by default.
+They cannot declare `default` or `grid`; Metewand never fills in missing output.
+Metric declarations describe data shape, while the evaluator and scientific
+rules define the calculation, validity, and completion criteria.
+
+Choose compact or explicit declarations independently for each boundary:
+`parameters` or `parameter-schema`, `result` or `result-schema`, and `metrics`
+or `metric-schema`. Declaring both forms for one boundary is an error. A
+contract with compact `parameters` cannot also receive problem-level
+`parameter-defaults`, including an empty mapping. Fixed datasets accept no
+parameters.
+
+### Selection precedence
+
+Declaration grids supply initial expansion axes. Experiment parameter axes
+replace matching declaration grids by parameter name; named cases then replace
+matching experiment axes and inherit all other selections. Expanded values
+merge recursively with literal defaults before validation. Missing required
+parameters with no effective value remain errors. Cartesian expansion and
+duplicate-candidate rejection follow the existing
+[configuration expansion](configuration-expansion.md) rules.
+
+Experiment and case overrides still use the explicit `value` and `grid` forms.
+Plain scalar overrides and problem fields directly under `problems.<name>`
+remain planned. The [parameter-matrix example](https://github.com/jolars/metewand/tree/main/examples/parameter-matrix)
+demonstrates compact dataset and problem fields, declaration grids, literal
+defaults, and case overrides through worker execution.
 
 ## Structural validation
 
@@ -128,7 +192,7 @@ The checks apply equally to experiment-level axes and named-case overlays. They
 run in deterministic definition, experiment, case, and namespace order and
 return the first `ParameterNamespaceError`.
 
-Compact implementation declarations lower into these fields during parsing,
+Compact declarations lower into these fields during parsing,
 before namespace validation. Invalid compact fields report the parameter's
 authored path and YAML location; supplied-value errors identify the parameter
 and violated constraint.

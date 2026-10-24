@@ -83,7 +83,7 @@ a new compatibility review is a prerequisite.
   existing schema and default records, expose effective parameters in plans,
   and exercise compact/explicit identity equivalence and defaulted execution in
   the parameter-matrix example.
-- [ ] Extend compact declarations to dataset and problem `parameters`, `result`,
+- [x] Extend compact declarations to dataset and problem `parameters`, `result`,
   and `metrics`, and add declaration-level default grids. These declarations
   generate normalized JSON Schemas. Declare each field once, with its type,
   bounds, and any parameter default or default grid together. Keep
@@ -97,15 +97,16 @@ a new compatibility review is a prerequisite.
   an inline `contract` wrapper. Normalize these fields into the same internal
   contract and identities. Preserve referenced contracts and supported explicit
   inline contracts; reject competing declarations of the same boundary.
-- [ ] Lower declaration defaults and grids into the existing parameter
-  resolution and expansion model. Let experiment axes override declaration
-  grids and named cases override experiment axes; preserve recursive merging of
-  literal defaults. Accept plain scalar literals in experiment and case
-  parameters, retaining explicit `value` and `grid` forms for arrays and objects.
+- [ ] Finish compact parameter overrides and diagnostics. Declaration defaults
+  and grids now use the existing resolution and expansion model, with experiment
+  axes overriding declaration grids and named cases overriding experiment axes.
+  Preserve recursive merging of literal defaults. Accept plain scalar literals
+  in experiment and case parameters, retaining explicit `value` and `grid` forms
+  for arrays and objects.
   Validate all effective values, record resolved settings, and keep equivalent
   compact and explicit declarations on the same identity path. Report errors at
-  the author's YAML field or supplied
-  value rather than a generated schema location.
+  the author's YAML field or supplied value rather than a generated schema
+  location.
 - [ ] Default an omitted parameter schema to a closed empty object. Allow
   unambiguous local-environment and one-shot-policy defaults, recording all
   resolved values and exposing effective settings through planning. Keep profile

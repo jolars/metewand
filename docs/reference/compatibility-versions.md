@@ -60,12 +60,16 @@ schemas inherit the dialect before hashing, and schema identities include their
 resolved dependencies. Moving a schema from a file to an inline declaration may
 change its path-bearing identity; see [schema normalization](schema-validation.md#inline-declarations).
 
-Compact implementation `parameters` add authoring syntax within the unreleased
-version-1 manifest and public schemas. They lower into the existing inline
-schema and literal default fields, preserving canonical representations and
-component identities for equivalent explicit declarations. Plans additionally
-report each candidate's resolved parameter mappings. This changes no wire
-messages, execution semantics, or persisted record formats.
+Compact dataset, problem, and implementation `parameters`, plus contract
+`result` and `metrics`, add authoring syntax within the unreleased version-1
+manifest, problem contracts, and public schemas. They lower into the existing
+inline schemas and literal default fields, preserving canonical representations
+and component identities for equivalent explicit declarations. Declaration
+grids remain expansion selections, separate from schemas and definition
+identities. Nonempty inline declaration grids also contribute to the manifest
+hash; existing declarations retain their canonical bytes. Plans report each
+candidate's resolved parameter mappings. This changes no wire messages,
+execution semantics, or persisted record formats.
 
 Optional family semantics schemas, applicability
 selection, profiles, scientific budgets, and instrumentation settings remain
