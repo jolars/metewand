@@ -78,7 +78,13 @@ a new compatibility review is a prerequisite.
 - [x] Allow schemas and problem contracts inline as well as through reusable
   file references. Resolve references offline, validate the same effective
   declarations, and hash their normalized contents.
-- [ ] Add compact `parameters`, `result`, and `metrics` declarations that
+- [x] Support compact implementation `parameters` with types, bounds, enums,
+  arrays, optional fields, and validated literal defaults. Lower them into the
+  existing schema and default records, expose effective parameters in plans,
+  and exercise compact/explicit identity equivalence and defaulted execution in
+  the parameter-matrix example.
+- [ ] Extend compact declarations to dataset and problem `parameters`, `result`,
+  and `metrics`, and add declaration-level default grids. These declarations
   generate normalized JSON Schemas. Declare each field once, with its type,
   bounds, and any parameter default or default grid together. Keep
   `implementations.<name>.parameters` separate from worker settings such as
@@ -96,9 +102,9 @@ a new compatibility review is a prerequisite.
   grids and named cases override experiment axes; preserve recursive merging of
   literal defaults. Accept plain scalar literals in experiment and case
   parameters, retaining explicit `value` and `grid` forms for arrays and objects.
-  Validate all effective values, record
-  resolved settings, and keep equivalent compact and explicit declarations on
-  the same identity path. Report errors at the author's YAML field or supplied
+  Validate all effective values, record resolved settings, and keep equivalent
+  compact and explicit declarations on the same identity path. Report errors at
+  the author's YAML field or supplied
   value rather than a generated schema location.
 - [ ] Default an omitted parameter schema to a closed empty object. Allow
   unambiguous local-environment and one-shot-policy defaults, recording all

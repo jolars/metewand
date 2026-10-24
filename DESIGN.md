@@ -361,10 +361,21 @@ provides the schema for validation. An explicit reference must still match the
 selected schema. This permits workers to emit standard envelopes without knowing
 an inline schema's internal catalog key.
 
+Implementations accept compact `parameters` declarations with explicit types,
+constraints, optional fields, and validated literal defaults. Parsing lowers
+them into the existing inline parameter schema and literal defaults, so an
+equivalent explicit inline declaration retains canonical bytes and identities.
+Plans expose resolved dataset, problem, and implementation parameters for each
+candidate. The [parameter reference](docs/reference/parameter-namespaces.md#compact-implementation-parameters)
+defines the supported fields. Other compact boundaries and declaration-level
+grids remain planned.
+
 #### Planned compact authoring
 
-The following syntax is planned, not yet accepted by the CLI. These fragments
-show the intended authoring shape; complete benchmarks also declare their
+The following combined syntax is planned, not yet accepted by the CLI: the
+implementation declarations extend the supported literal defaults with a grid,
+and the problem fields use the planned flat compact form. These fragments show
+the intended authoring shape; complete benchmarks also declare their
 sources, environments, accepted datasets, scientific rules, reference cases,
 and experiments.
 
@@ -519,10 +530,11 @@ the inline form inherits it from the owning format. Every external
 `$ref` must resolve to an admitted repository resource, recorded in the lockfile
 when locked execution is selected; schema validation never retrieves a remote
 reference. JSON Schema's `default` keyword inside an explicit schema remains an
-annotation and is never inserted by Metewand. The planned compact parameter
-declaration extracts its authoring-level `default` into `parameter-defaults`
-before schema generation and uses `grid` only for expansion. Neither becomes a
-new schema validation rule. A definition may instead declare a literal
+annotation and is never inserted by Metewand. Compact implementation parameter
+declarations extract the authoring-level `default` into `parameter-defaults`
+before schema generation. Declaration-level `grid` remains planned and will be
+used only for expansion. Neither becomes a new schema validation rule. A
+definition may instead declare a literal
 `parameter-defaults` object in the manifest;
 defaults cannot contain grids. Defaults are merged recursively by object key,
 while a supplied scalar, array, or `null` replaces the default at that key.

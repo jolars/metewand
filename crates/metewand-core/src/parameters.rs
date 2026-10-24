@@ -296,8 +296,26 @@ pub enum ParameterResolutionError {
     CanonicalJson(#[from] CanonicalJsonError),
 
     /// The merged value did not satisfy its parameter schema.
-    #[error(transparent)]
+    #[error("parameter validation failed: {}", parameter_validation_message(.0))]
     Validation(#[from] SchemaValidationError),
+}
+
+fn parameter_validation_message(error: &SchemaValidationError) -> String {
+    match error {
+        SchemaValidationError::InvalidInstance { violations, .. } => violations
+            .iter()
+            .map(|violation| {
+                let path = if violation.instance_path.is_empty() {
+                    "parameters"
+                } else {
+                    &violation.instance_path
+                };
+                format!("{path}: {}", violation.message)
+            })
+            .collect::<Vec<_>>()
+            .join("; "),
+        _ => error.to_string(),
+    }
 }
 
 fn merge_objects(target: &mut Map<String, Value>, supplied: &Map<String, Value>) {

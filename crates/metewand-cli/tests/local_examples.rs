@@ -28,6 +28,91 @@ fn parameter_matrix_example_executes_grids_and_coupled_cases() {
 }
 
 #[test]
+fn compact_implementation_parameters_preserve_plans_and_apply_defaults() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let benchmark = TempDir::new().unwrap();
+    copy_tree(&root.join("examples/parameter-matrix"), benchmark.path());
+    let manifest_path = benchmark.path().join("metewand.yaml");
+    let compact = fs::read_to_string(&manifest_path).unwrap();
+    let invoke = |command: &str| {
+        let output = Command::new(env!("CARGO_BIN_EXE_metewand"))
+            .current_dir(benchmark.path())
+            .args([command, "--output", "json"])
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+        serde_json::from_slice::<Value>(&output.stdout).unwrap()
+    };
+    let compact_plan = invoke("plan");
+    let explicit = compact.replace(
+        "parameters:\n      representation:\n        type: string\n        enum: [list, packed]\n        default: list",
+        "parameter-schema:\n      type: object\n      properties:\n        representation: {type: string, enum: [list, packed]}\n      required: [representation]\n      additionalProperties: false\n    parameter-defaults: {representation: list}",
+    );
+    assert_ne!(compact, explicit);
+    fs::write(&manifest_path, explicit).unwrap();
+    assert_eq!(compact_plan, invoke("plan"));
+
+    let default_only = compact.replace(
+        "    implementation-parameters:\n      reference:\n        representation: { grid: [\"list\", \"packed\"] }\n",
+        "",
+    );
+    assert_ne!(compact, default_only);
+    fs::write(&manifest_path, default_only).unwrap();
+    invoke("check");
+    let default_plan = invoke("plan");
+    for candidate in default_plan["data"]["experiments"][0]["candidates"]
+        .as_array()
+        .unwrap()
+    {
+        assert_eq!(
+            candidate["parameters"]["implementation"],
+            serde_json::json!({"representation": "list"})
+        );
+    }
+    let human = Command::new(env!("CARGO_BIN_EXE_metewand"))
+        .current_dir(benchmark.path())
+        .arg("plan")
+        .output()
+        .unwrap();
+    assert!(human.status.success(), "{human:?}");
+    assert!(
+        String::from_utf8_lossy(&human.stdout)
+            .contains("implementation parameters: {\"representation\":\"list\"}")
+    );
+    let run = Command::new(env!("CARGO_BIN_EXE_metewand"))
+        .current_dir(benchmark.path())
+        .args(["run", "--output-dir", "default-run", "--output", "json"])
+        .output()
+        .unwrap();
+    assert!(run.status.success(), "{run:?}");
+    let report: Value = serde_json::from_slice(&run.stdout).unwrap();
+    let attempts = report["data"]["attempts"].as_array().unwrap();
+    assert_eq!(attempts.len(), 5);
+    assert!(
+        attempts
+            .iter()
+            .all(|attempt| attempt["status"] == "accepted")
+    );
+    fs::write(
+        &manifest_path,
+        compact.replace(
+            "representation: { grid: [\"list\", \"packed\"] }",
+            "representation: {value: unknown}",
+        ),
+    )
+    .unwrap();
+    let invalid = Command::new(env!("CARGO_BIN_EXE_metewand"))
+        .current_dir(benchmark.path())
+        .arg("check")
+        .output()
+        .unwrap();
+    assert!(!invalid.status.success());
+    let message = String::from_utf8_lossy(&invalid.stderr);
+    assert!(message.contains("/representation"), "{message}");
+    assert!(!message.contains(".metewand-inline-"), "{message}");
+}
+
+#[test]
 fn motivating_workflows_execute_one_shot_scientific_cases() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let science = Command::new("python3")

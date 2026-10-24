@@ -12,8 +12,8 @@ use serde_json::Value as JsonValue;
 use thiserror::Error;
 
 use crate::{
-    MANIFEST_VERSION, canonical::CanonicalValue, problem_contract::ContractDeclaration,
-    schema::SchemaDeclaration,
+    MANIFEST_VERSION, canonical::CanonicalValue, field_declaration::ParameterDeclarations,
+    problem_contract::ContractDeclaration, schema::SchemaDeclaration,
 };
 
 /// Parses a version-1 YAML manifest into core domain types.
@@ -921,6 +921,8 @@ struct RawImplementationDefinition {
     protocol_transport: Option<ProtocolTransport>,
     problem_contracts: Vec<Name>,
     #[serde(default, deserialize_with = "deserialize_optional_non_null")]
+    parameters: Option<ParameterDeclarations>,
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
     parameter_schema: Option<SchemaDeclaration>,
     #[serde(default, deserialize_with = "deserialize_parameter_defaults")]
     parameter_defaults: Option<CanonicalValue>,
@@ -933,6 +935,17 @@ impl<'de> Deserialize<'de> for ImplementationDefinition {
         D: Deserializer<'de>,
     {
         let raw = RawImplementationDefinition::deserialize(deserializer)?;
+        let (parameter_schema, parameter_defaults) = if let Some(parameters) = raw.parameters {
+            if raw.parameter_schema.is_some() || raw.parameter_defaults.is_some() {
+                return Err(de::Error::custom(
+                    "`parameters` cannot be combined with `parameter-schema` or `parameter-defaults`",
+                ));
+            }
+            let (schema, defaults) = parameters.into_parts().map_err(de::Error::custom)?;
+            (Some(schema), defaults)
+        } else {
+            (raw.parameter_schema, raw.parameter_defaults)
+        };
         ensure_nonempty_unique(&raw.problem_contracts, "`problem-contracts`")
             .map_err(de::Error::custom)?;
         if raw.capabilities != [ImplementationCapability::OneShot] {
@@ -953,8 +966,8 @@ impl<'de> Deserialize<'de> for ImplementationDefinition {
         Ok(Self {
             worker,
             problem_contracts: raw.problem_contracts,
-            parameter_schema: raw.parameter_schema,
-            parameter_defaults: raw.parameter_defaults,
+            parameter_schema,
+            parameter_defaults,
             capabilities: raw.capabilities,
         })
     }

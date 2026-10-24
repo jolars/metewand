@@ -601,6 +601,26 @@ impl PlanResult {
                                 .implementation_configuration
                                 .id
                                 .to_string(),
+                            parameters: PlanParameters {
+                                dataset: candidate
+                                    .dataset_configuration
+                                    .record
+                                    .parameters
+                                    .as_json()
+                                    .clone(),
+                                problem: candidate
+                                    .problem_configuration
+                                    .record
+                                    .parameters
+                                    .as_json()
+                                    .clone(),
+                                implementation: candidate
+                                    .implementation_configuration
+                                    .record
+                                    .parameters
+                                    .as_json()
+                                    .clone(),
+                            },
                             capabilities: candidate
                                 .implementation_capabilities
                                 .iter()
@@ -721,12 +741,15 @@ impl PlanResult {
             for candidate in &experiment.candidates {
                 writeln!(
                     output,
-                    "  logical candidate {} ({})\n    dataset configuration: {}\n    problem configuration: {}\n    implementation configuration: {}",
+                    "  logical candidate {} ({})\n    dataset configuration: {}\n    problem configuration: {}\n    implementation configuration: {}\n    dataset parameters: {}\n    problem parameters: {}\n    implementation parameters: {}",
                     candidate.id,
                     candidate.source.human_label(),
                     candidate.dataset_configuration,
                     candidate.problem_configuration,
                     candidate.implementation_configuration,
+                    candidate.parameters.dataset,
+                    candidate.parameters.problem,
+                    candidate.parameters.implementation,
                 )
                 .expect("writing to a string cannot fail");
                 for capability in &candidate.capabilities {
@@ -1031,8 +1054,16 @@ struct PlanCandidate {
     dataset_configuration: String,
     problem_configuration: String,
     implementation_configuration: String,
+    parameters: PlanParameters,
     capabilities: Vec<CapabilityOutput>,
     specifications: Vec<PlanSpecification>,
+}
+
+#[derive(Debug, Serialize)]
+struct PlanParameters {
+    dataset: Value,
+    problem: Value,
+    implementation: Value,
 }
 
 #[derive(Debug, Serialize)]

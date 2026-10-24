@@ -5,6 +5,7 @@ pub mod canonical;
 pub mod compatibility;
 pub mod controls;
 pub mod export;
+mod field_declaration;
 pub mod identity;
 pub mod inspection;
 pub mod manifest;

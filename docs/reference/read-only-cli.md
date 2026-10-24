@@ -75,6 +75,11 @@ specification, observation-slot, and attempt-slot identities in deterministic
 expansion order. The summary distinguishes candidate, applicable-run,
 observation-slot, and execution-slot counts.
 
+Each candidate also reports its resolved dataset, problem, and implementation
+parameters, including literal defaults. Human output displays these alongside
+the configuration identities; machine output groups them under the candidate's
+`parameters.dataset`, `parameters.problem`, and `parameters.implementation`.
+
 The plan also shows declared worker commands, environment provisioning needs,
 execution controls, source artifacts, and capabilities. Capability evidence is
 always `declared`: a read-only plan never promotes a manifest assertion to

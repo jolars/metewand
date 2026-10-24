@@ -124,6 +124,11 @@
             "dataset_configuration": "mw1-dataset-configuration-1f20ab1fc35f4da45fb2e9b169813fa3d55c1d374a0a617f9a243aad8019fc36",
             "problem_configuration": "mw1-problem-configuration-a1e5d81f2dc951c03c923f47ae66e77ff6531ae36262156f33f70321f9623809",
             "implementation_configuration": "mw1-implementation-configuration-d2a7c540001e990e21b71f863f8e1d499bd6b68940743b7af45bcd8ac53f43df",
+            "parameters": {
+              "dataset": {},
+              "problem": {},
+              "implementation": {}
+            },
             "capabilities": [
               {
                 "capability": "one_shot",

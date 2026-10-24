@@ -22,8 +22,11 @@ problems:
       environment: "local"
 implementations:
   reference:
-    parameter-schema: "schemas/implementation-parameters.json"
-    parameter-defaults: { representation: "list" }
+    parameters:
+      representation:
+        type: string
+        enum: [list, packed]
+        default: list
     runner: "command"
     program: "python3"
     args: ["{sources}/worker.py", "implementation"]

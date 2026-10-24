@@ -2,6 +2,29 @@
   "version": 1,
   "valid": [
     {
+      "name": "manifest-with-compact-implementation-parameters",
+      "schema": "manifest",
+      "instance": {
+        "version": 1,
+        "name": "compact",
+        "implementations": {
+          "solver": {
+            "runner": "command",
+            "program": "solve",
+            "environment": "local",
+            "problem-contracts": ["sum"],
+            "capabilities": ["one_shot"],
+            "parameters": {
+              "iterations": { "type": "integer", "minimum": 1, "default": 1000 },
+              "mode": { "type": "string", "enum": ["a", "b"], "default": "a" },
+              "trace": { "type": "boolean", "optional": true },
+              "weights": { "type": "array", "items": "number", "minItems": 1, "default": [1, 2] }
+            }
+          }
+        }
+      }
+    },
+    {
       "name": "worker check reports current capability evidence",
       "schema": "machine-output",
       "instance": {
@@ -1514,6 +1537,25 @@
     }
   ],
   "invalid": [
+    {
+      "name": "manifest-with-competing-compact-and-explicit-parameters",
+      "schema": "manifest",
+      "instance": {
+        "version": 1,
+        "name": "competing",
+        "implementations": {
+          "solver": {
+            "runner": "command",
+            "program": "solve",
+            "environment": "local",
+            "problem-contracts": ["sum"],
+            "capabilities": ["one_shot"],
+            "parameters": {},
+            "parameter-schema": { "type": "object" }
+          }
+        }
+      }
+    },
     {
       "name": "worker check rejects declaration-only evidence",
       "schema": "machine-output",

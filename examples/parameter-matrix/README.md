@@ -6,6 +6,14 @@ offset. It keeps dataset `values`, problem `offset`, and implementation
 either a Python list or packed signed 64-bit integers; the evaluator independently
 reads the canonical dataset and checks the mathematical answer.
 
+The implementation declares `representation` once under `parameters`, with type
+`string`, enum values `list` and `packed`, and default `list`. Metewand generates
+its closed parameter schema and applies the literal default; no separate
+implementation schema is needed. The experiment overrides that default with an
+explicit grid of both representations. `plan` displays the resolved parameters
+for each candidate. See [compact implementation parameters](../../docs/reference/parameter-namespaces.md#compact-implementation-parameters)
+for the supported field declarations.
+
 From the repository root, with Python 3 on `PATH`, inspect and run it:
 
 ```sh
