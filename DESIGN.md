@@ -68,9 +68,19 @@ execution, and complete provenance.
 
 ## 2. User model
 
+Authors define datasets, problems, implementations, and experiments. A problem
+owns its scientific specification and independent evaluator. Its contract is
+the normalized, versioned agreement about inputs, results, metrics, and
+scientific rules; it need not be a separately authored component. The planned
+compact form below lets authors describe that problem once, while Metewand
+derives schemas and identities. A migration from a framework such as Benchopt
+should reuse dataset, solver, and evaluation logic with small adapters.
+
 A repository contains a manifest, optional native lockfiles, dataset
 materializers, problem contracts and evaluators, implementation adapters,
-schemas, and a generated lockfile:
+schemas, and a generated lockfile. A small benchmark can keep declarations in
+one manifest. A repository that shares external contracts and schemas can use
+the following layout:
 
 ```text
 benchmark/
@@ -140,7 +150,7 @@ external includes, unsafe integers, and non-finite numbers are rejected. Literal
 nulls remain available in canonical parameter values, while typed fields must
 satisfy their declared shape. Native ecosystem files keep their own formats.
 
-A representative manifest is:
+A representative manifest using the existing explicit declarations is:
 
 ```yaml
 version: 1
@@ -337,42 +347,140 @@ exposed as privileged built-in templates.
 The local MVP simplifies authoring around the Basin and clustlasso-cd
 integrations. Inline contracts and schemas are supported; scaffolds still emit
 the reusable external files documented in the
-[authoring reference](docs/reference/authoring-cli.md). Further defaults remain
-planned below.
+[authoring reference](docs/reference/authoring-cli.md).
 
-- A problem contract and its schemas may be inline or referenced from reusable
-  repository files. A small benchmark can use one manifest, worker code, and
-  scientific reference fixtures without separate schema documents.
-- Planned: an omitted parameter schema means a closed empty object, so unused parameter
-  namespaces need no boilerplate and unexpected parameters still fail. Local
-  environments and one-shot policies may use unambiguous documented defaults;
-  profiles and scientific choices remain explicit. The resolved declarations
-  record every effective default.
-- Family semantics remain explicit and hashed, including preprocessing,
-  validity, and completion rules. Planned: make a separate `semantics-schema` optional;
-  the independent evaluator and reference cases establish scientific behavior.
-  Authors may supply a schema when machine validation of those declarations is
-  useful, without restating every contract constant in a second document.
-- Inline schemas use the same offline catalog and Draft 2020-12 dialect as
-  referenced resources. Resolve references relative to the owning document,
-  normalize the effective declarations, and hash resolved schema contents.
-  External references and existing benchmark files remain supported.
+A problem contract and its schemas may be inline or referenced from reusable
+repository files. Inline schemas use the same offline catalog and Draft
+2020-12 dialect as referenced resources. Resolve references relative to the
+owning document, normalize the effective declarations, and hash resolved
+schema contents. External references and existing benchmark files remain
+supported.
 
 Result and metric envelopes may omit `schema`; the selected problem contract
 provides the schema for validation. An explicit reference must still match the
 selected schema. This permits workers to emit standard envelopes without knowing
 an inline schema's internal catalog key.
 
+#### Planned compact authoring
+
+The following syntax is planned, not yet accepted by the CLI. These fragments
+show the intended authoring shape; complete benchmarks also declare their
+sources, environments, accepted datasets, scientific rules, reference cases,
+and experiments.
+
+```yaml
+implementations:
+  solver:
+    runner: python
+    entrypoint: implementations/solver.py
+    parameters:
+      tolerance:
+        type: number
+        exclusiveMinimum: 0
+        default: 1e-6
+      max_iterations:
+        type: integer
+        minimum: 1
+        grid: [100, 1000]
+problems:
+  lasso:
+    parameters:
+      lambda:
+        type: number
+        minimum: 0
+    result:
+      coefficients:
+        type: array
+        items: { type: number }
+      intercept: number
+    metrics:
+      objective: number
+      kkt_violation: { type: number, minimum: 0 }
+    evaluator:
+      runner: python
+      entrypoint: problems/evaluate.py
+```
+
+Keep `implementations.<name>.parameters` as a separate namespace because a
+worker's launch settings and its scientific parameter names must not collide.
+Use the same field declarations for generated-dataset and problem parameters.
+A problem's parameters, `result`, `metrics`, scientific rules, reference cases,
+and evaluator belong directly under `problems.<name>`. The author need not add
+an inline `contract` wrapper. Metewand still constructs and hashes the internal
+contract. Referenced contracts and supported explicit inline contracts remain
+available; an author cannot combine a contract declaration with competing
+inline problem fields.
+
+The compact declarations follow these rules:
+
+- Declare each field once. A type name such as `intercept: number` is shorthand
+  for `intercept: { type: number }`. Start with scalar types, enums, and arrays,
+  reusing JSON Schema constraint names such as `minimum`, `exclusiveMinimum`,
+  and `items`. These constraint names retain their JSON Schema spelling within
+  field declarations. Block and flow YAML mappings normalize identically.
+- Fields are required and objects are closed by default, with an explicit way
+  to mark individual fields optional. Never fabricate missing results or
+  metrics. Full inline or referenced schemas remain available for complex or
+  reusable boundaries. Compact and explicit forms may be chosen independently
+  for parameters, results, and metrics; reject competing declarations of the
+  same boundary or its parameter defaults.
+- A parameter's type and bounds describe its valid domain. Its `default` is one
+  literal value, while its `grid` is a default selection of values to benchmark.
+  A field may declare either a default or a grid, but not both. A grid does not
+  become an enum or define the full domain, and neither defaults nor grids
+  supply inferred types or bounds. Results and metrics have no default or grid
+  behavior.
+- Lower compact defaults into the existing literal `parameter-defaults`
+  mechanism and declaration grids into parameter expansion axes. Experiment
+  axes replace declaration grids by parameter name; named cases replace
+  experiment axes and inherit all other selections. Merge each expanded
+  parameter object recursively with its literal defaults as in the existing
+  resolution model. Defaults, grid members, and overrides must satisfy the
+  declared domain. Preserve the existing Cartesian-product, coupled-case, and
+  duplicate-candidate rules.
+- Experiment and case parameter entries may use a plain scalar literal, such
+  as `tolerance: 1e-6`. Retain `value` for literal arrays and objects and `grid`
+  for sweeps, so an array value never becomes an implicit sweep. A missing
+  required parameter with no effective value is an error.
+- Normalize compact declarations before validation and identity construction.
+  Equivalent compact and explicit declarations must produce the same effective
+  schemas, parameters, and component identities. Resolve defaults before
+  hashing configurations and show effective selections and settings in plans.
+  Diagnostics identify the author's declaration or supplied value and its YAML
+  location, rather than exposing a generated schema location.
+
+An omitted parameter declaration will mean a closed empty object, so unused
+namespaces need no boilerplate and unexpected parameters still fail. Local
+environments and one-shot policies may use unambiguous documented defaults.
+Keep profile selection, preprocessing, validity, completion, and timing choices
+explicit, and record every effective default.
+
+Family semantics remain explicit and hashed, including preprocessing, validity,
+and completion rules. Make a separate `semantics-schema` optional; authors may
+supply one when machine validation of those rules is useful. Pass the resolved
+scientific rules to the independent evaluator alongside the contract identity
+and problem parameters. A tolerance declared in the problem should be consumed
+by evaluator code rather than repeated as a hard-coded constant. Reference cases
+continue to check scientific behavior. Metric declarations describe data shape;
+they do not infer scientific formulas, validity, or completion thresholds.
+
 Scaffolds should emit the compact form once implemented. Keep the actual
 scientific rules and adapter translations visible; defaults supply mechanical
-settings. New public schemas should reuse authoritative boundary types where
-practical. Rewriting the existing schema catalog is not a prerequisite for
-these integrations.
+settings. Let authors choose a worker language and generate small SDK adapters
+with scientific decisions clearly left for them to supply. The complete
+comparison should need one manifest, small adapters, and scientific reference
+fixtures, without hand-written protocol transport or artifact envelopes. New
+public schemas should reuse authoritative boundary types where practical.
+Rewriting the existing schema catalog is not a prerequisite for these
+integrations.
 
-Each parameter entry is either a literal `value` or an expansion `grid`. This
-distinction permits arrays and mappings to be literal parameter values. Grids form
-a Cartesian product across the dataset, problem, and applicable implementation
-namespaces.
+#### Parameter expansion
+
+In the existing explicit syntax, each experiment or case parameter entry is
+either a literal `value` or an expansion `grid`. The planned scalar shorthand
+and declaration selections lower to these same axes. This distinction permits
+arrays and mappings to be literal parameter values. Grids form a Cartesian
+product across the dataset, problem, and applicable implementation namespaces.
 
 An experiment may instead contain named `cases`. Each case supplies a partial
 set of dataset, problem, and implementation parameter values that is merged with
@@ -410,8 +518,11 @@ Version 1 uses JSON Schema 2020-12. Standalone schemas declare their dialect;
 the inline form inherits it from the owning format. Every external
 `$ref` must resolve to an admitted repository resource, recorded in the lockfile
 when locked execution is selected; schema validation never retrieves a remote
-reference. JSON Schema's `default` keyword remains an annotation and is never
-inserted by Metewand. A definition may instead declare a literal
+reference. JSON Schema's `default` keyword inside an explicit schema remains an
+annotation and is never inserted by Metewand. The planned compact parameter
+declaration extracts its authoring-level `default` into `parameter-defaults`
+before schema generation and uses `grid` only for expansion. Neither becomes a
+new schema validation rule. A definition may instead declare a literal
 `parameter-defaults` object in the manifest;
 defaults cannot contain grids. Defaults are merged recursively by object key,
 while a supplied scalar, array, or `null` replaces the default at that key.
@@ -2005,6 +2116,21 @@ knowledge of the orchestrator internals. Add callbacks as adopter workflows
 need them. The Julia SDK follows the local MVP; raw executables, including
 Rust workers, can use the protocol directly.
 
+Planned one-shot convenience callbacks should let an implementation return
+scientific result data and an evaluator return metric data with an explicit
+validity and completion verdict. Helpers handle handshakes, protocol transport,
+errors, standard artifact envelopes, and artifact writing. Adapters retain
+dataset preparation, solving, scientific result conversion, and metric
+formulas. Give evaluators the resolved scientific rules so manifest settings
+need not be repeated in their source code. Preserve the declared timing scope,
+including result serialization where required. Native Rust workers must not
+require a Python host.
+
+Keep the lower-level lifecycle hooks and custom artifact writers available for
+benchmarks that need them. The following sketches show that lifecycle and the
+planned profile hooks; convenience helpers do not require every simple adapter
+to implement all of them.
+
 R sketch:
 
 ```r
@@ -2109,9 +2235,12 @@ All three profile delivery modes are required. The scope around them is kept
 small enough to use the system in the two adopter projects:
 
 1. Run small Basin and clustlasso-cd comparisons through the existing one-shot
-   runner. Simplify authoring with inline contracts and schemas, mechanical
-   defaults, and an optional family semantics schema. Keep scientific choices,
-   independent evaluators, and reference cases explicit.
+   runner. Simplify authoring with flat inline problem definitions, compact
+   parameter, result, and metric declarations, default selections, mechanical
+   defaults, and an optional family semantics schema. Provide small adapters
+   that return scientific data while helpers handle protocol and artifact
+   bookkeeping. Keep scientific choices, independent evaluators, and reference
+   cases explicit.
 2. Add configuration-dependent applicability with checked-input evidence and
    visible exclusions that do not become failed attempts.
 3. Add buffered instrumented profiles first, reusing native local traces with
@@ -2154,8 +2283,12 @@ Keep the existing foundation tests and add focused evidence for new behavior:
   existing runs, and actual dependency changes invalidate their dependents;
 - configuration expansion preserves namespaces, coupled cases, repetitions,
   seed sharing, and deterministic scheduling;
-- compact and external declarations validate offline, reject invalid input,
-  and record normalized schemas and effective defaults;
+- compact and external declarations validate offline, reject invalid input at
+  the author's declaration or supplied value, and record normalized schemas and
+  effective defaults; equivalent declarations retain component identities;
+- declaration selections, experiment overrides, and named cases preserve the
+  valid parameter domains and existing expansion rules; evaluator callbacks
+  consume declared scientific settings without repeating constants;
 - independent evaluators accept reference solutions and reject malformed,
   numerically wrong, and semantically invalid results;
 - applicability retains exact inputs and reasons, protects dataset views, and

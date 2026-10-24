@@ -78,33 +78,61 @@ a new compatibility review is a prerequisite.
 - [x] Allow schemas and problem contracts inline as well as through reusable
   file references. Resolve references offline, validate the same effective
   declarations, and hash their normalized contents.
-- [ ] Add concise declarations for parameters, result fields, and metrics that
-  generate normalized JSON Schemas. Declare parameter types, defaults, and
-  bounds together, keeping experiment grids separate from the full valid
-  parameter domain. Retain explicit schemas for complex or reusable contracts.
+- [ ] Add compact `parameters`, `result`, and `metrics` declarations that
+  generate normalized JSON Schemas. Declare each field once, with its type,
+  bounds, and any parameter default or default grid together. Keep
+  `implementations.<name>.parameters` separate from worker settings such as
+  `runner` and `entrypoint`. Types and bounds define the full valid domain;
+  grids select runs without narrowing that domain. Treat block and flow YAML
+  mappings identically, require fields and close objects by default, and retain
+  explicit schemas for complex or reusable contracts.
+- [ ] Let authors define a problem's parameters, `result`, `metrics`, scientific
+  rules, reference cases, and evaluator directly under `problems.<name>` without
+  an inline `contract` wrapper. Normalize these fields into the same internal
+  contract and identities. Preserve referenced contracts and supported explicit
+  inline contracts; reject competing declarations of the same boundary.
+- [ ] Lower declaration defaults and grids into the existing parameter
+  resolution and expansion model. Let experiment axes override declaration
+  grids and named cases override experiment axes; preserve recursive merging of
+  literal defaults. Accept plain scalar literals in experiment and case
+  parameters, retaining explicit `value` and `grid` forms for arrays and objects.
+  Validate all effective values, record
+  resolved settings, and keep equivalent compact and explicit declarations on
+  the same identity path. Report errors at the author's YAML field or supplied
+  value rather than a generated schema location.
 - [ ] Default an omitted parameter schema to a closed empty object. Allow
   unambiguous local-environment and one-shot-policy defaults, recording all
   resolved values and exposing effective settings through planning. Keep profile
   selection, preprocessing, validity, completion, and timing choices explicit.
 - [ ] Make a separately authored family `semantics-schema` optional. Keep
   preprocessing, validity, and completion rules explicit in the problem
-  declaration, with an independent evaluator and reference cases.
+  declaration, with an independent evaluator and reference cases. Pass the
+  resolved scientific rules to the evaluator so authors do not repeat declared
+  tolerances or other constants in evaluator code.
 - [ ] Provide small Rust worker helpers for Basin and improve the Python and R
-  helpers where adopters still write protocol boilerplate. Keep preparation,
-  solving, and scientific result conversion in adapters; handle handshakes,
-  protocol transport, errors, and standard artifact envelopes in the helpers.
-  Preserve native process workers without requiring a Python host.
+  helpers where adopters still write protocol boilerplate. Let simple one-shot
+  adapters return result data, and evaluators return metric data and an explicit
+  verdict; helpers handle handshakes, transport, errors, standard envelopes, and
+  artifact writing. Keep preparation, solving, scientific conversion, and metric
+  formulas in adapters. Retain lifecycle hooks and custom artifact writers for
+  more involved cases, preserve timing boundaries, and support native process
+  workers without requiring a Python host.
 - [ ] Update scaffolding and one small example so a benchmark needs one
   manifest, small adapters, and scientific reference fixtures. Separate
-  contract and schema files remain available for reuse. Test invalid
-  declarations and normalized defaults without duplicating the example into
-  a fixture matrix.
+  contract and schema files remain available for reuse. Let authors select a
+  worker language and generate small SDK adapters with scientific decisions
+  clearly left to the author. Test invalid declarations, override precedence,
+  normalized defaults, and equivalent declaration identities without duplicating
+  the example into a fixture matrix.
 - [ ] Verify the authoring workflow with two existing methods, an independent
   evaluator, and reference data. Configure three measurement repetitions per
   method and include a case that misses its completion target. Run and inspect
   the comparison using one manifest and small adapters, without hand-written
   protocol handling or separate JSON Schema files. Check that metrics, effective
   settings, timings, and failure reasons are understandable from the public CLI.
+  Use this comparison to assess a Benchopt-style migration: reuse dataset,
+  solver, and evaluation logic, adding small adapters and declarations without
+  repeating scientific settings or implementing artifact envelopes.
 
 The existing authoring design is in [Authoring and
 scaffolding](DESIGN.md#authoring-and-scaffolding). These roadmap items remain
