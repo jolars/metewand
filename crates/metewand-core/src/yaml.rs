@@ -17,10 +17,60 @@ pub(crate) struct ParseError {
     pub source_span: SourceSpan,
 }
 
+#[derive(Clone, Debug, Default)]
+pub(crate) struct SourceMap {
+    values: BTreeMap<String, SourceSpan>,
+    keys: BTreeMap<String, SourceSpan>,
+}
+
+impl SourceMap {
+    pub(crate) fn contains(&self, pointer: &str) -> bool {
+        self.values.contains_key(pointer)
+    }
+
+    pub(crate) fn span(&self, pointer: &str) -> Option<SourceSpan> {
+        let mut pointer = pointer;
+        loop {
+            if let Some(span) = self.values.get(pointer) {
+                return Some(span.clone());
+            }
+            pointer = pointer.rsplit_once('/')?.0;
+        }
+    }
+
+    pub(crate) fn field_span(&self, pointer: &str) -> Option<SourceSpan> {
+        self.keys
+            .get(pointer)
+            .cloned()
+            .or_else(|| self.span(pointer))
+    }
+
+    pub(crate) fn subtree(&self, pointer: &str) -> Self {
+        let subtree = |spans: &BTreeMap<String, SourceSpan>| {
+            spans
+                .iter()
+                .filter_map(|(path, span)| {
+                    let suffix = path.strip_prefix(pointer)?;
+                    (suffix.is_empty() || suffix.starts_with('/'))
+                        .then(|| (suffix.to_owned(), span.clone()))
+                })
+                .collect()
+        };
+        Self {
+            values: subtree(&self.values),
+            keys: subtree(&self.keys),
+        }
+    }
+}
+
+pub(crate) fn escape_pointer(segment: &str) -> String {
+    segment.replace('~', "~0").replace('/', "~1")
+}
+
 pub(crate) fn parse<T: DeserializeOwned>(
     source_path: &Path,
     source: &str,
-) -> Result<T, ParseError> {
+) -> Result<(T, SourceMap), ParseError> {
     // Parsing into a JSON-domain tree first prevents YAML's typed string
     // coercions and preserves source locations through the typed decoding pass.
     let options = serde_saphyr::options! {
@@ -51,13 +101,29 @@ pub(crate) fn parse<T: DeserializeOwned>(
         });
     }
 
-    serde_path_to_error::deserialize(node.to_json()).map_err(|error| {
+    let mut spans = SourceMap::default();
+    node.collect_spans(source_path, &SourceLines::new(source), "", &mut spans);
+    let document = node.to_json();
+    let value = serde_path_to_error::deserialize(&document).map_err(|error| {
+        if let Some(field) = crate::field_declaration::diagnose(&document) {
+            return ParseError {
+                message: format!(
+                    "{}: {}",
+                    field.pointer.trim_start_matches('/').replace('/', "."),
+                    field.message
+                ),
+                source_span: spans
+                    .span(&field.pointer)
+                    .expect("a parsed document has a root span"),
+            };
+        }
         let location = node.error_location(error.path(), &error.inner().to_string());
         ParseError {
             message: error.to_string(),
             source_span: source_span(source_path, source, Some(location)),
         }
-    })
+    })?;
+    Ok((value, spans))
 }
 
 struct Node(Spanned<NodeValue>, bool);
@@ -75,6 +141,36 @@ enum NodeValue {
 }
 
 impl Node {
+    fn collect_spans(
+        &self,
+        path: &Path,
+        lines: &SourceLines,
+        pointer: &str,
+        spans: &mut SourceMap,
+    ) {
+        spans.values.insert(
+            pointer.to_owned(),
+            lines.span(path, Some(self.0.referenced)),
+        );
+        match &self.0.value {
+            NodeValue::Mapping(values) => {
+                for (name, (origin, value)) in values {
+                    let pointer = format!("{pointer}/{}", escape_pointer(name));
+                    spans
+                        .keys
+                        .insert(pointer.clone(), lines.span(path, Some(origin.referenced)));
+                    value.collect_spans(path, lines, &pointer, spans);
+                }
+            }
+            NodeValue::Sequence(values) => {
+                for (index, value) in values.iter().enumerate() {
+                    value.collect_spans(path, lines, &format!("{pointer}/{index}"), spans);
+                }
+            }
+            NodeValue::Scalar(_) => {}
+        }
+    }
+
     fn numeric_string_fallback(&self, source: &str) -> Option<Location> {
         match &self.0.value {
             NodeValue::Scalar(Value::String(value))
@@ -313,18 +409,54 @@ fn canonical_number<E: de::Error>(number: Number) -> Result<NodeValue, E> {
 }
 
 fn source_span(path: &Path, source: &str, location: Option<Location>) -> SourceSpan {
-    let Some(location) = location.filter(|location| *location != Location::UNKNOWN) else {
-        return SourceSpan::from_byte_range(path, source, source.len()..source.len());
-    };
-    let span = location.span();
-    let offset = usize::try_from(span.offset()).unwrap_or(usize::MAX);
-    let end_offset =
-        usize::try_from(span.offset().saturating_add(span.len())).unwrap_or(usize::MAX);
-    let byte_offset = |character_offset| {
-        source
-            .char_indices()
-            .nth(character_offset)
-            .map_or(source.len(), |(offset, _)| offset)
-    };
-    SourceSpan::from_byte_range(path, source, byte_offset(offset)..byte_offset(end_offset))
+    SourceLines::new(source).span(path, location)
+}
+
+struct SourceLines {
+    starts: Vec<usize>,
+    length: usize,
+}
+
+impl SourceLines {
+    fn new(source: &str) -> Self {
+        let mut starts = vec![0];
+        let mut length = 0;
+        for character in source.chars() {
+            length += 1;
+            if character == '\n' {
+                starts.push(length);
+            }
+        }
+        Self { starts, length }
+    }
+
+    fn position(&self, offset: usize) -> (usize, usize) {
+        let offset = offset.min(self.length);
+        let line = self.starts.partition_point(|start| *start <= offset) - 1;
+        (line + 1, offset - self.starts[line] + 1)
+    }
+
+    fn span(&self, path: &Path, location: Option<Location>) -> SourceSpan {
+        // Index line starts once so retaining every node's location does not
+        // repeatedly scan the entire document, including expanded aliases.
+        let (start, end) = location
+            .filter(|location| *location != Location::UNKNOWN)
+            .map_or((self.length, self.length), |location| {
+                let span = location.span();
+                (
+                    usize::try_from(span.offset()).unwrap_or(self.length),
+                    usize::try_from(span.offset().saturating_add(span.len()))
+                        .unwrap_or(self.length),
+                )
+            });
+        let (line, column) = self.position(start);
+        let (end_line, end_column) = self.position(end);
+        SourceSpan {
+            path: path.to_path_buf(),
+            line,
+            column,
+            end_line,
+            end_column,
+        }
+    }
 }

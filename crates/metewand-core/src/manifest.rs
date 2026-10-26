@@ -33,8 +33,8 @@ use crate::{
 /// Returns a path-aware, source-spanned diagnostic for malformed YAML or a
 /// value that cannot be represented by the version-1 manifest types.
 pub fn parse_manifest(source_path: &Path, source: &str) -> Result<Manifest, ManifestParseError> {
-    let mut manifest: Manifest =
-        crate::yaml::parse(source_path, source).map_err(|error| ManifestParseError {
+    let (mut manifest, source_map): (Manifest, _) = crate::yaml::parse(source_path, source)
+        .map_err(|error| ManifestParseError {
             message: error.message,
             source_span: error.source_span,
         })?;
@@ -54,17 +54,24 @@ pub fn parse_manifest(source_path: &Path, source: &str) -> Result<Manifest, Mani
             schema.set_owner(source_path);
         }
     }
-    for problem in manifest.problems.values_mut() {
+    for (name, problem) in &mut manifest.problems {
         if let ContractDeclaration::Inline(contract) = &mut problem.contract {
             contract.set_schema_owner(source_path);
+            let mut pointer = format!("/problems/{}", crate::yaml::escape_pointer(name.as_str()));
+            if source_map.contains(&format!("{pointer}/contract")) {
+                pointer.push_str("/contract");
+            }
+            contract.source_map = source_map.subtree(&pointer);
         }
     }
+    manifest.source_map = source_map;
     Ok(manifest)
 }
 
 /// A parsed version-1 benchmark manifest.
 #[derive(Debug)]
 pub struct Manifest {
+    pub(crate) source_map: crate::yaml::SourceMap,
     /// Manifest compatibility version.
     pub version: u32,
     /// Benchmark name.
@@ -111,6 +118,7 @@ impl<'de> Deserialize<'de> for Manifest {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let raw = RawManifest::deserialize(deserializer)?;
         let mut manifest = Self {
+            source_map: crate::yaml::SourceMap::default(),
             version: raw.version,
             name: raw.name,
             datasets: raw.datasets,
@@ -897,24 +905,6 @@ pub struct SourceSpan {
     pub end_column: usize,
 }
 
-impl SourceSpan {
-    pub(crate) fn from_byte_range(
-        path: &Path,
-        source: &str,
-        range: std::ops::Range<usize>,
-    ) -> Self {
-        let start = source_position(source, range.start);
-        let end = source_position(source, range.end);
-        Self {
-            path: path.to_path_buf(),
-            line: start.0,
-            column: start.1,
-            end_line: end.0,
-            end_column: end.1,
-        }
-    }
-}
-
 /// A YAML syntax or typed-manifest decoding failure.
 #[derive(Debug, Error)]
 #[error("failed to parse manifest at `{}`: {message}", source_span.path.display())]
@@ -1314,38 +1304,34 @@ fn build_worker(
     }
 }
 
-#[derive(Deserialize)]
-#[serde(untagged)]
-enum RawParameterAxis {
-    Value(RawValueAxis),
-    Grid(RawGridAxis),
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
-struct RawValueAxis {
-    #[serde(deserialize_with = "deserialize_manifest_value")]
-    value: CanonicalValue,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
-struct RawGridAxis {
-    #[serde(deserialize_with = "deserialize_manifest_values")]
-    grid: Vec<CanonicalValue>,
-}
-
 impl<'de> Deserialize<'de> for ParameterAxis {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
-        match RawParameterAxis::deserialize(deserializer)? {
-            RawParameterAxis::Value(axis) => Ok(Self::Value(axis.value)),
-            RawParameterAxis::Grid(axis) if axis.grid.is_empty() => {
-                Err(de::Error::custom("a parameter `grid` cannot be empty"))
+        let value = deserialize_manifest_value(deserializer)?;
+        match value.as_json() {
+            JsonValue::Object(mapping) if mapping.len() == 1 && mapping.contains_key("value") => {
+                CanonicalValue::try_from(mapping["value"].clone())
+                    .map(Self::Value)
+                    .map_err(de::Error::custom)
             }
-            RawParameterAxis::Grid(axis) => Ok(Self::Grid(axis.grid)),
+            JsonValue::Object(mapping) if mapping.len() == 1 && mapping.contains_key("grid") => {
+                let grid = mapping["grid"]
+                    .as_array()
+                    .filter(|values| !values.is_empty())
+                    .ok_or_else(|| {
+                        de::Error::custom("a parameter `grid` must be a nonempty array")
+                    })?;
+                grid.iter()
+                    .map(|value| CanonicalValue::try_from(value.clone()).map_err(de::Error::custom))
+                    .collect::<Result<Vec<_>, _>>()
+                    .map(Self::Grid)
+            }
+            JsonValue::Object(_) | JsonValue::Array(_) => Err(de::Error::custom(
+                "expected a scalar parameter, `{value: ...}` for a literal array or object, or `{grid: [...]}` for a sweep",
+            )),
+            _ => Ok(Self::Value(value)),
         }
     }
 }
@@ -1400,17 +1386,6 @@ where
 {
     let value = JsonValue::deserialize(deserializer)?;
     CanonicalValue::try_from(value).map_err(de::Error::custom)
-}
-
-fn deserialize_manifest_values<'de, D>(deserializer: D) -> Result<Vec<CanonicalValue>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let values = Vec::<JsonValue>::deserialize(deserializer)?;
-    values
-        .into_iter()
-        .map(|value| CanonicalValue::try_from(value).map_err(de::Error::custom))
-        .collect()
 }
 
 fn deserialize_safe_positive_integer<'de, D>(deserializer: D) -> Result<u64, D::Error>
@@ -1574,20 +1549,6 @@ fn valid_sha256(value: &str) -> bool {
         && value
             .bytes()
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-}
-
-fn source_position(source: &str, offset: usize) -> (usize, usize) {
-    let mut offset = offset.min(source.len());
-    while !source.is_char_boundary(offset) {
-        offset -= 1;
-    }
-    let prefix = &source[..offset];
-    let line = prefix.bytes().filter(|byte| *byte == b'\n').count() + 1;
-    let column = prefix
-        .rsplit('\n')
-        .next()
-        .map_or(1, |line| line.chars().count() + 1);
-    (line, column)
 }
 
 fn version_one() -> u32 {

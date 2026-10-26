@@ -62,7 +62,7 @@ experiments:
           numbers:
             values: { value: [10, 10] }
         problem-parameters:
-          offset: { value: 1 }
+          offset: 1
 execution-policies:
   local:
     version: 1

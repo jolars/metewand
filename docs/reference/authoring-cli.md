@@ -6,13 +6,15 @@ Scaffolds still emit the reusable external files listed below. Implementations
 and generated datasets may use [compact parameter declarations](parameter-namespaces.md#compact-implementation-parameters)
 with literal defaults or default grids. Problem contracts accept the same
 `parameters` form and compact `result` and `metrics` declarations. Each boundary
-can independently use a compact declaration or an explicit schema. The planned
-[compact authoring design](https://github.com/jolars/metewand/blob/main/DESIGN.md#planned-compact-authoring)
-puts problem fields directly under the problem, without a `contract` wrapper.
+can independently use a compact declaration or an explicit schema. Problem
+fields may also live directly under `problems.<name>`, without a `contract` wrapper.
 Implementation parameters keep their own mapping alongside worker settings.
 Experiment axes override declaration grids, and named cases override experiment
-axes. Plain scalar experiment overrides, language-specific SDK scaffolds,
-mechanical defaults, and an optional family semantics schema remain planned MVP
+axes. Experiment and case parameters accept plain scalar literals; arrays and
+objects use `value`, and sweeps use `grid`. Parameter diagnostics point to the
+authored declaration or effective supplied value in YAML. Local-environment and
+one-shot policy defaults resolve before planning. Language-specific SDK
+scaffolds and an optional family semantics schema remain planned MVP
 work; see the [roadmap](https://github.com/jolars/metewand/blob/main/TODO.md).
 
 ## Initialization

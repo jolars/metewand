@@ -505,9 +505,9 @@ integrations.
 
 #### Parameter expansion
 
-Each experiment or case parameter entry is either a literal `value` or an
-expansion `grid`. Declaration grids lower to these same axes; plain scalar
-experiment and case shorthand remains planned. This distinction permits
+Each experiment or case parameter entry is a plain scalar literal, an explicit
+literal `value`, or an expansion `grid`. Plain scalars lower to `value` axes,
+and declaration grids lower to the same expansion axes. This distinction permits
 arrays and mappings to be literal parameter values. Grids form a Cartesian
 product across the dataset, problem, and applicable implementation namespaces.
 

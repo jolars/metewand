@@ -416,6 +416,369 @@ fn declaration_grids_expand_across_namespaces_without_narrowing_domains() {
 }
 
 #[test]
+fn scalar_overrides_normalize_to_explicit_values_across_namespaces_and_cases() {
+    let mut compact = grid_document();
+    compact["implementations"]["solver"]["parameters"]["trace"] =
+        json!({"type": "boolean", "default": true});
+    compact["implementations"]["solver"]["parameters"]["nothing"] =
+        json!({"type": "null", "default": null});
+    compact["implementations"]["solver"]["parameters"]["tolerance"] =
+        json!({"type": "number", "minimum": 0, "default": 1e-6});
+    compact["experiments"][0]["dataset-parameters"] = json!({"generated": {"rows": 15}});
+    compact["experiments"][0]["problem-parameters"] = json!({"offset": 1});
+    compact["experiments"][0]["implementation-parameters"] = json!({"solver": {"steps": 3, "runner": "override", "trace": false, "nothing": null, "tolerance": 0.25}});
+    compact["experiments"][0]["cases"] = json!([
+        {"name": "inherited"},
+        {"name": "overridden", "dataset-parameters": {"generated": {"rows": 99}},
+         "problem-parameters": {"offset": 4}, "implementation-parameters": {"solver": {"steps": 5}}}
+    ]);
+    let mut explicit = compact.clone();
+    fn wrap_axes(axes: &mut Value) {
+        if let Some(axes) = axes.as_object_mut() {
+            for value in axes.values_mut() {
+                *value = json!({"value": value.clone()});
+            }
+        }
+    }
+    fn wrap_parameters(parameters: &mut Value) {
+        if let Some(axes) = parameters.get_mut("problem-parameters") {
+            wrap_axes(axes);
+        }
+        for namespace in ["dataset-parameters", "implementation-parameters"] {
+            if let Some(named) = parameters.get_mut(namespace).and_then(Value::as_object_mut) {
+                for axes in named.values_mut() {
+                    wrap_axes(axes);
+                }
+            }
+        }
+    }
+    wrap_parameters(&mut explicit["experiments"][0]);
+    for case in explicit["experiments"][0]["cases"].as_array_mut().unwrap() {
+        wrap_parameters(case);
+    }
+    assert_eq!(
+        canonical_manifest_bytes(&parse(&compact)).unwrap(),
+        canonical_manifest_bytes(&parse(&explicit)).unwrap()
+    );
+    assert_eq!(expand(&compact), expand(&explicit));
+    let expansion = expand(&compact);
+    assert_eq!(expansion[0].candidates.len(), 2);
+    assert_eq!(
+        expansion[0].candidates[0]
+            .implementation
+            .parameters
+            .as_json(),
+        &json!({"steps": 3, "runner": "override", "trace": false, "nothing": null, "tolerance": 0.25})
+    );
+    assert_eq!(
+        expansion[0].candidates[1].dataset.parameters.as_json(),
+        &json!({"rows": 99})
+    );
+    assert_eq!(
+        expansion[0].candidates[1].problem.parameters.as_json(),
+        &json!({"offset": 4})
+    );
+    public_schema_catalog()
+        .unwrap()
+        .validate(PublicSchema::Manifest.repository_path(), &compact)
+        .unwrap();
+}
+
+#[test]
+fn parameter_arrays_and_objects_require_explicit_axes() {
+    for value in [
+        json!([1, 2]),
+        json!({"nested": 1}),
+        json!({}),
+        json!({"value": 1, "grid": [2]}),
+        json!({"grid": []}),
+    ] {
+        let mut document = document();
+        document["experiments"][0]["implementation-parameters"] =
+            json!({"solver": {"steps": value}});
+        assert!(
+            parse_manifest(Path::new("metewand.yaml"), &document.to_string()).is_err(),
+            "{value}"
+        );
+        assert!(
+            public_schema_catalog()
+                .unwrap()
+                .validate(PublicSchema::Manifest.repository_path(), &document)
+                .is_err(),
+            "{value}"
+        );
+    }
+}
+
+#[test]
+fn compact_declaration_errors_locate_the_invalid_keyword_or_selection() {
+    for boundary in [
+        "/datasets/generated/parameters/rows",
+        "/problems/sum/contract/parameters/offset",
+        "/implementations/solver/parameters/steps",
+    ] {
+        for (field, token) in [
+            (
+                json!({"type": "integer", "minimum": 1, "default": -123}),
+                "-123",
+            ),
+            (
+                json!({"type": "integer", "minimum": 1, "grid": [1, -234]}),
+                "-234",
+            ),
+            (
+                json!({"type": "array", "items": "integer", "default": [1, "bad-item"]}),
+                "bad-item",
+            ),
+            (
+                json!({"type": "number", "minimum": "bad-bound"}),
+                "bad-bound",
+            ),
+        ] {
+            let mut document = document();
+            *document.pointer_mut(boundary).unwrap() = field;
+            let source = serde_saphyr::to_string(&document).unwrap();
+            let error = parse_manifest(Path::new("metewand.yaml"), &source).unwrap_err();
+            let span = error.source_span().unwrap();
+            let line = source.lines().nth(span.line - 1).unwrap();
+            assert!(
+                line.chars()
+                    .skip(span.column - 1)
+                    .collect::<String>()
+                    .starts_with(token),
+                "{boundary}: {span:?}: {line}"
+            );
+            if boundary.starts_with("/problems/") {
+                let contract_source =
+                    serde_saphyr::to_string(&document["problems"]["sum"]["contract"]).unwrap();
+                let error =
+                    parse_problem_contract_document(Path::new("problem.yaml"), &contract_source)
+                        .unwrap_err();
+                let span = error.source_span().unwrap();
+                assert!(
+                    contract_source
+                        .lines()
+                        .nth(span.line - 1)
+                        .unwrap()
+                        .chars()
+                        .skip(span.column - 1)
+                        .collect::<String>()
+                        .starts_with(token),
+                    "{span:?}"
+                );
+                flatten_problem(&mut document);
+                let source = serde_saphyr::to_string(&document).unwrap();
+                let error = parse_manifest(Path::new("metewand.yaml"), &source).unwrap_err();
+                let span = error.source_span().unwrap();
+                assert!(
+                    source
+                        .lines()
+                        .nth(span.line - 1)
+                        .unwrap()
+                        .chars()
+                        .skip(span.column - 1)
+                        .collect::<String>()
+                        .starts_with(token),
+                    "{span:?}"
+                );
+            }
+        }
+    }
+}
+
+fn assert_resolution_location(document: &Value, token: &str) {
+    let source = serde_saphyr::to_string(document).unwrap();
+    let manifest = parse_manifest(Path::new("bench/metewand.yaml"), &source).unwrap();
+    let (contracts, schemas) = contracts_and_schemas(&manifest);
+    let error = expand_manifest_configurations(&manifest, &contracts, &schemas).unwrap_err();
+    assert!(!error.to_string().contains(".metewand-inline-"), "{error}");
+    let span = error.source_span().unwrap();
+    assert_eq!(span.path, Path::new("bench/metewand.yaml"));
+    let line = source.lines().nth(span.line - 1).unwrap();
+    assert!(
+        line.chars()
+            .skip(span.column - 1)
+            .collect::<String>()
+            .starts_with(token),
+        "{span:?}: {line}\n{error}"
+    );
+}
+
+#[test]
+fn effective_parameter_errors_locate_experiment_and_case_selections() {
+    for (namespace, axes) in [
+        ("dataset-parameters", json!({"generated": {"rows": -123}})),
+        ("problem-parameters", json!({"offset": {"value": -123}})),
+        (
+            "implementation-parameters",
+            json!({"solver": {"steps": {"grid": [1, -123]}}}),
+        ),
+    ] {
+        let mut document = grid_document();
+        document["experiments"][0][namespace] = axes.clone();
+        assert_resolution_location(&document, "-123");
+        document["experiments"][0]["cases"] = json!([{"name": "inherit"}]);
+        assert_resolution_location(&document, "-123");
+        document["experiments"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove(namespace);
+        document["experiments"][0]["cases"][0][namespace] = axes;
+        assert_resolution_location(&document, "-123");
+    }
+    let mut document = document();
+    document["experiments"][0]["implementation-parameters"] =
+        json!({"solver": {"unknown/field~name": 12345}});
+    assert_resolution_location(&document, "12345");
+}
+
+#[test]
+fn effective_parameter_errors_locate_alias_uses() {
+    let mut document = document();
+    document["datasets"]["generated"]["parameters"]["rows"]["minimum"] = json!(-123);
+    document["experiments"][0]["implementation-parameters"] = json!({"solver": {"steps": -123}});
+    let source = serde_saphyr::to_string(&document)
+        .unwrap()
+        .replacen("-123", "&invalid -123", 1)
+        .replace("steps: -123", "steps: *invalid");
+    let manifest = parse_manifest(Path::new("metewand.yaml"), &source).unwrap();
+    let (contracts, schemas) = contracts_and_schemas(&manifest);
+    let error = expand_manifest_configurations(&manifest, &contracts, &schemas).unwrap_err();
+    let span = error.source_span().unwrap();
+    assert!(
+        source
+            .lines()
+            .nth(span.line - 1)
+            .unwrap()
+            .chars()
+            .skip(span.column - 1)
+            .collect::<String>()
+            .starts_with("*invalid"),
+        "{span:?}"
+    );
+}
+
+#[test]
+fn missing_values_locate_compact_fields_in_flat_wrapped_and_external_contracts() {
+    for pointer in [
+        "/datasets/generated/parameters/rows",
+        "/problems/sum/contract/parameters/offset",
+        "/implementations/solver/parameters/steps",
+    ] {
+        let mut document = document();
+        document
+            .pointer_mut(pointer)
+            .unwrap()
+            .as_object_mut()
+            .unwrap()
+            .remove("default");
+        let name = pointer.rsplit('/').next().unwrap();
+        assert_resolution_location(&document, &format!("{name}:"));
+        flatten_problem(&mut document);
+        assert_resolution_location(&document, &format!("{name}:"));
+    }
+
+    let mut document = document();
+    document["problems"]["sum"]["contract"]["parameters"]["offset"]
+        .as_object_mut()
+        .unwrap()
+        .remove("default");
+    let source = serde_saphyr::to_string(&document["problems"]["sum"]["contract"]).unwrap();
+    let source_path = Path::new("bench/problem.yaml");
+    let contract = parse_problem_contract_document(source_path, &source).unwrap();
+    let manifest = parse_manifest(Path::new("bench/metewand.yaml"), &document.to_string()).unwrap();
+    let (mut contracts, schemas) = contracts_and_schemas(&manifest);
+    contracts.insert(manifest.experiments[0].problem.clone(), contract);
+    let error = expand_manifest_configurations(&manifest, &contracts, &schemas).unwrap_err();
+    let span = error.source_span().unwrap();
+    assert_eq!(span.path, source_path);
+    assert!(
+        source
+            .lines()
+            .nth(span.line - 1)
+            .unwrap()
+            .trim_start()
+            .starts_with("offset:"),
+        "{span:?}"
+    );
+}
+
+#[test]
+fn cases_validate_effective_values_and_reject_equivalent_scalar_duplicates() {
+    let mut document = document();
+    document["experiments"][0]["implementation-parameters"] = json!({"solver": {"steps": -123}});
+    document["experiments"][0]["cases"] = json!([
+        {"name": "replacement", "implementation-parameters": {"solver": {"steps": 2}}}
+    ]);
+    assert_eq!(
+        expand(&document)[0].candidates[0]
+            .implementation
+            .parameters
+            .as_json()["steps"],
+        2
+    );
+    document["experiments"][0]["cases"] = json!([
+        {"name": "scalar", "implementation-parameters": {"solver": {"steps": 2}}},
+        {"name": "explicit", "implementation-parameters": {"solver": {"steps": {"value": 2}}}}
+    ]);
+    let manifest = parse(&document);
+    let (contracts, schemas) = contracts_and_schemas(&manifest);
+    assert!(matches!(
+        expand_manifest_configurations(&manifest, &contracts, &schemas),
+        Err(ConfigurationExpansionError::DuplicateLogicalCandidate(_))
+    ));
+}
+
+#[test]
+fn literal_object_defaults_merge_recursively_after_axis_precedence() {
+    let mut document = document();
+    let implementation = document["implementations"]["solver"]
+        .as_object_mut()
+        .unwrap();
+    implementation.remove("parameters");
+    implementation.insert("parameter-schema".into(), object_schema(json!({
+        "settings": object_schema(json!({"left": {"type": "integer", "minimum": 0}, "right": {"type": "integer", "minimum": 0}}), &["left", "right"]),
+        "weights": {"type": "array", "items": {"type": "integer", "minimum": 0}},
+        "nullable": {"type": ["object", "null"]}
+    }), &["settings", "weights", "nullable"]));
+    implementation.insert("parameter-defaults".into(), json!({"settings": {"left": 1, "right": 2}, "weights": [1, 2], "nullable": {"inherited": true}}));
+    document["experiments"][0]["implementation-parameters"] = json!({"solver": {
+        "settings": {"value": {"left": 5}}, "weights": {"value": [3]}, "nullable": null
+    }});
+    document["experiments"][0]["cases"] = json!([
+        {"name": "inherit"},
+        {"name": "replace-axis", "implementation-parameters": {"solver": {"settings": {"value": {"right": 7}}}}}
+    ]);
+    let expansion = expand(&document);
+    assert_eq!(
+        expansion[0].candidates[0]
+            .implementation
+            .parameters
+            .as_json(),
+        &json!({"settings": {"left": 5, "right": 2}, "weights": [3], "nullable": null})
+    );
+    assert_eq!(
+        expansion[0].candidates[1]
+            .implementation
+            .parameters
+            .as_json(),
+        &json!({"settings": {"left": 1, "right": 7}, "weights": [3], "nullable": null})
+    );
+
+    document["implementations"]["solver"]["parameter-defaults"]["settings"]["right"] = json!(-234);
+    assert_resolution_location(&document, "-234");
+    document["implementations"]["solver"]["parameter-defaults"]["settings"]["right"] = json!(2);
+    document["experiments"][0]["implementation-parameters"]["solver"]["settings"]["value"]["left"] =
+        json!(-345);
+    assert_resolution_location(&document, "-345");
+    document["experiments"][0]["implementation-parameters"]["solver"]["settings"]["value"]["left"] =
+        json!(5);
+    document["experiments"][0]["implementation-parameters"]["solver"]["weights"] =
+        json!({"grid": [[1], [2, -456]]});
+    assert_resolution_location(&document, "-456");
+}
+
+#[test]
 fn array_enum_boolean_and_null_grids_preserve_literal_values() {
     let mut document = document();
     document["implementations"]["solver"]["parameters"] = json!({

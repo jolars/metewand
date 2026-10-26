@@ -2,6 +2,45 @@
   "version": 1,
   "valid": [
     {
+      "name": "manifest-with-scalar-parameter-overrides",
+      "schema": "manifest",
+      "instance": {
+        "version": 1,
+        "name": "scalar-overrides",
+        "experiments": [
+          {
+            "name": "main",
+            "problem": "sum",
+            "datasets": ["generated"],
+            "implementations": ["solver"],
+            "execution-policy": "local",
+            "observation-policy": "final",
+            "seed": 7,
+            "dataset-parameters": { "generated": { "rows": 10 } },
+            "problem-parameters": { "offset": 0.5 },
+            "implementation-parameters": {
+              "solver": {
+                "mode": "cyclic",
+                "trace": false,
+                "nullable": null,
+                "weights": { "value": [1, 2] },
+                "settings": { "value": { "nested": 1 } },
+                "steps": { "grid": [1, 2] }
+              }
+            },
+            "cases": [
+              {
+                "name": "override",
+                "dataset-parameters": { "generated": { "rows": 20 } },
+                "problem-parameters": { "offset": null },
+                "implementation-parameters": { "solver": { "trace": true } }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
       "name": "manifest-with-flat-problem-declaration",
       "schema": "manifest",
       "instance": {
@@ -1736,6 +1775,46 @@
     }
   ],
   "invalid": [
+    {
+      "name": "parameter-overrides-require-value-for-literal-arrays",
+      "schema": "manifest",
+      "instance": {
+        "version": 1,
+        "name": "implicit-array",
+        "experiments": [
+          {
+            "name": "main",
+            "problem": "sum",
+            "implementations": ["solver"],
+            "execution-policy": "local",
+            "observation-policy": "final",
+            "seed": 7,
+            "problem-parameters": { "weights": [1, 2] }
+          }
+        ]
+      }
+    },
+    {
+      "name": "parameter-overrides-require-value-for-literal-objects",
+      "schema": "manifest",
+      "instance": {
+        "version": 1,
+        "name": "implicit-object",
+        "experiments": [
+          {
+            "name": "main",
+            "problem": "sum",
+            "implementations": ["solver"],
+            "execution-policy": "local",
+            "observation-policy": "final",
+            "seed": 7,
+            "cases": [
+              { "name": "invalid", "problem-parameters": { "settings": { "nested": 1 } } }
+            ]
+          }
+        ]
+      }
+    },
     {
       "name": "manifest-rejects-competing-contract-and-flat-problem",
       "schema": "manifest",

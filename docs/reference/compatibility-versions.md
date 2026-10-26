@@ -90,6 +90,12 @@ as equivalent wrapped inline declarations. Referenced and explicit inline
 contracts remain supported. Combining either with flat contract fields is an
 error. This changes no persisted records, wire messages, or execution semantics.
 
+Plain scalar experiment and case parameter entries retain authoring and
+public-schema version 1. They lower to the existing literal `value` axes before
+hashing and expansion, so equivalent explicit axes keep their canonical bytes,
+plans, and component identities. YAML source locations are diagnostic metadata
+and do not enter identities or persisted records.
+
 Optional family semantics schemas, applicability
 selection, profiles, scientific budgets, and instrumentation settings remain
 planned implementation work.

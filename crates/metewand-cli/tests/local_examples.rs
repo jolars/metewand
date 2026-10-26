@@ -47,7 +47,7 @@ fn compact_implementation_parameters_preserve_plans_and_apply_defaults() {
     let explicit = compact.replace(
         "parameters:\n      representation:\n        type: string\n        enum: [list, packed]\n        default: list",
         "parameter-schema:\n      type: object\n      properties:\n        representation: {type: string, enum: [list, packed]}\n      required: [representation]\n      additionalProperties: false\n    parameter-defaults: {representation: list}",
-    );
+    ).replace("offset: 1", "offset: { value: 1 }");
     assert_ne!(compact, explicit);
     fs::write(&manifest_path, explicit).unwrap();
     assert_eq!(compact_plan, invoke("plan"));
@@ -110,6 +110,77 @@ fn compact_implementation_parameters_preserve_plans_and_apply_defaults() {
     let message = String::from_utf8_lossy(&invalid.stderr);
     assert!(message.contains("/representation"), "{message}");
     assert!(!message.contains(".metewand-inline-"), "{message}");
+}
+
+#[test]
+fn invalid_parameter_values_report_their_yaml_locations() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let benchmark = TempDir::new().unwrap();
+    copy_tree(&root.join("examples/parameter-matrix"), benchmark.path());
+    let path = benchmark.path().join("metewand.yaml");
+    let original = fs::read_to_string(&path).unwrap();
+    for (from, to, token) in [
+        (
+            "representation: { grid: [\"list\", \"packed\"] }",
+            "representation: invalid-mode",
+            "invalid-mode",
+        ),
+        (
+            "representation: { grid: [\"list\", \"packed\"] }",
+            "representation: { grid: [list, invalid-grid] }",
+            "invalid-grid",
+        ),
+        (
+            "offset: 1",
+            "offset: { value: invalid-offset }",
+            "invalid-offset",
+        ),
+        (
+            "values: { value: [10, 10] }",
+            "values: { value: [10, invalid-array] }",
+            "invalid-array",
+        ),
+    ] {
+        let source = original.replace(from, to);
+        assert_ne!(source, original);
+        fs::write(&path, &source).unwrap();
+        for command in ["check", "plan"] {
+            let output = Command::new(env!("CARGO_BIN_EXE_metewand"))
+                .current_dir(benchmark.path())
+                .args([command, "--output", "json"])
+                .output()
+                .unwrap();
+            assert_eq!(output.status.code(), Some(3), "{output:?}");
+            let diagnostic: Value = serde_json::from_slice(&output.stdout).unwrap();
+            let cause = &diagnostic["data"]["causes"][0];
+            assert_eq!(cause["code"], "invalid_configuration");
+            let span = &cause["source_span"];
+            assert_eq!(span["path"], "metewand.yaml", "{diagnostic}");
+            let line = span["line"].as_u64().unwrap() as usize;
+            let column = span["column"].as_u64().unwrap() as usize;
+            assert!(
+                source
+                    .lines()
+                    .nth(line - 1)
+                    .unwrap()
+                    .chars()
+                    .skip(column - 1)
+                    .collect::<String>()
+                    .starts_with(token),
+                "{diagnostic}"
+            );
+            assert!(!diagnostic.to_string().contains(".metewand-inline-"));
+        }
+        let human = Command::new(env!("CARGO_BIN_EXE_metewand"))
+            .current_dir(benchmark.path())
+            .arg("check")
+            .output()
+            .unwrap();
+        assert!(
+            String::from_utf8_lossy(&human.stderr).contains("metewand.yaml:"),
+            "{human:?}"
+        );
+    }
 }
 
 #[test]
@@ -186,6 +257,36 @@ fn run_example(name: &str) -> Vec<Value> {
                     );
                 } else {
                     assert_eq!(attempt["metrics"], serde_json::json!({"absolute_error": 0}));
+                    if name == "parameter-matrix" {
+                        let observation: Value = serde_json::from_slice(
+                            &fs::read(
+                                benchmark
+                                    .path()
+                                    .join("run")
+                                    .join(attempt["observation_directory"].as_str().unwrap())
+                                    .join("observation.json"),
+                            )
+                            .unwrap(),
+                        )
+                        .unwrap();
+                        let execution = &observation["provenance"]["data"]["execution"];
+                        assert!(matches!(
+                            execution["implementation_parameters"]["representation"].as_str(),
+                            Some("list" | "packed")
+                        ));
+                        let values = &observation["provenance"]["data"]["context"]["dataset_materialization"]
+                            ["derivation"]["parameters"]["values"];
+                        let sum: i64 = values
+                            .as_array()
+                            .unwrap()
+                            .iter()
+                            .map(|value| value.as_i64().unwrap())
+                            .sum();
+                        assert_eq!(
+                            attempt["result"]["answer"].as_i64().unwrap(),
+                            sum + execution["problem_parameters"]["offset"].as_i64().unwrap()
+                        );
+                    }
                 }
             }
             return attempts;

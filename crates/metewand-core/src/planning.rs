@@ -14,8 +14,9 @@ use crate::{
     manifest::{
         DatasetDefinition, ExecutionPolicyDefinition, ExperimentCase, ExperimentDefinition,
         ImplementationCapability, Manifest, Name, ObservationPolicyDefinition, ParameterAxes,
-        ParameterAxis, WorkerDefinition,
+        ParameterAxis, SourceSpan, WorkerDefinition,
     },
+    parameter_source::ParameterSources,
     parameters::{
         ParameterNamespaceError, ParameterResolutionError, resolve_parameters,
         validate_parameter_namespaces,
@@ -690,7 +691,9 @@ pub enum ConfigurationExpansionError {
         definition: Name,
         /// Underlying canonicalization or schema-validation error.
         #[source]
-        error: ParameterResolutionError,
+        error: Box<ParameterResolutionError>,
+        /// Authored declaration or value responsible for the failed validation.
+        source_span: Option<Box<SourceSpan>>,
     },
 
     /// Two expansion paths produced the same logical candidate.
@@ -700,6 +703,17 @@ pub enum ConfigurationExpansionError {
     /// Canonical serialization unexpectedly failed while comparing candidates.
     #[error("failed to canonicalize an expanded configuration: {0}")]
     Canonicalization(#[from] CanonicalJsonError),
+}
+
+impl ConfigurationExpansionError {
+    /// Returns the authored YAML location of a failed parameter resolution.
+    #[must_use]
+    pub fn source_span(&self) -> Option<&SourceSpan> {
+        match self {
+            Self::ParameterResolution { source_span, .. } => source_span.as_deref(),
+            _ => None,
+        }
+    }
 }
 
 /// Details about two expansion paths that produced one logical candidate.
@@ -791,13 +805,22 @@ fn expand_source(
         &contract.parameter_grids,
         Some(&experiment.problem_parameters),
         case.map(|case| &case.problem_parameters),
+        &ParameterSources::new(
+            manifest,
+            contract,
+            experiment,
+            case,
+            ConfigurationNamespace::Problem,
+            &experiment.problem,
+        ),
     )
-    .map_err(|error| ConfigurationExpansionError::ParameterResolution {
+    .map_err(|failure| ConfigurationExpansionError::ParameterResolution {
         experiment: experiment.name.clone(),
         source_location: source.clone(),
         namespace: ConfigurationNamespace::Problem,
         definition: experiment.problem.clone(),
-        error,
+        error: Box::new(failure.error),
+        source_span: failure.source_span,
     })?;
 
     let dataset_parameters = if experiment.datasets.is_empty() {
@@ -822,18 +845,27 @@ fn expand_source(
                                 &definition.parameter_grids,
                                 experiment.dataset_parameters.get(name),
                                 case.and_then(|case| case.dataset_parameters.get(name)),
+                                &ParameterSources::new(
+                                    manifest,
+                                    contract,
+                                    experiment,
+                                    case,
+                                    ConfigurationNamespace::Dataset,
+                                    name,
+                                ),
                             ),
                             None => Ok(vec![empty_parameters()]),
                         }
                     }
                 }
-                .map_err(|error| {
+                .map_err(|failure: ParameterExpansionFailure| {
                     ConfigurationExpansionError::ParameterResolution {
                         experiment: experiment.name.clone(),
                         source_location: source.clone(),
                         namespace: ConfigurationNamespace::Dataset,
                         definition: name.clone(),
-                        error,
+                        error: Box::new(failure.error),
+                        source_span: failure.source_span,
                     }
                 })?;
                 Ok((
@@ -857,15 +889,24 @@ fn expand_source(
                     &definition.parameter_grids,
                     experiment.implementation_parameters.get(name),
                     case.and_then(|case| case.implementation_parameters.get(name)),
+                    &ParameterSources::new(
+                        manifest,
+                        contract,
+                        experiment,
+                        case,
+                        ConfigurationNamespace::Implementation,
+                        name,
+                    ),
                 ),
                 None => Ok(vec![empty_parameters()]),
             }
-            .map_err(|error| ConfigurationExpansionError::ParameterResolution {
+            .map_err(|failure| ConfigurationExpansionError::ParameterResolution {
                 experiment: experiment.name.clone(),
                 source_location: source.clone(),
                 namespace: ConfigurationNamespace::Implementation,
                 definition: name.clone(),
-                error,
+                error: Box::new(failure.error),
+                source_span: failure.source_span,
             })?;
             Ok((
                 name.clone(),
@@ -908,6 +949,11 @@ fn expand_source(
     Ok(())
 }
 
+struct ParameterExpansionFailure {
+    error: ParameterResolutionError,
+    source_span: Option<Box<SourceSpan>>,
+}
+
 fn expand_resolved_parameters(
     schemas: &SchemaCatalog,
     schema_path: &std::path::Path,
@@ -915,7 +961,8 @@ fn expand_resolved_parameters(
     grids: &ParameterAxes,
     base: Option<&ParameterAxes>,
     overlay: Option<&ParameterAxes>,
-) -> Result<Vec<CanonicalValue>, ParameterResolutionError> {
+    sources: &ParameterSources<'_>,
+) -> Result<Vec<CanonicalValue>, ParameterExpansionFailure> {
     let mut axes = grids
         .iter()
         .map(|(name, axis)| (name.as_str(), axis))
@@ -927,10 +974,20 @@ fn expand_resolved_parameters(
         axes.extend(overlay.iter().map(|(name, axis)| (name.as_str(), axis)));
     }
 
-    let supplied = expand_axes(&axes)?;
+    let supplied = expand_axes(&axes).map_err(|error| ParameterExpansionFailure {
+        error: error.into(),
+        source_span: None,
+    })?;
     supplied
         .iter()
-        .map(|parameters| resolve_parameters(schemas, schema_path, defaults, parameters))
+        .map(|parameters| {
+            resolve_parameters(schemas, schema_path, defaults, parameters).map_err(|error| {
+                let source_span = sources
+                    .locate(&error, parameters, defaults, &axes)
+                    .map(Box::new);
+                ParameterExpansionFailure { error, source_span }
+            })
+        })
         .collect()
 }
 

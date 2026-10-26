@@ -1496,10 +1496,15 @@ impl CommandError {
             LogicalPlanningError::Control(_) => {
                 Diagnostic::new("required_control_unsupported", error.to_string())
             }
-            LogicalPlanningError::Configuration(_) => {
-                Diagnostic::new("invalid_configuration", error.to_string()).with_remediation(
-                    "Correct the experiment configuration and run the plan again.",
-                )
+            LogicalPlanningError::Configuration(source) => {
+                let mut diagnostic = Diagnostic::new("invalid_configuration", error.to_string())
+                    .with_remediation(
+                        "Correct the experiment configuration and run the plan again.",
+                    );
+                if let Some(span) = source.source_span() {
+                    diagnostic = diagnostic.with_source_span(span);
+                }
+                diagnostic
             }
             LogicalPlanningError::MissingDefinitionIdentity { .. } => {
                 Diagnostic::new("missing_definition_identity", error.to_string())
@@ -1715,9 +1720,13 @@ fn repository_diagnostic(error: &RepositoryCheckError) -> Diagnostic {
             Diagnostic::new("invalid_schema_catalog", error.to_string())
                 .with_remediation("Correct the reported repository schema.")
         }
-        RepositoryCheckError::Configuration(_) => {
-            Diagnostic::new("invalid_configuration", error.to_string())
-                .with_remediation("Correct the incompatible experiment configuration.")
+        RepositoryCheckError::Configuration(source) => {
+            let mut diagnostic = Diagnostic::new("invalid_configuration", error.to_string())
+                .with_remediation("Correct the incompatible experiment configuration.");
+            if let Some(span) = source.source_span() {
+                diagnostic = diagnostic.with_source_span(span);
+            }
+            diagnostic
         }
         RepositoryCheckError::SourceBundle(_) => {
             Diagnostic::new("invalid_source_bundle", error.to_string())

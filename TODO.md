@@ -97,7 +97,7 @@ a new compatibility review is a prerequisite.
   an inline `contract` wrapper. Normalize these fields into the same internal
   contract and identities. Preserve referenced contracts and supported explicit
   inline contracts; reject competing declarations of the same boundary.
-- [ ] Finish compact parameter overrides and diagnostics. Declaration defaults
+- [x] Finish compact parameter overrides and diagnostics. Declaration defaults
   and grids now use the existing resolution and expansion model, with experiment
   axes overriding declaration grids and named cases overriding experiment axes.
   Preserve recursive merging of literal defaults. Accept plain scalar literals

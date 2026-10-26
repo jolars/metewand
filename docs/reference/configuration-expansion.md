@@ -16,7 +16,8 @@ one explicit built-in unit-dataset configuration with `{}` parameters.
 
 ## Matrix semantics
 
-A `value` is one literal parameter value—even when it is an array or object. A
+A plain scalar or explicit `value` is one literal parameter value. Arrays and
+objects use the explicit `value` form. A
 `grid` contributes one axis whose members retain their declared order. Axes
 form a Cartesian product only for the selected dataset and implementation in a
 candidate; a grid for one implementation does not multiply candidates for a
@@ -49,8 +50,10 @@ cases, and grid values remains meaningful and is preserved.
 
 When `cases` are present, the experiment-level axes are defaults rather than a
 separate matrix member. Each case replaces matching axes by parameter name,
-inherits all other experiment-level axes, and expands independently. Case
-results are unioned, not multiplied, so values such as dataset shape and
+inherits all other experiment-level axes, and expands independently. Overrides
+replace whole axes; object-valued axes merge recursively with the definition's
+literal defaults after replacement. Case results are unioned, not multiplied,
+so values such as dataset shape and
 problem regularization can remain coupled. Grids inside one case still form a
 Cartesian product.
 

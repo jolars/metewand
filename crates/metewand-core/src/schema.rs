@@ -219,6 +219,27 @@ impl SchemaCatalog {
             .iter_errors(instance)
             .map(|error| SchemaViolation {
                 instance_path: error.instance_path().to_string(),
+                value_path: match error.kind() {
+                    jsonschema::error::ValidationErrorKind::Required { property } => format!(
+                        "{}/{}",
+                        error.instance_path(),
+                        crate::yaml::escape_pointer(property.as_str().unwrap_or_default())
+                    ),
+                    jsonschema::error::ValidationErrorKind::AdditionalProperties { unexpected }
+                    | jsonschema::error::ValidationErrorKind::UnevaluatedProperties {
+                        unexpected,
+                    } => unexpected.iter().min().map_or_else(
+                        || error.instance_path().to_string(),
+                        |property| {
+                            format!(
+                                "{}/{}",
+                                error.instance_path(),
+                                crate::yaml::escape_pointer(property)
+                            )
+                        },
+                    ),
+                    _ => error.instance_path().to_string(),
+                },
                 schema_path: error
                     .absolute_keyword_location()
                     .map_or_else(|| error.schema_path().to_string(), ToString::to_string),
@@ -480,6 +501,8 @@ pub struct SchemaViolation {
     pub schema_path: String,
     /// Human-readable description of the violated constraint.
     pub message: String,
+    /// JSON Pointer to the offending or missing value, including object keys.
+    pub value_path: String,
 }
 
 fn validate_repository_path(path: &Path) -> Result<(), SchemaCatalogError> {

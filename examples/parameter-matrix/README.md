@@ -43,9 +43,11 @@ metric is `absolute_error = 0`. Each candidate has one implementation repetition
 and one measurement repetition.
 
 The `cartesian` case inherits the dataset declaration's grid. The `coupled`
-case overrides it with `value` to preserve a single literal array. The grid
-selects runs without restricting the valid array domain. All grids expand
-deterministically. Overlapping cases are errors rather than implicit statistical
+case overrides it with `value` to preserve a single literal array. It also
+uses the plain scalar `offset: 1`, which normalizes to the same axis
+as `offset: {value: 1}`. Arrays and objects require an explicit `value` or `grid`
+wrapper. The grid selects runs without restricting the valid array domain.
+All grids expand deterministically. Overlapping cases are errors rather than implicit statistical
 replications; use repetition fields for that purpose. See
 [configuration expansion](../../docs/reference/configuration-expansion.md).
 

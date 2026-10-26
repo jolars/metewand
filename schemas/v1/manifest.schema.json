@@ -321,6 +321,7 @@
     },
     "parameter_axis": {
       "oneOf": [
+        { "type": ["null", "boolean", "number", "string"] },
         {
           "type": "object",
           "properties": { "value": {} },

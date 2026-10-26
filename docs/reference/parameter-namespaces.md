@@ -169,9 +169,28 @@ parameters with no effective value remain errors. Cartesian expansion and
 duplicate-candidate rejection follow the existing
 [configuration expansion](configuration-expansion.md) rules.
 
-Experiment and case overrides still use the explicit `value` and `grid` forms.
-Plain scalar overrides and problem fields directly under `problems.<name>`
-remain planned. The [parameter-matrix example](https://github.com/jolars/metewand/tree/main/examples/parameter-matrix)
+Experiment and case overrides accept plain scalar literals: numbers, strings,
+booleans, and `null`. A scalar is equivalent to an explicit `value` axis:
+
+```yaml
+problem-parameters:
+  offset: 1
+implementation-parameters:
+  solver:
+    tolerance: 1e-6
+    trace: false
+    weights: {value: [1, 2]}
+    settings: {value: {left: 3}}
+    max_iterations: {grid: [100, 1000]}
+```
+
+Arrays and objects require `value` for one literal value or `grid` for a sweep.
+An unwrapped array never becomes an implicit sweep. Each expanded parameter
+object merges with its definition's literal defaults. A case replaces an
+experiment axis as a whole, including object-valued axes; it then merges with
+the definition defaults, rather than with the replaced experiment value.
+
+The [parameter-matrix example](https://github.com/jolars/metewand/tree/main/examples/parameter-matrix)
 demonstrates compact dataset and problem fields, declaration grids, literal
 defaults, and case overrides through worker execution.
 
@@ -198,8 +217,13 @@ return the first `ParameterNamespaceError`.
 
 Compact declarations lower into these fields during parsing,
 before namespace validation. Invalid compact fields report the parameter's
-authored path and YAML location; supplied-value errors identify the parameter
-and violated constraint.
+authored path and YAML location. Supplied-value errors identify the parameter,
+violated constraint, and exact YAML location of the effective scalar, `value`,
+or grid member, including nested array and object values. An inherited invalid
+default points to its declaration. A missing required compact parameter points
+to its field declaration, including in a referenced problem contract. Human and
+machine diagnostics use the same source spans; generated schema paths are not
+shown for parameter validation failures.
 
 ```rust
 use std::path::Path;

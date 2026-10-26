@@ -12,6 +12,7 @@ pub mod manifest;
 pub mod manifest_hash;
 pub mod materialization;
 pub mod measurements;
+mod parameter_source;
 pub mod parameters;
 pub mod planning;
 pub mod problem_contract;

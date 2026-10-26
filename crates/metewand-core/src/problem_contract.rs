@@ -133,12 +133,13 @@ pub fn parse_problem_contract_document(
     source_path: &Path,
     source: &str,
 ) -> Result<ProblemContract, ProblemContractError> {
-    let mut contract: ProblemContract =
-        crate::yaml::parse(source_path, source).map_err(|error| ProblemContractError::Parse {
+    let (mut contract, source_map): (ProblemContract, _) = crate::yaml::parse(source_path, source)
+        .map_err(|error| ProblemContractError::Parse {
             message: error.message,
             source_span: error.source_span,
         })?;
     contract.set_schema_owner(source_path);
+    contract.source_map = source_map;
     Ok(contract)
 }
 
@@ -170,6 +171,7 @@ pub fn validate_problem_contract(
 /// A validated, language-neutral problem and fairness contract.
 #[derive(Clone, Debug)]
 pub struct ProblemContract {
+    pub(crate) source_map: crate::yaml::SourceMap,
     /// Problem-contract compatibility version.
     pub version: u32,
     /// Stable problem name declared by the contract.
@@ -322,6 +324,7 @@ impl<'de> Deserialize<'de> for ProblemContract {
         }
 
         Ok(Self {
+            source_map: crate::yaml::SourceMap::default(),
             version: raw.version,
             name: raw.name,
             family: raw.family,

@@ -430,8 +430,10 @@ fn validates_every_resolved_configuration_with_its_own_schema() {
             source_location: ConfigurationSource::Experiment,
             namespace: ConfigurationNamespace::Dataset,
             definition,
-            error: ParameterResolutionError::Validation(_),
+            error,
+            ..
         }) if experiment.as_str() == "main" && definition.as_str() == "generated"
+            && matches!(error.as_ref(), ParameterResolutionError::Validation(_))
     ));
 }
 
