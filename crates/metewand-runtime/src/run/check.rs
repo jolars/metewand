@@ -140,6 +140,9 @@ pub fn check_repository_workers(
             .iter()
             .map(|capability| match capability {
                 metewand_core::manifest::ImplementationCapability::OneShot => Capability::OneShot,
+                metewand_core::manifest::ImplementationCapability::BufferedProfile => {
+                    Capability::BufferedProfile
+                }
                 metewand_core::manifest::ImplementationCapability::Applicability => {
                     Capability::Applicability
                 }

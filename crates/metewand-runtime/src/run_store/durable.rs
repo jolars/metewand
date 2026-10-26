@@ -57,7 +57,15 @@ impl RunStore {
         })
     }
 
+    pub fn open_buffered(root: &Path) -> Result<Self, RunStoreError> {
+        Self::open_version(root, &|_| Ok(()), true)
+    }
+
     fn open_checked(root: &Path, check: &Check<'_>) -> Result<Self, RunStoreError> {
+        Self::open_version(root, check, false)
+    }
+
+    fn open_version(root: &Path, check: &Check<'_>, buffered: bool) -> Result<Self, RunStoreError> {
         if !root.is_absolute() || !fs::symlink_metadata(root)?.is_dir() {
             return Err(RunStoreError::UnsafePath(root.to_owned()));
         }
@@ -89,7 +97,11 @@ impl RunStore {
         let version: u32 = tx.pragma_query_value(None, "user_version", |r| r.get(0))?;
         if version == 0 {
             verify_schema(&tx)?;
-            tx.execute_batch(RUN_STORE_SCHEMA_SQL)?;
+            tx.execute_batch(if buffered {
+                super::BUFFERED_RUN_STORE_SCHEMA_SQL
+            } else {
+                RUN_STORE_SCHEMA_SQL
+            })?;
         }
         tx.commit()?;
         sync_file(&File::open(&database_path)?, check)?;
@@ -433,9 +445,13 @@ pub(super) fn verify_schema(connection: &Connection) -> Result<(), RunStoreError
     if version == 0 && objects.is_empty() {
         return Ok(());
     }
-    if version == RUN_STORE_SCHEMA_VERSION {
+    if version == RUN_STORE_SCHEMA_VERSION || version == super::BUFFERED_RUN_STORE_SCHEMA_VERSION {
         let expected = Connection::open_in_memory()?;
-        expected.execute_batch(RUN_STORE_SCHEMA_SQL)?;
+        expected.execute_batch(if version == super::BUFFERED_RUN_STORE_SCHEMA_VERSION {
+            super::BUFFERED_RUN_STORE_SCHEMA_SQL
+        } else {
+            RUN_STORE_SCHEMA_SQL
+        })?;
         if objects == schema_objects(&expected)? {
             return Ok(());
         }

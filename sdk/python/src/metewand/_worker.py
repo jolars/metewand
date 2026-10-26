@@ -20,6 +20,7 @@ _FAILURE_CODES = {
     "unsupported_operation",
     "operation_failed",
     "internal_error",
+    "resource_limit",
 }
 _VERDICTS = {"invalid", "reached", "not_reached", "not_required"}
 
@@ -81,6 +82,17 @@ class _ImplementationLifecycle(ABC):
 
     def shutdown(self):
         """Release benchmark-owned resources before the process exits."""
+
+
+class BufferedImplementation(_ImplementationLifecycle):
+    """An adapter that returns a bounded trace through execute_buffered."""
+
+    def execute(self, budget, observation_control):
+        raise WorkerError("unsupported_operation", "One-shot execution is not implemented.")
+
+    @abstractmethod
+    def execute_buffered(self, budget, trace):
+        """Solve once, honor each stop decision, and finish or adopt the buffer."""
 
 
 class Implementation(_ImplementationLifecycle):
@@ -150,6 +162,7 @@ _FIELDS = {
         "implementation_seed": "seed",
     },
     "execute": {"result_dir": "string"},
+    "execute_buffered": {"result_root":"string", "profile":"object"},
     "reset": {},
     "evaluate": {
         "dataset_dir": "string",
@@ -161,7 +174,7 @@ _FIELDS = {
     "shutdown": {},
 }
 _METHODS = {
-    "implementation": {"check_applicability", "prepare", "execute", "reset", "shutdown"},
+    "implementation": {"check_applicability", "prepare", "execute", "execute_buffered", "reset", "shutdown"},
     "dataset_materializer": {"materialize", "shutdown"},
     "problem_evaluator": {"evaluate", "shutdown"},
 }
@@ -278,7 +291,7 @@ class _Dispatcher:
                 "protocol": WIRE_PROTOCOL_VERSION,
                 "worker_id": request["worker_id"],
                 "sdk": {"name": "metewand-python", "version": SDK_VERSION},
-                "capabilities": ["one_shot"] + (["applicability"] if self.applicability else [])
+                "capabilities": ([] if isinstance(self.worker, BufferedImplementation) else ["one_shot"]) + (["buffered_profile"] if hasattr(self.worker, "execute_buffered") else []) + (["applicability"] if self.applicability else [])
                 if self.role == "implementation"
                 else (["problem_semantics"] if self.semantics else []),
             }
@@ -349,6 +362,14 @@ class _Dispatcher:
                 if 0 <= elapsed <= MAX_SAFE_INTEGER
                 else None,
             }
+        elif method == "execute_buffered":
+            if not self.prepared or not hasattr(self.worker, "execute_buffered"):
+                raise WorkerError("invalid_request", "Buffered execution requires preparation and buffered_profile support.")
+            self.prepared = False
+            from ._buffered import BufferedTrace
+            trace = BufferedTrace(request["profile"], Path(request["result_root"]))
+            self.worker.execute_buffered(None, trace)
+            return {"buffer": {"manifest": _completed_manifest(trace.directory, trace.write())}}
         elif method == "reset":
             self.prepared = False
             self.worker.reset()
@@ -469,7 +490,7 @@ def _serve_fds(worker, role, read_fd, write_fd, semantics=False):
 
 def serve_implementation(implementation, *, read_fd=None, write_fd=None):
     """Serve a one-shot Implementation on inherited or explicitly supplied pipes."""
-    if not isinstance(implementation, (Implementation, OneShotImplementation)):
+    if not isinstance(implementation, (Implementation, OneShotImplementation, BufferedImplementation)):
         raise TypeError("Expected an Implementation or OneShotImplementation instance.")
     _serve_fds(implementation, "implementation", read_fd, write_fd)
 

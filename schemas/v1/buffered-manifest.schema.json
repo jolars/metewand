@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "metewand://schemas/v1/buffered-manifest.schema.json",
+  "x-metewand-compatibility-version": 1,
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "complete": {
+      "const": true
+    },
+    "clock": {
+      "const": "monotonic_ns"
+    },
+    "instrumented_scope": {
+      "type": "string",
+      "minLength": 1
+    },
+    "instrumented_total_time_ns": {
+      "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
+    },
+    "stop_reason": {
+      "enum": [
+        "target_reached",
+        "fixed_count",
+        "trace_limit",
+        "observation_limit",
+        "byte_limit",
+        "active_time_limit",
+        "implementation_stopped"
+      ]
+    },
+    "trace": {
+      "$ref": "common.schema.json#/$defs/repository_path"
+    },
+    "snapshots": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "properties": {
+          "capture_ordinal": {
+            "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
+          },
+          "trace_index": {
+            "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
+          },
+          "thresholds": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            },
+            "uniqueItems": true
+          },
+          "manifest": {
+            "$ref": "common.schema.json#/$defs/repository_path"
+          }
+        },
+        "required": [
+          "capture_ordinal",
+          "trace_index",
+          "thresholds",
+          "manifest"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "files": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "$ref": "common.schema.json#/$defs/repository_path"
+          },
+          "sha256": {
+            "$ref": "common.schema.json#/$defs/sha256"
+          },
+          "size_bytes": {
+            "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
+          }
+        },
+        "required": [
+          "path",
+          "sha256",
+          "size_bytes"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "schema_version",
+    "complete",
+    "clock",
+    "instrumented_scope",
+    "instrumented_total_time_ns",
+    "stop_reason",
+    "trace",
+    "snapshots",
+    "files"
+  ],
+  "additionalProperties": false
+}

@@ -48,33 +48,66 @@
         "logical_slot_id": { "$ref": "#/$defs/logical_slot_id" },
         "resolved_slot_id": { "$ref": "#/$defs/resolved_slot_id" },
         "attempt_id": { "type": "string", "pattern": "^mw1-attempt-[0-9a-f]{64}$" },
-        "status": { "enum": ["accepted", "failed", "superseded"] },
+        "status": { "enum": ["accepted", "failed", "superseded", "censored"] },
         "observation_id": { "type": ["string", "null"], "pattern": "^mw1-observation-[0-9a-f]{64}$" },
         "attempt_directory": { "$ref": "common.schema.json#/$defs/repository_path" },
         "observation_directory": { "anyOf": [{ "type": "null" }, { "$ref": "common.schema.json#/$defs/repository_path" }] },
         "result": {},
         "metrics": {},
-        "diagnostic": { "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/diagnostic" }] }
+        "diagnostic": { "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/diagnostic" }] },
+        "observations": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "properties": {
+              "observation_id": {
+                "$ref": "common.schema.json#/$defs/identity"
+              },
+              "observation_directory": {
+                "$ref": "common.schema.json#/$defs/repository_path"
+              },
+              "result": {},
+              "metrics": {},
+              "profile": {
+                "$ref": "profile-observation.schema.json"
+              }
+            },
+            "required": [
+              "observation_id",
+              "observation_directory",
+              "result",
+              "metrics",
+              "profile"
+            ],
+            "additionalProperties": false
+          }
+        }
       },
       "required": ["logical_slot_id", "resolved_slot_id", "attempt_id", "status", "observation_id", "attempt_directory", "observation_directory", "result", "metrics", "diagnostic"],
+      "additionalProperties": false,
       "allOf": [
         {
           "if": { "properties": { "status": { "const": "accepted" } } },
           "then": {
-            "properties": {
-              "observation_id": { "type": "string" },
-              "observation_directory": { "type": "string" },
-              "diagnostic": { "type": "null" }
-            }
+            "properties": { "diagnostic": { "type": "null" } },
+            "anyOf": [
+              {
+                "properties": {
+                  "observation_id": { "type": "string" },
+                  "observation_directory": { "type": "string" }
+                }
+              },
+              { "required": ["observations"] }
+            ]
           },
           "else": {
-            "if": { "properties": { "status": { "const": "failed" } } },
+            "if": { "properties": { "status": { "enum": ["failed", "censored"] } } },
             "then": { "properties": { "diagnostic": { "$ref": "#/$defs/diagnostic" } } },
             "else": { "properties": { "diagnostic": { "type": "null" } } }
           }
         }
-      ],
-      "additionalProperties": false
+      ]
     },
     "event": {
       "type": "object",
@@ -112,7 +145,10 @@
             "event": { "const": "run_finished" },
             "accepted_attempts": { "$ref": "common.schema.json#/$defs/safe_nonnegative_integer" },
             "failed_attempts": { "$ref": "common.schema.json#/$defs/safe_nonnegative_integer" },
-            "superseded_attempts": { "$ref": "common.schema.json#/$defs/safe_nonnegative_integer" }
+            "superseded_attempts": { "$ref": "common.schema.json#/$defs/safe_nonnegative_integer" },
+            "censored_attempts": {
+              "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
+            }
           },
           "required": ["accepted_attempts", "failed_attempts", "superseded_attempts"]
         }
@@ -125,7 +161,10 @@
         "attempt_slots": { "$ref": "common.schema.json#/$defs/safe_nonnegative_integer" },
         "accepted_attempts": { "$ref": "common.schema.json#/$defs/safe_nonnegative_integer" },
         "failed_attempts": { "$ref": "common.schema.json#/$defs/safe_nonnegative_integer" },
-        "superseded_attempts": { "$ref": "common.schema.json#/$defs/safe_nonnegative_integer" }
+        "superseded_attempts": { "$ref": "common.schema.json#/$defs/safe_nonnegative_integer" },
+        "censored_attempts": {
+          "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
+        }
       },
       "required": ["attempt_slots", "accepted_attempts", "failed_attempts", "superseded_attempts"],
       "additionalProperties": false

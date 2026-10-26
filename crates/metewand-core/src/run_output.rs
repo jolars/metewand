@@ -34,6 +34,7 @@ pub struct RunDiagnostic {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RunAttemptStatus {
+    Censored,
     /// The independently evaluated result met its completion rule.
     Accepted,
     /// A concurrent candidate won the slot finalization claim.
@@ -45,6 +46,8 @@ pub enum RunAttemptStatus {
 /// The public command view of one finalized attempt.
 #[derive(Clone, Debug, Serialize)]
 pub struct RunAttemptOutput {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub observations: Vec<ProfileObservationOutput>,
     /// Logical position from the read-only plan.
     pub logical_slot_id: RecordId<LogicalAttemptSlotRecord>,
     /// Position after binding the execution dependencies.
@@ -65,6 +68,15 @@ pub struct RunAttemptOutput {
     pub metrics: Option<Value>,
     /// Reason for failure, including a missed scientific completion target.
     pub diagnostic: Option<RunDiagnostic>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct ProfileObservationOutput {
+    pub observation_id: RecordId<RunObservationRecord>,
+    pub observation_directory: String,
+    pub result: Value,
+    pub metrics: Value,
+    pub profile: crate::records::ProfileObservationRecord,
 }
 
 /// A monotonically sequenced event from one invocation.
@@ -104,6 +116,8 @@ pub enum RunEventKind {
     RunFinished {
         /// Number of accepted attempts.
         accepted_attempts: usize,
+        #[serde(skip_serializing_if = "is_zero")]
+        censored_attempts: usize,
         /// Number of failed attempts.
         failed_attempts: usize,
         /// Number of concurrent candidates superseded by another finalizer.
@@ -114,6 +128,8 @@ pub enum RunEventKind {
 /// Counts for the complete selected execution, including failed attempts.
 #[derive(Debug, Serialize)]
 pub struct RunSummary {
+    #[serde(skip_serializing_if = "is_zero")]
+    pub censored_attempts: usize,
     /// Number of measured slots selected from the logical plan.
     pub attempt_slots: usize,
     /// Number of durably accepted attempts.
@@ -141,4 +157,8 @@ pub struct RunReport {
     pub events: Vec<RunEvent>,
     /// Counts derived from the same terminal attempts.
     pub summary: RunSummary,
+}
+
+fn is_zero(value: &usize) -> bool {
+    *value == 0
 }

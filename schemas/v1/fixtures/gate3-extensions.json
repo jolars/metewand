@@ -16,13 +16,6 @@
       "value": ["one_shot", "streaming_profile"]
     },
     {
-      "name": "manifest buffered-profile selection",
-      "template": "complete one-shot benchmark manifest",
-      "pointer": "/implementations/native",
-      "field": "capabilities",
-      "value": ["one_shot", "buffered_profile"]
-    },
-    {
       "name": "manifest profile policy",
       "template": "complete one-shot benchmark manifest",
       "pointer": "/observation-policies/final",

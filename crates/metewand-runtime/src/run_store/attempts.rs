@@ -446,6 +446,16 @@ pub(super) fn commit_terminal_in(
     now_ns: u64,
     checked_at_ns: u64,
 ) -> Result<TerminalAttempt, RunStoreError> {
+    if matches!(outcome, TerminalOutcome::Accepted) {
+        let buffered: bool = tx.query_row(
+            "SELECT kind='buffered' FROM attempt_slots WHERE id=?1",
+            [attempt.slot().to_string()],
+            |r| r.get(0),
+        )?;
+        if buffered {
+            tx.execute("INSERT INTO selected_observations SELECT slot_id,id,1,?2 FROM observations WHERE producing_attempt_id=?1 AND valid=1",params![attempt.id().to_string(),timestamp(now_ns)?])?;
+        }
+    }
     let now = timestamp(now_ns)?.max(timestamp(attempt.updated_at_ns)?);
     let checked = timestamp(checked_at_ns)?.max(now);
     #[cfg(test)]
@@ -692,6 +702,20 @@ pub(super) fn validate_acceptance(
     }
     if total == 0 {
         return Err(invalid("measurement requires observation slots"));
+    }
+    if kind == "buffered" {
+        let produced: i64 = tx.query_row(
+            "SELECT count(*) FROM observations WHERE producing_attempt_id=?1 AND valid=1",
+            [attempt.id().to_string()],
+            |r| r.get(0),
+        )?;
+        let conflicts:bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM selected_observations s JOIN observations o ON o.id=s.observation_id JOIN attempt_observation_slots m ON m.observation_slot_id=s.slot_id WHERE m.attempt_slot_id=?1 AND o.producing_attempt_id!=?2)",params![attempt.slot().to_string(),attempt.id().to_string()],|r|r.get(0))?;
+        if produced == 0 || conflicts {
+            return Err(invalid(
+                "buffered acceptance requires this attempt's complete trajectory without selections from another retry",
+            ));
+        }
+        return Ok(());
     }
     let complete: i64 = tx.query_row(
         "SELECT count(*) FROM attempt_observation_slots m

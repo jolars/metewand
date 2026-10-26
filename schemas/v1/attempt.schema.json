@@ -44,6 +44,39 @@
           },
           "required": ["kind", "diagnostic"],
           "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "enum": [
+                "accepted",
+                "censored",
+                "superseded",
+                "failed"
+              ]
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1
+            },
+            "diagnostic": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "common.schema.json#/$defs/diagnostic"
+                }
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "reason",
+            "diagnostic"
+          ],
+          "additionalProperties": false
         }
       ]
     },

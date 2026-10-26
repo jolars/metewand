@@ -146,3 +146,15 @@ messages, execution semantics, and the run-store layout remain unchanged:
 `WIRE_PROTOCOL_VERSION = 1`, `EXECUTION_SEMANTICS_VERSION = 2`, and
 `RUN_STORE_SCHEMA_VERSION = 1`. The canonical index vector lives beside the
 schemas in `schemas/v1/fixtures/export-index-v1.jsonl`.
+
+## Instrumented profile rows
+
+Buffered attempts retain one producing-attempt identity for each trajectory.
+Snapshot observation rows expose evaluator-owned metrics, local provisional
+metrics, `instrumented_time_ns`, total instrumented duration, and executor timing.
+Diagnostic `trace` rows expose `provisional_metric_name` and
+`provisional_metric_value` while their independent metric coordinate stays null.
+The `profile` object retains work counts, threshold references, and scope metadata.
+Compatibility classes include the instrumented measurement basis and named scope
+with its contract definition. Keep attempt identities when grouping curves.
+See [buffered profiles](buffered-profiles.md).

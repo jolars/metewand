@@ -71,6 +71,7 @@ pub(super) struct ResolvedBatch {
 }
 
 pub(super) struct ResolvedCandidate {
+    pub profile: Option<metewand_core::profile::SelectedBufferedProfile>,
     pub experiment: String,
     pub logical_selection_ids: Vec<String>,
     pub applicability: IdentifiedRecord<metewand_core::applicability::ApplicabilityDecisionRecord>,
@@ -91,6 +92,7 @@ pub(super) struct ResolvedCandidate {
 
 #[derive(Clone)]
 pub(super) struct ResolvedMeasurement {
+    pub observation_slots: Vec<IdentifiedRecord<ResolvedObservationSlotRecord>>,
     pub candidate: RecordId<metewand_core::records::LogicalCandidateRecord>,
     pub specification: IdentifiedRecord<ResolvedOneShotSpecificationRecord>,
     pub selection_ids: Vec<String>,
@@ -686,6 +688,26 @@ fn resolve_candidate(
         .expect("checked plan problem definition")
         .0;
     let contract = &repository.problem_contracts[problem_name];
+    let profile = repository.manifest.observation_policies
+        [&experiment.observation_policy.record.name]
+        .profile
+        .as_ref()
+        .map(|p| {
+            let name = catalog
+                .implementation_definitions
+                .iter()
+                .find(|(_, id)| **id == candidate.implementation_configuration.record.definition)
+                .expect("checked implementation")
+                .0;
+            let binding = &p.implementations[name];
+            metewand_core::profile::SelectedBufferedProfile {
+                policy: p.policy.clone(),
+                instrumented_scope: binding.instrumented_scope.clone(),
+                scope: contract.instrumented_scopes[&binding.instrumented_scope].clone(),
+                instrumentation: binding.instrumentation.clone(),
+                check_schedule: binding.check_schedule.clone(),
+            }
+        });
     let applicability = resolve_applicability(
         candidate,
         &implementation,
@@ -730,12 +752,20 @@ fn resolve_candidate(
                 }
             })
             .collect::<Result<Vec<_>, _>>()?;
-        for (slot, logical_observation) in specification
+        for slot in specification
             .attempt_slots
             .iter()
             .filter(|slot| matches!(slot.record.role, AttemptSlotRole::Measured { .. }))
-            .zip(&specification.observation_slots)
         {
+            let anchor = match slot.record.role {
+                AttemptSlotRole::Measured { observation_slot } => observation_slot,
+                _ => unreachable!(),
+            };
+            let logical_observation = specification
+                .observation_slots
+                .iter()
+                .find(|o| o.id == anchor)
+                .expect("planned observation");
             let AttemptSlotRole::Measured { observation_slot } = slot.record.role else {
                 unreachable!("only measured slots were selected");
             };
@@ -806,23 +836,45 @@ fn resolve_candidate(
                 "cpu_model": null, "selected_cores": null, "memory": null, "kernel": null,
                 "language_runtime": null, "blas": null, "thread_settings": null,
             }))?;
+            let bound = profile.as_ref().map_or(1, |p| p.policy.max_observations);
+            let observation_slots = specification
+                .observation_slots
+                .iter()
+                .filter(|o| {
+                    o.record.measurement_index >= logical_observation.record.measurement_index
+                        && o.record.measurement_index
+                            < logical_observation.record.measurement_index + bound
+                })
+                .map(|o| {
+                    identify_record(ResolvedObservationSlotRecord {
+                        logical_slot: o.id,
+                        specification: resolved.id,
+                    })
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            let mut selection_ids = vec![
+                candidate.candidate.id.to_string(),
+                specification.specification.id.to_string(),
+                resolved.id.to_string(),
+                slot.id.to_string(),
+                attempt_slot.id.to_string(),
+                logical_observation.id.to_string(),
+                observation_slot.id.to_string(),
+                if applicability.record.checked_inputs.is_some() {
+                    applicability.id.to_string()
+                } else {
+                    format!("run-store-v1:unconditional:{}", candidate.candidate.id)
+                },
+            ];
+            for observation in &observation_slots {
+                selection_ids.push(observation.id.to_string());
+                selection_ids.push(observation.record.logical_slot.to_string());
+            }
             measurements.push(ResolvedMeasurement {
+                observation_slots,
                 candidate: candidate.candidate.id,
                 specification: resolved.clone(),
-                selection_ids: vec![
-                    candidate.candidate.id.to_string(),
-                    specification.specification.id.to_string(),
-                    resolved.id.to_string(),
-                    slot.id.to_string(),
-                    attempt_slot.id.to_string(),
-                    logical_observation.id.to_string(),
-                    observation_slot.id.to_string(),
-                    if applicability.record.checked_inputs.is_some() {
-                        applicability.id.to_string()
-                    } else {
-                        format!("run-store-v1:unconditional:{}", candidate.candidate.id)
-                    },
-                ],
+                selection_ids,
                 scheduling,
                 warmups: warmups.clone(),
                 logical_slot: slot.id,
@@ -840,6 +892,7 @@ fn resolve_candidate(
         policy,
     };
     Ok(ResolvedCandidate {
+        profile,
         experiment: experiment.name.to_string(),
         applicability,
         logical_selection_ids: std::iter::once(candidate.candidate.id.to_string())

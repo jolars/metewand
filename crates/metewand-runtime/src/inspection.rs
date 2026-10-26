@@ -60,6 +60,9 @@ impl Inspection {
             self.add_identified(&experiment.execution_policy)?;
             self.add_identified(&experiment.observation_policy)?;
             for candidate in &experiment.candidates {
+                if let Some(profile) = &candidate.profile_policy {
+                    self.add_identified(profile)?;
+                }
                 self.add_identified(&candidate.dataset_configuration)?;
                 self.add_identified(&candidate.problem_configuration)?;
                 self.add_identified(&candidate.implementation_configuration)?;

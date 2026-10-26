@@ -1,4 +1,7 @@
-//! One private, non-published Gate-1 run of a resolved fixed dataset.
+//! Private execution of resolved fixed datasets.
+
+mod buffered;
+pub(crate) use buffered::{BufferedEvent, run_buffered};
 
 use std::{
     fs::{self, Permissions},
@@ -219,6 +222,9 @@ pub enum FixedDatasetRunOutcome {
 /// Technical failure classes retained before an attempt can be published.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum FixedDatasetFailureKind {
+    InvalidBuffer,
+    MetricDisagreement,
+    ResourceLimit,
     /// A runtime control ceased to hold over the worker lifetime.
     ControlEnforcementLost,
     /// Inputs or local setup prevented execution.
@@ -246,6 +252,9 @@ impl FixedDatasetFailureKind {
     #[must_use]
     pub const fn code(self) -> &'static str {
         match self {
+            Self::InvalidBuffer => "invalid_buffer",
+            Self::MetricDisagreement => "metric_disagreement",
+            Self::ResourceLimit => "resource_limit",
             Self::ControlEnforcementLost => "control_enforcement_lost",
             Self::SetupFailure => "setup_failure",
             Self::DatasetMutation => "dataset_mutation",
@@ -761,6 +770,10 @@ fn path_string(path: &Path) -> Result<String, FixedDatasetRunError> {
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum FixedDatasetRunError {
+    #[error("invalid buffered profile: {0}")]
+    InvalidBuffer(String),
+    #[error("provisional metrics disagree with independent evaluation: {0}")]
+    MetricDisagreement(String),
     /// Durable execution ownership or phase recording failed.
     #[error(transparent)]
     Coordination(#[from] crate::run_store::RunStoreError),
@@ -862,6 +875,8 @@ impl FixedDatasetRunError {
     #[must_use]
     pub fn failure_kind(&self) -> FixedDatasetFailureKind {
         match self {
+            Self::InvalidBuffer(_) => FixedDatasetFailureKind::InvalidBuffer,
+            Self::MetricDisagreement(_) => FixedDatasetFailureKind::MetricDisagreement,
             Self::DatasetMutation { .. } => FixedDatasetFailureKind::DatasetMutation,
             Self::ScientificTimeout => FixedDatasetFailureKind::ScientificTimeout,
             Self::Coordination(_)
@@ -888,6 +903,11 @@ impl FixedDatasetRunError {
 
 fn classify_session(source: &WorkerSessionError, implementation: bool) -> FixedDatasetFailureKind {
     match source {
+        WorkerSessionError::WorkerFailure { failure, .. }
+            if failure.code() == metewand_protocol::WorkerFailureCode::ResourceLimit =>
+        {
+            FixedDatasetFailureKind::ResourceLimit
+        }
         WorkerSessionError::ControlEnforcementLost { .. }
         | WorkerSessionError::Process {
             source: crate::worker_process::WorkerProcessError::LogDrainDeadline { .. },

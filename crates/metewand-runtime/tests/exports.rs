@@ -111,6 +111,7 @@ fn every_terminal_outcome_retains_earlier_observations_and_distinct_guarantees()
                 "best_effort"
             };
             let observation = identify_record(RunObservationRecord {
+        profile: None,
                 slot: observation_slot,
                 producing_attempt: attempt.id(),
                 result: ArtifactReference {

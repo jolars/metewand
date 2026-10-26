@@ -37,7 +37,7 @@ The command executes every selected candidate, implementation repetition, and
 measurement repetition. It supports fixed
 local datasets, local generators and transformations with pinned HTTP(S) sources,
 the built-in empty unit dataset for dataset-free problems,
-one-shot workers, local environments, dedicated POSIX protocol pipes, fresh
+one-shot and [buffered profile](buffered-profiles.md) workers, local environments, dedicated POSIX protocol pipes, fresh
 or reused implementation processes, process-local warm-ups, all three
 contract-authorized wall-timing scopes, sequential or block-randomized order, and
 `best_effort` enforcement. Complete preflight precedes every worker launch and

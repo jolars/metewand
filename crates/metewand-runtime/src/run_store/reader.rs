@@ -37,7 +37,9 @@ impl StoreSnapshot {
         )?;
         connection.pragma_update(None, "query_only", true)?;
         let version = connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
-        if version != RUN_STORE_SCHEMA_VERSION {
+        if version != RUN_STORE_SCHEMA_VERSION
+            && version != super::BUFFERED_RUN_STORE_SCHEMA_VERSION
+        {
             return Err(RunStoreError::UnsupportedSchema {
                 version,
                 reason: "inspection requires an initialized supported store",

@@ -18,18 +18,27 @@ coordination or evidence of acceptance.
 The database layout has its own compatibility version. It does not change the
 manifest, public JSON Schemas, identities, execution semantics, wire protocol,
 or artifact-store compatibility constants. Execution semantics are at version 2;
-the other contracts remain at version 1. Profile
-states and slot kinds in this layout reserve the semantics described in
-[DESIGN.md](https://github.com/jolars/metewand/blob/main/DESIGN.md#automation-and-agentic-workflows); they do not add profile
-support to the current one-shot domain records or CLI. The writer uses these
-existing version-1 edges and constraints without changing any compatibility
-constant. Identity conformance tests also check the reservation helper against
-the existing terminal-attempt vectors.
+the other contracts remain at version 1.
+
+`BUFFERED_RUN_STORE_SCHEMA_VERSION = 2` and the embedded `v2.sql` add the
+`buffered` execution kind. `RunStore::open_buffered` initializes this layout for
+new runs containing profiles. Both layouts remain readable and writable under
+their own exact schema checks; opening a version-1 store never migrates it.
+A fresh output directory is required when adding buffered profiles.
+
+Buffered observations publish without selection. Acceptance selects all valid
+observations from that attempt in the same transaction that commits its terminal
+state. An immutable accepted outcome anticipates those selection timestamps so
+recovery can import a fully published success atomically. Censored and failed
+attempts preserve their observations without selecting them. Recovery and retries
+never combine trajectories from different attempts. The crash campaign covers
+both layouts and buffered selection boundaries.
 
 `RunStore::open` reads `user_version` before changing the persistent journal
 mode or applying DDL. It creates version 1 only in an empty database, rejects
 unknown versions and unversioned databases with user objects, and checks an
-existing version-1 database against the embedded tables, indexes, and triggers.
+existing version-1 or version-2 database against its embedded tables, indexes,
+and triggers.
 Migration must be deliberate and transactional. The SQL intentionally omits
 `IF NOT EXISTS` so an existing, incompatible table cannot silently pass
 initialization. The initializer applies the whole script in one immediate

@@ -69,6 +69,12 @@
           "type": "array",
           "items": { "$ref": "#/$defs/reference_case" },
           "minItems": 1
+        },
+        "instrumented-scopes": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "profile-observation-policy.schema.json#/$defs/scope"
+          }
         }
       },
       "required": [

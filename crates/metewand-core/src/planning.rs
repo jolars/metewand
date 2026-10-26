@@ -109,6 +109,8 @@ pub struct ExpandedExperiment {
 /// [`DatasetConfigurationDefinition::Unit`].
 #[derive(Clone, Debug, Default)]
 pub struct LogicalPlanningCatalog {
+    /// Instrumentation schemas with their resolved dependency identities.
+    pub schema_identities: BTreeMap<std::path::PathBuf, RecordId<crate::records::SchemaResource>>,
     /// Manifest and built-in dataset-definition identities.
     pub dataset_definitions:
         BTreeMap<DatasetConfigurationDefinition, RecordId<DatasetDefinitionRecord>>,
@@ -160,7 +162,7 @@ pub struct LogicalExperimentPlan {
     pub scheduling_seed: DerivedSeedRecord,
     /// Selected, fully defaulted execution policy.
     pub execution_policy: IdentifiedRecord<ExecutionPolicyRecord>,
-    /// Selected one-shot observation policy.
+    /// Selected common observation policy.
     pub observation_policy: IdentifiedRecord<ObservationPolicyRecord>,
     /// Logical candidates in deterministic configuration-expansion order.
     pub candidates: Vec<LogicalCandidatePlan>,
@@ -169,6 +171,8 @@ pub struct LogicalExperimentPlan {
 /// One expanded configuration candidate with all logical identities attached.
 #[derive(Clone, Debug, PartialEq)]
 pub struct LogicalCandidatePlan {
+    /// Selected profile binding, absent for the original one-shot representation.
+    pub profile_policy: Option<IdentifiedRecord<ObservationPolicyRecord>>,
     /// Experiment defaults or named case that produced this candidate.
     pub source: ConfigurationSource,
     /// Identified dataset configuration, including its derived seed.
@@ -415,6 +419,21 @@ fn plan_candidate(
         .copied()
         .map(CapabilityReport::declared)
         .collect();
+    let profile_policy = if let Some(profile) =
+        &manifest.observation_policies[&experiment.observation_policy].profile
+    {
+        let binding = &profile.implementations[&expanded.implementation.definition];
+        let value = serde_json::json!({"policy": profile.policy, "binding": profile.declaration_value()["implementations"][expanded.implementation.definition.as_str()],
+            "instrumentation_schema": catalog.schema_identities.get(binding.instrumentation_schema.as_path())});
+        Some(identify_record(ObservationPolicyRecord {
+            name: experiment.observation_policy.clone(),
+            kind: crate::manifest::ObservationKind::Profile,
+            profile: Some(CanonicalValue::try_from(value).map_err(IdentityError::from)?),
+        })?)
+    } else {
+        None
+    };
+    let observation_policy = profile_policy.as_ref().map_or(observation_policy, |p| p.id);
     let candidate = identify_record(LogicalCandidateRecord {
         dataset_configuration: dataset_configuration.id,
         problem_configuration: problem_configuration.id,
@@ -433,11 +452,16 @@ fn plan_candidate(
                 implementation_repetition,
                 warmup_runs,
                 scheduling_seed,
+                manifest.observation_policies[&experiment.observation_policy]
+                    .profile
+                    .as_ref()
+                    .map(|p| p.policy.max_observations),
             )
         })
         .collect::<Result<Vec<_>, LogicalPlanningError>>()?;
 
     Ok(LogicalCandidatePlan {
+        profile_policy,
         source: expanded.source,
         dataset_configuration,
         problem_configuration,
@@ -457,6 +481,7 @@ fn plan_specification(
     implementation_repetition: u64,
     warmup_runs: u64,
     scheduling_seed: &DerivedSeedRecord,
+    profile_bound: Option<u64>,
 ) -> Result<OneShotSpecificationPlan, LogicalPlanningError> {
     let implementation_seed = derive_implementation_seed(
         experiment.seed,
@@ -471,7 +496,15 @@ fn plan_specification(
         implementation_seed,
     })?;
 
-    let observation_slots = (0..experiment.measurement_repetitions)
+    let bound = profile_bound.unwrap_or(1);
+    let slot_count = experiment
+        .measurement_repetitions
+        .checked_mul(bound)
+        .ok_or_else(|| LogicalPlanningError::MissingDefinitionIdentity {
+            kind: "observation bound",
+            name: "too many observation slots".into(),
+        })?;
+    let observation_slots = (0..slot_count)
         .map(|measurement_index| {
             identify_record(LogicalObservationSlotRecord {
                 specification: specification.id,
@@ -494,7 +527,7 @@ fn plan_specification(
             role,
         })?);
     }
-    for observation in &observation_slots {
+    for observation in observation_slots.iter().step_by(bound as usize) {
         let role = AttemptSlotRole::Measured {
             observation_slot: observation.id,
         };
@@ -558,6 +591,12 @@ fn observation_policy_record(
     ObservationPolicyRecord {
         name,
         kind: definition.kind,
+        profile: definition.profile.as_ref().map(|p| {
+            crate::canonical::CanonicalValue::try_from(
+                serde_json::to_value(&p.policy).expect("profile policy"),
+            )
+            .expect("validated profile")
+        }),
     }
 }
 

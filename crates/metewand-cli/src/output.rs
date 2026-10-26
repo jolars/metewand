@@ -237,7 +237,7 @@ impl CommandResult {
             return EXIT_RUN_FAILED;
         }
         if let Self::Run(report) = self
-            && report.summary.failed_attempts > 0
+            && (report.summary.failed_attempts > 0 || report.summary.censored_attempts > 0)
         {
             EXIT_RUN_FAILED
         } else {
@@ -315,6 +315,14 @@ fn render_status(report: &StatusReport) -> String {
         if slot.in_current_plan == Some(false) {
             writeln!(output, "    absent from the current logical plan").expect("string write");
         }
+    }
+    if report.summary.censored_attempts > 0 {
+        writeln!(
+            output,
+            "  {} censored attempts.",
+            report.summary.censored_attempts
+        )
+        .expect("string write");
     }
     for attempt in &report.attempts {
         writeln!(
@@ -602,6 +610,7 @@ impl PlanResult {
                             })
                             .collect();
                         PlanCandidate {
+                            profile:candidate.profile_policy.as_ref().and_then(|p|p.record.profile.as_ref()).map(|p|p.as_json().clone()),
                             applicability: needs_check.then(|| metewand_core::applicability::ApplicabilityDecisionRecord {
                                 candidate_id: candidate.candidate.id,
                                 outcome: metewand_core::applicability::ApplicabilityOutcome::Unchecked,
@@ -1072,6 +1081,8 @@ struct PlanExperiment {
 
 #[derive(Debug, Serialize)]
 struct PlanCandidate {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    profile: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     applicability: Option<metewand_core::applicability::ApplicabilityDecisionRecord>,
     id: String,
@@ -1607,6 +1618,7 @@ pub fn render_event(event: &RunEvent, format: OutputFormat) -> Result<String, se
                 attempt.attempt_id,
                 match attempt.status {
                     RunAttemptStatus::Accepted => "accepted",
+                    RunAttemptStatus::Censored => "censored",
                     RunAttemptStatus::Failed => "failed",
                     RunAttemptStatus::Superseded => "superseded",
                 }
@@ -1615,8 +1627,9 @@ pub fn render_event(event: &RunEvent, format: OutputFormat) -> Result<String, se
                 accepted_attempts,
                 failed_attempts,
                 superseded_attempts,
+                censored_attempts,
             } => format!(
-                "Finished: {accepted_attempts} accepted, {failed_attempts} failed, {superseded_attempts} superseded.\n"
+                "Finished: {accepted_attempts} accepted, {censored_attempts} censored, {failed_attempts} failed, {superseded_attempts} superseded.\n"
             ),
         }),
     }
@@ -1632,12 +1645,24 @@ fn render_run_report(report: &RunReport) -> String {
         report.output_directory
     );
     for attempt in &report.attempts {
+        for observation in &attempt.observations {
+            writeln!(
+                output,
+                "  observation {}: instrumented {} ns, scope {}; evaluator metrics {}",
+                observation.observation_id,
+                observation.profile.instrumented_time_ns,
+                observation.profile.instrumented_scope,
+                observation.metrics
+            )
+            .expect("string write");
+        }
         writeln!(
             output,
             "  attempt {}: {}",
             attempt.attempt_id,
             match attempt.status {
                 RunAttemptStatus::Accepted => "accepted",
+                RunAttemptStatus::Censored => "censored",
                 RunAttemptStatus::Failed => "failed",
                 RunAttemptStatus::Superseded => "superseded",
             }
@@ -1847,6 +1872,7 @@ fn implementation_capability(capability: ImplementationCapability) -> &'static s
     match capability {
         ImplementationCapability::OneShot => "one_shot",
         ImplementationCapability::Applicability => "applicability",
+        ImplementationCapability::BufferedProfile => "buffered_profile",
     }
 }
 

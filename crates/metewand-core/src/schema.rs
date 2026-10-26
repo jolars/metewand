@@ -264,6 +264,54 @@ impl SchemaCatalog {
         self.validators.contains_key(schema_path)
     }
 
+    /// Checks a named numeric metric through the catalog's offline references.
+    pub fn has_numeric_property(&self, path: &Path, name: &str) -> bool {
+        fn resolve<'a>(
+            catalog: &'a SchemaCatalog,
+            mut node: &'a Value,
+            mut root: &'a Value,
+        ) -> Option<(&'a Value, &'a Value)> {
+            for _ in 0..64 {
+                let Some(reference) = node.get("$ref").and_then(Value::as_str) else {
+                    return Some((node, root));
+                };
+                let (uri, fragment) = reference.split_once('#').unwrap_or((reference, ""));
+                if !uri.is_empty() {
+                    root = catalog
+                        .normalized
+                        .iter()
+                        .find(|(path, document)| {
+                            repository_uri(path) == uri
+                                || document.get("$id").and_then(Value::as_str) == Some(uri)
+                        })?
+                        .1;
+                }
+                node = if fragment.is_empty() {
+                    root
+                } else {
+                    root.pointer(fragment)?
+                };
+            }
+            None
+        }
+        let Some(root) = self.normalized.get(path) else {
+            return false;
+        };
+        let Some((object, root)) = resolve(self, root, root) else {
+            return false;
+        };
+        let Some(property) = object.get("properties").and_then(|p| p.get(name)) else {
+            return false;
+        };
+        let Some((property, _)) = resolve(self, property, root) else {
+            return false;
+        };
+        matches!(
+            property.get("type").and_then(Value::as_str),
+            Some("number" | "integer")
+        )
+    }
+
     /// Compares normalized declarations without attempting schema implication.
     ///
     /// Inline schemas can match reusable files by their contents. Two explicit

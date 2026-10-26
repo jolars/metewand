@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "metewand://schemas/v1/buffered-trace-point.schema.json",
+  "x-metewand-compatibility-version": 1,
+  "type": "object",
+  "properties": {
+    "check_index": {
+      "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
+    },
+    "work": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
+      }
+    },
+    "provisional_metrics": {
+      "type": "object"
+    },
+    "instrumented_time_ns": {
+      "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
+    },
+    "terminal": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "check_index",
+    "work",
+    "provisional_metrics",
+    "instrumented_time_ns",
+    "terminal"
+  ],
+  "additionalProperties": false
+}

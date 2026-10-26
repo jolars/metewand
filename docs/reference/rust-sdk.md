@@ -140,7 +140,8 @@ copies on return. Standard output and standard error remain available for
 logs. `serve_implementation_on` and `serve_evaluator_on` also accept explicit
 streams, including borrowed streams. There is no automatic stdin/stdout
 fallback. Handshakes report SDK name `metewand-rust` and the workspace package
-version. Implementations advertise only `one_shot`.
+version. Implementations advertise their supported one-shot, applicability,
+and buffered capabilities.
 
 Return `WorkerError::operation_failed(message)` for ordinary failures, or
 convert an existing `WorkerFailure` into `WorkerError` to preserve its stable
@@ -158,3 +159,18 @@ No compatibility version changes: these callbacks produce the existing wire
 messages and result and metrics envelopes. Focused tests cover native processes,
 canonical artifacts, callback timing, lifecycle failures, malformed requests,
 and independent evaluation through the public CLI.
+
+## Native buffered profiles
+
+Override `Implementation::supports_buffered_profile` and
+`execute_buffered(&mut self, trace: &mut BufferedTrace)`. Buffered-only workers
+return `false` from `supports_one_shot` and may use `type Output = ()` without
+implementing one-shot execution. The existing serving helpers dispatch the
+negotiated operation.
+
+`metewand_runtime::buffered` supplies `Progress`, `Decision`, and `BufferedTrace`.
+Use `record` for existing local metrics or `observe` for lazy measurements.
+Honor `Decision::Stop` before another solver update and call `finish` with the
+terminal state. Native artifact writers may use `adopt_buffer` instead.
+The [native example](https://github.com/jolars/metewand/tree/main/examples/buffered-profile)
+and [profile contract](buffered-profiles.md) document the complete flow.

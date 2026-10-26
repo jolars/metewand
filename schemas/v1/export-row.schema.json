@@ -114,7 +114,21 @@
             "partial",
             "unavailable"
           ]
-        }
+        },
+        "instrumented_time_ns": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "instrumented_total_time_ns": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "provisional_metric_name": {
+          "type": "string"
+        },
+        "provisional_metric_value": {}
       },
       "required": [
         "metric_name",

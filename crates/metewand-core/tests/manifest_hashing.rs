@@ -191,6 +191,7 @@ fn component_ids(manifest: &Manifest) -> Vec<String> {
         .get_key_value("final")
         .unwrap();
     let observation_policy_id = identify_record(ObservationPolicyRecord {
+        profile: None,
         name: name.clone(),
         kind: policy.kind,
     })

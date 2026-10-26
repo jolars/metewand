@@ -280,10 +280,13 @@ fn manifest_value(manifest: &Manifest) -> Value {
         (
             "observation_policies",
             named_map(&manifest.observation_policies, |policy| {
-                object([
-                    ("version", json!(policy.version)),
-                    ("kind", json!(observation_kind(policy.kind))),
-                ])
+                let mut value = policy
+                    .profile
+                    .as_ref()
+                    .map_or_else(|| json!({}), |p| p.declaration_value());
+                value["version"] = json!(policy.version);
+                value["kind"] = json!(observation_kind(policy.kind));
+                value
             }),
         ),
     ])
@@ -665,12 +668,14 @@ fn implementation_capability(capability: ImplementationCapability) -> &'static s
     match capability {
         ImplementationCapability::OneShot => "one_shot",
         ImplementationCapability::Applicability => "applicability",
+        ImplementationCapability::BufferedProfile => "buffered_profile",
     }
 }
 
 fn observation_kind(kind: ObservationKind) -> &'static str {
     match kind {
         ObservationKind::OneShot => "one_shot",
+        ObservationKind::Profile => "profile",
     }
 }
 

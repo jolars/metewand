@@ -35,6 +35,7 @@ pub(super) fn now() -> u64 {
 
 pub(super) struct AttemptExecution {
     store: RunStore,
+    profile_references: Vec<(String, String)>,
     owned: Arc<Mutex<OwnedAttempt>>,
     owner: String,
     stop: mpsc::Sender<()>,
@@ -95,6 +96,7 @@ impl AttemptExecution {
                 }
             })?;
         Ok(Some(Self {
+            profile_references: vec![],
             store,
             owned,
             owner,
@@ -198,6 +200,94 @@ impl AttemptExecution {
         ))
     }
 
+    pub fn publish_buffer(
+        &mut self,
+        directory: &std::path::Path,
+    ) -> Result<serde_json::Value, RunError> {
+        let owned = self.owned.lock().expect("lease owner lock").clone();
+        let published = self.store.publish_artifact(
+            &owned,
+            ArtifactKind::Other,
+            |path| copy_prepared(directory, path),
+            now,
+        )?;
+        self.profile_references
+            .push(("buffer".into(), published.artifact.id.clone()));
+        Ok(
+            serde_json::json!({"id":published.artifact.id,"directory":published.artifact.relative_path}),
+        )
+    }
+
+    pub fn publish_profile_observation(
+        &mut self,
+        result: &FixedDatasetResult,
+        request: PublicationRequest<'_>,
+    ) -> Result<
+        (
+            metewand_core::records::IdentifiedRecord<metewand_core::records::RunObservationRecord>,
+            String,
+        ),
+        RunError,
+    > {
+        let prepared = prepare_fixed_dataset(result, request)?;
+        let owned = self.owned.lock().expect("lease owner lock").clone();
+        let published = self.store.publish_artifact(
+            &owned,
+            ArtifactKind::Observation,
+            |path| copy_prepared(prepared.observation_files.path(), path),
+            now,
+        )?;
+        self.store.register_observation(
+            &owned,
+            &prepared.observation,
+            &published.artifact,
+            false,
+            now(),
+        )?;
+        self.profile_references
+            .push(("observation".into(), published.artifact.id));
+        Ok((prepared.observation, published.artifact.relative_path))
+    }
+
+    pub fn publish_buffered(&mut self, record: &mut RunAttemptRecord) -> Result<String, RunError> {
+        use metewand_core::records::ProfileAttemptStatus;
+        let RunAttemptOutcome::Buffered { status, .. } = &mut record.outcome else {
+            return Err(RunError::Unsupported("expected buffered outcome".into()));
+        };
+        if *status == ProfileAttemptStatus::Accepted {
+            let mut owned = self.owned.lock().expect("lease owner lock");
+            let current = now();
+            let finalization = self.store.begin_finalization(
+                &owned,
+                LeaseRequest {
+                    id: format!("finalization:{}", self.owner),
+                    owner_token: self.owner.clone(),
+                    expires_at_ns: current + LEASE_DURATION_NS,
+                },
+                current,
+            )?;
+            *owned = finalization.attempt;
+            if finalization.disposition == ClaimDisposition::Superseded {
+                *status = ProfileAttemptStatus::Superseded;
+            }
+        } else {
+            self.advance(AttemptPhase::Finalizing)?;
+        }
+        let owned = self.owned.lock().expect("lease owner lock").clone();
+        let document = attempt_document(record)
+            .map_err(io::Error::other)?
+            .to_canonical_bytes()?;
+        let published = self.store.publish_finalization(
+            &owned,
+            terminal(&record.outcome)?,
+            &self.profile_references,
+            |path| std::fs::write(path.join("attempt.json"), &document),
+            now,
+        )?;
+        self.finish_heartbeat()?;
+        Ok(published.artifact.relative_path)
+    }
+
     pub fn publish_failure(&mut self, record: &RunAttemptRecord) -> Result<String, RunError> {
         self.advance(AttemptPhase::Finalizing)?;
         let owned = self.owned.lock().expect("lease owner lock").clone();
@@ -237,6 +327,25 @@ impl Drop for AttemptExecution {
 
 fn terminal(outcome: &RunAttemptOutcome) -> Result<TerminalOutcome, RunError> {
     Ok(match outcome {
+        RunAttemptOutcome::Buffered {
+            status,
+            reason,
+            diagnostic,
+            ..
+        } => match status {
+            metewand_core::records::ProfileAttemptStatus::Accepted => TerminalOutcome::Accepted,
+            metewand_core::records::ProfileAttemptStatus::Censored => TerminalOutcome::Censored {
+                reason: reason.clone(),
+            },
+            metewand_core::records::ProfileAttemptStatus::Superseded => TerminalOutcome::Superseded,
+            metewand_core::records::ProfileAttemptStatus::Failed => TerminalOutcome::Failed {
+                code: diagnostic
+                    .as_ref()
+                    .map_or("buffered_failure", |d| d.code.as_str())
+                    .to_owned(),
+                details: CanonicalValue::try_from(serde_json::json!({"message":reason}))?,
+            },
+        },
         RunAttemptOutcome::Accepted { .. } => TerminalOutcome::Accepted,
         RunAttemptOutcome::Superseded { .. } => TerminalOutcome::Superseded,
         RunAttemptOutcome::Failed { diagnostic, .. } => TerminalOutcome::Failed {

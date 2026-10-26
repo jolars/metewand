@@ -69,14 +69,20 @@ fn seed(store: &RunStore, measurement: bool) {
          INSERT INTO resolved_runs VALUES ('run', 'logical', 'candidate', 'decision', 1, '{}');",
         )
         .unwrap();
+    let buffered = store
+        .connection
+        .pragma_query_value(None, "user_version", |r| r.get::<_, u32>(0))
+        .unwrap()
+        == 2;
     for index in [1, 2] {
         store
             .connection
             .execute(
-                "INSERT INTO attempt_slots VALUES (?1, ?1, 'run', 'one_shot', ?2, '{}')",
+                "INSERT INTO attempt_slots VALUES (?1, ?1, 'run', ?3, ?2, '{}')",
                 (
                     slot(index).to_string(),
                     if measurement { "measurement" } else { "warmup" },
+                    if buffered { "buffered" } else { "one_shot" },
                 ),
             )
             .unwrap();
@@ -108,20 +114,35 @@ fn observe(store: &mut RunStore, attempt: &OwnedAttempt, now: u64) -> String {
     let tx = store.connection.transaction().unwrap();
     tx.execute("INSERT INTO observations VALUES (?1, 'observation-slot', ?2, ?3, 1, 'reached', ?4, 'observation', '{}')",
         (&id, attempt.id().to_string(), slot(1).to_string(), &artifact.id)).unwrap();
-    tx.execute(
-        "INSERT OR IGNORE INTO selected_observations VALUES ('observation-slot', ?1, 1, ?2)",
-        (&id, now as i64),
-    )
-    .unwrap();
+    let buffered = tx
+        .pragma_query_value(None, "user_version", |r| r.get::<_, u32>(0))
+        .unwrap()
+        == 2;
+    if buffered {
+        tx.execute("INSERT OR IGNORE INTO observation_slots VALUES ('observation-slot-2','logical-2','run','{}')",[]).unwrap();
+        tx.execute("INSERT OR IGNORE INTO attempt_observation_slots VALUES (?1,'observation-slot-2','run')",[slot(1).to_string()]).unwrap();
+        tx.execute("INSERT INTO observations VALUES (?1,'observation-slot-2',?2,?3,1,'reached',?4,'observation','{}')",(format!("observation-2-{}",attempt.retry_index()),attempt.id().to_string(),slot(1).to_string(),&artifact.id)).unwrap();
+    } else {
+        tx.execute(
+            "INSERT OR IGNORE INTO selected_observations VALUES ('observation-slot', ?1, 1, ?2)",
+            (&id, now as i64),
+        )
+        .unwrap();
+    }
     tx.commit().unwrap();
     artifact.id
 }
 
 fn prepare(root: &Path, scenario: &str) {
-    if scenario == "initialize" {
+    if scenario.starts_with("initialize") {
         return;
     }
-    let mut store = RunStore::open(root).unwrap();
+    let mut store = if scenario.starts_with("buffered-") {
+        RunStore::open_buffered(root)
+    } else {
+        RunStore::open(root)
+    }
+    .unwrap();
     seed(&store, !scenario.starts_with("concurrent"));
     if !scenario.starts_with("recover-") {
         return;
@@ -171,6 +192,7 @@ fn prepare(root: &Path, scenario: &str) {
 }
 
 fn publish(store: &mut RunStore, scenario: &str) {
+    let scenario = scenario.strip_prefix("buffered-").unwrap_or(scenario);
     let mut attempt = reserve(store);
     if scenario == "accepted" {
         for (offset, phase) in [
@@ -256,9 +278,13 @@ fn crash_child() {
         .unwrap()
         .parse()
         .unwrap();
-    if scenario == "initialize" {
+    if scenario.starts_with("initialize") {
         arm(trace, target);
-        RunStore::open(Path::new(&root)).unwrap();
+        if scenario == "initialize-buffered" {
+            RunStore::open_buffered(Path::new(&root)).unwrap();
+        } else {
+            RunStore::open(Path::new(&root)).unwrap();
+        }
         return;
     }
     let mut store = RunStore::open(Path::new(&root)).unwrap();
@@ -403,14 +429,33 @@ fn assert_terminal_artifacts(root: &Path, db: &Connection, successes: &BTreeSet<
 
 fn audit(root: &Path, scenario: &str) {
     let mut store = RunStore::open(root).unwrap();
-    if scenario == "initialize" {
+    if scenario.starts_with("initialize") {
         seed(&store, true);
     }
     let successes = published_successes(root);
     let before_selections = selections(&store.connection);
     let accepted_before = count_where(&store.connection, "state = 'accepted'");
     store.recover(|| 200).unwrap();
-    assert_eq!(selections(&store.connection), before_selections);
+    if store
+        .connection
+        .pragma_query_value(None, "user_version", |r| r.get::<_, u32>(0))
+        .unwrap()
+        == 2
+    {
+        let after = selections(&store.connection);
+        assert!(
+            before_selections
+                .iter()
+                .all(|selection| after.contains(selection))
+        );
+        let invalid:i64=store.connection.query_row("SELECT count(*) FROM selected_observations s JOIN observations o ON o.id=s.observation_id JOIN attempts a ON a.id=o.producing_attempt_id WHERE a.state!='accepted'",[],|r|r.get(0)).unwrap();
+        assert_eq!(
+            invalid, 0,
+            "buffered selection must commit with its accepted attempt"
+        );
+    } else {
+        assert_eq!(selections(&store.connection), before_selections);
+    }
     let accepted = count_where(&store.connection, "state = 'accepted'");
     assert!(accepted >= accepted_before);
     assert!(accepted <= 1);
@@ -543,10 +588,17 @@ fn campaign(scenario: &str) -> BTreeSet<String> {
     let (output, boundaries) = run(baseline.path(), scenario, 0);
     assert!(output.status.success(), "{scenario}: {output:?}");
     assert!(!boundaries.is_empty(), "no crash points in {scenario}");
-    if scenario == "initialize" {
+    if scenario.starts_with("initialize") {
+        let version = if scenario == "initialize-buffered" {
+            2
+        } else {
+            1
+        };
         for phase in ["before", "after"] {
             assert!(
-                boundaries.contains(&format!("database.{phase} PRAGMA user_version = 1;")),
+                boundaries.contains(&format!(
+                    "database.{phase} PRAGMA user_version = {version};"
+                )),
                 "leading SQL comments must not hide the schema version write"
             );
         }
@@ -614,6 +666,9 @@ fn campaign_child() {
 fn every_durability_boundary_survives_process_death_and_resume() {
     let scenarios = [
         "initialize",
+        "initialize-buffered",
+        "buffered-accepted",
+        "buffered-censored",
         "accepted",
         "censored",
         "superseded",
@@ -806,5 +861,27 @@ fn concurrent_processes_converge_even_when_a_publisher_dies_after_rename() {
                 1
             );
         }
+    }
+}
+
+#[test]
+fn buffered_selection_commits_with_the_terminal_attempt_and_survives_recovery() {
+    let fixture = tempfile::tempdir().unwrap();
+    prepare(fixture.path(), "buffered-accepted");
+    let baseline = tempfile::tempdir().unwrap();
+    copy_fixture(fixture.path(), baseline.path());
+    let (output, boundaries) = run(baseline.path(), "buffered-accepted", 0);
+    assert!(output.status.success(), "{output:?}");
+    for boundary in [
+        "finalization.outcome.after",
+        "finalization.projection.before",
+        "finalization.after",
+    ] {
+        let target = boundaries.iter().position(|p| p == boundary).unwrap() + 1;
+        let root = tempfile::tempdir().unwrap();
+        copy_fixture(fixture.path(), root.path());
+        let (output, _) = run(root.path(), "buffered-accepted", target);
+        assert_eq!(output.status.code(), Some(86));
+        audit(root.path(), "buffered-accepted");
     }
 }

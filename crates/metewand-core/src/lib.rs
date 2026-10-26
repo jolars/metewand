@@ -17,6 +17,7 @@ mod parameter_source;
 pub mod parameters;
 pub mod planning;
 pub mod problem_contract;
+pub mod profile;
 pub mod public_schemas;
 pub mod records;
 pub mod run_documents;

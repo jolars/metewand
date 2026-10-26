@@ -18,7 +18,7 @@
     },
     "capability": {
       "type": "string",
-      "enum": ["one_shot", "applicability", "fresh_sequence", "streaming_profile", "problem_semantics"]
+      "enum": ["one_shot", "applicability", "fresh_sequence", "streaming_profile", "problem_semantics", "buffered_profile"]
     },
     "path": {
       "type": "string",
@@ -54,7 +54,7 @@
       "properties": {
         "code": {
           "type": "string",
-          "enum": ["invalid_request", "unsupported_operation", "operation_failed", "internal_error"]
+          "enum": ["invalid_request", "unsupported_operation", "operation_failed", "internal_error", "resource_limit"]
         },
         "message": { "type": "string", "minLength": 1 },
         "details": { "type": "object" }
@@ -325,6 +325,50 @@
       },
       "required": ["id", "ok", "error"],
       "additionalProperties": false
+    },
+    "execute_buffered_request": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/request_id"
+        },
+        "method": {
+          "const": "execute_buffered"
+        },
+        "result_root": {
+          "$ref": "#/$defs/path"
+        },
+        "profile": {
+          "$ref": "profile-observation-policy.schema.json#/$defs/selected"
+        }
+      },
+      "required": [
+        "id",
+        "method",
+        "result_root",
+        "profile"
+      ],
+      "additionalProperties": false
+    },
+    "execute_buffered_response": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/request_id"
+        },
+        "ok": {
+          "const": true
+        },
+        "buffer": {
+          "$ref": "#/$defs/manifest_reference"
+        }
+      },
+      "required": [
+        "id",
+        "ok",
+        "buffer"
+      ],
+      "additionalProperties": false
     }
   },
   "oneOf": [
@@ -342,6 +386,12 @@
     { "$ref": "#/$defs/execute_response" },
     { "$ref": "#/$defs/check_applicability_request" },
     { "$ref": "#/$defs/check_applicability_response" },
-    { "$ref": "#/$defs/failure_response" }
+    { "$ref": "#/$defs/failure_response" },
+    {
+      "$ref": "#/$defs/execute_buffered_request"
+    },
+    {
+      "$ref": "#/$defs/execute_buffered_response"
+    }
   ]
 }

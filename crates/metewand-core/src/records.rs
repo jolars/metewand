@@ -412,8 +412,10 @@ pub struct ExecutionPolicyRecord {
 }
 
 /// An observation policy after version-1 defaults have been applied.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ObservationPolicyRecord {
+    /// Scientific fields and the selected implementation binding.
+    pub profile: Option<CanonicalValue>,
     /// Manifest-local policy name.
     pub name: Name,
     /// Version-1 observation kind.
@@ -690,6 +692,7 @@ pub struct ProvenanceRecord {
 /// An independently finalized, evaluator-accepted one-shot result.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RunObservationRecord {
+    pub profile: Option<ProfileObservationRecord>,
     /// Resolved observation slot satisfied by this result.
     pub slot: RecordId<ResolvedObservationSlotRecord>,
     /// Attempt that produced this observation.
@@ -706,6 +709,30 @@ pub struct RunObservationRecord {
     pub provenance: ProvenanceRecord,
 }
 
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProfileObservationRecord {
+    pub delivery: crate::profile::BufferedDelivery,
+    pub measurement_basis: crate::profile::InstrumentedBasis,
+    pub instrumented_scope: String,
+    pub clock: String,
+    pub instrumented_time_ns: u64,
+    pub instrumented_total_time_ns: u64,
+    pub trace_index: u64,
+    pub capture_ordinal: u64,
+    pub thresholds: Vec<f64>,
+    pub provisional_metrics: serde_json::Value,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProfileAttemptStatus {
+    Accepted,
+    Censored,
+    Superseded,
+    Failed,
+}
+
 /// Structured evidence for a failed run attempt.
 #[derive(Clone, Debug, PartialEq)]
 pub struct AttemptDiagnostic {
@@ -720,6 +747,12 @@ pub struct AttemptDiagnostic {
 /// Terminal outcome of one one-shot run attempt.
 #[derive(Clone, Debug, PartialEq)]
 pub enum RunAttemptOutcome {
+    Buffered {
+        status: ProfileAttemptStatus,
+        observations: Vec<RecordId<RunObservationRecord>>,
+        reason: String,
+        diagnostic: Option<AttemptDiagnostic>,
+    },
     /// The attempt durably published its one required observation.
     Accepted {
         /// Exact observation produced by this one-shot attempt.

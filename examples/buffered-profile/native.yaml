@@ -1,0 +1,55 @@
+version: 1
+name: native-buffered-profile
+problems:
+  square:
+    contract: problem.yaml
+    evaluator:
+      runner: python
+      entrypoint: evaluator.py
+      sources: [evaluator.py, "metewand/*.py"]
+implementations:
+  native:
+    runner: command
+    program: ./native-worker
+    sources: [native-worker]
+    problem-contracts: [square]
+    capabilities: [buffered_profile]
+    parameters:
+      maximum_updates: { type: integer, minimum: 0, maximum: 1000, default: 20 }
+      local_bias: { type: number, default: 0 }
+experiments:
+  - name: target
+    problem: square
+    implementations: [native]
+    execution-policy: local
+    observation-policy: accuracy
+    seed: 7
+execution-policies:
+  local:
+    timing-scope: prepare_and_execute
+    primary-time: timed_wall_time
+    timeout: 5 s
+observation-policies:
+  accuracy:
+    kind: profile
+    metric: gap
+    direction: at_most
+    threshold: 0.0001
+    record-thresholds: [0.5, 0.05, 0.0001]
+    max-observations: 3
+    max-trace-points: 100
+    max-buffer-bytes: 65536
+    terminal-reserve-bytes: 8192
+    max-active-time: 1 s
+    implementations:
+      native:
+        delivery: buffered_profile
+        measurement-basis: instrumented
+        instrumented-scope: complete_solver_call
+        instrumentation-schema:
+          type: object
+          properties: { recording: { const: direct } }
+          required: [recording]
+          additionalProperties: false
+        instrumentation: { recording: direct }
+        check-schedule: { every: 1 }

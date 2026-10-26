@@ -13,12 +13,15 @@ pub enum ExportRecordType {
     Applicability,
     Attempt,
     Observation,
+    Trace,
 }
 
 /// Guarantees and measurement boundaries that must stay visible in comparisons.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CompatibilityClass {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile: Option<Value>,
     pub execution_semantics_version: Option<u32>,
     pub timing_scope: Option<String>,
     pub primary_time: Option<String>,
@@ -37,6 +40,8 @@ pub struct CompatibilityClass {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ExportRecord {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile: Option<Value>,
     pub schema_version: u32,
     pub record_type: ExportRecordType,
     pub id: String,
@@ -70,6 +75,14 @@ pub struct ExportRecord {
 /// One metric coordinate, or a null coordinate for an entity without metrics.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct TidyRow {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub instrumented_time_ns: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub instrumented_total_time_ns: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provisional_metric_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provisional_metric_value: Option<Value>,
     #[serde(flatten)]
     pub record: ExportRecord,
     /// RFC 6901 pointer into evaluator-owned metric data.
@@ -91,7 +104,17 @@ pub struct TidyRow {
 impl ExportRecord {
     #[must_use]
     pub fn tidy_rows(&self) -> Vec<TidyRow> {
-        let values = metric_values(&self.metrics);
+        let diagnostic = self.record_type == ExportRecordType::Trace;
+        let values = if diagnostic {
+            metric_values(
+                &self
+                    .profile
+                    .as_ref()
+                    .map_or(Value::Null, |p| p["provisional_metrics"].clone()),
+            )
+        } else {
+            metric_values(&self.metrics)
+        };
         let values = if values.is_empty() {
             vec![(None, Value::Null)]
         } else {
@@ -129,10 +152,32 @@ impl ExportRecord {
                 let (timed_wall_time_ns, timed_wall_time_status) = quantity("timed_wall_time_ns");
                 let (cpu_time_ns, cpu_time_status) = quantity("cpu_time_ns");
                 let (peak_rss_bytes, peak_rss_status) = quantity("peak_rss_bytes");
+                let profile = self.profile.as_ref();
+                let provisional = metric_name
+                    .as_ref()
+                    .and_then(|name| profile.and_then(|p| p["provisional_metrics"].pointer(name)))
+                    .cloned();
                 TidyRow {
+                    instrumented_time_ns: profile.and_then(|p| p["instrumented_time_ns"].as_u64()),
+                    instrumented_total_time_ns: profile
+                        .and_then(|p| p["instrumented_total_time_ns"].as_u64()),
+                    provisional_metric_name: if diagnostic {
+                        metric_name.clone()
+                    } else {
+                        None
+                    },
+                    provisional_metric_value: if diagnostic {
+                        Some(metric_value.clone())
+                    } else {
+                        provisional
+                    },
                     record,
-                    metric_name,
-                    metric_value,
+                    metric_name: if diagnostic { None } else { metric_name },
+                    metric_value: if diagnostic {
+                        Value::Null
+                    } else {
+                        metric_value
+                    },
                     metric_unit: None,
                     metric_direction: None,
                     timed_wall_time_ns,

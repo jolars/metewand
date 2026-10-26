@@ -1,18 +1,97 @@
 use std::str::FromStr;
 
 use metewand_protocol::{
-    Acknowledgement, Capability, EvaluateRequest, ExecuteRequest, ExecuteResponse, HandshakeError,
-    HelloRequest, HelloResponse, MaterializeRequest, MaterializeResponse, MessageEncodeError,
-    OperationResponse, PrepareRequest, RequestId, RequestTracker, RequestTrackerError,
-    ResetRequest, SdkMetadata, ShutdownRequest, WorkerFailure, WorkerFailureCode,
-    WorkerFailureResponse, WorkerIdentity, WorkerRole, decode_message, decode_operation_response,
-    encode_message, framing::FrameReader, framing::MAX_LINE_BYTES, negotiate_protocol,
-    validate_hello_response,
+    Acknowledgement, Capability, EvaluateRequest, ExecuteBufferedRequest, ExecuteBufferedResponse,
+    ExecuteRequest, ExecuteResponse, HandshakeError, HelloRequest, HelloResponse,
+    MaterializeRequest, MaterializeResponse, MessageEncodeError, OperationResponse, PrepareRequest,
+    RequestId, RequestTracker, RequestTrackerError, ResetRequest, SdkMetadata, ShutdownRequest,
+    WorkerFailure, WorkerFailureCode, WorkerFailureResponse, WorkerIdentity, WorkerRole,
+    decode_message, decode_operation_response, encode_message, framing::FrameReader,
+    framing::MAX_LINE_BYTES, negotiate_protocol, validate_hello_response,
 };
 use serde_json::json;
 
 const WORKER_ID: &str =
     "mw1-resolved-worker-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+#[test]
+fn buffered_delivery_has_stable_frames_and_strict_envelopes() {
+    let id: RequestId = "1".parse().unwrap();
+    let request = ExecuteBufferedRequest::new(
+        id.clone(),
+        "/private/results",
+        json!({"instrumentation":{"observer":"gap"}}),
+    );
+    assert_eq!(
+        encode_message(&request).unwrap(),
+        b"{\"id\":\"1\",\"method\":\"execute_buffered\",\"profile\":{\"instrumentation\":{\"observer\":\"gap\"}},\"result_root\":\"/private/results\"}\n"
+    );
+    let value = serde_json::to_value(&request).unwrap();
+    assert_eq!(
+        decode_message::<ExecuteBufferedRequest>(value.clone()).unwrap(),
+        request
+    );
+    for (field, invalid) in [
+        ("method", json!("execute")),
+        ("result_root", json!("")),
+        ("profile", json!([])),
+        ("unknown", json!(true)),
+    ] {
+        let mut invalid_request = value.clone();
+        invalid_request[field] = invalid;
+        assert!(decode_message::<ExecuteBufferedRequest>(invalid_request).is_err());
+    }
+    let response = ExecuteBufferedResponse::new(id, "buffer.json");
+    assert_eq!(
+        encode_message(&response).unwrap(),
+        b"{\"buffer\":{\"manifest\":\"buffer.json\"},\"id\":\"1\",\"ok\":true}\n"
+    );
+    let value = serde_json::to_value(&response).unwrap();
+    assert_eq!(
+        decode_message::<ExecuteBufferedResponse>(value.clone()).unwrap(),
+        response
+    );
+    for (field, invalid) in [
+        ("ok", json!(false)),
+        ("buffer", json!({"manifest":""})),
+        ("buffer", json!({"manifest":"buffer.json", "complete":true})),
+        ("unknown", json!(true)),
+    ] {
+        let mut invalid_response = value.clone();
+        invalid_response[field] = invalid;
+        assert!(decode_message::<ExecuteBufferedResponse>(invalid_response).is_err());
+    }
+}
+
+#[test]
+fn buffered_capability_and_resource_failure_are_available_in_version_one() {
+    let hello = HelloRequest::new(
+        "0".parse().unwrap(),
+        WorkerRole::Implementation,
+        WORKER_ID.parse().unwrap(),
+    );
+    let response = HelloResponse::new(
+        "0".parse().unwrap(),
+        WORKER_ID.parse().unwrap(),
+        None,
+        [Capability::BufferedProfile],
+    );
+    assert!(validate_hello_response(&hello, &response, &[Capability::BufferedProfile]).is_ok());
+    assert!(matches!(
+        validate_hello_response(&hello, &response, &[Capability::OneShot]),
+        Err(HandshakeError::MissingCapability { .. })
+    ));
+    let failure = json!({"id":"1", "ok":false, "error":{
+        "code":"resource_limit", "message":"Terminal snapshot exceeds capacity."
+    }});
+    assert_eq!(
+        decode_message::<WorkerFailureResponse>(failure)
+            .unwrap()
+            .error()
+            .code(),
+        WorkerFailureCode::ResourceLimit
+    );
+}
 
 #[test]
 fn scientific_rules_extend_only_negotiated_evaluator_requests() {
@@ -454,6 +533,7 @@ fn every_version_one_role_and_capability_has_a_stable_spelling() {
         serde_json::to_value([
             Capability::OneShot,
             Capability::Applicability,
+            Capability::BufferedProfile,
             Capability::FreshSequence,
             Capability::StreamingProfile,
         ])
@@ -461,6 +541,7 @@ fn every_version_one_role_and_capability_has_a_stable_spelling() {
         json!([
             "one_shot",
             "applicability",
+            "buffered_profile",
             "fresh_sequence",
             "streaming_profile"
         ])

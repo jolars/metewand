@@ -232,6 +232,12 @@ pub(crate) fn prepare_fixed_dataset(
     let result_digest = hash_local_tree(&result_copy)?;
     let metrics_digest = sha256(&result.metrics_bytes);
     let observation = identify_record(RunObservationRecord {
+        profile: result
+            .execution_provenance
+            .get("profile_observation")
+            .map(|v| serde_json::from_value(v.clone()))
+            .transpose()
+            .map_err(|_| PublicationError::InvalidProvenance)?,
         slot: request.observation_slot,
         producing_attempt: attempt_id,
         result: ArtifactReference {

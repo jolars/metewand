@@ -1,6 +1,6 @@
 # Python worker helpers
 
-The [Python SDK](https://github.com/jolars/metewand/tree/main/sdk/python) supports the existing version-1 one-shot worker
+The [Python SDK](https://github.com/jolars/metewand/tree/main/sdk/python) supports version-1 one-shot and buffered worker
 protocol. It requires Python 3.11 or later and uses only the standard library at
 runtime. Install it into the worker's selected environment, or include its
 `metewand` package in a declared source bundle as the [runnable
@@ -178,7 +178,8 @@ standard error remain available for logs; there is no automatic stdin/stdout
 fallback.
 
 The handshake echoes the supplied resolved worker identity and reports
-`metewand-python` version `0.1.0`. Implementations advertise only `one_shot`;
+`metewand-python` version `0.1.0`. One-shot implementations advertise `one_shot`; buffered implementations advertise
+`buffered_profile`;
 materializers and evaluators advertise no implementation capabilities. The SDK
 rejects unsupported protocol offers, wrong roles, unknown fields, invalid seeds,
 and operations before negotiation. Messages are canonical JSON Lines with the
@@ -225,3 +226,19 @@ PYTHONPATH=sdk/python/src python3 -m unittest discover -s sdk/python/tests -v
 cargo test -p metewand-runtime --test python_sdk --locked
 cargo test -p metewand-cli --test python_sdk --locked
 ```
+
+## Buffered implementations
+
+Subclass `BufferedImplementation`, implement the existing `prepare` callback,
+and implement `execute_buffered(self, budget, trace)`. Serve it with
+`serve_implementation`. A one-shot implementation can also define
+`execute_buffered` to advertise both capabilities.
+
+`BufferedTrace.observe(progress, measure, snapshot)` returns a `Decision` whose
+`stop` property and `reason` describe the local policy decision. `record`
+accepts existing measurements. Both freeze lazily selected JSON snapshots and
+require `finish` before returning. `trace.directory` and `adopt_buffer` support
+native solvers that collect the equivalent artifacts without Python crossings.
+See [buffered profiles](buffered-profiles.md) and the
+[example](https://github.com/jolars/metewand/tree/main/examples/buffered-profile)
+for the full policy, clock, terminal capacity, and independent evaluation rules.

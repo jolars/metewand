@@ -109,6 +109,9 @@
             "declared",
             "unavailable"
           ]
+        },
+        "profile": {
+          "type": "object"
         }
       },
       "required": [
@@ -136,7 +139,8 @@
           "enum": [
             "applicability",
             "attempt",
-            "observation"
+            "observation",
+            "trace"
           ]
         },
         "id": {
@@ -345,6 +349,9 @@
               "type": "null"
             }
           ]
+        },
+        "profile": {
+          "type": "object"
         }
       },
       "required": [

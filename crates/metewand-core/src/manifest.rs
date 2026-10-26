@@ -54,6 +54,13 @@ pub fn parse_manifest(source_path: &Path, source: &str) -> Result<Manifest, Mani
             schema.set_owner(source_path);
         }
     }
+    for policy in manifest.observation_policies.values_mut() {
+        if let Some(profile) = &mut policy.profile {
+            for binding in profile.implementations.values_mut() {
+                binding.instrumentation_schema.set_owner(source_path);
+            }
+        }
+    }
     for (name, problem) in &mut manifest.problems {
         if let ContractDeclaration::Inline(contract) = &mut problem.contract {
             contract.set_schema_owner(source_path);
@@ -576,29 +583,83 @@ pub enum Enforcement {
     Required,
 }
 
-/// The version-1 one-shot observation policy.
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+/// A one-shot or bounded profile observation policy.
+#[derive(Debug)]
 pub struct ObservationPolicyDefinition {
-    /// Observation-policy compatibility version.
-    #[serde(default = "version_one", deserialize_with = "deserialize_version_one")]
     pub version: u32,
-    /// Version-1 observation kind.
-    #[serde(deserialize_with = "deserialize_one_shot_kind")]
     pub kind: ObservationKind,
+    pub profile: Option<crate::profile::ProfileDefinition>,
 }
 
-/// A supported observation-policy kind.
+impl<'de> Deserialize<'de> for ObservationPolicyDefinition {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let mut value = serde_json::Value::deserialize(deserializer)?;
+        let object = value
+            .as_object_mut()
+            .ok_or_else(|| de::Error::custom("observation policy must be an object"))?;
+        let version = object.remove("version").unwrap_or(serde_json::json!(1));
+        if version != serde_json::json!(1) {
+            return Err(de::Error::custom("expected observation policy version 1"));
+        }
+        let kind = object
+            .remove("kind")
+            .ok_or_else(|| de::Error::missing_field("kind"))?;
+        match kind.as_str() {
+            Some("one_shot") if object.is_empty() => Ok(Self {
+                version: 1,
+                kind: ObservationKind::OneShot,
+                profile: None,
+            }),
+            Some("profile") => {
+                let bindings = object
+                    .remove("implementations")
+                    .ok_or_else(|| de::Error::missing_field("implementations"))?;
+                let implementations: BTreeMap<Name, crate::profile::BufferedBinding> =
+                    serde_json::from_value(bindings).map_err(de::Error::custom)?;
+                let policy: crate::profile::ProfilePolicy =
+                    serde_json::from_value(value).map_err(de::Error::custom)?;
+                policy.validate().map_err(de::Error::custom)?;
+                if implementations.is_empty() {
+                    return Err(de::Error::custom("profile implementations cannot be empty"));
+                }
+                for binding in implementations.values() {
+                    if binding.instrumented_scope.is_empty()
+                        || !binding.instrumentation.is_object()
+                        || binding.check_schedule.every == 0
+                        || binding.check_schedule.every > crate::canonical::MAX_SAFE_INTEGER
+                        || binding.check_schedule.start > crate::canonical::MAX_SAFE_INTEGER
+                    {
+                        return Err(de::Error::custom(
+                            "buffered binding requires a scope, an instrumentation object, and a positive safe check interval",
+                        ));
+                    }
+                }
+                Ok(Self {
+                    version: 1,
+                    kind: ObservationKind::Profile,
+                    profile: Some(crate::profile::ProfileDefinition {
+                        policy,
+                        implementations,
+                    }),
+                })
+            }
+            _ => Err(de::Error::custom(
+                "expected one_shot without profile fields, or profile with buffered bindings",
+            )),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ObservationKind {
-    /// Produce one final result without a scientific budget.
     OneShot,
+    Profile,
 }
-
 impl fmt::Display for ObservationKind {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(match self {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
             Self::OneShot => "one_shot",
+            Self::Profile => "profile",
         })
     }
 }
@@ -708,6 +769,8 @@ pub enum ImplementationCapability {
     OneShot,
     /// Checks configuration-dependent support before measurement.
     Applicability,
+    /// Produces a bounded local trace and selected snapshots.
+    BufferedProfile,
 }
 
 /// A pinned remote input to a dataset materializer.
@@ -1187,10 +1250,13 @@ impl<'de> Deserialize<'de> for ImplementationDefinition {
                 .map_err(de::Error::custom)?;
         ensure_nonempty_unique(&raw.problem_contracts, "`problem-contracts`")
             .map_err(de::Error::custom)?;
-        if !raw
+        if !(raw
             .capabilities
             .contains(&ImplementationCapability::OneShot)
-            || raw.capabilities.len() > 2
+            || raw
+                .capabilities
+                .contains(&ImplementationCapability::BufferedProfile))
+            || raw.capabilities.len() > 3
             || raw
                 .capabilities
                 .iter()
@@ -1198,7 +1264,7 @@ impl<'de> Deserialize<'de> for ImplementationDefinition {
                 .any(|(i, c)| raw.capabilities[..i].contains(c))
         {
             return Err(de::Error::custom(
-                "version 1 requires `one_shot` with optional `applicability`, without duplicates",
+                "requires `one_shot` or `buffered_profile`, with optional `applicability`, without duplicates",
             ));
         }
         let worker = build_worker(
@@ -1357,20 +1423,6 @@ where
     } else {
         Err(de::Error::custom(format_args!(
             "expected version 1, found version {version}"
-        )))
-    }
-}
-
-fn deserialize_one_shot_kind<'de, D>(deserializer: D) -> Result<ObservationKind, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let kind = String::deserialize(deserializer)?;
-    if kind == "one_shot" {
-        Ok(ObservationKind::OneShot)
-    } else {
-        Err(de::Error::custom(format_args!(
-            "version 1 supports only the `one_shot` observation kind, found {kind:?}"
         )))
     }
 }

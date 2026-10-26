@@ -1,6 +1,7 @@
 //! Manifest-driven execution of the trusted local Gate-1 vertical path.
 
 mod attempt;
+mod buffered;
 mod check;
 
 pub use check::{
@@ -187,7 +188,11 @@ pub fn run_repository_with_options(
             .create(&output_directory)?;
         fs::set_permissions(&output_directory, fs::Permissions::from_mode(0o700))?;
         fs::File::open(output_directory.parent().expect("destination has a parent"))?.sync_all()?;
-        store = Some(RunStore::open(&output_directory)?);
+        store = Some(if resolved.candidates.iter().any(|c| c.profile.is_some()) {
+            RunStore::open_buffered(&output_directory)?
+        } else {
+            RunStore::open(&output_directory)?
+        });
     }
     let mut store = store.expect("new or resumed store");
     if options.resume {
@@ -210,12 +215,21 @@ pub fn run_repository_with_options(
                 .artifact
                 .add_root(&format!("run:{}", output_directory.display()))?;
         }
-        store.register_one_shot(
-            slot.candidate,
-            &slot.specification,
-            &slot.attempt_slot,
-            &slot.observation_slot,
-        )?;
+        if resolved.candidates[candidate].profile.is_some() {
+            store.register_buffered(
+                slot.candidate,
+                &slot.specification,
+                &slot.attempt_slot,
+                &slot.observation_slots,
+            )?;
+        } else {
+            store.register_one_shot(
+                slot.candidate,
+                &slot.specification,
+                &slot.attempt_slot,
+                &slot.observation_slot,
+            )?;
+        }
         let progress = store.slot_progress(slot.attempt_slot.id)?;
         if progress.accepted || (progress.attempts > 0 && !options.retry) {
             continue;
@@ -290,6 +304,10 @@ pub fn run_repository_with_options(
             attempts.push(attempt);
         }
     }
+    let censored_attempts = attempts
+        .iter()
+        .filter(|a| a.status == RunAttemptStatus::Censored)
+        .count();
     let accepted_attempts = attempts
         .iter()
         .filter(|attempt| attempt.status == RunAttemptStatus::Accepted)
@@ -306,6 +324,7 @@ pub fn run_repository_with_options(
         &mut events,
         &mut event_sink,
         RunEventKind::RunFinished {
+            censored_attempts,
             accepted_attempts,
             failed_attempts,
             superseded_attempts,
@@ -322,6 +341,7 @@ pub fn run_repository_with_options(
         attempts,
         events,
         summary: RunSummary {
+            censored_attempts,
             attempt_slots,
             accepted_attempts,
             failed_attempts,
@@ -398,6 +418,16 @@ fn execute(
     worker: &mut crate::worker_reuse::ReusableWorker,
     execution: &mut AttemptExecution,
 ) -> Result<RunAttemptOutput, RunError> {
+    if candidate.profile.is_some() {
+        return buffered::execute(
+            repository,
+            candidate,
+            measurement,
+            private_root,
+            worker,
+            execution,
+        );
+    }
     execution.advance(AttemptPhase::Materializing)?;
     let started_at = SystemTime::now();
     let mut measurements = ExecutionMeasurements {
@@ -619,6 +649,7 @@ fn execute(
         },
     )?;
     let (status, diagnostic) = match &published.attempt.record.outcome {
+        RunAttemptOutcome::Buffered { .. } => unreachable!("one-shot publisher"),
         RunAttemptOutcome::Accepted { .. } => (RunAttemptStatus::Accepted, None),
         RunAttemptOutcome::Superseded { .. } => (RunAttemptStatus::Superseded, None),
         RunAttemptOutcome::Failed { diagnostic, .. } => (
@@ -630,6 +661,7 @@ fn execute(
         ),
     };
     Ok(RunAttemptOutput {
+        observations: vec![],
         logical_slot_id: measurement.logical_slot,
         resolved_slot_id: measurement.attempt_slot.id,
         attempt_id: published.attempt.id,
@@ -687,6 +719,7 @@ fn failed_attempt(
     let attempt = metewand_core::identity::identify_record(record)?;
     let attempt_directory = execution.publish_failure(&attempt.record)?;
     Ok(RunAttemptOutput {
+        observations: vec![],
         logical_slot_id: measurement.logical_slot,
         resolved_slot_id: measurement.attempt_slot.id,
         attempt_id: attempt.id,

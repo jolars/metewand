@@ -153,6 +153,7 @@ fn dataset_free_contracts(manifest: &Manifest) -> BTreeMap<Name, ProblemContract
 
 fn catalog() -> LogicalPlanningCatalog {
     LogicalPlanningCatalog {
+        schema_identities: Default::default(),
         dataset_definitions: BTreeMap::from([(
             DatasetConfigurationDefinition::Named(name("fixed")),
             id::<DatasetDefinitionRecord>(1),

@@ -44,7 +44,14 @@
       "type": "object",
       "propertyNames": { "$ref": "common.schema.json#/$defs/name" },
       "additionalProperties": {
-        "$ref": "one-shot-observation-policy.schema.json"
+        "oneOf": [
+          {
+            "$ref": "one-shot-observation-policy.schema.json"
+          },
+          {
+            "$ref": "profile-observation-policy.schema.json"
+          }
+        ]
       }
     }
   },
@@ -223,8 +230,11 @@
         "parameter-defaults": { "type": "object" },
         "capabilities": {
           "type": "array",
-          "items": {"enum": ["one_shot", "applicability"]},
-          "contains": {"const": "one_shot"},
+          "items": {"enum": ["one_shot", "applicability", "buffered_profile"]},
+          "contains": {"enum": [
+  "one_shot",
+  "buffered_profile"
+]},
           "uniqueItems": true
         }
       },

@@ -27,7 +27,7 @@ pub fn observation_document(
     if record.timing.primary_time != PrimaryTime::TimedWallTime {
         return Err(RunDocumentError::UnsupportedPrimaryTime);
     }
-    Ok(CanonicalValue::try_from(json!({
+    let mut value = json!({
         "schema_version": PUBLIC_SCHEMA_VERSION,
         "id": record_id(record)?,
         "slot_id": record.slot,
@@ -48,7 +48,11 @@ pub fn observation_document(
             CompletionStatus::NotReached => "not_reached",
         }},
         "provenance": provenance(&record.provenance),
-    }))?)
+    });
+    if let Some(profile) = &record.profile {
+        value["profile"] = serde_json::to_value(profile).expect("profile evidence");
+    }
+    Ok(CanonicalValue::try_from(value)?)
 }
 
 /// Renders the versioned public terminal attempt envelope.
@@ -57,7 +61,21 @@ pub fn observation_document(
 ///
 /// Rejects unsupported timestamps and values outside canonical JSON.
 pub fn attempt_document(record: &RunAttemptRecord) -> Result<CanonicalValue, RunDocumentError> {
+    if let RunAttemptOutcome::Buffered {
+        status,
+        observations,
+        reason,
+        diagnostic,
+    } = &record.outcome
+    {
+        return Ok(CanonicalValue::try_from(
+            json!({"schema_version":PUBLIC_SCHEMA_VERSION,"id":record_id(record)?,"slot_id":record.slot,"retry_index":record.retry_index,
+            "outcome":{"kind":status,"reason":reason,"diagnostic":diagnostic.as_ref().map(|d|json!({"code":d.code,"message":d.message,"details":d.details.as_ref().map(CanonicalValue::as_json)}))},
+            "observations":observations,"started_at":timestamp(record.started_at)?,"finished_at":timestamp(record.finished_at)?,"provenance":provenance(&record.provenance)}),
+        )?);
+    }
     let (outcome, observation) = match &record.outcome {
+        RunAttemptOutcome::Buffered { .. } => unreachable!("handled buffered outcome"),
         RunAttemptOutcome::Accepted { observation } => {
             (json!({"kind": "accepted"}), Some(*observation))
         }

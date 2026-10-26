@@ -15,6 +15,8 @@ mod fault_injection;
 pub mod artifact_store;
 pub mod authoring;
 #[cfg(unix)]
+pub mod buffered;
+#[cfg(unix)]
 pub mod datamonger;
 #[cfg(unix)]
 pub mod dataset_materialization;

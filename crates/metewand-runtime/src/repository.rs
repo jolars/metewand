@@ -205,6 +205,16 @@ fn schema_roots<'a>(
     for implementation in manifest.implementations.values() {
         roots.extend(implementation.parameter_schema.iter());
     }
+    for policy in manifest.observation_policies.values() {
+        if let Some(profile) = &policy.profile {
+            roots.extend(
+                profile
+                    .implementations
+                    .values()
+                    .map(|b| &b.instrumentation_schema),
+            );
+        }
+    }
     for contract in contracts {
         roots.extend(contract.schemas());
     }
@@ -560,6 +570,7 @@ fn build_planning_catalog(
     records.extend(source_bundles.records);
     Ok((
         LogicalPlanningCatalog {
+            schema_identities: schema_ids.clone(),
             dataset_definitions,
             problem_definitions,
             implementation_definitions,
@@ -774,7 +785,7 @@ fn contract_identity_value(
             }))
         })
         .collect::<Result<Vec<_>, _>>()?;
-    CanonicalValue::try_from(json!({
+    let mut value = json!({
         "allowed_timing_scopes": contract.allowed_timing_scopes.iter().map(ToString::to_string).collect::<Vec<_>>(),
         "dataset_schemas": dataset_schemas,
         "family": contract.family.as_str(),
@@ -787,8 +798,12 @@ fn contract_identity_value(
         "semantics_schema": contract.semantics_schema.as_ref().map(|schema| schema_id(schemas, schema.as_path()).map(|id| id.to_string())).transpose()?,
         "supported_budgets": contract.supported_budgets.iter().map(ToString::to_string).collect::<Vec<_>>(),
         "version": contract.version,
-    }))
-    .map_err(RepositoryCheckError::Canonical)
+    });
+    if !contract.instrumented_scopes.is_empty() {
+        value["instrumented_scopes"] =
+            serde_json::to_value(&contract.instrumented_scopes).expect("validated scopes");
+    }
+    CanonicalValue::try_from(value).map_err(RepositoryCheckError::Canonical)
 }
 
 fn reference_resource(root: &Path, path: &RepositoryPath) -> Result<Value, RepositoryCheckError> {

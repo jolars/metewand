@@ -411,6 +411,7 @@ fn implementation_capability(value: ImplementationCapability) -> &'static str {
     match value {
         ImplementationCapability::OneShot => "one_shot",
         ImplementationCapability::Applicability => "applicability",
+        ImplementationCapability::BufferedProfile => "buffered_profile",
     }
 }
 
@@ -602,15 +603,20 @@ impl IdentityRecord for ExecutionPolicyRecord {
 
 impl IdentityRecord for ObservationPolicyRecord {
     fn identity_fields(&self) -> Map<String, Value> {
-        fields([
+        let mut value = fields([
             ("name", json!(self.name.as_str())),
             (
                 "kind",
                 json!(match self.kind {
                     ObservationKind::OneShot => "one_shot",
+                    ObservationKind::Profile => "profile",
                 }),
             ),
-        ])
+        ]);
+        if let Some(profile) = &self.profile {
+            value.insert("profile".into(), profile.as_json().clone());
+        }
+        value
     }
 }
 
@@ -829,7 +835,7 @@ impl IdentityRecord for ResolvedAttemptSlotRecord {
 
 impl IdentityRecord for RunObservationRecord {
     fn identity_fields(&self) -> Map<String, Value> {
-        fields([
+        let mut value = fields([
             ("slot", id(&self.slot)),
             ("producing_attempt", id(&self.producing_attempt)),
             ("result", artifact(&self.result)),
@@ -843,7 +849,14 @@ impl IdentityRecord for RunObservationRecord {
                     CompletionStatus::NotReached => "not_reached",
                 }),
             ),
-        ])
+        ]);
+        if let Some(profile) = &self.profile {
+            value.insert(
+                "profile".into(),
+                serde_json::to_value(profile).expect("profile evidence"),
+            );
+        }
+        value
     }
 }
 

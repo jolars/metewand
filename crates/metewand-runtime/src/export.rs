@@ -43,6 +43,45 @@ impl ResultSet {
         }) {
             records.push(project(source, &graph)?);
         }
+        let mut traces = Vec::new();
+        for attempt in records
+            .iter()
+            .filter(|r| r.record_type == ExportRecordType::Attempt)
+        {
+            let Some(profile) = &attempt.profile else {
+                continue;
+            };
+            let artifact = &profile["buffer"]["artifact"];
+            let manifest = &profile["buffer"]["manifest"];
+            let Some(directory) = artifact["directory"].as_str() else {
+                continue;
+            };
+            let Some(trace) = manifest["trace"].as_str() else {
+                continue;
+            };
+            let directory = safe_profile_path(root, directory)?;
+            let path = safe_profile_path(&directory, trace)?;
+            for (index, line) in fs::read(path)?
+                .split(|b| *b == b'\n')
+                .filter(|l| !l.is_empty())
+                .enumerate()
+            {
+                let point: metewand_core::profile::TracePoint =
+                    serde_json::from_value(CanonicalValue::from_slice(line)?.as_json().clone())?;
+                let mut row = attempt.clone();
+                row.record_type = ExportRecordType::Trace;
+                row.id = format!("{}:check:{index}", attempt.id);
+                row.metrics = Value::Null;
+                row.valid = None;
+                row.selected = None;
+                row.completion = None;
+                row.profile = Some(
+                    json!({"delivery":"buffered_profile","measurement_basis":"instrumented","instrumented_scope":manifest["instrumented_scope"],"clock":manifest["clock"],"instrumented_time_ns":point.instrumented_time_ns,"instrumented_total_time_ns":manifest["instrumented_total_time_ns"],"trace_index":index,"check_index":point.check_index,"work":point.work,"terminal":point.terminal,"provisional_metrics":point.provisional_metrics,"independently_validated":false}),
+                );
+                traces.push(row);
+            }
+        }
+        records.extend(traces);
         records.sort_by(|a, b| {
             (
                 &a.candidate_id,
@@ -293,7 +332,12 @@ fn project(
         .get("execution_policy")
         .cloned()
         .unwrap_or(Value::Null);
+    let selected_profile = execution
+        .get("profile_policy")
+        .or_else(|| provenance["data"]["profile"].get("selected"));
+    let profile_class=selected_profile.map(|p|json!({"delivery":"buffered_profile","measurement_basis":"instrumented","instrumented_scope":p["instrumented_scope"],"clock":"monotonic_ns","scope":p["scope"]}));
     let mut compatibility = CompatibilityClass {
+        profile: profile_class,
         execution_semantics_version: provenance["execution_semantics_version"]
             .as_u64()
             .and_then(|n| n.try_into().ok()),
@@ -349,6 +393,10 @@ fn project(
     let metrics = lookup(graph, document["metrics"]["id"].as_str());
     let result = lookup(graph, document["result"]["id"].as_str());
     Ok(ExportRecord {
+        profile: document
+            .get("profile")
+            .cloned()
+            .or_else(|| provenance["data"].get("profile").cloned()),
         schema_version: EXPORT_SCHEMA_VERSION,
         record_type,
         id: source.id.clone(),
@@ -390,6 +438,19 @@ fn project(
         provenance,
         evidence: json!({"source": row, "attempt": attempt, "attempt_slot": slot, "observation_slot": observation_slot, "resolved_run": run, "metrics": metrics, "result": result}),
     })
+}
+
+fn safe_profile_path(root: &Path, relative: &str) -> Result<PathBuf, ExportError> {
+    let path: metewand_core::manifest::RepositoryPath = serde_json::from_value(json!(relative))
+        .map_err(|_| ExportError::InvalidEvidence("unsafe buffered artifact path"))?;
+    let target = root.join(path.as_path());
+    let canonical = fs::canonicalize(&target)?;
+    if !canonical.starts_with(fs::canonicalize(root)?) {
+        return Err(ExportError::InvalidEvidence(
+            "buffer path escapes its artifact",
+        ));
+    }
+    Ok(target)
 }
 
 fn coverage(value: &Value) -> Value {
@@ -499,6 +560,11 @@ fn csv(rows: &[TidyRow]) -> Result<Vec<u8>, ExportError> {
         "metric_value",
         "metric_unit",
         "metric_direction",
+        "instrumented_time_ns",
+        "instrumented_total_time_ns",
+        "provisional_metric_name",
+        "provisional_metric_value",
+        "profile",
         "timed_wall_time_ns",
         "timed_wall_time_status",
         "implementation_time_ns",

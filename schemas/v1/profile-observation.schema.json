@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "metewand://schemas/v1/profile-observation.schema.json",
+  "x-metewand-compatibility-version": 1,
+  "type": "object",
+  "properties": {
+    "delivery": {
+      "const": "buffered_profile"
+    },
+    "measurement_basis": {
+      "const": "instrumented"
+    },
+    "instrumented_scope": {
+      "type": "string",
+      "minLength": 1
+    },
+    "clock": {
+      "const": "monotonic_ns"
+    },
+    "instrumented_time_ns": {
+      "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
+    },
+    "instrumented_total_time_ns": {
+      "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
+    },
+    "trace_index": {
+      "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
+    },
+    "capture_ordinal": {
+      "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
+    },
+    "thresholds": {
+      "type": "array",
+      "items": {
+        "type": "number"
+      },
+      "uniqueItems": true
+    },
+    "provisional_metrics": {
+      "type": "object"
+    }
+  },
+  "required": [
+    "delivery",
+    "measurement_basis",
+    "instrumented_scope",
+    "clock",
+    "instrumented_time_ns",
+    "instrumented_total_time_ns",
+    "trace_index",
+    "capture_ordinal",
+    "thresholds",
+    "provisional_metrics"
+  ],
+  "additionalProperties": false
+}

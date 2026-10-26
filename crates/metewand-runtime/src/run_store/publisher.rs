@@ -10,8 +10,7 @@ use serde_json::json;
 use sha2::{Digest, Sha256};
 
 use super::{
-    ArtifactRegistration, OwnedAttempt, RUN_STORE_SCHEMA_VERSION, RunStore, RunStoreError,
-    TerminalAttempt, TerminalOutcome,
+    ArtifactRegistration, OwnedAttempt, RunStore, RunStoreError, TerminalAttempt, TerminalOutcome,
     attempts::{commit_finalization_in, fence, invalid, timestamp, validate_finalization},
 };
 use crate::{
@@ -169,7 +168,9 @@ impl RunStore {
         let now = clock().max(finished);
         artifact.verified_at_ns = now;
         check_stage(&tx, attempt, &stage, now)?;
-        if coordination_snapshot(&tx, attempt, &outcome)? != document.as_json()["coordination"] {
+        if coordination_snapshot(&tx, attempt, &outcome, finished)?
+            != document.as_json()["coordination"]
+        {
             return Err(invalid("coordination records changed during publication"));
         }
         // Fencing uses the post-publication clock, while the terminal record and
@@ -337,9 +338,9 @@ pub(super) fn build_outcome_document(
         [attempt.id().to_string()],
         |r| r.get(0),
     )?;
-    let coordination = coordination_snapshot(tx, attempt, outcome)?;
+    let coordination = coordination_snapshot(tx, attempt, outcome, finished)?;
     let document = CanonicalValue::try_from(json!({
-        "run_store_version": RUN_STORE_SCHEMA_VERSION,
+        "run_store_version": tx.pragma_query_value(None,"user_version",|r|r.get::<_,u32>(0))?,
         "attempt_id": attempt.id(), "slot_id":attempt.slot(), "retry_index":attempt.retry_index(),
         "finalizing_revision":attempt.revision(), "state":outcome.state(), "details":outcome.details()?,
         "started_at_ns":started.to_string(), "finished_at_ns":finished.to_string(), "references":dependencies,
@@ -352,6 +353,7 @@ fn coordination_snapshot(
     tx: &Transaction<'_>,
     attempt: &OwnedAttempt,
     outcome: &TerminalOutcome,
+    finished: u64,
 ) -> Result<serde_json::Value, RunStoreError> {
     fn rows(
         tx: &Transaction<'_>,
@@ -378,13 +380,26 @@ fn coordination_snapshot(
         outcome,
         TerminalOutcome::Accepted | TerminalOutcome::Censored { .. }
     );
-    Ok(json!({
+    let mut snapshot = json!({
         "attempt_slots": rows(tx, "SELECT json_object('id', s.id, 'logical_slot_id', s.logical_slot_id, 'resolved_run_id', s.resolved_run_id, 'kind', s.kind, 'role', s.role, 'record', json(s.record_json)) FROM attempt_slots s JOIN attempts a ON a.slot_id = s.id WHERE a.id = ?1", [&id])?,
         "resolved_runs": rows(tx, "SELECT json_object('id', r.id, 'logical_specification_id', r.logical_specification_id, 'candidate_id', r.candidate_id, 'applicability_id', r.applicability_id, 'record', json(r.record_json)) FROM resolved_runs r JOIN attempt_slots s ON s.resolved_run_id = r.id JOIN attempts a ON a.slot_id = s.id WHERE a.id = ?1", [&id])?,
         "applicability_decisions": rows(tx, "SELECT json_object('id', d.id, 'candidate_id', d.candidate_id, 'applicable', d.applicable, 'record', json(d.record_json)) FROM applicability_decisions d JOIN resolved_runs r ON r.applicability_id = d.id JOIN attempt_slots s ON s.resolved_run_id = r.id JOIN attempts a ON a.slot_id = s.id WHERE a.id = ?1", [&id])?,
         "observation_slots": rows(tx, "SELECT json_object('id', o.id, 'logical_slot_id', o.logical_slot_id, 'resolved_run_id', o.resolved_run_id, 'record', json(o.record_json)) FROM observation_slots o JOIN attempt_observation_slots m ON m.observation_slot_id = o.id JOIN attempts a ON a.slot_id = m.attempt_slot_id WHERE a.id = ?1 ORDER BY o.id", [&id])?,
         "observations": rows(tx, "SELECT json_object('id', o.id, 'slot_id', o.slot_id, 'producing_attempt_id', o.producing_attempt_id, 'valid', o.valid, 'completion', o.completion, 'artifact_id', o.artifact_id, 'record', json(o.record_json), 'selected_at_ns', CAST(s.selected_at_ns AS TEXT)) FROM observations o LEFT JOIN selected_observations s ON s.observation_id = o.id WHERE o.producing_attempt_id = ?1 OR (?2 AND s.observation_id IS NOT NULL AND o.slot_id IN (SELECT observation_slot_id FROM attempt_observation_slots m JOIN attempts a ON a.slot_id = m.attempt_slot_id WHERE a.id = ?1)) ORDER BY o.id", params![id, include_selected])?,
-    }))
+    });
+    if matches!(outcome, TerminalOutcome::Accepted)
+        && snapshot["attempt_slots"][0]["kind"] == "buffered"
+    {
+        for observation in snapshot["observations"]
+            .as_array_mut()
+            .expect("coordination observations")
+        {
+            if observation["producing_attempt_id"] == id {
+                observation["selected_at_ns"] = json!(finished.to_string());
+            }
+        }
+    }
+    Ok(snapshot)
 }
 
 impl Stage {

@@ -8,9 +8,9 @@
       "frame": "{\"capabilities\":[\"one_shot\",\"applicability\",\"fresh_sequence\",\"streaming_profile\"],\"id\":\"0\",\"ok\":true,\"protocol\":1,\"sdk\":null,\"worker_id\":\"mw1-resolved-worker-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}\n"
     },
     {
-      "name": "buffered profile is not a version-1 capability",
+      "name": "buffered profile is negotiated under version 1",
       "message_type": "hello-response",
-      "valid": false,
+      "valid": true,
       "frame": "{\"capabilities\":[\"one_shot\",\"buffered_profile\"],\"id\":\"0\",\"ok\":true,\"protocol\":1,\"sdk\":null,\"worker_id\":\"mw1-resolved-worker-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}\n"
     },
     {

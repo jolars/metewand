@@ -8,6 +8,7 @@ repository root.
   | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
   | [Fixed dataset](https://github.com/jolars/metewand/tree/main/examples/fixed-dataset)         | A complete run with raw Python workers and a fixed input dataset.         |
   | [Python SDK](https://github.com/jolars/metewand/tree/main/examples/python-sdk)               | One compact manifest, SDK callbacks, reference fixtures, and process reuse.           |
+  | [Buffered profiles](https://github.com/jolars/metewand/tree/main/examples/buffered-profile) | Bounded local traces, selected snapshots, native Rust, and independent evaluation. |
   | [R SDK](https://github.com/jolars/metewand/tree/main/examples/r-sdk)                         | The same three worker roles using the R SDK.                              |
   | [Native Rust](https://github.com/jolars/metewand/tree/main/examples/rust-sdk)               | Native implementation and evaluator callbacks with standard artifacts.    |
   | [Generated dataset](https://github.com/jolars/metewand/tree/main/examples/generated-dataset) | Materialization and implementation preparation with validated artifacts.  |

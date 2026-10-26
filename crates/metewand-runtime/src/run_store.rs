@@ -34,6 +34,9 @@ pub use recovery::{RecoveryReport, RejectedArtifact};
 
 /// Internal SQLite layout version, independent of public record compatibility.
 pub const RUN_STORE_SCHEMA_VERSION: u32 = 1;
+/// Buffered execution requires the version-2 membership and acceptance layout.
+pub const BUFFERED_RUN_STORE_SCHEMA_VERSION: u32 = 2;
+pub const BUFFERED_RUN_STORE_SCHEMA_SQL: &str = include_str!("run_store/v2.sql");
 
 /// Initial schema for a new run store.
 ///

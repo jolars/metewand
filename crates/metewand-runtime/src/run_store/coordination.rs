@@ -63,6 +63,44 @@ impl RunStore {
         attempt: &IdentifiedRecord<ResolvedAttemptSlotRecord>,
         observation: &IdentifiedRecord<ResolvedObservationSlotRecord>,
     ) -> Result<(), RunStoreError> {
+        self.register_execution(
+            candidate,
+            run,
+            attempt,
+            std::slice::from_ref(observation),
+            "one_shot",
+        )
+    }
+
+    pub fn register_buffered(
+        &mut self,
+        candidate: RecordId<LogicalCandidateRecord>,
+        run: &IdentifiedRecord<ResolvedOneShotSpecificationRecord>,
+        attempt: &IdentifiedRecord<ResolvedAttemptSlotRecord>,
+        observations: &[IdentifiedRecord<ResolvedObservationSlotRecord>],
+    ) -> Result<(), RunStoreError> {
+        let version: u32 = self
+            .connection
+            .pragma_query_value(None, "user_version", |r| r.get(0))?;
+        if version != super::BUFFERED_RUN_STORE_SCHEMA_VERSION {
+            return Err(invalid(
+                "buffered profiles require a new version-2 output directory",
+            ));
+        }
+        self.register_execution(candidate, run, attempt, observations, "buffered")
+    }
+
+    fn register_execution(
+        &mut self,
+        candidate: RecordId<LogicalCandidateRecord>,
+        run: &IdentifiedRecord<ResolvedOneShotSpecificationRecord>,
+        attempt: &IdentifiedRecord<ResolvedAttemptSlotRecord>,
+        observations: &[IdentifiedRecord<ResolvedObservationSlotRecord>],
+        kind: &str,
+    ) -> Result<(), RunStoreError> {
+        let observation = observations
+            .first()
+            .ok_or_else(|| invalid("execution requires observation slots"))?;
         if record_id(&run.record)? != run.id
             || record_id(&attempt.record)? != attempt.id
             || record_id(&observation.record)? != observation.id
@@ -103,7 +141,7 @@ impl RunStore {
         )?;
         let attempt_record =
             String::from_utf8(canonical_identity_bytes(&attempt.record)?).expect("canonical UTF-8");
-        tx.execute("INSERT INTO attempt_slots VALUES (?1, ?2, ?3, 'one_shot', 'measurement', ?4) ON CONFLICT(id) DO NOTHING", params![attempt.id.to_string(), attempt.record.logical_slot.to_string(), run.id.to_string(), attempt_record])?;
+        tx.execute("INSERT INTO attempt_slots VALUES (?1, ?2, ?3, ?5, 'measurement', ?4) ON CONFLICT(id) DO NOTHING", params![attempt.id.to_string(), attempt.record.logical_slot.to_string(), run.id.to_string(), attempt_record,kind])?;
         let observation_record = String::from_utf8(canonical_identity_bytes(&observation.record)?)
             .expect("canonical UTF-8");
         tx.execute(
@@ -133,6 +171,39 @@ impl RunStore {
             if existing != record {
                 return Err(invalid("registered identity has conflicting contents"));
             }
+        }
+        for extra in &observations[1..] {
+            if record_id(&extra.record)? != extra.id || extra.record.specification != run.id {
+                return Err(invalid("invalid buffered observation slot"));
+            }
+            let document = String::from_utf8(canonical_identity_bytes(&extra.record)?)
+                .expect("canonical UTF-8");
+            tx.execute(
+                "INSERT INTO observation_slots VALUES (?1,?2,?3,?4) ON CONFLICT(id) DO NOTHING",
+                params![
+                    extra.id.to_string(),
+                    extra.record.logical_slot.to_string(),
+                    run.id.to_string(),
+                    document
+                ],
+            )?;
+            let existing: String = tx.query_row(
+                "SELECT record_json FROM observation_slots WHERE id=?1",
+                [extra.id.to_string()],
+                |r| r.get(0),
+            )?;
+            if existing != document {
+                return Err(invalid("conflicting buffered observation identity"));
+            }
+            tx.execute("INSERT INTO attempt_observation_slots VALUES (?1,?2,?3) ON CONFLICT(observation_slot_id) DO NOTHING",params![attempt.id.to_string(),extra.id.to_string(),run.id.to_string()])?;
+        }
+        let existing_kind: String = tx.query_row(
+            "SELECT kind FROM attempt_slots WHERE id=?1",
+            [attempt.id.to_string()],
+            |r| r.get(0),
+        )?;
+        if existing_kind != kind {
+            return Err(invalid("conflicting execution delivery kind"));
         }
         tx.commit()?;
         Ok(())

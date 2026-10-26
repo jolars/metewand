@@ -110,3 +110,8 @@ let catalog = public_schema_catalog()?;
 The catalog also contains the shared `common.schema.json` resource needed by the
 entry points. Conformance examples and negative cases live beside the schemas in
 [`schemas/v1/fixtures`](https://github.com/jolars/metewand/tree/main/schemas/v1/fixtures/).
+
+Buffered profiles add version-1 `profile-observation-policy`, `buffered-manifest`,
+`buffered-trace-point`, and `profile-observation` entry points. Nested trace rows
+inherit the enclosing buffer version. Existing observation, attempt, protocol,
+and export schemas include profile variants while retaining one-shot records.

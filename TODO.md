@@ -171,25 +171,31 @@ Prioritize this delivery mode because both adopters already collect local
 traces. Native loops must work without a host-language callback or protocol
 round trip at every observation.
 
-- [ ] Introduce the shared profile policy and observation fields with this first
+- [x] Introduce the shared profile policy and observation fields with this first
   producer and consumer, and reuse them across the remaining modes.
-- [ ] Add bounded `execute_buffered` delivery with direct recording and
-  `observe(progress, measure, snapshot) -> continue | stop(reason)`. Reuse
-  native instrumentation and provide Python integration for clustlasso-cd.
-- [ ] Validate clock and timing scope, check schedules, count and byte bounds,
+- [x] Add bounded `execute_buffered` delivery with direct recording and
+  `observe(progress, measure, snapshot) -> continue | stop(reason)`. Rust and
+  Python helpers support native buffer submission without per-check host
+  callbacks. Adoption in Basin and clustlasso-cd remains below.
+- [x] Validate clock and timing scope, check schedules, count and byte bounds,
   monotonic times, selected immutable snapshots, and a required terminal
   check. Include measurement, callback, and earlier snapshot work in local
   time; retain the executor-observed duration separately.
-- [ ] Independently evaluate saved results and retain provisional local metrics
+- [x] Independently evaluate saved results and retain provisional local metrics
   separately. Unsaved trace rows remain diagnostics. Do not turn existing
   metric-only trajectories into independently verified observations.
-- [ ] Support several thresholds from one unchanged trajectory, deduplicate
+- [x] Support several thresholds from one unchanged trajectory, deduplicate
   snapshots, and reserve terminal capacity. Preserve numerical behavior
   apart from the declared stopping rule.
 - [ ] Exercise a Basin trace and a clustlasso-cd native trajectory with selected
   result snapshots. Test metric disagreement, snapshot mutation, bounds,
   partial publication, and failure without splicing retries or accepting an
   unreturned buffer.
+
+The [buffered profile example](examples/buffered-profile) covers both SDKs,
+fixed counts, targets, inspection, resume, and exports. Focused tests cover
+metric disagreement, bounds, snapshot mutation, partial publication, unreturned
+buffers, and retry isolation. Adopter repository changes are deferred.
 
 See [Instrumented profiles and local
 observers](DESIGN.md#instrumented-profiles-and-local-observers) for the timing

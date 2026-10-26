@@ -8,12 +8,14 @@ from ._artifacts import (
     write_metrics,
     write_result,
 )
+from ._buffered import BufferedTrace, Decision
 from ._canonical import CanonicalJsonError, canonical_bytes, parse_json
 from ._worker import (
     SDK_VERSION,
     Evaluation,
     Implementation,
     OneShotImplementation,
+    BufferedImplementation,
     ProtocolError,
     WorkerError,
     serve_dataset_materializer,
@@ -24,6 +26,9 @@ from ._worker import (
 __version__ = SDK_VERSION
 
 __all__ = [
+    "BufferedImplementation",
+    "BufferedTrace",
+    "Decision",
     "CanonicalJsonError",
     "Evaluation",
     "Implementation",

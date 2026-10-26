@@ -1796,6 +1796,90 @@
           ]
         }
       }
+    },
+    {
+      "name": "profile-observation-policy",
+      "schema": "profile-observation-policy",
+      "instance": {
+        "max-observations": 1,
+        "max-trace-points": 2,
+        "max-buffer-bytes": 65536,
+        "terminal-reserve-bytes": 8192,
+        "max-active-time": "1 s",
+        "kind": "profile",
+        "implementations": {
+          "native": {
+            "delivery": "buffered_profile",
+            "measurement-basis": "instrumented",
+            "instrumented-scope": "solver",
+            "instrumentation-schema": {},
+            "instrumentation": {},
+            "check-schedule": {
+              "every": 1
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "buffered-manifest",
+      "schema": "buffered-manifest",
+      "instance": {
+        "schema_version": 1,
+        "complete": true,
+        "clock": "monotonic_ns",
+        "instrumented_scope": "solver",
+        "instrumented_total_time_ns": 2,
+        "stop_reason": "implementation_stopped",
+        "trace": "trace.jsonl",
+        "snapshots": [
+          {
+            "capture_ordinal": 0,
+            "trace_index": 0,
+            "thresholds": [],
+            "manifest": "snapshots/0/result.json"
+          }
+        ],
+        "files": [
+          {
+            "path": "trace.jsonl",
+            "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+            "size_bytes": 1
+          },
+          {
+            "path": "snapshots/0/result.json",
+            "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+            "size_bytes": 1
+          }
+        ]
+      }
+    },
+    {
+      "name": "buffered-trace-point",
+      "schema": "buffered-trace-point",
+      "instance": {
+        "check_index": 0,
+        "work": {},
+        "provisional_metrics": {},
+        "instrumented_time_ns": 1,
+        "terminal": true
+      }
+    },
+    {
+      "name": "profile-observation",
+      "schema": "profile-observation",
+      "instance": {
+        "delivery": "buffered_profile",
+        "measurement_basis": "instrumented",
+        "instrumented_scope": "solver",
+        "clock": "monotonic_ns",
+        "instrumented_time_ns": 1,
+        "instrumented_total_time_ns": 2,
+        "trace_index": 0,
+        "capture_ordinal": 0,
+        "thresholds": [],
+        "provisional_metrics": {}
+      }
     }
   ],
   "invalid": [
@@ -4329,6 +4413,94 @@
             }
           ]
         }
+      }
+    },
+    {
+      "name": "profile-observation-policy-unknown-field",
+      "schema": "profile-observation-policy",
+      "instance": {
+        "max-observations": 1,
+        "max-trace-points": 2,
+        "max-buffer-bytes": 65536,
+        "terminal-reserve-bytes": 8192,
+        "max-active-time": "1 s",
+        "kind": "profile",
+        "implementations": {
+          "native": {
+            "delivery": "buffered_profile",
+            "measurement-basis": "instrumented",
+            "instrumented-scope": "solver",
+            "instrumentation-schema": {},
+            "instrumentation": {},
+            "check-schedule": {
+              "every": 1
+            }
+          }
+        },
+        "unknown": true
+      }
+    },
+    {
+      "name": "buffered-manifest-unknown-field",
+      "schema": "buffered-manifest",
+      "instance": {
+        "schema_version": 1,
+        "complete": true,
+        "clock": "monotonic_ns",
+        "instrumented_scope": "solver",
+        "instrumented_total_time_ns": 2,
+        "stop_reason": "implementation_stopped",
+        "trace": "trace.jsonl",
+        "snapshots": [
+          {
+            "capture_ordinal": 0,
+            "trace_index": 0,
+            "thresholds": [],
+            "manifest": "snapshots/0/result.json"
+          }
+        ],
+        "files": [
+          {
+            "path": "trace.jsonl",
+            "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+            "size_bytes": 1
+          },
+          {
+            "path": "snapshots/0/result.json",
+            "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+            "size_bytes": 1
+          }
+        ],
+        "unknown": true
+      }
+    },
+    {
+      "name": "buffered-trace-point-unknown-field",
+      "schema": "buffered-trace-point",
+      "instance": {
+        "check_index": 0,
+        "work": {},
+        "provisional_metrics": {},
+        "instrumented_time_ns": 1,
+        "terminal": true,
+        "unknown": true
+      }
+    },
+    {
+      "name": "profile-observation-unknown-field",
+      "schema": "profile-observation",
+      "instance": {
+        "delivery": "buffered_profile",
+        "measurement_basis": "instrumented",
+        "instrumented_scope": "solver",
+        "clock": "monotonic_ns",
+        "instrumented_time_ns": 1,
+        "instrumented_total_time_ns": 2,
+        "trace_index": 0,
+        "capture_ordinal": 0,
+        "thresholds": [],
+        "provisional_metrics": {},
+        "unknown": true
       }
     }
   ]

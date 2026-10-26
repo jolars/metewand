@@ -1,0 +1,308 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "metewand://schemas/v1/profile-observation-policy.schema.json",
+  "x-metewand-compatibility-version": 1,
+  "type": "object",
+  "properties": {
+    "metric": {
+      "type": "string",
+      "minLength": 1
+    },
+    "direction": {
+      "enum": [
+        "at_most",
+        "at_least"
+      ]
+    },
+    "threshold": {
+      "type": "number"
+    },
+    "record-thresholds": {
+      "type": "array",
+      "items": {
+        "type": "number"
+      },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "max-observations": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "max-trace-points": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "max-buffer-bytes": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "terminal-reserve-bytes": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "max-active-time": {
+      "type": "string",
+      "pattern": "^\\s*[1-9][0-9]*\\s*(ms|s|min|h)\\s*$"
+    },
+    "kind": {
+      "const": "profile"
+    },
+    "version": {
+      "const": 1
+    },
+    "implementations": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "$ref": "common.schema.json#/$defs/name"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "delivery": {
+            "const": "buffered_profile"
+          },
+          "measurement-basis": {
+            "const": "instrumented"
+          },
+          "instrumented-scope": {
+            "type": "string",
+            "minLength": 1
+          },
+          "instrumentation-schema": {
+            "$ref": "common.schema.json#/$defs/schema_declaration"
+          },
+          "instrumentation": {
+            "type": "object"
+          },
+          "check-schedule": {
+            "type": "object",
+            "properties": {
+              "every": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              },
+              "start": {
+                "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
+              }
+            },
+            "required": [
+              "every"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "delivery",
+          "measurement-basis",
+          "instrumented-scope",
+          "instrumentation-schema",
+          "instrumentation",
+          "check-schedule"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "max-observations",
+    "max-trace-points",
+    "max-buffer-bytes",
+    "terminal-reserve-bytes",
+    "max-active-time",
+    "kind",
+    "implementations"
+  ],
+  "additionalProperties": false,
+  "dependentRequired": {
+    "metric": [
+      "direction",
+      "threshold"
+    ],
+    "direction": [
+      "metric",
+      "threshold"
+    ],
+    "threshold": [
+      "metric",
+      "direction"
+    ],
+    "record-thresholds": [
+      "metric",
+      "direction",
+      "threshold"
+    ]
+  },
+  "$defs": {
+    "policy": {
+      "type": "object",
+      "properties": {
+        "metric": {
+          "type": "string",
+          "minLength": 1
+        },
+        "direction": {
+          "enum": [
+            "at_most",
+            "at_least"
+          ]
+        },
+        "threshold": {
+          "type": "number"
+        },
+        "record-thresholds": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "max-observations": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "max-trace-points": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "max-buffer-bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "terminal-reserve-bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "max-active-time": {
+          "type": "string",
+          "pattern": "^\\s*[1-9][0-9]*\\s*(ms|s|min|h)\\s*$"
+        }
+      },
+      "required": [
+        "max-observations",
+        "max-trace-points",
+        "max-buffer-bytes",
+        "terminal-reserve-bytes",
+        "max-active-time"
+      ],
+      "additionalProperties": false,
+      "dependentRequired": {
+        "metric": [
+          "direction",
+          "threshold"
+        ],
+        "direction": [
+          "metric",
+          "threshold"
+        ],
+        "threshold": [
+          "metric",
+          "direction"
+        ],
+        "record-thresholds": [
+          "metric",
+          "direction",
+          "threshold"
+        ]
+      }
+    },
+    "scope": {
+      "type": "object",
+      "properties": {
+        "clock-origin": {
+          "type": "string",
+          "minLength": 1
+        },
+        "included-work": {
+          "type": "string",
+          "minLength": 1
+        },
+        "excluded-preparation": {
+          "type": "string",
+          "minLength": 1
+        },
+        "metric-agreement": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "atol": {
+                "type": "number",
+                "minimum": 0
+              },
+              "rtol": {
+                "type": "number",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "atol",
+              "rtol"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "clock-origin",
+        "included-work",
+        "excluded-preparation"
+      ],
+      "additionalProperties": false
+    },
+    "selected": {
+      "type": "object",
+      "properties": {
+        "policy": {
+          "$ref": "#/$defs/policy"
+        },
+        "instrumented_scope": {
+          "type": "string",
+          "minLength": 1
+        },
+        "scope": {
+          "$ref": "#/$defs/scope"
+        },
+        "instrumentation": {
+          "type": "object"
+        },
+        "check_schedule": {
+          "type": "object",
+          "properties": {
+            "every": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "start": {
+              "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
+            }
+          },
+          "required": [
+            "every"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "policy",
+        "instrumented_scope",
+        "scope",
+        "instrumentation",
+        "check_schedule"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

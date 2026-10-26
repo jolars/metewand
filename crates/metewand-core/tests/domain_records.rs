@@ -154,6 +154,7 @@ fn separates_logical_records_from_resolved_runtime_dependencies() {
         enforcement: Enforcement::BestEffort,
     };
     let observation_policy = ObservationPolicyRecord {
+        profile: None,
         name: name("final"),
         kind: ObservationKind::OneShot,
     };
@@ -293,6 +294,7 @@ fn records_one_shot_observations_and_terminal_attempts_without_losing_failures()
         data: value(r#"{"environment_class":"development"}"#),
     };
     let observation = RunObservationRecord {
+        profile: None,
         slot: id::<ResolvedObservationSlotRecord>(51),
         producing_attempt: id::<RunAttemptRecord>(52),
         result: ArtifactReference::<ResultArtifact> {
@@ -332,6 +334,7 @@ fn records_one_shot_observations_and_terminal_attempts_without_losing_failures()
     };
     let retained_observation_id = id::<RunObservationRecord>(58);
     let not_reached_observation = RunObservationRecord {
+        profile: None,
         producing_attempt: id::<RunAttemptRecord>(59),
         completion: CompletionStatus::NotReached,
         ..observation.clone()
@@ -358,6 +361,7 @@ fn records_one_shot_observations_and_terminal_attempts_without_losing_failures()
         data: value(r#"{"ephemeral_path":"/tmp/metewand-attempt"}"#),
     };
     let reprovenanced_observation = RunObservationRecord {
+        profile: None,
         provenance: different_provenance.clone(),
         ..observation.clone()
     };

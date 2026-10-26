@@ -1120,8 +1120,9 @@ selected implementation binds a delivery mode under the same policy:
   It supports direct recording and a local measurement-and-stopping callback.
 
 Fresh-sequence and buffered profiles are required by the local MVP; streaming
-profiles follow it. Their examples below
-specify intended interfaces, not capabilities of the current CLI or SDKs.
+profiles follow it. Buffered profiles are implemented in the CLI and Rust and
+Python helpers; see [Buffered profiles](docs/reference/buffered-profiles.md).
+Fresh-sequence and streaming examples below specify intended interfaces.
 Implement each mode with its actual producer, consumer, and focused behavioral
 tests. Apply the [pre-MVP compatibility policy](docs/reference/compatibility-versions.md)
 only to affected boundaries. This design change does not change current
@@ -1224,21 +1225,23 @@ observation-policies:
     metric: "relative_duality_gap"
     direction: "at_most"
     threshold: 1e-8
-    record_thresholds: [1e-4, 1e-6, 1e-8]
-    max_observations: 3
-    max_trace_points: 10000
-    max_buffer_bytes: 67108864
-    max_active_time: "30 s"
+    record-thresholds: [1e-4, 1e-6, 1e-8]
+    max-observations: 3
+    max-trace-points: 10000
+    max-buffer-bytes: 67108864
+    terminal-reserve-bytes: 8388608
+    max-active-time: "30 s"
     implementations:
       hybrid:
         delivery: "buffered_profile"
-        measurement_basis: "instrumented"
-        instrumented_scope: "complete_solver_call"
-        instrumentation_schema: "schemas/hybrid-observer.json"
-        instrumentation: { check_every: 5, observer: "duality_gap" }
+        measurement-basis: "instrumented"
+        instrumented-scope: "complete_solver_call"
+        instrumentation-schema: "schemas/hybrid-observer.json"
+        instrumentation: { observer: "duality_gap" }
+        check-schedule: { every: 5, start: 0 }
 ```
 
-The optional `record_thresholds` list requests snapshots at the first locally
+The optional `record-thresholds` list requests snapshots at the first locally
 observed crossing of each listed threshold. Values are finite, distinct, ordered
 from least to most demanding under the metric direction, and end at the
 profile's completion threshold. A snapshot may serve several thresholds crossed
@@ -1441,7 +1444,7 @@ check_applicability(dataset_dir, dataset_manifest, problem_contract_id,
 prepare(dataset_dir, problem_contract_id, problem_parameters, implementation_parameters, implementation_seed)
 execute(result_dir, optional_scientific_budget, optional_observation_control)
 execute_stream(checkpoint_root, optional_scientific_budget)           # optional
-execute_buffered(result_root, instrumentation, optional_scientific_budget)  # optional, planned
+execute_buffered(result_root, profile)                               # optional
 reset()
 shutdown()
 ```
@@ -1450,7 +1453,7 @@ shutdown()
 `applicability` capability. `execute` is used by `one_shot` and
 `fresh_sequence`; the latter passes one canonical observation-control value from
 the implementation's declared schema and schedule. `execute_stream` is required
-for `streaming_profile`. The planned `execute_buffered` method requires the
+for `streaming_profile`. The `execute_buffered` method requires the
 `buffered_profile` capability and returns one completed buffer manifest after
 the solve, without checkpoint events or continuation messages. That manifest
 references the trace, canonical snapshot manifests, provisional stop reason,
@@ -2233,7 +2236,7 @@ functions and structs and share the canonicalization, seed, protocol, and error
 vectors used by R and Python. Its implementation and conformance suite do not
 block the local MVP.
 
-For the planned buffered API, `trace.record` accepts measurements supplied by
+For the buffered API, `trace.record` accepts measurements supplied by
 existing instrumentation; `trace.observe(progress, measure, snapshot)` is the
 local observer passed into a cooperative solver. Both enforce the selected
 schema, schedule, clock boundary, and collection bounds. `trace.finish` captures

@@ -127,7 +127,28 @@ pub trait Implementation {
     ///
     /// # Errors
     /// Return a failure when solving cannot complete.
-    fn execute(&mut self) -> WorkerResult<Self::Output>;
+    fn execute(&mut self) -> WorkerResult<Self::Output> {
+        Err(failure(
+            WorkerFailureCode::UnsupportedOperation,
+            "One-shot execution is not implemented.",
+        ))
+    }
+
+    fn supports_one_shot(&self) -> bool {
+        true
+    }
+    fn supports_buffered_profile(&self) -> bool {
+        false
+    }
+    fn execute_buffered(
+        &mut self,
+        _trace: &mut crate::buffered::BufferedTrace,
+    ) -> WorkerResult<()> {
+        Err(failure(
+            WorkerFailureCode::UnsupportedOperation,
+            "Buffered execution is not implemented.",
+        ))
+    }
 
     /// Converts solver output to scientific JSON data outside SDK solve timing.
     ///
@@ -298,7 +319,13 @@ fn implementation_on(
     mut clock: impl FnMut() -> u128,
 ) -> Result<(), ServeError> {
     let mut prepared = false;
-    let mut capabilities = vec![Capability::OneShot];
+    let mut capabilities = Vec::new();
+    if worker.supports_one_shot() {
+        capabilities.push(Capability::OneShot);
+    }
+    if worker.supports_buffered_profile() {
+        capabilities.push(Capability::BufferedProfile);
+    }
     if worker.supports_applicability() {
         capabilities.push(Capability::Applicability);
     }
@@ -343,6 +370,28 @@ fn implementation_on(
                     elapsed,
                     manifest,
                     statistics.as_object().expect("validated object").clone(),
+                ))
+            }
+            "execute_buffered" => {
+                let request: metewand_protocol::ExecuteBufferedRequest = decode(request)?;
+                if !prepared || !worker.supports_buffered_profile() {
+                    return Err(failure(
+                        WorkerFailureCode::InvalidRequest,
+                        "Buffered execution requires preparation and buffered_profile support.",
+                    ));
+                }
+                prepared = false;
+                let profile = serde_json::from_value(request.profile().clone())
+                    .map_err(|e| WorkerError::operation_failed(e.to_string()))?;
+                let mut trace = crate::buffered::BufferedTrace::new(
+                    profile,
+                    PathBuf::from(request.result_root()),
+                )?;
+                worker.execute_buffered(&mut trace)?;
+                let manifest = trace.write()?;
+                response(&metewand_protocol::ExecuteBufferedResponse::new(
+                    request.id().clone(),
+                    manifest,
                 ))
             }
             "reset" => {

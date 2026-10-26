@@ -344,6 +344,7 @@ fn graph(mutation: Option<&str>, order: ObjectOrder, checked: bool) -> IdentityG
         &mut vectors,
         "observation-policy",
         ObservationPolicyRecord {
+            profile: None,
             name: name(if is_mutated(mutation, "observation-policy") {
                 "final-v2"
             } else {
@@ -697,6 +698,7 @@ fn graph(mutation: Option<&str>, order: ObjectOrder, checked: bool) -> IdentityG
         &mut vectors,
         "observation",
         RunObservationRecord {
+            profile: None,
             slot: resolved_observation_slot,
             producing_attempt: run_attempt,
             result: ArtifactReference {

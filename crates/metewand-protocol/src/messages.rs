@@ -127,6 +127,8 @@ pub enum Capability {
     FreshSequence,
     /// Can publish bounded checkpoints during one execution.
     StreamingProfile,
+    /// Returns a complete bounded local trace and selected results.
+    BufferedProfile,
     /// Receives declared scientific rules in independent evaluation requests.
     ProblemSemantics,
 }
@@ -753,6 +755,71 @@ enum ExecuteMethod {
     Execute,
 }
 
+/// Executes one prepared solver and returns a complete buffer after execution.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ExecuteBufferedRequest {
+    id: RequestId,
+    method: BufferedMethod,
+    #[serde(deserialize_with = "deserialize_nonempty_string")]
+    result_root: String,
+    #[serde(deserialize_with = "deserialize_object")]
+    profile: Value,
+}
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum BufferedMethod {
+    ExecuteBuffered,
+}
+impl private::Sealed for ExecuteBufferedRequest {}
+impl WireMessage for ExecuteBufferedRequest {}
+impl ExecuteBufferedRequest {
+    pub fn new(id: RequestId, result_root: impl Into<String>, profile: Value) -> Self {
+        Self {
+            id,
+            method: BufferedMethod::ExecuteBuffered,
+            result_root: result_root.into(),
+            profile,
+        }
+    }
+    pub fn id(&self) -> &RequestId {
+        &self.id
+    }
+    pub fn result_root(&self) -> &str {
+        &self.result_root
+    }
+    pub fn profile(&self) -> &Value {
+        &self.profile
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ExecuteBufferedResponse {
+    id: RequestId,
+    ok: Success,
+    buffer: ManifestReference,
+}
+impl private::Sealed for ExecuteBufferedResponse {}
+impl WireMessage for ExecuteBufferedResponse {}
+impl WireResponse for ExecuteBufferedResponse {
+    fn id(&self) -> &RequestId {
+        &self.id
+    }
+}
+impl ExecuteBufferedResponse {
+    pub fn new(id: RequestId, manifest: impl Into<String>) -> Self {
+        Self {
+            id,
+            ok: Success,
+            buffer: ManifestReference::new(manifest),
+        }
+    }
+    pub fn manifest(&self) -> &str {
+        &self.buffer.manifest
+    }
+}
+
 /// A request to clear slot-scoped implementation state before reuse.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -1147,6 +1214,8 @@ pub enum WorkerFailureCode {
     OperationFailed,
     /// An unexpected internal worker failure occurred.
     InternalError,
+    /// A declared collection or output capacity could not be satisfied.
+    ResourceLimit,
 }
 
 /// Structured failure details returned by a worker operation.
@@ -1538,7 +1607,10 @@ pub fn validate_hello_response(
     if let Some(capability) = selected_capabilities.iter().find(|capability| {
         !matches!(
             capability,
-            Capability::OneShot | Capability::Applicability | Capability::ProblemSemantics
+            Capability::OneShot
+                | Capability::Applicability
+                | Capability::ProblemSemantics
+                | Capability::BufferedProfile
         )
     }) {
         return Err(HandshakeError::ReservedCapability {

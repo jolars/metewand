@@ -1,4 +1,4 @@
-# Worker protocol and one-shot exchanges
+# Worker protocol and execution exchanges
 
 Every worker session begins with a strict version-1 handshake before Metewand
 sends work. The orchestrator's first JSON-Lines message fixes the requested
@@ -20,14 +20,10 @@ Direct protocol workers use `"sdk": null`. SDK-backed workers supply nonempty
 package name and version strings. The three roles are `dataset_materializer`,
 `implementation`, and `problem_evaluator`.
 
-The protocol recognizes the `one_shot`, `applicability`, `fresh_sequence`, and
-`streaming_profile` capability names. A session fails if the worker omits a
-capability selected by the plan. These four capabilities belong to the
-implementation role. The typed session supports `one_shot` and `applicability`.
-The manifest-driven runner selects `applicability` when the implementation
-declares it alongside `one_shot`. Workers may
-report profile capabilities, but sessions reject attempts to select them until
-their request subprotocols are implemented. An unselected report remains inert.
+The protocol recognizes `one_shot`, `applicability`, and `buffered_profile`.
+These capabilities belong to implementation workers. A session rejects a worker
+missing a selected capability. `fresh_sequence` and `streaming_profile` remain
+recognized metadata whose selection is reserved. Unselected reports are inert.
 
 Evaluators may report `problem_semantics`. Metewand selects it when reported
 and sends the complete canonical scientific rules in `evaluate` requests. It
@@ -258,3 +254,17 @@ The wire-protocol version and public-schema compatibility version both remain
 1. These one-shot messages complete another part of the initial, unreleased
 contracts; they do not revise an earlier released format. Returned artifact
 validation and profile subprotocols remain separate roadmap slices.
+
+## Buffered execution
+
+`execute_buffered` requires the negotiated `buffered_profile` capability and a
+successful preparation. Its request contains `id`, `method`, `result_root`, and
+`profile`, the normalized selected policy and instrumentation. The successful
+response contains `id`, `ok: true`, and `buffer: {manifest: "buffer.json"}`.
+There are no checkpoint or continuation messages.
+
+All trace and snapshot files must be closed before the response. The buffer
+manifest binds the file inventory, local stop reason, monotonic clock, scope,
+trace, selected results, and total instrumented duration. `resource_limit` is a
+worker failure code for output that cannot fit declared collection limits.
+See [buffered profiles](buffered-profiles.md) for scientific and timing rules.

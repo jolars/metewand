@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use metewand_core::{canonical::MAX_SAFE_INTEGER, planning::LogicalPlan, records::AttemptSlotRole};
 
@@ -69,19 +69,38 @@ pub(super) fn preselect(plan: &LogicalPlan, options: &RunOptions) -> Result<Logi
     let mut matched = BTreeSet::new();
     let mut selected = plan.clone();
     for experiment in &mut selected.experiments {
+        let bound = experiment
+            .observation_policy
+            .record
+            .profile
+            .as_ref()
+            .and_then(|profile| profile.as_json()["max-observations"].as_u64())
+            .unwrap_or(1) as usize;
         for candidate in &mut experiment.candidates {
             for specification in &mut candidate.specifications {
                 let mut observations = BTreeSet::new();
+                // A selected capture retains the complete producing trajectory.
+                let captures = specification
+                    .observation_slots
+                    .chunks(bound)
+                    .map(|group| {
+                        (
+                            group[0].id,
+                            group.iter().map(|slot| slot.id).collect::<Vec<_>>(),
+                        )
+                    })
+                    .collect::<BTreeMap<_, _>>();
                 specification.attempt_slots.retain(|slot| {
                     let AttemptSlotRole::Measured { observation_slot } = slot.record.role else {
                         return true;
                     };
-                    let ids = [
+                    let mut ids = vec![
                         candidate.candidate.id.to_string(),
                         specification.specification.id.to_string(),
                         slot.id.to_string(),
                         observation_slot.to_string(),
                     ];
+                    ids.extend(captures[&observation_slot].iter().map(ToString::to_string));
                     let selected = logical
                         .iter()
                         .filter(|id| ids.contains(id))
@@ -90,7 +109,7 @@ pub(super) fn preselect(plan: &LogicalPlan, options: &RunOptions) -> Result<Logi
                         matched.insert((**id).clone());
                     }
                     if !selected.is_empty() {
-                        observations.insert(observation_slot);
+                        observations.extend(captures[&observation_slot].iter().copied());
                     }
                     !selected.is_empty()
                 });

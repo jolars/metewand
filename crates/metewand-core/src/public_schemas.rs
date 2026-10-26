@@ -23,6 +23,11 @@ static CATALOG: Mutex<Option<SchemaCatalog>> = Mutex::new(None);
 /// A public version-1 schema entry point.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum PublicSchema {
+    ProfileObservationPolicy,
+    BufferedManifest,
+    BufferedTracePoint,
+    ProfileObservation,
+
     /// Realized worker settings with redacted secret channels.
     WorkerEnvironment,
     /// Envelope used for command events, results, and diagnostics.
@@ -76,7 +81,11 @@ pub enum PublicSchema {
 }
 
 /// Every public schema entry point in stable presentation order.
-pub const PUBLIC_SCHEMAS: [PublicSchema; 25] = [
+pub const PUBLIC_SCHEMAS: [PublicSchema; 29] = [
+    PublicSchema::ProfileObservationPolicy,
+    PublicSchema::BufferedManifest,
+    PublicSchema::BufferedTracePoint,
+    PublicSchema::ProfileObservation,
     PublicSchema::MachineOutput,
     PublicSchema::RunOutput,
     PublicSchema::InspectionOutput,
@@ -109,6 +118,10 @@ impl PublicSchema {
     #[must_use]
     pub const fn slug(self) -> &'static str {
         match self {
+            Self::ProfileObservationPolicy => "profile-observation-policy",
+            Self::BufferedManifest => "buffered-manifest",
+            Self::BufferedTracePoint => "buffered-trace-point",
+            Self::ProfileObservation => "profile-observation",
             Self::WorkerEnvironment => "worker-environment",
             Self::ArtifactCacheObject => "artifact-cache-object",
             Self::DatasetCacheEntry => "dataset-cache-entry",
@@ -149,6 +162,10 @@ impl PublicSchema {
     #[must_use]
     pub fn repository_path(self) -> &'static Path {
         Path::new(match self {
+            Self::ProfileObservationPolicy => "schemas/v1/profile-observation-policy.schema.json",
+            Self::BufferedManifest => "schemas/v1/buffered-manifest.schema.json",
+            Self::BufferedTracePoint => "schemas/v1/buffered-trace-point.schema.json",
+            Self::ProfileObservation => "schemas/v1/profile-observation.schema.json",
             Self::WorkerEnvironment => "schemas/v1/worker-environment.schema.json",
             Self::ArtifactCacheObject => "schemas/v1/artifact-cache-object.schema.json",
             Self::DatasetCacheEntry => "schemas/v1/dataset-cache-entry.schema.json",
@@ -185,6 +202,12 @@ impl PublicSchema {
     #[must_use]
     pub const fn id(self) -> &'static str {
         match self {
+            Self::ProfileObservationPolicy => {
+                "metewand://schemas/v1/profile-observation-policy.schema.json"
+            }
+            Self::BufferedManifest => "metewand://schemas/v1/buffered-manifest.schema.json",
+            Self::BufferedTracePoint => "metewand://schemas/v1/buffered-trace-point.schema.json",
+            Self::ProfileObservation => "metewand://schemas/v1/profile-observation.schema.json",
             Self::WorkerEnvironment => "metewand://schemas/v1/worker-environment.schema.json",
             Self::ArtifactCacheObject => "metewand://schemas/v1/artifact-cache-object.schema.json",
             Self::DatasetCacheEntry => "metewand://schemas/v1/dataset-cache-entry.schema.json",
@@ -229,6 +252,19 @@ impl PublicSchema {
     #[must_use]
     pub const fn source(self) -> &'static str {
         match self {
+            Self::ProfileObservationPolicy => {
+                include_str!("../../../schemas/v1/profile-observation-policy.schema.json")
+            }
+            Self::BufferedManifest => {
+                include_str!("../../../schemas/v1/buffered-manifest.schema.json")
+            }
+            Self::BufferedTracePoint => {
+                include_str!("../../../schemas/v1/buffered-trace-point.schema.json")
+            }
+            Self::ProfileObservation => {
+                include_str!("../../../schemas/v1/profile-observation.schema.json")
+            }
+
             Self::WorkerEnvironment => {
                 include_str!("../../../schemas/v1/worker-environment.schema.json")
             }

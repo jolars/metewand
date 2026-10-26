@@ -50,8 +50,8 @@ constants, schemas, or accepted inputs.
 
 ## Current input boundary
 
-The manifest and standalone observation-policy schema currently admit only
-`one_shot`. Problem contracts require `supported-budgets: ["none"]`.
+The manifest admits `one_shot` and buffered `profile` observation policies.
+Problem contracts require `supported-budgets: ["none"]`.
 Inline contracts and schemas are supported. Result and metric envelopes may
 omit `schema` to use the selected contract's schema. These additions retain the
 unreleased version-1 authoring and public-schema boundaries: existing canonical
@@ -111,17 +111,22 @@ original wire shape. Python and R SDKs require explicit opt-in through
 execution semantics. Older runtimes reject this new capability; pin a matching
 Metewand revision when opting in.
 
-Profiles, scientific budgets, and instrumentation settings remain planned
-implementation work. Applicability is optional alongside `one_shot`. Plans
-record unchecked candidates; resolution records support decisions and binds
-checked evidence to resolved execution identities. Unconditional execution
-identities and persisted records retain their existing representation.
+[Buffered profiles](buffered-profiles.md) extend the unreleased version-1
+manifest, public records, and capability-negotiated wire protocol. New buffer
+artifacts start at version 1. Existing one-shot canonical identity transcripts
+and persisted records retain their representations. Execution semantics remain
+at version 2; instrumented evidence carries its own explicit basis and scope.
 
-The handshake and typed session implement `check_applicability`.
-`fresh_sequence` and `streaming_profile` remain capability metadata whose work
-exchanges are not implemented. `buffered_profile` is absent from the current capability set.
-The current `execute` request admits only `id`, `method`, and
-`result_dir`.
+Runs containing profiles initialize SQLite layout 2. Version-1 stores remain
+readable and resumable for one-shot work, without migration. Buffered selection
+commits with one accepted producing attempt. Partial observations survive but
+cannot satisfy a retry. Exports add diagnostic trace rows and optional profile
+fields; CSV exposes instrumented and provisional metric columns.
+
+The handshake and typed session implement `check_applicability` and
+`execute_buffered`. `fresh_sequence` and `streaming_profile` remain reserved for
+selection. Additional scientific budgets remain unsupported. The original
+`execute` request still admits only `id`, `method`, and `result_dir`.
 
 Strict schemas and typed parsers must agree on what the implementation accepts.
 The [extension rejection vectors](https://github.com/jolars/metewand/blob/main/schemas/v1/fixtures/gate3-extensions.json)

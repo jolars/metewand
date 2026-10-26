@@ -378,6 +378,28 @@ impl WorkerSession {
         self.exchange(WorkerPhase::Execute, &request, timeout)
     }
 
+    /// Executes a selected buffered profile without checkpoint round trips.
+    pub fn execute_buffered(
+        &mut self,
+        result_root: impl Into<String>,
+        profile: Value,
+    ) -> Result<metewand_protocol::ExecuteBufferedResponse, WorkerSessionError> {
+        self.require_role(WorkerPhase::Execute, WorkerRole::Implementation)?;
+        if !self
+            .negotiated()
+            .selected_capabilities()
+            .contains(&Capability::BufferedProfile)
+        {
+            return Err(WorkerSessionError::CapabilityNotSelected {
+                phase: WorkerPhase::Execute,
+                capability: Capability::BufferedProfile,
+            });
+        }
+        let id = self.begin_request(WorkerPhase::Execute)?;
+        let request = metewand_protocol::ExecuteBufferedRequest::new(id, result_root, profile);
+        self.exchange(WorkerPhase::Execute, &request, self.timeouts.execute)
+    }
+
     /// Clears slot-scoped state before an implementation worker is reused.
     ///
     /// A failed reset discards the worker because clean state can no longer be

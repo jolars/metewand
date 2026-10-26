@@ -1,0 +1,25 @@
+version: 1
+name: square
+family: optimization
+dataset-schemas: []
+result:
+  x: number
+metrics:
+  gap: { type: number, minimum: 0 }
+allowed-timing-scopes: [prepare_and_execute, execute_only, cold_end_to_end]
+instrumented-scopes:
+  complete_solver_call:
+    clock-origin: Before solver initialization.
+    included-work: Initialization, updates, measurements, observer dispatch, and snapshot capture.
+    excluded-preparation: Input loading and final buffer file serialization.
+supported-budgets: [none]
+semantics:
+  preprocessing:
+    shared_materialization: none
+    implementation_conversion: none
+    allowed_outside_timed_scope: []
+  validity: { finite_scalar: true }
+  one_shot_completion: { gap: 0 }
+reference-cases:
+  - result: reference/result.json
+    expected-metrics: reference/metrics.json

@@ -175,6 +175,53 @@ fn validate_compatibility(
                 });
             }
 
+            if let Some(profile) = &observation_policy.profile {
+                let binding = profile.implementations.get(implementation).ok_or_else(|| {
+                    ManifestCompatibilityError::InvalidProfile(format!(
+                        "missing binding for {implementation}"
+                    ))
+                })?;
+                let scope = contract
+                    .instrumented_scopes
+                    .get(&binding.instrumented_scope)
+                    .ok_or_else(|| {
+                        ManifestCompatibilityError::InvalidProfile(format!(
+                            "contract does not authorize instrumented scope {}",
+                            binding.instrumented_scope
+                        ))
+                    })?;
+                if scope.clock_origin.is_empty()
+                    || scope.included_work.is_empty()
+                    || scope.excluded_preparation.is_empty()
+                    || scope.metric_agreement.values().any(|t| {
+                        !t.atol.is_finite() || !t.rtol.is_finite() || t.atol < 0.0 || t.rtol < 0.0
+                    })
+                {
+                    return Err(ManifestCompatibilityError::InvalidProfile("instrumented scopes require clock and work descriptions and finite nonnegative agreement tolerances".into()));
+                }
+                if let Some(schemas) = schemas {
+                    if let Some(metric) = &profile.policy.metric
+                        && !schemas.has_numeric_property(contract.metric_schema.as_path(), metric)
+                    {
+                        return Err(ManifestCompatibilityError::InvalidProfile(format!(
+                            "target metric {metric:?} must name a numeric property in the metric schema"
+                        )));
+                    }
+                    for metric in scope.metric_agreement.keys() {
+                        if !schemas.has_numeric_property(contract.metric_schema.as_path(), metric) {
+                            return Err(ManifestCompatibilityError::InvalidProfile(format!(
+                                "agreement metric {metric:?} must name a numeric metric"
+                            )));
+                        }
+                    }
+                    schemas
+                        .validate(
+                            binding.instrumentation_schema.as_path(),
+                            &binding.instrumentation,
+                        )
+                        .map_err(|e| ManifestCompatibilityError::InvalidProfile(e.to_string()))?;
+                }
+            }
             let required_capability = required_capability(observation_policy.kind);
             if !definition.capabilities.contains(&required_capability) {
                 return Err(ManifestCompatibilityError::UnsupportedObservationKind {
@@ -242,12 +289,13 @@ fn validate_dataset_selection(
 fn required_capability(kind: ObservationKind) -> ImplementationCapability {
     match kind {
         ObservationKind::OneShot => ImplementationCapability::OneShot,
+        ObservationKind::Profile => ImplementationCapability::BufferedProfile,
     }
 }
 
 fn required_scientific_budget(kind: ObservationKind) -> ScientificBudget {
     match kind {
-        ObservationKind::OneShot => ScientificBudget::None,
+        ObservationKind::OneShot | ObservationKind::Profile => ScientificBudget::None,
     }
 }
 
@@ -255,6 +303,8 @@ fn required_scientific_budget(kind: ObservationKind) -> ScientificBudget {
 #[derive(Debug, Error, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum ManifestCompatibilityError {
+    #[error("invalid buffered profile: {0}")]
+    InvalidProfile(String),
     /// Compact contract parameters and a problem definition both supply defaults.
     #[error(
         "problem `{problem}`: contract `parameters` cannot be combined with problem `parameter-defaults`"

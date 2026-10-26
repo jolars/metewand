@@ -35,6 +35,7 @@ pub(crate) const CONTRACT_FIELDS: &[&str] = &[
     "metric-schema",
     "semantics-schema",
     "allowed-timing-scopes",
+    "instrumented-scopes",
     "supported-budgets",
     "semantics",
     "reference-cases",
@@ -198,6 +199,8 @@ pub struct ProblemContract {
     pub semantics_schema: Option<SchemaDeclaration>,
     /// Timing scopes under which the problem may be measured.
     pub allowed_timing_scopes: Vec<TimingScope>,
+    /// Explicit opt-in to worker-reported instrumented scopes.
+    pub instrumented_scopes: std::collections::BTreeMap<String, crate::profile::InstrumentedScope>,
     /// Scientific budgets supported by the contract.
     pub supported_budgets: Vec<ScientificBudget>,
     /// Validated family-specific semantics and operational rules.
@@ -234,7 +237,7 @@ impl ProblemContract {
     }
 
     fn declaration_value(&self) -> Value {
-        json!({
+        let mut value = json!({
             "version": self.version, "name": self.name.as_str(), "family": self.family.as_str(),
             "parameter_schema": self.parameter_schema.declaration_value(),
             "dataset_schemas": self.dataset_schemas.iter().map(SchemaDeclaration::declaration_value).collect::<Vec<_>>(),
@@ -248,7 +251,12 @@ impl ProblemContract {
                 "dataset": case.dataset.as_ref().map(RepositoryPath::as_path),
                 "result": case.result.as_path(), "expected_metrics": case.expected_metrics.as_path(),
             })).collect::<Vec<_>>(),
-        })
+        });
+        if !self.instrumented_scopes.is_empty() {
+            value["instrumented_scopes"] =
+                serde_json::to_value(&self.instrumented_scopes).expect("validated scopes");
+        }
+        value
     }
 }
 
@@ -274,6 +282,8 @@ struct RawProblemContract {
     metric_schema: Option<SchemaDeclaration>,
     #[serde(default, deserialize_with = "deserialize_optional_non_null")]
     semantics_schema: Option<SchemaDeclaration>,
+    #[serde(default)]
+    instrumented_scopes: std::collections::BTreeMap<String, crate::profile::InstrumentedScope>,
     allowed_timing_scopes: Vec<TimingScope>,
     supported_budgets: Vec<ScientificBudget>,
     semantics: ProblemSemantics,
@@ -340,6 +350,7 @@ impl<'de> Deserialize<'de> for ProblemContract {
             metric_schema,
             semantics_schema: raw.semantics_schema,
             allowed_timing_scopes: raw.allowed_timing_scopes,
+            instrumented_scopes: raw.instrumented_scopes,
             supported_budgets: raw.supported_budgets,
             semantics: raw.semantics,
             reference_cases: raw.reference_cases,

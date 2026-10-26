@@ -1,0 +1,87 @@
+version: 1
+name: buffered-profile
+problems:
+  square:
+    contract: problem.yaml
+    evaluator:
+      runner: python
+      entrypoint: evaluator.py
+      sources: [evaluator.py, "metewand/*.py"]
+implementations:
+  observer:
+    runner: python
+    entrypoint: worker.py
+    sources: [worker.py, "metewand/*.py"]
+    problem-contracts: [square]
+    capabilities: [buffered_profile]
+    parameters: &parameters
+      maximum_updates: { type: integer, minimum: 0, maximum: 1000, default: 20 }
+      local_bias: { type: number, default: 0 }
+  direct:
+    runner: python
+    entrypoint: worker.py
+    sources: [worker.py, "metewand/*.py"]
+    problem-contracts: [square]
+    capabilities: [buffered_profile]
+    parameters: *parameters
+experiments:
+  - name: target
+    problem: square
+    implementations: [observer, direct]
+    execution-policy: local
+    observation-policy: accuracy
+    measurement-repetitions: 2
+    seed: 7
+  - name: fixed
+    problem: square
+    implementations: [observer]
+    execution-policy: local
+    observation-policy: three_checks
+    seed: 8
+execution-policies:
+  local:
+    timing-scope: prepare_and_execute
+    primary-time: timed_wall_time
+    worker-reuse: true
+    warmup-runs: 1
+    timeout: 5 s
+observation-policies:
+  accuracy:
+    kind: profile
+    metric: gap
+    direction: at_most
+    threshold: 0.0001
+    record-thresholds: [0.5, 0.05, 0.0001]
+    max-observations: 3
+    max-trace-points: 100
+    max-buffer-bytes: 65536
+    terminal-reserve-bytes: 8192
+    max-active-time: 1 s
+    implementations:
+      observer: &observer
+        delivery: buffered_profile
+        measurement-basis: instrumented
+        instrumented-scope: complete_solver_call
+        instrumentation-schema: &instrumentation
+          type: object
+          properties: { recording: { enum: [observer, direct] } }
+          required: [recording]
+          additionalProperties: false
+        instrumentation: { recording: observer }
+        check-schedule: { every: 1 }
+      direct:
+        delivery: buffered_profile
+        measurement-basis: instrumented
+        instrumented-scope: complete_solver_call
+        instrumentation-schema: *instrumentation
+        instrumentation: { recording: direct }
+        check-schedule: { every: 1 }
+  three_checks:
+    kind: profile
+    max-observations: 3
+    max-trace-points: 10
+    max-buffer-bytes: 65536
+    terminal-reserve-bytes: 8192
+    max-active-time: 1 s
+    implementations:
+      observer: *observer

@@ -60,6 +60,7 @@ const reference = [
     items: [
       ['fixed-dataset-run', 'Timing envelopes'],
       ['execution-measurements', 'Execution measurements'],
+      ['buffered-profiles', 'Buffered profiles'],
       ['execution-controls', 'Execution controls'],
       ['worker-reuse', 'Worker reuse and warm-ups'],
       ['worker-environments', 'Worker environments'],
