@@ -34,10 +34,39 @@ pub struct ProfilePolicy {
     )]
     pub record_thresholds: Vec<f64>,
     pub max_observations: u64,
+    #[serde(
+        default,
+        skip_serializing_if = "is_zero",
+        deserialize_with = "positive_bound"
+    )]
     pub max_trace_points: u64,
+    #[serde(
+        default,
+        skip_serializing_if = "is_zero",
+        deserialize_with = "positive_bound"
+    )]
     pub max_buffer_bytes: u64,
+    #[serde(
+        default,
+        skip_serializing_if = "is_zero",
+        deserialize_with = "positive_bound"
+    )]
     pub terminal_reserve_bytes: u64,
     pub max_active_time: String,
+}
+
+fn positive_bound<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<u64, D::Error> {
+    let value = u64::deserialize(deserializer)?;
+    if value == 0 || value > MAX_SAFE_INTEGER {
+        return Err(serde::de::Error::custom(
+            "bounds must be positive safe integers",
+        ));
+    }
+    Ok(value)
+}
+
+fn is_zero(value: &u64) -> bool {
+    *value == 0
 }
 
 fn present<'de, D: serde::Deserializer<'de>, T: Deserialize<'de>>(
@@ -65,22 +94,19 @@ pub enum Direction {
 
 impl ProfilePolicy {
     pub fn validate(&self) -> Result<(), String> {
-        if [
-            self.max_observations,
-            self.max_trace_points,
-            self.max_buffer_bytes,
-            self.terminal_reserve_bytes,
-        ]
-        .iter()
-        .any(|v| *v == 0 || *v > MAX_SAFE_INTEGER)
-            || self.terminal_reserve_bytes > self.max_buffer_bytes
+        if self.max_observations == 0 || self.max_observations > MAX_SAFE_INTEGER {
+            return Err("max-observations must be a positive safe integer".into());
+        }
+        if self.max_trace_points != 0
+            || self.max_buffer_bytes != 0
+            || self.terminal_reserve_bytes != 0
         {
-            return Err("profile bounds must be positive safe integers; terminal reserve must fit the buffer".into());
+            self.validate_buffered()?;
         }
         self.active_time_ns()?;
         match (&self.metric, self.direction, self.threshold) {
             (None, None, None) if self.record_thresholds.is_empty() => {
-                if self.max_trace_points < self.max_observations {
+                if self.max_trace_points != 0 && self.max_trace_points < self.max_observations {
                     return Err(
                         "fixed count requires enough trace points for every observation".into(),
                     );
@@ -101,6 +127,21 @@ impl ProfilePolicy {
             _ => {
                 return Err("profiles require either metric, direction, and threshold together, or a fixed count without thresholds".into());
             }
+        }
+        Ok(())
+    }
+
+    pub fn validate_buffered(&self) -> Result<(), String> {
+        if [
+            self.max_trace_points,
+            self.max_buffer_bytes,
+            self.terminal_reserve_bytes,
+        ]
+        .iter()
+        .any(|v| *v == 0 || *v > MAX_SAFE_INTEGER)
+            || self.terminal_reserve_bytes > self.max_buffer_bytes
+        {
+            return Err("buffered bounds must be positive safe integers; terminal reserve must fit the buffer".into());
         }
         Ok(())
     }
@@ -175,16 +216,18 @@ pub enum InstrumentedBasis {
 #[derive(Clone, Debug)]
 pub struct ProfileDefinition {
     pub policy: ProfilePolicy,
-    pub implementations: BTreeMap<Name, BufferedBinding>,
+    pub implementations: BTreeMap<Name, ProfileBinding>,
 }
 
 impl ProfileDefinition {
     pub fn declaration_value(&self) -> Value {
         let mut value = serde_json::to_value(&self.policy).expect("validated profile");
-        value["implementations"] = self.implementations.iter().map(|(name,b)| (name.as_str().to_owned(),serde_json::json!({
-            "delivery":b.delivery,"measurement-basis":b.measurement_basis,"instrumented-scope":b.instrumented_scope,
-            "instrumentation-schema":b.instrumentation_schema.declaration_value(),"instrumentation":b.instrumentation,"check-schedule":b.check_schedule
-        }))).collect::<serde_json::Map<_,_>>().into();
+        value["implementations"] = self
+            .implementations
+            .iter()
+            .map(|(name, binding)| (name.as_str().to_owned(), binding.declaration_value()))
+            .collect::<serde_json::Map<_, _>>()
+            .into();
         value
     }
 }
@@ -276,4 +319,209 @@ pub struct BufferFile {
     pub path: PathBuf,
     pub sha256: String,
     pub size_bytes: u64,
+}
+
+/// Delivery-specific authoring fields share a completion policy.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(untagged)]
+pub enum ProfileBinding {
+    Buffered(BufferedBinding),
+    Fresh(FreshBinding),
+}
+
+impl ProfileBinding {
+    pub fn schema(&self) -> &SchemaDeclaration {
+        match self {
+            Self::Buffered(b) => &b.instrumentation_schema,
+            Self::Fresh(b) => &b.control_schema,
+        }
+    }
+    pub fn schema_mut(&mut self) -> &mut SchemaDeclaration {
+        match self {
+            Self::Buffered(b) => &mut b.instrumentation_schema,
+            Self::Fresh(b) => &mut b.control_schema,
+        }
+    }
+    pub fn declaration_value(&self) -> Value {
+        match self {
+            Self::Buffered(b) => serde_json::json!({
+                "delivery":b.delivery,"measurement-basis":b.measurement_basis,"instrumented-scope":b.instrumented_scope,
+                "instrumentation-schema":b.instrumentation_schema.declaration_value(),"instrumentation":b.instrumentation,"check-schedule":b.check_schedule
+            }),
+            Self::Fresh(b) => {
+                serde_json::json!({"delivery":b.delivery,"control-schema":b.control_schema.declaration_value(),"schedule":b.schedule})
+            }
+        }
+    }
+    pub fn validate(&self, policy: &ProfilePolicy) -> Result<(), String> {
+        match self {
+            Self::Buffered(b) => {
+                policy.validate_buffered()?;
+                if b.instrumented_scope.is_empty()
+                    || !b.instrumentation.is_object()
+                    || b.check_schedule.every == 0
+                    || b.check_schedule.every > MAX_SAFE_INTEGER
+                    || b.check_schedule.start > MAX_SAFE_INTEGER
+                {
+                    return Err("buffered binding requires a scope, instrumentation object, and positive safe check interval".into());
+                }
+            }
+            Self::Fresh(b) => {
+                let count = b.schedule.len();
+                if count == 0
+                    || count > policy.max_observations
+                    || (policy.metric.is_none() && count != policy.max_observations)
+                {
+                    return Err("fresh schedules must fit max-observations; fixed counts must match exactly".into());
+                }
+                b.schedule.expand(policy.max_observations)?;
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct FreshBinding {
+    pub delivery: FreshDelivery,
+    pub control_schema: SchemaDeclaration,
+    pub schedule: ControlSchedule,
+}
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum FreshDelivery {
+    FreshSequence,
+}
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ExecutorBasis {
+    ExecutorObserved,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum ControlSchedule {
+    Explicit {
+        controls: Vec<Value>,
+    },
+    Linear {
+        field: String,
+        start: f64,
+        step: f64,
+        count: u64,
+    },
+    Geometric {
+        field: String,
+        start: f64,
+        ratio: f64,
+        count: u64,
+    },
+}
+impl ControlSchedule {
+    pub fn len(&self) -> u64 {
+        match self {
+            Self::Explicit { controls } => controls.len() as u64,
+            Self::Linear { count, .. } | Self::Geometric { count, .. } => *count,
+        }
+    }
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+    pub fn expand(&self, bound: u64) -> Result<Vec<crate::canonical::CanonicalValue>, String> {
+        use crate::canonical::CanonicalValue;
+        let count = self.len();
+        if count == 0 || count > bound || count > MAX_SAFE_INTEGER {
+            return Err(
+                "control schedules require a positive count within max-observations".into(),
+            );
+        }
+        let mut controls = Vec::new();
+        controls
+            .try_reserve(usize::try_from(count).map_err(|_| "control count exceeds address space")?)
+            .map_err(|_| "control schedule exceeds available memory")?;
+        match self {
+            Self::Explicit { controls: values } => {
+                for value in values {
+                    if !value.is_object() {
+                        return Err("observation controls must be objects".into());
+                    }
+                    controls
+                        .push(CanonicalValue::try_from(value.clone()).map_err(|e| e.to_string())?);
+                }
+            }
+            Self::Linear { field, start, .. } | Self::Geometric { field, start, .. } => {
+                if field.is_empty() {
+                    return Err("schedule field must be nonempty".into());
+                }
+                let mut value = *start;
+                for index in 0..count {
+                    if !value.is_finite() {
+                        return Err("schedule arithmetic must remain finite".into());
+                    }
+                    let number = if value.fract() == 0.0 && value.abs() <= MAX_SAFE_INTEGER as f64 {
+                        serde_json::json!(value as i64)
+                    } else {
+                        serde_json::json!(value)
+                    };
+                    controls.push(
+                        CanonicalValue::try_from(serde_json::json!({field: number}))
+                            .map_err(|e| e.to_string())?,
+                    );
+                    if index + 1 < count {
+                        value = match self {
+                            Self::Linear { step, .. } => value + step,
+                            Self::Geometric { ratio, .. } => value * ratio,
+                            _ => unreachable!(),
+                        };
+                    }
+                }
+            }
+        }
+        Ok(controls)
+    }
+}
+
+/// Coordinates and exact control for one independently executed fresh point.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+#[derive(Eq)]
+pub struct FreshControl {
+    pub schedule_index: u64,
+    pub observation_control: Value,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct FreshObservationRecord {
+    pub delivery: FreshDelivery,
+    pub measurement_basis: ExecutorBasis,
+    pub measurement_index: u64,
+    pub schedule_index: u64,
+    pub observation_control: Value,
+}
+
+/// Rebuildable repetition progress, separate from individual attempt acceptance.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct FreshSequenceProgress {
+    pub resolved_specification_id: String,
+    pub logical_specification_id: String,
+    pub measurement_index: u64,
+    pub scheduled_points: u64,
+    pub accepted_points: u64,
+    pub consumed_time_ns: u64,
+    pub conservative_time_ns: u64,
+    pub status: String,
+    pub reason: Option<String>,
+}
+
+/// Public plan coordinates for a fresh execution without changing legacy slot arrays.
+#[derive(Clone, Debug, Serialize)]
+pub struct FreshPlannedObservation {
+    pub observation_slot_id: String,
+    pub attempt_slot_id: String,
+    pub measurement_index: u64,
+    pub schedule_index: u64,
+    pub observation_control: Value,
 }

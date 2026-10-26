@@ -2,55 +2,87 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "metewand://schemas/v1/profile-observation.schema.json",
   "x-metewand-compatibility-version": 1,
-  "type": "object",
-  "properties": {
-    "delivery": {
-      "const": "buffered_profile"
-    },
-    "measurement_basis": {
-      "const": "instrumented"
-    },
-    "instrumented_scope": {
-      "type": "string",
-      "minLength": 1
-    },
-    "clock": {
-      "const": "monotonic_ns"
-    },
-    "instrumented_time_ns": {
-      "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
-    },
-    "instrumented_total_time_ns": {
-      "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
-    },
-    "trace_index": {
-      "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
-    },
-    "capture_ordinal": {
-      "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
-    },
-    "thresholds": {
-      "type": "array",
-      "items": {
-        "type": "number"
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "delivery": {
+          "const": "buffered_profile"
+        },
+        "measurement_basis": {
+          "const": "instrumented"
+        },
+        "instrumented_scope": {
+          "type": "string",
+          "minLength": 1
+        },
+        "clock": {
+          "const": "monotonic_ns"
+        },
+        "instrumented_time_ns": {
+          "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
+        },
+        "instrumented_total_time_ns": {
+          "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
+        },
+        "trace_index": {
+          "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
+        },
+        "capture_ordinal": {
+          "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
+        },
+        "thresholds": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "uniqueItems": true
+        },
+        "provisional_metrics": {
+          "type": "object"
+        }
       },
-      "uniqueItems": true
+      "required": [
+        "delivery",
+        "measurement_basis",
+        "instrumented_scope",
+        "clock",
+        "instrumented_time_ns",
+        "instrumented_total_time_ns",
+        "trace_index",
+        "capture_ordinal",
+        "thresholds",
+        "provisional_metrics"
+      ],
+      "additionalProperties": false
     },
-    "provisional_metrics": {
-      "type": "object"
+    {
+      "type": "object",
+      "properties": {
+        "delivery": {
+          "const": "fresh_sequence"
+        },
+        "measurement_basis": {
+          "const": "executor_observed"
+        },
+        "measurement_index": {
+          "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
+        },
+        "schedule_index": {
+          "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
+        },
+        "observation_control": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "delivery",
+        "measurement_basis",
+        "measurement_index",
+        "schedule_index",
+        "observation_control"
+      ],
+      "additionalProperties": false
     }
-  },
-  "required": [
-    "delivery",
-    "measurement_basis",
-    "instrumented_scope",
-    "clock",
-    "instrumented_time_ns",
-    "instrumented_total_time_ns",
-    "trace_index",
-    "capture_ordinal",
-    "thresholds",
-    "provisional_metrics"
-  ],
-  "additionalProperties": false
+  ]
 }

@@ -31,6 +31,7 @@ use crate::{
 /// An in-memory inspection view. It never initializes, recovers, or writes a run.
 #[derive(Default)]
 pub struct Inspection {
+    fresh_sequences: Vec<metewand_core::profile::FreshSequenceProgress>,
     records: BTreeMap<String, InspectionRecord>,
     slots: Vec<SlotStatus>,
     attempts: Vec<AttemptStatus>,
@@ -115,7 +116,9 @@ impl Inspection {
             .as_nanos();
         self.output_directory = Some(snapshot.root.to_string_lossy().into_owned());
         for (&kind, rows) in &snapshot.tables {
-            if matches!(kind, "event" | "attempt-artifact" | "observation-artifact") {
+            if kind.starts_with("fresh-")
+                || matches!(kind, "event" | "attempt-artifact" | "observation-artifact")
+            {
                 continue;
             }
             for row in rows {
@@ -129,6 +132,33 @@ impl Inspection {
         }
         for artifact in &snapshot.tables["stored-artifact"] {
             self.read_artifact(&snapshot.root, artifact)?;
+        }
+        if let Some(progress) = snapshot.tables.get("fresh-sequence") {
+            self.fresh_sequences = progress
+                .iter()
+                .map(|p| {
+                    serde_json::from_value(p.clone())
+                        .map_err(|_| InspectionError::Invalid("invalid fresh progress"))
+                })
+                .collect::<Result<_, _>>()?;
+            for member in &snapshot.tables["fresh-member"] {
+                let id = string(member, "slot_id")?;
+                let progress = progress.iter().find(|p| {
+                    p["resolved_specification_id"] == member["resolved_run_id"]
+                        && p["measurement_index"] == member["measurement_index"]
+                });
+                let disposition = snapshot.tables["fresh-disposition"]
+                    .iter()
+                    .find(|d| d["slot_id"] == id);
+                if let Some(record) = self.records.get_mut(&id) {
+                    record.record["fresh_sequence"] = json!({"delivery":"fresh_sequence","measurement_basis":"executor_observed","measurement_index":member["measurement_index"],"schedule_index":member["schedule_index"],"observation_slot_id":member["observation_slot_id"],"observation_control":member["control"],"progress":progress,"disposition":disposition.map(|d|&d["reason"]),"causing_attempt_id":disposition.map(|d|&d["causing_attempt_id"])});
+                }
+            }
+            for budget in &snapshot.tables["fresh-budget"] {
+                if let Some(record) = self.records.get_mut(&string(budget, "attempt_id")?) {
+                    record.record["fresh_budget"] = budget.clone();
+                }
+            }
         }
         for row in &snapshot.tables["attempt"] {
             let id = string(row, "id")?;
@@ -240,6 +270,24 @@ impl Inspection {
                 SlotState::Active
             } else if attempts.iter().any(|attempt| attempt.recovery_required) {
                 SlotState::RecoveryRequired
+            } else if snapshot
+                .tables
+                .get("fresh-disposition")
+                .is_some_and(|rows| {
+                    rows.iter()
+                        .any(|d| d["slot_id"] == id && d["reason"] == "skipped_target_reached")
+                })
+            {
+                SlotState::SkippedTargetReached
+            } else if snapshot
+                .tables
+                .get("fresh-disposition")
+                .is_some_and(|rows| {
+                    rows.iter()
+                        .any(|d| d["slot_id"] == id && d["reason"] == "active_time_limit")
+                })
+            {
+                SlotState::Censored
             } else if attempts.is_empty() {
                 SlotState::Pending
             } else {
@@ -483,6 +531,8 @@ impl Inspection {
         };
         for slot in &self.slots {
             match slot.state {
+                SlotState::SkippedTargetReached => summary.skipped_target_reached_slots += 1,
+                SlotState::Censored => summary.censored_slots += 1,
                 SlotState::Pending => summary.pending_slots += 1,
                 SlotState::Active => summary.active_slots += 1,
                 SlotState::Satisfied => summary.satisfied_slots += 1,
@@ -505,6 +555,7 @@ impl Inspection {
             .filter(|observation| observation.selected)
             .count();
         StatusReport {
+            fresh_sequences: self.fresh_sequences,
             command: "status",
             benchmark: self.benchmark,
             manifest_hash: self.manifest_hash,

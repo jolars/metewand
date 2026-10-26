@@ -175,6 +175,7 @@ fn separates_logical_records_from_resolved_runtime_dependencies() {
         },
     };
     let observation_slot = LogicalObservationSlotRecord {
+        fresh: None,
         specification: id::<OneShotLogicalSpecificationRecord>(27),
         measurement_index: 3,
     };

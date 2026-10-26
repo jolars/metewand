@@ -61,6 +61,7 @@ pub(super) fn execute(
         }
     };
     let request = || FixedDatasetRun {
+        observation_control: None,
         dataset_dir: view.directory(),
         problem_contract_id: &candidate.contract_id,
         problem_parameters: &candidate.problem_parameters,

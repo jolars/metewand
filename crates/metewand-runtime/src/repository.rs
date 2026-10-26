@@ -207,12 +207,7 @@ fn schema_roots<'a>(
     }
     for policy in manifest.observation_policies.values() {
         if let Some(profile) = &policy.profile {
-            roots.extend(
-                profile
-                    .implementations
-                    .values()
-                    .map(|b| &b.instrumentation_schema),
-            );
+            roots.extend(profile.implementations.values().map(|b| b.schema()));
         }
     }
     for contract in contracts {

@@ -136,7 +136,9 @@
             "active",
             "satisfied",
             "retry_required",
-            "recovery_required"
+            "recovery_required",
+            "skipped_target_reached",
+            "censored"
           ]
         },
         "attempt_ids": {
@@ -348,6 +350,12 @@
         },
         "selected_observations": {
           "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
+        },
+        "skipped_target_reached_slots": {
+          "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
+        },
+        "censored_slots": {
+          "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
         }
       },
       "required": [
@@ -428,6 +436,12 @@
         },
         "summary": {
           "$ref": "#/$defs/summary"
+        },
+        "fresh_sequences": {
+          "type": "array",
+          "items": {
+            "$ref": "profile-observation-policy.schema.json#/$defs/progress"
+          }
         }
       },
       "required": [

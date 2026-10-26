@@ -51,45 +51,146 @@
     },
     {
       "if": {
-        "properties": { "kind": { "const": "diagnostic" } },
-        "required": ["kind"]
+        "properties": {
+          "kind": {
+            "const": "diagnostic"
+          }
+        },
+        "required": [
+          "kind"
+        ]
       },
       "then": {
         "properties": {
-          "data": { "$ref": "common.schema.json#/$defs/diagnostic" }
+          "data": {
+            "$ref": "common.schema.json#/$defs/diagnostic"
+          }
         }
       }
     },
     {
       "if": {
         "properties": {
-          "kind": { "const": "result" },
+          "kind": {
+            "const": "result"
+          },
           "data": {
             "type": "object",
-            "properties": { "command": { "const": "init" } },
-            "required": ["command"]
+            "properties": {
+              "command": {
+                "const": "init"
+              }
+            },
+            "required": [
+              "command"
+            ]
           }
         },
-        "required": ["kind", "data"]
+        "required": [
+          "kind",
+          "data"
+        ]
       },
       "then": {
-        "properties": { "data": { "$ref": "#/$defs/init_result" } }
+        "properties": {
+          "data": {
+            "$ref": "#/$defs/init_result"
+          }
+        }
       }
     },
     {
       "if": {
         "properties": {
-          "kind": { "const": "result" },
+          "kind": {
+            "const": "result"
+          },
           "data": {
             "type": "object",
-            "properties": { "command": { "const": "scaffold" } },
-            "required": ["command"]
+            "properties": {
+              "command": {
+                "const": "scaffold"
+              }
+            },
+            "required": [
+              "command"
+            ]
           }
         },
-        "required": ["kind", "data"]
+        "required": [
+          "kind",
+          "data"
+        ]
       },
       "then": {
-        "properties": { "data": { "$ref": "#/$defs/scaffold_result" } }
+        "properties": {
+          "data": {
+            "$ref": "#/$defs/scaffold_result"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "result"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "command": {
+                "const": "plan"
+              }
+            },
+            "required": [
+              "command"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "data"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "experiments": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "candidates": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "specifications": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "fresh_observations": {
+                                  "type": "array",
+                                  "items": {
+                                    "$ref": "profile-observation-policy.schema.json#/$defs/planned_observation"
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     }
   ],

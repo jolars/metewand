@@ -4,14 +4,14 @@
 \alias{serve_evaluator}
 \alias{worker_error}
 \alias{evaluation}
-\title{Serve Version-1 One-Shot Workers}
+\title{Serve Version-1 Workers}
 \description{Dispatch benchmark-owned callbacks over dedicated protocol pipes.
 Metewand owns environments, source acquisition, seeds, scheduling, validation,
 and publication.}
 \usage{
 serve_implementation(prepare, execute, result = NULL, reset = NULL, shutdown = NULL,
                      statistics = NULL, read_fd = NULL, write_fd = NULL,
-                     result_data = NULL)
+                     result_data = NULL, fresh_sequence = FALSE)
 serve_dataset_materializer(materialize, read_fd = NULL, write_fd = NULL)
 serve_evaluator(evaluate, read_fd = NULL, write_fd = NULL, semantics = FALSE)
 worker_error(code, message, details = NULL)
@@ -27,6 +27,9 @@ evaluation(metrics, verdict)
   SDK writes the standard result envelope from execute output or result_data.}
   \item{result_data}{Optional function converting execute output to scientific
   JSON data outside diagnostic solve timing. Supply either this or result.}
+  \item{fresh_sequence}{When TRUE, report fresh_sequence and pass the selected
+  canonical observation-control object to execute. Its response echo is preserved
+  independently of callback mutations. Budget remains NULL.}
   \item{reset}{Optional function of state that releases slot-scoped resources.
   Its return value is discarded. Without it, reset is unsupported.}
   \item{shutdown}{Optional function of state that releases resources before exit.}

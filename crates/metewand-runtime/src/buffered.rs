@@ -76,6 +76,7 @@ impl BufferedTrace {
         clock: impl Fn() -> u64 + 'static,
     ) -> WorkerResult<Self> {
         profile.policy.validate().map_err(invalid)?;
+        profile.policy.validate_buffered().map_err(invalid)?;
         if profile.check_schedule.every == 0 {
             return Err(invalid("check interval must be positive"));
         }
@@ -472,6 +473,7 @@ pub fn validate_buffer(
 ) -> Result<(BufferedManifest, Vec<TracePoint>), String> {
     let fail = |e: std::io::Error| e.to_string();
     profile.policy.validate()?;
+    profile.policy.validate_buffered()?;
     let mut actual = BTreeMap::new();
     inventory_files(root, root, &mut actual)?;
     let total = actual

@@ -152,7 +152,10 @@
       "properties": {
         "id": { "$ref": "#/$defs/request_id" },
         "method": { "const": "execute" },
-        "result_dir": { "$ref": "#/$defs/path" }
+        "result_dir": { "$ref": "#/$defs/path" },
+        "observation_control": {
+          "type": "object"
+        }
       },
       "required": ["id", "method", "result_dir"],
       "additionalProperties": false
@@ -239,7 +242,10 @@
           ]
         },
         "result": { "$ref": "#/$defs/manifest_reference" },
-        "statistics": { "type": "object" }
+        "statistics": { "type": "object" },
+        "observation_control": {
+          "type": "object"
+        }
       },
       "required": ["id", "ok", "implementation_time_ns", "result", "statistics"],
       "additionalProperties": false

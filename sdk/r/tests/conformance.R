@@ -65,7 +65,8 @@ for (session in golden$sessions) {
     implementation = list(
       prepare = function(dataset, contract, problem, implementation, seed) list(seed = seed),
       execute = function(state, budget, control) {
-        stopifnot(is.null(budget), is.null(control))
+        stopifnot(is.null(budget))
+        if (isTRUE(session$fresh_sequence)) stopifnot(control$iterations == 4) else stopifnot(is.null(control))
         state
       },
       statistics = function(state) list(seed = state$seed),
@@ -98,7 +99,7 @@ for (session in golden$sessions) {
     encode(response)
   }
   responses <- with_bindings(list(.clock = clock, .encode_response = inspect),
-    exchange(callbacks, session$role, requests))
+    exchange(callbacks, session$role, requests, fresh_sequence = isTRUE(session$fresh_sequence)))
   for (i in seq_along(responses)) {
     expected <- gsub("@SDK@", "metewand-r", session$exchanges[[i]]$response, fixed = TRUE)
     stopifnot(identical(c(canonical_bytes(responses[[i]]), as.raw(10)), charToRaw(enc2utf8(expected))))

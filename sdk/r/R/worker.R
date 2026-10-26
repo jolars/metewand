@@ -91,7 +91,7 @@ evaluation <- function(metrics, verdict) {
   structure(list(metrics = metrics, verdict = verdict), class = "metewand_evaluation")
 }
 
-.serve <- function(worker, role, reader, writer, semantics = FALSE) {
+.serve <- function(worker, role, reader, writer, semantics = FALSE, fresh_sequence = FALSE) {
   ready <- FALSE
   prepared <- FALSE
   state <- NULL
@@ -100,6 +100,14 @@ evaluation <- function(metrics, verdict) {
       rules <- request$problem_semantics
       if (!.is_object(rules)) .fail("invalid_request", "Expected problem_semantics object.")
       request$problem_semantics <- NULL
+    }
+    control <- NULL
+    if (identical(request$method, "execute") && "observation_control" %in% names(request)) {
+      if (!fresh_sequence || !.is_object(request$observation_control)) {
+        .fail("invalid_request", "Observation controls require fresh_sequence support and an object.")
+      }
+      control <- parse_json(canonical_bytes(request$observation_control))
+      request$observation_control <- NULL
     }
     method <- .validate_request(request)
     if (!ready) {
@@ -110,7 +118,7 @@ evaluation <- function(metrics, verdict) {
       ready <<- TRUE
       return(list(protocol = 1, worker_id = request$worker_id,
                   sdk = list(name = "metewand-r", version = "0.1.0"),
-                  capabilities = if (role == "implementation") list("one_shot") else
+                  capabilities = if (role == "implementation") c(list("one_shot"), if (fresh_sequence) list("fresh_sequence")) else
                     if (semantics) list("problem_semantics") else list()))
     }
     if (method == "hello") .fail("invalid_request", "The worker session has already negotiated a protocol.")
@@ -127,7 +135,7 @@ evaluation <- function(metrics, verdict) {
       prepared <<- FALSE
       execute <- worker$execute
       start <- .clock()
-      executed <- execute(state, NULL, NULL)
+      executed <- execute(state, NULL, if (is.null(control)) NULL else parse_json(canonical_bytes(control)))
       elapsed <- .clock() - start
       state <<- executed
       statistics <- if (is.function(worker$statistics)) worker$statistics(state) else NULL
@@ -140,8 +148,10 @@ evaluation <- function(metrics, verdict) {
         write_result(request$result_dir, data)
       }
       manifest <- .completed_manifest(request$result_dir, manifest)
-      return(list(result = list(manifest = manifest), statistics = statistics,
-                  implementation_time_ns = if (.is_integer(elapsed)) elapsed else NULL))
+      response <- list(result = list(manifest = manifest), statistics = statistics,
+                       implementation_time_ns = if (.is_integer(elapsed)) elapsed else NULL)
+      if (!is.null(control)) response$observation_control <- control
+      return(response)
     } else if (method == "reset") {
       prepared <<- FALSE
       previous <- state
@@ -195,7 +205,7 @@ evaluation <- function(metrics, verdict) {
   }
 }
 
-.serve_fds <- function(worker, role, read_fd, write_fd, semantics = FALSE) {
+.serve_fds <- function(worker, role, read_fd, write_fd, semantics = FALSE, fresh_sequence = FALSE) {
   if (is.null(read_fd)) read_fd <- suppressWarnings(as.double(Sys.getenv("METEWAND_PROTOCOL_READ_FD")))
   if (is.null(write_fd)) write_fd <- suppressWarnings(as.double(Sys.getenv("METEWAND_PROTOCOL_WRITE_FD")))
   if (!.is_integer(read_fd, .Machine$integer.max) || !.is_integer(write_fd, .Machine$integer.max)) {
@@ -203,12 +213,12 @@ evaluation <- function(metrics, verdict) {
   }
   pipes <- .native(C_mw_open, read_fd, write_fd, error = stop)
   on.exit(.Call(C_mw_close, pipes))
-  .serve(worker, role, pipes, pipes, semantics = semantics)
+  .serve(worker, role, pipes, pipes, semantics = semantics, fresh_sequence = fresh_sequence)
 }
 
 serve_implementation <- function(prepare, execute, result = NULL, reset = NULL, shutdown = NULL,
                                  statistics = NULL, read_fd = NULL, write_fd = NULL,
-                                 result_data = NULL) {
+                                 result_data = NULL, fresh_sequence = FALSE) {
   callbacks <- list(prepare = prepare, execute = execute, result = result,
                     reset = reset, shutdown = shutdown, statistics = statistics,
                     result_data = result_data)
@@ -219,7 +229,8 @@ serve_implementation <- function(prepare, execute, result = NULL, reset = NULL, 
   if (!is.null(result) && !is.null(result_data)) {
     stop("Supply result or result_data, not both.", call. = FALSE)
   }
-  .serve_fds(callbacks, "implementation", read_fd, write_fd)
+  if (!is.logical(fresh_sequence) || length(fresh_sequence) != 1L || is.na(fresh_sequence)) stop("fresh_sequence must be a boolean.", call. = FALSE)
+  .serve_fds(callbacks, "implementation", read_fd, write_fd, fresh_sequence = fresh_sequence)
 }
 
 serve_dataset_materializer <- function(materialize, read_fd = NULL, write_fd = NULL) {

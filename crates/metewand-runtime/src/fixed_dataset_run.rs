@@ -105,6 +105,8 @@ impl TimingEnvelope {
 /// does not materialize it or create a private dataset view.
 #[derive(Debug)]
 pub struct FixedDatasetRun<'a> {
+    /// Selected canonical control, absent for one-shot execution.
+    pub observation_control: Option<&'a Value>,
     /// Directory containing the fixed local dataset consumed by both workers.
     pub dataset_dir: &'a Path,
     /// Exact selected problem-contract identity sent over the worker protocol.
@@ -441,7 +443,11 @@ fn run_workers(
                     implementation_process,
                     WorkerRole::Implementation,
                     request.implementation_identity.clone(),
-                    &[Capability::OneShot],
+                    &[if request.observation_control.is_some() {
+                        Capability::FreshSequence
+                    } else {
+                        Capability::OneShot
+                    }],
                     request.timeouts,
                     timing.deadline,
                 )
@@ -497,9 +503,11 @@ fn run_workers(
         }
         implementation.set_scientific_deadline(timing.deadline);
         let executed = measure(&mut measurements.execute_request_time_ns, || {
-            implementation
-                .execute(result_path.clone())
-                .map_err(|source| FixedDatasetRunError::Implementation { source })
+            match request.observation_control {
+                Some(control) => implementation.execute_fresh(result_path.clone(), control.clone()),
+                None => implementation.execute(result_path.clone()),
+            }
+            .map_err(|source| FixedDatasetRunError::Implementation { source })
         });
         let elapsed = if executed.is_ok() {
             match timing.finish() {
@@ -915,7 +923,8 @@ fn classify_session(source: &WorkerSessionError, implementation: bool) -> FixedD
         } => FixedDatasetFailureKind::ControlEnforcementLost,
         WorkerSessionError::Timeout { .. } => FixedDatasetFailureKind::PhaseTimeout,
         WorkerSessionError::ScientificTimeout { .. } => FixedDatasetFailureKind::ScientificTimeout,
-        WorkerSessionError::ProtocolRead { .. }
+        WorkerSessionError::ObservationControlMismatch
+        | WorkerSessionError::ProtocolRead { .. }
         | WorkerSessionError::Response { .. }
         | WorkerSessionError::Handshake { .. }
         | WorkerSessionError::Encode { .. }

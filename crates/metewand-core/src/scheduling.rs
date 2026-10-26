@@ -27,6 +27,8 @@ pub struct ComparisonBlock {
 /// Scheduling inputs for one measured slot, independent of executor state.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SchedulingSlot {
+    /// Fresh-sequence round; zero for existing delivery modes.
+    pub observation_round: u64,
     /// Stable identity used to break equal within-block priorities.
     pub logical_slot: RecordId<LogicalAttemptSlotRecord>,
     /// Comparison group resolved after dataset materialization.
@@ -79,6 +81,7 @@ pub fn schedule_slots(
             (
                 derive_block_scheduling_priority(scheduling_seed, &slot.comparison_block),
                 slot.comparison_block,
+                slot.observation_round,
                 slot.scheduling_priority,
                 slot.logical_slot,
             )

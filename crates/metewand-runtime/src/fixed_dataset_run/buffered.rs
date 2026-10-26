@@ -2,7 +2,7 @@ use super::*;
 use metewand_core::{
     profile::{BufferedDelivery, InstrumentedBasis},
     profile::{BufferedManifest, SelectedBufferedProfile},
-    records::ProfileObservationRecord,
+    records::BufferedObservationRecord,
 };
 use serde_json::json;
 
@@ -347,7 +347,7 @@ fn run_workers(
             CompletionStatus::NotRequired
         };
         let point = &trace[snapshot.trace_index as usize];
-        let profile_observation = ProfileObservationRecord {
+        let profile_observation = BufferedObservationRecord {
             delivery: BufferedDelivery::BufferedProfile,
             measurement_basis: InstrumentedBasis::Instrumented,
             instrumented_scope: profile.instrumented_scope.clone(),

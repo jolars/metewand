@@ -1122,7 +1122,9 @@ selected implementation binds a delivery mode under the same policy:
 Fresh-sequence and buffered profiles are required by the local MVP; streaming
 profiles follow it. Buffered profiles are implemented in the CLI and Rust and
 Python helpers; see [Buffered profiles](docs/reference/buffered-profiles.md).
-Fresh-sequence and streaming examples below specify intended interfaces.
+Fresh sequences are implemented through the CLI and Python and R helpers; see
+[Fresh-sequence profiles](docs/reference/fresh-sequence-profiles.md). Streaming
+examples below specify intended interfaces.
 Implement each mode with its actual producer, consumer, and focused behavioral
 tests. Apply the [pre-MVP compatibility policy](docs/reference/compatibility-versions.md)
 only to affected boundaries. This design change does not change current
@@ -1140,20 +1142,20 @@ observation-policies:
     metric: "relative_duality_gap"
     direction: "at_most"
     threshold: 1e-7
-    max_observations: 100
-    max_active_time: "30 s"
+    max-observations: 100
+    max-active-time: "30 s"
     implementations:
       iterative:
         delivery: "fresh_sequence"
-        control_schema: "schemas/iteration-control.json"
+        control-schema: "schemas/iteration-control.json"
         schedule: { kind: "linear", field: "iterations", start: 1, step: 1, count: 100 }
       tolerance:
         delivery: "fresh_sequence"
-        control_schema: "schemas/tolerance-control.json"
+        control-schema: "schemas/tolerance-control.json"
         schedule: { kind: "geometric", field: "tolerance", start: 0.1, ratio: 0.1, count: 12 }
       callback:
         delivery: "streaming_profile"
-        control_schema: "schemas/callback-progress.json"
+        control-schema: "schemas/callback-progress.json"
 ```
 
 An observation policy may run a fixed number of observations or stop when a
@@ -1188,7 +1190,16 @@ accepting its attempt; a profile policy uses its explicit target and bound.
 
 For `fresh_sequence`, every observation control receives clean implementation
 state; worker-process reuse and process-local warm-up remain governed by the
-execution policy. For `streaming_profile`, the worker pauses after publishing a
+execution policy. Each fresh point uses its own executor-observed curve time.
+A separate cumulative active-time budget includes measured failures and retries
+across resume, excluding warm-ups and evaluation. Durable reservations retain
+conservative charges if interruption loses timing evidence. Valid below-target
+points satisfy their individual slots; repetition completion is separate. A
+technical failure does not prevent later controls from running within the
+remaining budget. Target completion skips remaining unsatisfied slots and
+prevents further retries in that repetition.
+
+For `streaming_profile`, the worker pauses after publishing a
 checkpoint until Metewand validates and evaluates it and replies with
 `continue` or `stop`. Checkpoint result writing is included in active execution
 time, while independent evaluation is excluded and recorded separately. The
@@ -1477,9 +1488,9 @@ an SDK.
 
 The Gate-1 one-shot request omits the optional scientific budget and observation
 control, and its response omits `observation_control`. The `fresh_sequence`
-subprotocol adds its selected control in the later profile slice; until then,
-selecting that capability is rejected. `implementation_time_ns` is explicitly
-nullable, and `statistics` is an object. Successful `prepare`, `reset`,
+subprotocol adds the selected canonical control to the request and requires its
+matching response echo. Python and R helpers explicitly opt in.
+`implementation_time_ns` is explicitly nullable, and `statistics` is an object. Successful `prepare`, `reset`,
 and `shutdown` calls return the common acknowledgment
 `{"id":"…","ok":true}`. Successful `evaluate` calls instead return
 `{"id":"…","ok":true,"verdict":"reached"}` after writing metrics. The required

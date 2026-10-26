@@ -117,16 +117,27 @@ artifacts start at version 1. Existing one-shot canonical identity transcripts
 and persisted records retain their representations. Execution semantics remain
 at version 2; instrumented evidence carries its own explicit basis and scope.
 
-Runs containing profiles initialize SQLite layout 2. Version-1 stores remain
+Runs containing buffered delivery initialize SQLite layout 2, unless fresh
+delivery requires layout 3. Version-1 stores remain
 readable and resumable for one-shot work, without migration. Buffered selection
 commits with one accepted producing attempt. Partial observations survive but
 cannot satisfy a retry. Exports add diagnostic trace rows and optional profile
 fields; CSV exposes instrumented and provisional metric columns.
 
 The handshake and typed session implement `check_applicability` and
-`execute_buffered`. `fresh_sequence` and `streaming_profile` remain reserved for
-selection. Additional scientific budgets remain unsupported. The original
-`execute` request still admits only `id`, `method`, and `result_dir`.
+`execute_buffered`. Fresh sequences select `fresh_sequence` and add an optional
+`observation_control` object to `execute` requests and responses, with a required
+matching echo for fresh execution. One-shot wire shapes remain unchanged.
+`streaming_profile` remains reserved, and additional scientific budgets remain
+unsupported.
+
+[Fresh sequences](fresh-sequence-profiles.md) add SQLite layout 3 for durable
+repetition membership, cumulative time reservations, and slot dispositions.
+Layouts 1 and 2 remain readable and resumable without migration. Existing
+one-shot and buffered canonical identity bytes remain unchanged. Fresh slots
+bind explicit repetition and schedule indices and canonical controls. Version-1
+public records add fresh evidence, repetition progress, and skipped slot export
+rows; execution semantics remain at version 2.
 
 Strict schemas and typed parsers must agree on what the implementation accepts.
 The [extension rejection vectors](https://github.com/jolars/metewand/blob/main/schemas/v1/fixtures/gate3-extensions.json)

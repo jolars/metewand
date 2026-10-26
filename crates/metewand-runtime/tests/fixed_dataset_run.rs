@@ -417,6 +417,7 @@ fn fixed_dataset_runs_through_implementation_and_independent_evaluator() {
 
     let whole_call_started = Instant::now();
     let result = run_fixed_dataset(FixedDatasetRun {
+        observation_control: None,
         dataset_dir: &fixture_path("fixed-dataset"),
         problem_contract_id: "mw1-problem-contract-fixture",
         problem_parameters: &problem_parameters,
@@ -466,6 +467,7 @@ fn rejected_prepare_does_not_leave_private_output() {
     let worker_id = WorkerIdentity::from_str(WORKER_ID).unwrap();
 
     let error = run_fixed_dataset(FixedDatasetRun {
+        observation_control: None,
         dataset_dir: &fixture_path("fixed-dataset"),
         problem_contract_id: "mw1-problem-contract-fixture",
         problem_parameters: &problem_parameters,
@@ -611,6 +613,7 @@ fn run_mutation_case(
     }
     let worker_id = WorkerIdentity::from_str(WORKER_ID).unwrap();
     let outcome = run_fixed_dataset_outcome(FixedDatasetRun {
+        observation_control: None,
         dataset_dir: dataset.path(),
         problem_contract_id: "mw1-problem-contract-fixture",
         problem_parameters: &json!({"offset": 2}),
@@ -778,6 +781,7 @@ fn run_timing_case(
     let worker_id = WorkerIdentity::from_str(WORKER_ID).unwrap();
 
     let outcome = run_fixed_dataset_outcome(FixedDatasetRun {
+        observation_control: None,
         dataset_dir: &fixture_path("fixed-dataset"),
         problem_contract_id: "mw1-problem-contract-fixture",
         problem_parameters: &problem_parameters,

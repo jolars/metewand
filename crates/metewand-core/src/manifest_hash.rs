@@ -668,6 +668,7 @@ fn implementation_capability(capability: ImplementationCapability) -> &'static s
     match capability {
         ImplementationCapability::OneShot => "one_shot",
         ImplementationCapability::Applicability => "applicability",
+        ImplementationCapability::FreshSequence => "fresh_sequence",
         ImplementationCapability::BufferedProfile => "buffered_profile",
     }
 }

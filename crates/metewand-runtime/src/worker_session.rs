@@ -361,21 +361,62 @@ impl WorkerSession {
         &mut self,
         result_dir: impl Into<String>,
     ) -> Result<ExecuteResponse, WorkerSessionError> {
+        self.execute_control(result_dir.into(), None)
+    }
+
+    /// Executes one clean point under the selected fresh-sequence capability.
+    pub fn execute_fresh(
+        &mut self,
+        result_dir: impl Into<String>,
+        control: Value,
+    ) -> Result<ExecuteResponse, WorkerSessionError> {
+        self.execute_control(result_dir.into(), Some(control))
+    }
+
+    fn execute_control(
+        &mut self,
+        result_dir: String,
+        control: Option<Value>,
+    ) -> Result<ExecuteResponse, WorkerSessionError> {
         self.require_role(WorkerPhase::Execute, WorkerRole::Implementation)?;
+        let capability = if control.is_some() {
+            Capability::FreshSequence
+        } else {
+            Capability::OneShot
+        };
         if !self
             .negotiated()
             .selected_capabilities()
-            .contains(&Capability::OneShot)
+            .contains(&capability)
         {
             return Err(WorkerSessionError::CapabilityNotSelected {
                 phase: WorkerPhase::Execute,
-                capability: Capability::OneShot,
+                capability,
             });
         }
         let id = self.begin_request(WorkerPhase::Execute)?;
-        let request = ExecuteRequest::new(id, result_dir);
-        let timeout = self.timeouts.execute;
-        self.exchange(WorkerPhase::Execute, &request, timeout)
+        let mut request = ExecuteRequest::new(id, result_dir);
+        if let Some(control) = &control {
+            request = request.with_observation_control(control.clone());
+        }
+        let response: ExecuteResponse =
+            self.exchange(WorkerPhase::Execute, &request, self.timeouts.execute)?;
+        let control_matches = match (control.as_ref(), response.observation_control()) {
+            (None, None) => true,
+            (Some(expected), Some(actual)) => matches!(
+                (
+                    metewand_core::canonical::CanonicalValue::try_from(expected.clone()),
+                    metewand_core::canonical::CanonicalValue::try_from(actual.clone()),
+                ),
+                (Ok(expected), Ok(actual)) if expected == actual
+            ),
+            _ => false,
+        };
+        if !control_matches {
+            self.discard();
+            return Err(WorkerSessionError::ObservationControlMismatch);
+        }
+        Ok(response)
     }
 
     /// Executes a selected buffered profile without checkpoint round trips.
@@ -753,6 +794,8 @@ fn run_protocol_io(
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum WorkerSessionError {
+    #[error("execute response did not echo the selected observation control")]
+    ObservationControlMismatch,
     /// A previously applied lifetime control no longer holds.
     #[error("worker control enforcement lost: {control}")]
     ControlEnforcementLost {

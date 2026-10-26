@@ -10,6 +10,7 @@ pub const EXPORT_SCHEMA_VERSION: u32 = 1;
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ExportRecordType {
+    Slot,
     Applicability,
     Attempt,
     Observation,

@@ -715,6 +715,12 @@ enum PrepareMethod {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ExecuteRequest {
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_control"
+    )]
+    observation_control: Option<Value>,
     id: RequestId,
     method: ExecuteMethod,
     #[serde(deserialize_with = "deserialize_nonempty_string")]
@@ -730,10 +736,19 @@ impl ExecuteRequest {
     #[must_use]
     pub fn new(id: RequestId, result_dir: impl Into<String>) -> Self {
         Self {
+            observation_control: None,
             id,
             method: ExecuteMethod::Execute,
             result_dir: result_dir.into(),
         }
+    }
+
+    pub fn observation_control(&self) -> Option<&Value> {
+        self.observation_control.as_ref()
+    }
+    pub fn with_observation_control(mut self, control: Value) -> Self {
+        self.observation_control = Some(control);
+        self
     }
 
     /// Returns the request identifier.
@@ -1140,6 +1155,12 @@ impl EvaluateResponse {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ExecuteResponse {
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_control"
+    )]
+    observation_control: Option<Value>,
     id: RequestId,
     ok: Success,
     #[serde(deserialize_with = "deserialize_required_safe_u64_option")]
@@ -1169,12 +1190,21 @@ impl ExecuteResponse {
         statistics: serde_json::Map<String, Value>,
     ) -> Self {
         Self {
+            observation_control: None,
             id,
             ok: Success,
             implementation_time_ns,
             result: ManifestReference::new(manifest),
             statistics: Value::Object(statistics),
         }
+    }
+
+    pub fn observation_control(&self) -> Option<&Value> {
+        self.observation_control.as_ref()
+    }
+    pub fn with_observation_control(mut self, control: Value) -> Self {
+        self.observation_control = Some(control);
+        self
     }
 
     /// Returns the worker's optional diagnostic implementation-call time.
@@ -1611,6 +1641,7 @@ pub fn validate_hello_response(
                 | Capability::Applicability
                 | Capability::ProblemSemantics
                 | Capability::BufferedProfile
+                | Capability::FreshSequence
         )
     }) {
         return Err(HandshakeError::ReservedCapability {
@@ -1857,4 +1888,11 @@ pub enum OperationResponseDecodeError {
     /// The response did not answer the one pending request.
     #[error(transparent)]
     Request(#[from] RequestTrackerError),
+}
+
+fn deserialize_control<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<Value>, D::Error> {
+    let control = deserialize_object(deserializer)?;
+    Ok(Some(control))
 }

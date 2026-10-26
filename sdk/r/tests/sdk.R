@@ -68,12 +68,12 @@ hello <- function(role = "implementation") list(
   id = "0", method = "hello", protocols = list(1), role = role,
   worker_id = paste0("mw1-resolved-worker-", strrep("a", 64)))
 request <- function(method, ...) c(list(id = "1", method = method), list(...))
-exchange <- function(worker, role, requests, semantics = FALSE) {
+exchange <- function(worker, role, requests, semantics = FALSE, fresh_sequence = FALSE) {
   bytes <- do.call(c, lapply(requests, function(r) c(canonical_bytes(r), as.raw(10))))
   input <- rawConnection(bytes)
   output <- rawConnection(raw(), "wb")
   on.exit({close(input); close(output)})
-  metewand:::.serve(worker, role, input, output, semantics = semantics)
+  metewand:::.serve(worker, role, input, output, semantics = semantics, fresh_sequence = fresh_sequence)
   lines <- strsplit(rawToChar(rawConnectionValue(output)), "\n", fixed = TRUE)[[1]]
   lapply(lines, function(line) {
     value <- parse_json(line)

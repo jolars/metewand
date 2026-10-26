@@ -25,6 +25,7 @@ fn slots() -> Vec<SchedulingSlot> {
                 for implementation_repetition in 0..2 {
                     for measurement_index in 0..2 {
                         slots.push(SchedulingSlot {
+                            observation_round: 0,
                             logical_slot: RecordId::from_digest([slots.len() as u8; 32]),
                             comparison_block: ComparisonBlock {
                                 dataset_instance: RecordId::from_digest([dataset; 32]),
@@ -176,4 +177,37 @@ fn block_priorities_match_version_one_conformance_vectors() {
             .collect::<String>();
         assert_eq!(hex, vector["priority"].as_str().unwrap());
     }
+}
+
+#[test]
+fn fresh_rounds_interleave_unequal_schedules_within_comparison_blocks() {
+    let mut slots = slots()[..1].to_vec();
+    let base = slots[0];
+    slots.clear();
+    for implementation in 0..2u8 {
+        for round in 0..(3 - u64::from(implementation)) {
+            slots.push(SchedulingSlot {
+                observation_round: round,
+                logical_slot: RecordId::from_digest([implementation * 3 + round as u8; 32]),
+                scheduling_priority: ContentDigest::new([1 - implementation; 32]),
+                ..base
+            });
+        }
+    }
+    slots.reverse();
+    let order = schedule_slots(RunOrder::Randomized, &seed(), &slots);
+    assert_eq!(
+        order
+            .iter()
+            .map(|&i| slots[i].observation_round)
+            .collect::<Vec<_>>(),
+        [0, 0, 1, 1, 2]
+    );
+    assert_eq!(
+        order
+            .iter()
+            .map(|&i| slots[i].scheduling_priority.bytes()[0])
+            .collect::<Vec<_>>(),
+        [0, 1, 0, 1, 1]
+    );
 }

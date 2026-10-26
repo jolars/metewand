@@ -12,7 +12,7 @@ use metewand_core::{
     canonical::CanonicalValue,
     records::{RecordId, ResolvedAttemptSlotRecord},
 };
-use rusqlite::Connection;
+use rusqlite::{Connection, params};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
@@ -69,11 +69,11 @@ fn seed(store: &RunStore, measurement: bool) {
          INSERT INTO resolved_runs VALUES ('run', 'logical', 'candidate', 'decision', 1, '{}');",
         )
         .unwrap();
-    let buffered = store
+    let version = store
         .connection
         .pragma_query_value(None, "user_version", |r| r.get::<_, u32>(0))
-        .unwrap()
-        == 2;
+        .unwrap();
+    let buffered = version == 2;
     for index in [1, 2] {
         store
             .connection
@@ -82,10 +82,36 @@ fn seed(store: &RunStore, measurement: bool) {
                 (
                     slot(index).to_string(),
                     if measurement { "measurement" } else { "warmup" },
-                    if buffered { "buffered" } else { "one_shot" },
+                    if buffered {
+                        "buffered"
+                    } else if version == 3 {
+                        "fresh_observation"
+                    } else {
+                        "one_shot"
+                    },
                 ),
             )
             .unwrap();
+    }
+    if version == 3 {
+        let policy=json!({"metric":"gap","direction":"at_most","threshold":0,"max-observations":2,"max-active-time":"1 ms"}).to_string();
+        store
+            .connection
+            .execute("INSERT INTO fresh_sequences VALUES ('run',0,?1)", [policy])
+            .unwrap();
+        for index in [1u8, 2] {
+            store
+                .connection
+                .execute(
+                    "INSERT INTO fresh_members VALUES (?1,'run',0,?2,?3)",
+                    params![
+                        slot(index).to_string(),
+                        i64::from(index - 1),
+                        json!({"iterations":index}).to_string()
+                    ],
+                )
+                .unwrap();
+        }
     }
     if measurement {
         store
@@ -122,7 +148,11 @@ fn observe(store: &mut RunStore, attempt: &OwnedAttempt, now: u64) -> String {
         tx.execute("INSERT OR IGNORE INTO observation_slots VALUES ('observation-slot-2','logical-2','run','{}')",[]).unwrap();
         tx.execute("INSERT OR IGNORE INTO attempt_observation_slots VALUES (?1,'observation-slot-2','run')",[slot(1).to_string()]).unwrap();
         tx.execute("INSERT INTO observations VALUES (?1,'observation-slot-2',?2,?3,1,'reached',?4,'observation','{}')",(format!("observation-2-{}",attempt.retry_index()),attempt.id().to_string(),slot(1).to_string(),&artifact.id)).unwrap();
-    } else {
+    } else if tx
+        .pragma_query_value(None, "user_version", |r| r.get::<_, u32>(0))
+        .unwrap()
+        != 3
+    {
         tx.execute(
             "INSERT OR IGNORE INTO selected_observations VALUES ('observation-slot', ?1, 1, ?2)",
             (&id, now as i64),
@@ -137,7 +167,9 @@ fn prepare(root: &Path, scenario: &str) {
     if scenario.starts_with("initialize") {
         return;
     }
-    let mut store = if scenario.starts_with("buffered-") {
+    let mut store = if scenario.starts_with("fresh-") {
+        RunStore::open_fresh(root)
+    } else if scenario.starts_with("buffered-") {
         RunStore::open_buffered(root)
     } else {
         RunStore::open(root)
@@ -192,8 +224,15 @@ fn prepare(root: &Path, scenario: &str) {
 }
 
 fn publish(store: &mut RunStore, scenario: &str) {
-    let scenario = scenario.strip_prefix("buffered-").unwrap_or(scenario);
+    let fresh = scenario.starts_with("fresh-");
+    let scenario = scenario
+        .strip_prefix("buffered-")
+        .or_else(|| scenario.strip_prefix("fresh-"))
+        .unwrap_or(scenario);
     let mut attempt = reserve(store);
+    if fresh {
+        store.reserve_fresh_time(&attempt, None, 10).unwrap();
+    }
     if scenario == "accepted" {
         for (offset, phase) in [
             AttemptPhase::Materializing,
@@ -219,6 +258,19 @@ fn publish(store: &mut RunStore, scenario: &str) {
         .publish_artifact(&attempt, ArtifactKind::Dataset, payload, || 21)
         .unwrap();
     let observation = observe(store, &attempt, 22);
+    if fresh {
+        store
+            .record_fresh_time(
+                &attempt,
+                if scenario == "censored" {
+                    1_000_000
+                } else {
+                    25
+                },
+                22,
+            )
+            .unwrap();
+    }
     let outcome = match scenario {
         "accepted" => TerminalOutcome::Accepted,
         "censored" => TerminalOutcome::Censored {
@@ -280,7 +332,9 @@ fn crash_child() {
         .unwrap();
     if scenario.starts_with("initialize") {
         arm(trace, target);
-        if scenario == "initialize-buffered" {
+        if scenario == "initialize-fresh" {
+            RunStore::open_fresh(Path::new(&root)).unwrap();
+        } else if scenario == "initialize-buffered" {
             RunStore::open_buffered(Path::new(&root)).unwrap();
         } else {
             RunStore::open(Path::new(&root)).unwrap();
@@ -440,7 +494,7 @@ fn audit(root: &Path, scenario: &str) {
         .connection
         .pragma_query_value(None, "user_version", |r| r.get::<_, u32>(0))
         .unwrap()
-        == 2
+        >= 2
     {
         let after = selections(&store.connection);
         assert!(
@@ -485,7 +539,7 @@ fn audit(root: &Path, scenario: &str) {
         0
     );
     assert_terminal_artifacts(root, &store.connection, &successes);
-    let tables = [
+    let mut tables = vec![
         "events",
         "attempt_transitions",
         "attempts",
@@ -495,6 +549,41 @@ fn audit(root: &Path, scenario: &str) {
         "observations",
         "selected_observations",
     ];
+    if super::fresh::supported(&store.connection).unwrap() {
+        tables.extend([
+            "fresh_sequences",
+            "fresh_members",
+            "fresh_budget",
+            "fresh_dispositions",
+        ]);
+        let progress = store.fresh_progress().unwrap();
+        assert_eq!(progress.len(), 1);
+        assert!(progress[0].consumed_time_ns <= 1_000_000);
+        if !successes.is_empty() {
+            assert_eq!(progress[0].status, "accepted");
+            let skipped: i64 = store
+                .connection
+                .query_row(
+                    "SELECT count(*) FROM fresh_dispositions WHERE reason='skipped_target_reached'",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert_eq!(skipped, 1);
+        }
+        let unknown: i64 = store
+            .connection
+            .query_row(
+                "SELECT count(*) FROM fresh_budget WHERE charged_ns IS NULL",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        if unknown > 0 {
+            assert_eq!(progress[0].conservative_time_ns, 1_000_000);
+            assert_eq!(progress[0].status, "censored");
+        }
+    }
     let before: Vec<_> = tables
         .iter()
         .map(|table| count(&store.connection, table))
@@ -546,7 +635,9 @@ fn audit(root: &Path, scenario: &str) {
         }
     });
     let reservation = store.reserve(slot(1), authorization, lease("resume", 400), 210);
-    if accepted == 1 {
+    let stopped = super::fresh::supported(&store.connection).unwrap()
+        && matches!(reservation, Err(RunStoreError::SatisfiedSlot));
+    if accepted == 1 || stopped {
         assert!(matches!(reservation, Err(RunStoreError::SatisfiedSlot)));
     } else {
         let attempt = reservation.unwrap();
@@ -565,7 +656,10 @@ fn audit(root: &Path, scenario: &str) {
             )
             .unwrap();
     }
-    assert_eq!(count_where(&store.connection, "state = 'accepted'"), 1);
+    assert_eq!(
+        count_where(&store.connection, "state = 'accepted'"),
+        if stopped { accepted } else { 1 }
+    );
     for selected in before_selections {
         assert!(selections(&store.connection).contains(&selected));
     }
@@ -589,7 +683,9 @@ fn campaign(scenario: &str) -> BTreeSet<String> {
     assert!(output.status.success(), "{scenario}: {output:?}");
     assert!(!boundaries.is_empty(), "no crash points in {scenario}");
     if scenario.starts_with("initialize") {
-        let version = if scenario == "initialize-buffered" {
+        let version = if scenario == "initialize-fresh" {
+            3
+        } else if scenario == "initialize-buffered" {
             2
         } else {
             1
@@ -667,6 +763,10 @@ fn every_durability_boundary_survives_process_death_and_resume() {
     let scenarios = [
         "initialize",
         "initialize-buffered",
+        "initialize-fresh",
+        "fresh-accepted",
+        "fresh-censored",
+        "fresh-failed",
         "buffered-accepted",
         "buffered-censored",
         "accepted",
@@ -884,4 +984,93 @@ fn buffered_selection_commits_with_the_terminal_attempt_and_survives_recovery() 
         assert_eq!(output.status.code(), Some(86));
         audit(root.path(), "buffered-accepted");
     }
+}
+
+#[test]
+fn fresh_sequence_budget_and_target_survive_publication_crashes() {
+    for scenario in ["fresh-accepted", "fresh-censored"] {
+        let fixture = tempfile::tempdir().unwrap();
+        prepare(fixture.path(), scenario);
+        let baseline = tempfile::tempdir().unwrap();
+        copy_fixture(fixture.path(), baseline.path());
+        let (output, boundaries) = run(baseline.path(), scenario, 0);
+        assert!(output.status.success(), "{output:?}");
+        audit(baseline.path(), scenario);
+        for needle in [
+            "INSERT INTO fresh_budget",
+            "UPDATE fresh_budget",
+            "INSERT INTO fresh_dispositions",
+            "finalization.projection.after",
+        ] {
+            let target = boundaries.iter().position(|b| b.contains(needle)).unwrap() + 1;
+            let root = tempfile::tempdir().unwrap();
+            copy_fixture(fixture.path(), root.path());
+            let (output, _) = run(root.path(), scenario, target);
+            assert!(!output.status.success());
+            audit(root.path(), scenario);
+        }
+    }
+}
+
+#[test]
+fn fresh_time_reservation_refunds_only_on_terminal_commit() {
+    let root = tempfile::tempdir().unwrap();
+    let mut store = RunStore::open_fresh(root.path()).unwrap();
+    seed(&store, true);
+    let attempt = reserve(&mut store);
+    assert_eq!(
+        store.reserve_fresh_time(&attempt, None, 10).unwrap(),
+        Some(1_000_000)
+    );
+    store.record_fresh_time(&attempt, 25, 11).unwrap();
+    let progress = store.fresh_progress().unwrap().remove(0);
+    assert_eq!(progress.consumed_time_ns, 1_000_000);
+    assert_eq!(progress.conservative_time_ns, 999_975);
+    assert!(matches!(
+        store.reserve(
+            slot(2),
+            RetryAuthorization::FirstAttempt,
+            lease("competing", 100),
+            11
+        ),
+        Err(RunStoreError::SequenceBusy)
+    ));
+    let attempt = store
+        .advance(&attempt, AttemptPhase::Finalizing, 12)
+        .unwrap();
+    store
+        .publish_finalization(
+            &attempt,
+            TerminalOutcome::Failed {
+                code: "failed_point".into(),
+                details: CanonicalValue::try_from(json!({})).unwrap(),
+            },
+            &[],
+            payload,
+            || 20,
+        )
+        .unwrap();
+    drop(store);
+    let mut store = RunStore::open(root.path()).unwrap();
+    let progress = store.fresh_progress().unwrap().remove(0);
+    assert_eq!(progress.consumed_time_ns, 25);
+    assert_eq!(progress.conservative_time_ns, 0);
+    let second = store
+        .reserve(
+            slot(2),
+            RetryAuthorization::FirstAttempt,
+            lease("second", 100),
+            30,
+        )
+        .unwrap();
+    assert_eq!(
+        store.reserve_fresh_time(&second, None, 30).unwrap(),
+        Some(999_975)
+    );
+    store.recover(|| 200).unwrap();
+    let progress = store.fresh_progress().unwrap().remove(0);
+    assert_eq!(progress.status, "censored");
+    assert_eq!(progress.consumed_time_ns, 1_000_000);
+    assert_eq!(progress.conservative_time_ns, 999_975);
+    assert!(store.recover(|| 201).unwrap().terminals.is_empty());
 }

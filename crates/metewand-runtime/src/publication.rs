@@ -272,7 +272,11 @@ pub(crate) fn prepare_fixed_dataset(
         PublicSchema::Observation,
         &document,
     )?;
-    attempt.outcome = if result.completion == CompletionStatus::NotReached {
+    attempt.outcome = if result.completion == CompletionStatus::NotReached
+        && !matches!(
+            observation.record.profile,
+            Some(metewand_core::records::ProfileObservationRecord::Fresh(_))
+        ) {
         RunAttemptOutcome::Failed {
             diagnostic: AttemptDiagnostic {
                 code: "completion_target_not_reached".to_owned(),

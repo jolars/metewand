@@ -164,6 +164,9 @@
         "superseded_attempts": { "$ref": "common.schema.json#/$defs/safe_nonnegative_integer" },
         "censored_attempts": {
           "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
+        },
+        "censored_profiles": {
+          "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
         }
       },
       "required": ["attempt_slots", "accepted_attempts", "failed_attempts", "superseded_attempts"],
@@ -178,7 +181,13 @@
         "output_directory": { "type": "string", "minLength": 1 },
         "attempts": { "type": "array", "items": { "$ref": "#/$defs/attempt" } },
         "events": { "type": "array", "items": { "$ref": "#/$defs/event" }, "minItems": 2 },
-        "summary": { "$ref": "#/$defs/summary" }
+        "summary": { "$ref": "#/$defs/summary" },
+        "fresh_sequences": {
+          "type": "array",
+          "items": {
+            "$ref": "profile-observation-policy.schema.json#/$defs/progress"
+          }
+        }
       },
       "required": ["command", "benchmark", "manifest_hash", "output_directory", "attempts", "events", "summary"],
       "additionalProperties": false

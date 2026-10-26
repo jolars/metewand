@@ -145,6 +145,8 @@ pub fn referenced_ids(value: &Value) -> Vec<String> {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SlotState {
+    SkippedTargetReached,
+    Censored,
     Pending,
     Active,
     Satisfied,
@@ -199,6 +201,10 @@ pub struct ObservationStatus {
 
 #[derive(Debug, Default, Serialize)]
 pub struct StatusSummary {
+    #[serde(skip_serializing_if = "zero")]
+    pub skipped_target_reached_slots: usize,
+    #[serde(skip_serializing_if = "zero")]
+    pub censored_slots: usize,
     pub attempt_slots: usize,
     pub pending_slots: usize,
     pub active_slots: usize,
@@ -216,6 +222,8 @@ pub struct StatusSummary {
 /// The same status evidence is rendered by human and machine interfaces.
 #[derive(Debug, Serialize)]
 pub struct StatusReport {
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub fresh_sequences: Vec<crate::profile::FreshSequenceProgress>,
     pub command: &'static str,
     pub benchmark: Option<String>,
     pub manifest_hash: Option<String>,
@@ -231,4 +239,8 @@ pub struct StatusReport {
 pub struct Explanation {
     pub command: &'static str,
     pub subject: InspectionRecord,
+}
+
+fn zero(value: &usize) -> bool {
+    *value == 0
 }

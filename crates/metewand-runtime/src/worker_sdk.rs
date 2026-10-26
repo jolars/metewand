@@ -348,6 +348,12 @@ fn implementation_on(
             }
             "execute" => {
                 let request: ExecuteRequest = decode(request)?;
+                if request.observation_control().is_some() {
+                    return Err(failure(
+                        WorkerFailureCode::UnsupportedOperation,
+                        "This SDK worker does not implement fresh_sequence.",
+                    ));
+                }
                 if !prepared {
                     return Err(failure(
                         WorkerFailureCode::InvalidRequest,

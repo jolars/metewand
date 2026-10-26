@@ -514,6 +514,8 @@ pub struct OneShotLogicalSpecificationRecord {
 /// One independently evaluated one-shot measurement position.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LogicalObservationSlotRecord {
+    /// Absent for the existing one-shot and buffered identities.
+    pub fresh: Option<crate::profile::FreshControl>,
     /// Logical run being observed.
     pub specification: RecordId<OneShotLogicalSpecificationRecord>,
     /// Zero-based measurement-repetition index.
@@ -710,8 +712,20 @@ pub struct RunObservationRecord {
 }
 
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(untagged)]
+pub enum ProfileObservationRecord {
+    Buffered(BufferedObservationRecord),
+    Fresh(crate::profile::FreshObservationRecord),
+}
+impl From<BufferedObservationRecord> for ProfileObservationRecord {
+    fn from(value: BufferedObservationRecord) -> Self {
+        Self::Buffered(value)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct ProfileObservationRecord {
+pub struct BufferedObservationRecord {
     pub delivery: crate::profile::BufferedDelivery,
     pub measurement_basis: crate::profile::InstrumentedBasis,
     pub instrumented_scope: String,
@@ -747,6 +761,11 @@ pub struct AttemptDiagnostic {
 /// Terminal outcome of one one-shot run attempt.
 #[derive(Clone, Debug, PartialEq)]
 pub enum RunAttemptOutcome {
+    /// A scientific bound stopped execution before a complete result.
+    Censored {
+        reason: String,
+        observation: Option<RecordId<RunObservationRecord>>,
+    },
     Buffered {
         status: ProfileAttemptStatus,
         observations: Vec<RecordId<RunObservationRecord>>,

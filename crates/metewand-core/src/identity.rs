@@ -411,6 +411,7 @@ fn implementation_capability(value: ImplementationCapability) -> &'static str {
     match value {
         ImplementationCapability::OneShot => "one_shot",
         ImplementationCapability::Applicability => "applicability",
+        ImplementationCapability::FreshSequence => "fresh_sequence",
         ImplementationCapability::BufferedProfile => "buffered_profile",
     }
 }
@@ -703,10 +704,17 @@ impl IdentityRecord for OneShotLogicalSpecificationRecord {
 
 impl IdentityRecord for LogicalObservationSlotRecord {
     fn identity_fields(&self) -> Map<String, Value> {
-        fields([
+        let mut value = fields([
             ("specification", id(&self.specification)),
             ("measurement_index", json!(self.measurement_index)),
-        ])
+        ]);
+        if let Some(fresh) = &self.fresh {
+            value.insert(
+                "fresh".into(),
+                serde_json::to_value(fresh).expect("fresh control"),
+            );
+        }
+        value
     }
 }
 

@@ -57,15 +57,19 @@ impl RunStore {
         })
     }
 
+    pub fn open_fresh(root: &Path) -> Result<Self, RunStoreError> {
+        Self::open_version(root, &|_| Ok(()), 3)
+    }
+
     pub fn open_buffered(root: &Path) -> Result<Self, RunStoreError> {
-        Self::open_version(root, &|_| Ok(()), true)
+        Self::open_version(root, &|_| Ok(()), 2)
     }
 
     fn open_checked(root: &Path, check: &Check<'_>) -> Result<Self, RunStoreError> {
-        Self::open_version(root, check, false)
+        Self::open_version(root, check, 1)
     }
 
-    fn open_version(root: &Path, check: &Check<'_>, buffered: bool) -> Result<Self, RunStoreError> {
+    fn open_version(root: &Path, check: &Check<'_>, layout: u32) -> Result<Self, RunStoreError> {
         if !root.is_absolute() || !fs::symlink_metadata(root)?.is_dir() {
             return Err(RunStoreError::UnsafePath(root.to_owned()));
         }
@@ -97,10 +101,10 @@ impl RunStore {
         let version: u32 = tx.pragma_query_value(None, "user_version", |r| r.get(0))?;
         if version == 0 {
             verify_schema(&tx)?;
-            tx.execute_batch(if buffered {
-                super::BUFFERED_RUN_STORE_SCHEMA_SQL
-            } else {
-                RUN_STORE_SCHEMA_SQL
+            tx.execute_batch(match layout {
+                3 => super::FRESH_RUN_STORE_SCHEMA_SQL,
+                2 => super::BUFFERED_RUN_STORE_SCHEMA_SQL,
+                _ => RUN_STORE_SCHEMA_SQL,
             })?;
         }
         tx.commit()?;
@@ -116,6 +120,8 @@ impl RunStore {
 /// Store operations never fall back to a weaker durability mode.
 #[derive(Debug, Error)]
 pub enum RunStoreError {
+    #[error("another attempt owns this fresh-sequence repetition")]
+    SequenceBusy,
     #[error(transparent)]
     Publication(#[from] crate::publication::PublicationError),
     #[error("invalid attempt operation: {0}")]
@@ -445,12 +451,18 @@ pub(super) fn verify_schema(connection: &Connection) -> Result<(), RunStoreError
     if version == 0 && objects.is_empty() {
         return Ok(());
     }
-    if version == RUN_STORE_SCHEMA_VERSION || version == super::BUFFERED_RUN_STORE_SCHEMA_VERSION {
+    if [
+        RUN_STORE_SCHEMA_VERSION,
+        super::BUFFERED_RUN_STORE_SCHEMA_VERSION,
+        super::FRESH_RUN_STORE_SCHEMA_VERSION,
+    ]
+    .contains(&version)
+    {
         let expected = Connection::open_in_memory()?;
-        expected.execute_batch(if version == super::BUFFERED_RUN_STORE_SCHEMA_VERSION {
-            super::BUFFERED_RUN_STORE_SCHEMA_SQL
-        } else {
-            RUN_STORE_SCHEMA_SQL
+        expected.execute_batch(match version {
+            3 => super::FRESH_RUN_STORE_SCHEMA_SQL,
+            2 => super::BUFFERED_RUN_STORE_SCHEMA_SQL,
+            _ => RUN_STORE_SCHEMA_SQL,
         })?;
         if objects == schema_objects(&expected)? {
             return Ok(());

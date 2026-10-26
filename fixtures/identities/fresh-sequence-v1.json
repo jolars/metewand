@@ -1,0 +1,23 @@
+{
+  "identity_version": 1,
+  "observations": [
+    {
+      "measurement_index": 0,
+      "schedule_index": 0,
+      "canonical": "{\"fresh\":{\"observation_control\":{\"iterations\":1},\"schedule_index\":0},\"measurement_index\":0,\"specification\":\"mw1-logical-specification-1111111111111111111111111111111111111111111111111111111111111111\",\"version\":1}",
+      "identity": "mw1-logical-observation-slot-ef31e2904f678e3e7c9270154f776c72ca1bb294ad8c70d368559a8ba4a5fb81"
+    },
+    {
+      "measurement_index": 1,
+      "schedule_index": 0,
+      "canonical": "{\"fresh\":{\"observation_control\":{\"iterations\":1},\"schedule_index\":0},\"measurement_index\":1,\"specification\":\"mw1-logical-specification-1111111111111111111111111111111111111111111111111111111111111111\",\"version\":1}",
+      "identity": "mw1-logical-observation-slot-74ba3de7f1d9d5a9843955f1ef2aa85a7be6d4086d52054372f8db88fcb54470"
+    },
+    {
+      "measurement_index": 0,
+      "schedule_index": 1,
+      "canonical": "{\"fresh\":{\"observation_control\":{\"iterations\":1},\"schedule_index\":1},\"measurement_index\":0,\"specification\":\"mw1-logical-specification-1111111111111111111111111111111111111111111111111111111111111111\",\"version\":1}",
+      "identity": "mw1-logical-observation-slot-0864417e9d1c7dee597793e96cff79caeb9584afba8dc82025f8990c672ea832"
+    }
+  ]
+}

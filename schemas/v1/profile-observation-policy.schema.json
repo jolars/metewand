@@ -62,59 +62,163 @@
         "$ref": "common.schema.json#/$defs/name"
       },
       "additionalProperties": {
-        "type": "object",
-        "properties": {
-          "delivery": {
-            "const": "buffered_profile"
-          },
-          "measurement-basis": {
-            "const": "instrumented"
-          },
-          "instrumented-scope": {
-            "type": "string",
-            "minLength": 1
-          },
-          "instrumentation-schema": {
-            "$ref": "common.schema.json#/$defs/schema_declaration"
-          },
-          "instrumentation": {
-            "type": "object"
-          },
-          "check-schedule": {
+        "oneOf": [
+          {
             "type": "object",
             "properties": {
-              "every": {
-                "type": "integer",
-                "minimum": 1,
-                "maximum": 9007199254740991
+              "delivery": {
+                "const": "buffered_profile"
               },
-              "start": {
-                "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
+              "measurement-basis": {
+                "const": "instrumented"
+              },
+              "instrumented-scope": {
+                "type": "string",
+                "minLength": 1
+              },
+              "instrumentation-schema": {
+                "$ref": "common.schema.json#/$defs/schema_declaration"
+              },
+              "instrumentation": {
+                "type": "object"
+              },
+              "check-schedule": {
+                "type": "object",
+                "properties": {
+                  "every": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991
+                  },
+                  "start": {
+                    "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
+                  }
+                },
+                "required": [
+                  "every"
+                ],
+                "additionalProperties": false
               }
             },
             "required": [
-              "every"
+              "delivery",
+              "measurement-basis",
+              "instrumented-scope",
+              "instrumentation-schema",
+              "instrumentation",
+              "check-schedule"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "delivery": {
+                "const": "fresh_sequence"
+              },
+              "control-schema": {
+                "$ref": "common.schema.json#/$defs/schema_declaration"
+              },
+              "schedule": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "const": "explicit"
+                      },
+                      "controls": {
+                        "type": "array",
+                        "minItems": 1,
+                        "items": {
+                          "type": "object"
+                        }
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "controls"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "const": "linear"
+                      },
+                      "field": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "start": {
+                        "type": "number"
+                      },
+                      "step": {
+                        "type": "number"
+                      },
+                      "count": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 9007199254740991
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "field",
+                      "start",
+                      "step",
+                      "count"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "const": "geometric"
+                      },
+                      "field": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "start": {
+                        "type": "number"
+                      },
+                      "ratio": {
+                        "type": "number"
+                      },
+                      "count": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 9007199254740991
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "field",
+                      "start",
+                      "ratio",
+                      "count"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              }
+            },
+            "required": [
+              "delivery",
+              "control-schema",
+              "schedule"
             ],
             "additionalProperties": false
           }
-        },
-        "required": [
-          "delivery",
-          "measurement-basis",
-          "instrumented-scope",
-          "instrumentation-schema",
-          "instrumentation",
-          "check-schedule"
-        ],
-        "additionalProperties": false
+        ]
       }
     }
   },
   "required": [
     "max-observations",
-    "max-trace-points",
-    "max-buffer-bytes",
-    "terminal-reserve-bytes",
     "max-active-time",
     "kind",
     "implementations"
@@ -137,6 +241,18 @@
       "metric",
       "direction",
       "threshold"
+    ],
+    "max-trace-points": [
+      "max-buffer-bytes",
+      "terminal-reserve-bytes"
+    ],
+    "max-buffer-bytes": [
+      "max-trace-points",
+      "terminal-reserve-bytes"
+    ],
+    "terminal-reserve-bytes": [
+      "max-trace-points",
+      "max-buffer-bytes"
     ]
   },
   "$defs": {
@@ -191,9 +307,6 @@
       },
       "required": [
         "max-observations",
-        "max-trace-points",
-        "max-buffer-bytes",
-        "terminal-reserve-bytes",
         "max-active-time"
       ],
       "additionalProperties": false,
@@ -214,6 +327,18 @@
           "metric",
           "direction",
           "threshold"
+        ],
+        "max-trace-points": [
+          "max-buffer-bytes",
+          "terminal-reserve-bytes"
+        ],
+        "max-buffer-bytes": [
+          "max-trace-points",
+          "terminal-reserve-bytes"
+        ],
+        "terminal-reserve-bytes": [
+          "max-trace-points",
+          "max-buffer-bytes"
         ]
       }
     },
@@ -265,7 +390,18 @@
       "type": "object",
       "properties": {
         "policy": {
-          "$ref": "#/$defs/policy"
+          "allOf": [
+            {
+              "$ref": "#/$defs/policy"
+            },
+            {
+              "required": [
+                "max-trace-points",
+                "max-buffer-bytes",
+                "terminal-reserve-bytes"
+              ]
+            }
+          ]
         },
         "instrumented_scope": {
           "type": "string",
@@ -303,6 +439,111 @@
         "check_schedule"
       ],
       "additionalProperties": false
+    },
+    "progress": {
+      "type": "object",
+      "properties": {
+        "resolved_specification_id": {
+          "type": "string"
+        },
+        "logical_specification_id": {
+          "type": "string"
+        },
+        "measurement_index": {
+          "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
+        },
+        "scheduled_points": {
+          "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
+        },
+        "accepted_points": {
+          "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
+        },
+        "consumed_time_ns": {
+          "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
+        },
+        "conservative_time_ns": {
+          "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
+        },
+        "status": {
+          "enum": [
+            "accepted",
+            "censored",
+            "partial"
+          ]
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "resolved_specification_id",
+        "logical_specification_id",
+        "measurement_index",
+        "scheduled_points",
+        "accepted_points",
+        "consumed_time_ns",
+        "conservative_time_ns",
+        "status",
+        "reason"
+      ],
+      "additionalProperties": false
+    },
+    "planned_observation": {
+      "type": "object",
+      "properties": {
+        "observation_slot_id": {
+          "$ref": "common.schema.json#/$defs/identity"
+        },
+        "attempt_slot_id": {
+          "$ref": "common.schema.json#/$defs/identity"
+        },
+        "measurement_index": {
+          "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
+        },
+        "schedule_index": {
+          "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
+        },
+        "observation_control": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "observation_slot_id",
+        "attempt_slot_id",
+        "measurement_index",
+        "schedule_index",
+        "observation_control"
+      ],
+      "additionalProperties": false
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "implementations": {
+            "not": {
+              "additionalProperties": {
+                "properties": {
+                  "delivery": {
+                    "const": "fresh_sequence"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "max-trace-points",
+          "max-buffer-bytes",
+          "terminal-reserve-bytes"
+        ]
+      }
+    }
+  ]
 }

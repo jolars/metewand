@@ -1,0 +1,20 @@
+version: 1
+name: square_root
+family: root_finding
+dataset-schemas: []
+result:
+  x: number
+metrics:
+  residual: { type: number, minimum: 0 }
+allowed-timing-scopes: [prepare_and_execute, execute_only, cold_end_to_end]
+supported-budgets: [none]
+semantics:
+  preprocessing:
+    shared_materialization: none
+    implementation_conversion: none
+    allowed_outside_timed_scope: []
+  validity: { interval: [1, 2] }
+  one_shot_completion: { residual: 0 }
+reference-cases:
+  - result: reference/result.json
+    expected-metrics: reference/metrics.json

@@ -39,6 +39,7 @@ impl StoreSnapshot {
         let version = connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
         if version != RUN_STORE_SCHEMA_VERSION
             && version != super::BUFFERED_RUN_STORE_SCHEMA_VERSION
+            && version != super::FRESH_RUN_STORE_SCHEMA_VERSION
         {
             return Err(RunStoreError::UnsupportedSchema {
                 version,
@@ -58,6 +59,39 @@ impl StoreSnapshot {
                 })
                 .collect::<Result<Vec<_>, _>>()?;
             tables.insert(*kind, records);
+        }
+        if version == super::FRESH_RUN_STORE_SCHEMA_VERSION {
+            for (kind, sql) in [
+                (
+                    "fresh-member",
+                    "SELECT json_object('slot_id',slot_id,'resolved_run_id',resolved_run_id,'measurement_index',measurement_index,'schedule_index',schedule_index,'control',json(control_json),'observation_slot_id',(SELECT observation_slot_id FROM attempt_observation_slots WHERE attempt_slot_id=fresh_members.slot_id)) FROM fresh_members ORDER BY slot_id",
+                ),
+                (
+                    "fresh-budget",
+                    "SELECT json_object('attempt_id',attempt_id,'reserved_ns',reserved_ns,'charged_ns',charged_ns) FROM fresh_budget ORDER BY attempt_id",
+                ),
+                (
+                    "fresh-disposition",
+                    "SELECT json_object('slot_id',slot_id,'reason',reason,'causing_attempt_id',causing_attempt_id) FROM fresh_dispositions ORDER BY slot_id",
+                ),
+            ] {
+                let mut query = connection.prepare(sql)?;
+                let rows = query
+                    .query_map([], |r| r.get::<_, String>(0))?
+                    .map(|r| {
+                        serde_json::from_str(&r?)
+                            .map_err(|_| super::attempts::invalid("invalid fresh evidence"))
+                    })
+                    .collect::<Result<Vec<Value>, _>>()?;
+                tables.insert(kind, rows);
+            }
+            tables.insert(
+                "fresh-sequence",
+                super::fresh::progress(&connection)?
+                    .into_iter()
+                    .map(|p| serde_json::to_value(p).expect("typed progress"))
+                    .collect(),
+            );
         }
         Ok(Self { root, tables })
     }

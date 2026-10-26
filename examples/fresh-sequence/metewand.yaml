@@ -1,0 +1,76 @@
+version: 1
+name: fresh-sequence
+problems:
+  square_root:
+    contract: problem.yaml
+    evaluator:
+      runner: python
+      entrypoint: evaluator.py
+      sources: [evaluator.py, "metewand/*.py"]
+implementations:
+  bisection:
+    runner: python
+    entrypoint: worker.py
+    sources: [worker.py, solver.py, "metewand/*.py"]
+    problem-contracts: [square_root]
+    capabilities: [fresh_sequence]
+  uniroot:
+    runner: r
+    entrypoint: worker.R
+    sources: [worker.R, "library/**/*"]
+    problem-contracts: [square_root]
+    capabilities: [fresh_sequence]
+experiments:
+  - name: target
+    problem: square_root
+    implementations: [bisection, uniroot]
+    execution-policy: local
+    observation-policy: accuracy
+    measurement-repetitions: 2
+    seed: 7
+  - name: fixed
+    problem: square_root
+    implementations: [bisection]
+    execution-policy: local
+    observation-policy: four_points
+    seed: 8
+execution-policies:
+  local:
+    timing-scope: prepare_and_execute
+    primary-time: timed_wall_time
+    worker-reuse: true
+    warmup-runs: 1
+    max-concurrency: 2
+    run-order: randomized
+    timeout: 5 s
+observation-policies:
+  accuracy:
+    kind: profile
+    metric: residual
+    direction: at_most
+    threshold: 0.000001
+    max-observations: 4
+    max-active-time: 10 s
+    implementations:
+      bisection: &bisection
+        delivery: fresh_sequence
+        control-schema:
+          type: object
+          properties: { iterations: { type: integer, minimum: 1, maximum: 100 } }
+          required: [iterations]
+          additionalProperties: false
+        schedule: { kind: explicit, controls: [{ iterations: 1 }, { iterations: 4 }, { iterations: 16 }, { iterations: 32 }] }
+      uniroot:
+        delivery: fresh_sequence
+        control-schema:
+          type: object
+          properties: { tolerance: { type: number, exclusiveMinimum: 0 } }
+          required: [tolerance]
+          additionalProperties: false
+        schedule: { kind: geometric, field: tolerance, start: 0.1, ratio: 0.01, count: 4 }
+  four_points:
+    kind: profile
+    max-observations: 4
+    max-active-time: 10 s
+    implementations:
+      bisection: *bisection

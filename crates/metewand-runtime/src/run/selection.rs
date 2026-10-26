@@ -78,6 +78,39 @@ pub(super) fn preselect(plan: &LogicalPlan, options: &RunOptions) -> Result<Logi
             .unwrap_or(1) as usize;
         for candidate in &mut experiment.candidates {
             for specification in &mut candidate.specifications {
+                let fresh = specification
+                    .observation_slots
+                    .iter()
+                    .any(|slot| slot.record.fresh.is_some());
+                if fresh {
+                    let ids = std::iter::once(candidate.candidate.id.to_string())
+                        .chain(std::iter::once(specification.specification.id.to_string()))
+                        .chain(
+                            specification
+                                .attempt_slots
+                                .iter()
+                                .map(|slot| slot.id.to_string()),
+                        )
+                        .chain(
+                            specification
+                                .observation_slots
+                                .iter()
+                                .map(|slot| slot.id.to_string()),
+                        )
+                        .collect::<BTreeSet<_>>();
+                    let matches = logical
+                        .iter()
+                        .filter(|id| ids.contains(id.as_str()))
+                        .collect::<Vec<_>>();
+                    if matches.is_empty() {
+                        specification.attempt_slots.clear();
+                        specification.observation_slots.clear();
+                    }
+                    for id in matches {
+                        matched.insert((*id).clone());
+                    }
+                    continue;
+                }
                 let mut observations = BTreeSet::new();
                 // A selected capture retains the complete producing trajectory.
                 let captures = specification
@@ -154,21 +187,39 @@ pub(super) fn rebuild_batches(
         }
         let bound = candidate.reuse_key.policy.max_concurrency;
         let lanes = bound.min((end - start) as u64) as usize;
-        for (batch_index, batch_start) in (start..end).step_by(lanes).enumerate() {
-            let batch_end = (batch_start + lanes).min(end);
+        let mut batch_start = start;
+        let mut batch_index = 0;
+        while batch_start < end {
+            let mut batch_end = batch_start;
+            let mut repetitions = BTreeSet::new();
+            while batch_end < end && batch_end - batch_start < lanes {
+                let (candidate, measurement) = schedule[batch_end];
+                let slot = &resolved.candidates[candidate].measurements[measurement];
+                if slot.fresh.is_some()
+                    && !repetitions.insert((
+                        slot.specification.id,
+                        slot.scheduling.comparison_block.measurement_index,
+                    ))
+                {
+                    break;
+                }
+                batch_end += 1;
+            }
             for (lane, &(candidate, measurement)) in
                 schedule[batch_start..batch_end].iter().enumerate()
             {
                 let provenance =
                     &mut resolved.candidates[candidate].measurements[measurement].provenance;
                 let mut value = provenance.as_json().clone();
-                value["concurrency"] = serde_json::json!({"max_concurrency": bound, "dispatch": "fixed_batches", "batch_index": batch_index, "batch_size": batch_end - batch_start, "lane_index": lane});
+                value["concurrency"] = serde_json::json!({"max_concurrency": bound, "dispatch": "fixed_batches", "batch_index": batch_index, "batch_size": batch_end-batch_start, "lane_index": lane});
                 *provenance = canonical(value)?;
             }
             batches.push(ResolvedBatch {
                 slots: batch_start..batch_end,
                 lane_count: lanes,
             });
+            batch_start = batch_end;
+            batch_index += 1;
         }
         start = end;
     }

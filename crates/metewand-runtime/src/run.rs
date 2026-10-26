@@ -36,12 +36,12 @@ use metewand_core::{
         RunSummary,
     },
 };
-use serde_json::json;
+use serde_json::{Value, json};
 use thiserror::Error;
 
 use crate::{
     fixed_dataset_run::{
-        FixedDatasetRun, FixedDatasetRunError, run_fixed_dataset_in_view,
+        ExecutionTimingPolicy, FixedDatasetRun, FixedDatasetRunError, run_fixed_dataset_in_view,
         run_fixed_dataset_with_session,
     },
     local_tree::LocalTreeHashError,
@@ -188,11 +188,19 @@ pub fn run_repository_with_options(
             .create(&output_directory)?;
         fs::set_permissions(&output_directory, fs::Permissions::from_mode(0o700))?;
         fs::File::open(output_directory.parent().expect("destination has a parent"))?.sync_all()?;
-        store = Some(if resolved.candidates.iter().any(|c| c.profile.is_some()) {
-            RunStore::open_buffered(&output_directory)?
-        } else {
-            RunStore::open(&output_directory)?
-        });
+        store = Some(
+            if resolved
+                .candidates
+                .iter()
+                .any(|c| c.fresh_profile.is_some())
+            {
+                RunStore::open_fresh(&output_directory)?
+            } else if resolved.candidates.iter().any(|c| c.profile.is_some()) {
+                RunStore::open_buffered(&output_directory)?
+            } else {
+                RunStore::open(&output_directory)?
+            },
+        );
     }
     let mut store = store.expect("new or resumed store");
     if options.resume {
@@ -201,6 +209,39 @@ pub fn run_repository_with_options(
     for candidate in &resolved.candidates {
         if candidate.applicability.record.checked_inputs.is_some() {
             store.register_applicability(&candidate.applicability)?;
+        }
+    }
+    let fresh_repetitions = selected
+        .iter()
+        .filter_map(|&(candidate, measurement)| {
+            let slot = &resolved.candidates[candidate].measurements[measurement];
+            slot.fresh.as_ref().map(|_| {
+                (
+                    candidate,
+                    slot.specification.id,
+                    slot.scheduling.comparison_block.measurement_index,
+                )
+            })
+        })
+        .collect::<std::collections::BTreeSet<_>>();
+    for (index, candidate) in resolved.candidates.iter().enumerate() {
+        if let Some(policy) = &candidate.fresh_profile {
+            for slot in &candidate.measurements {
+                let repetition = slot.scheduling.comparison_block.measurement_index;
+                if fresh_repetitions.contains(&(index, slot.specification.id, repetition)) {
+                    store.register_fresh(
+                        slot.candidate,
+                        &slot.specification,
+                        &slot.attempt_slot,
+                        &slot.observation_slot,
+                        crate::run_store::fresh::FreshPointRegistration {
+                            measurement_index: repetition,
+                            control: slot.fresh.as_ref().expect("fresh control"),
+                            policy,
+                        },
+                    )?;
+                }
+            }
         }
     }
     let mut schedule = Vec::new();
@@ -222,7 +263,7 @@ pub fn run_repository_with_options(
                 &slot.attempt_slot,
                 &slot.observation_slots,
             )?;
-        } else {
+        } else if resolved.candidates[candidate].fresh_profile.is_none() {
             store.register_one_shot(
                 slot.candidate,
                 &slot.specification,
@@ -231,13 +272,13 @@ pub fn run_repository_with_options(
             )?;
         }
         let progress = store.slot_progress(slot.attempt_slot.id)?;
-        if progress.accepted || (progress.attempts > 0 && !options.retry) {
+        if progress.accepted
+            || progress.disposition.is_some()
+            || (progress.attempts > 0 && !options.retry)
+        {
             continue;
         }
         schedule.push((candidate, measurement));
-    }
-    if let Some(bound) = options.max_attempts {
-        schedule.truncate(bound.min(schedule.len() as u64) as usize);
     }
     selection::rebuild_batches(&mut resolved, schedule)?;
     let attempt_slots = resolved.schedule.len();
@@ -249,21 +290,47 @@ pub fn run_repository_with_options(
     )?;
     let mut attempts = Vec::new();
     let mut workers = Vec::new();
+    let mut busy_repetitions = std::collections::BTreeSet::new();
     for batch in &resolved.batches {
         workers.resize_with(
             batch.lane_count,
             crate::worker_reuse::ReusableWorker::default,
         );
+        if options
+            .max_attempts
+            .is_some_and(|bound| attempts.len() as u64 >= bound)
+        {
+            break;
+        }
         let mut slots = Vec::new();
         let mut executions = Vec::new();
         for &(candidate, measurement) in &resolved.schedule[batch.slots.clone()] {
-            if let Some(execution) = AttemptExecution::reserve(
-                &store,
-                &resolved.candidates[candidate].measurements[measurement],
-                options.retry,
-            )? {
-                slots.push((candidate, measurement));
-                executions.push(execution);
+            if options
+                .max_attempts
+                .is_some_and(|bound| (attempts.len() + executions.len()) as u64 >= bound)
+            {
+                break;
+            }
+            let slot = &resolved.candidates[candidate].measurements[measurement];
+            let repetition = (
+                slot.specification.id,
+                slot.scheduling.comparison_block.measurement_index,
+            );
+            if slot.fresh.is_some() && busy_repetitions.contains(&repetition) {
+                continue;
+            }
+            match AttemptExecution::reserve(&store, slot, options.retry) {
+                Ok(Some(execution)) => {
+                    slots.push((candidate, measurement));
+                    executions.push(execution);
+                }
+                Ok(None) => (),
+                Err(RunError::Store(crate::run_store::RunStoreError::SequenceBusy)) => {
+                    // Stepping past an owned point could reorder this sequence if
+                    // its owner finishes before our next batch.
+                    busy_repetitions.insert(repetition);
+                }
+                Err(error) => return Err(error),
             }
         }
         for (lane, &(candidate, measurement)) in slots.iter().enumerate() {
@@ -304,6 +371,12 @@ pub fn run_repository_with_options(
             attempts.push(attempt);
         }
     }
+    let fresh_sequences = store.fresh_progress()?;
+    let censored_profiles = fresh_sequences
+        .iter()
+        .filter(|p| p.status == "censored")
+        .count();
+    let attempt_slots = attempts.len();
     let censored_attempts = attempts
         .iter()
         .filter(|a| a.status == RunAttemptStatus::Censored)
@@ -331,6 +404,7 @@ pub fn run_repository_with_options(
         },
     )?;
     Ok(RunReport {
+        fresh_sequences,
         command: "run",
         benchmark: repository.manifest.name.to_string(),
         manifest_hash: repository.manifest_hash.to_string(),
@@ -341,6 +415,7 @@ pub fn run_repository_with_options(
         attempts,
         events,
         summary: RunSummary {
+            censored_profiles,
             censored_attempts,
             attempt_slots,
             accepted_attempts,
@@ -472,7 +547,9 @@ fn execute(
             );
         }
     };
+    let effective_timeout = std::cell::Cell::new(candidate.timing.timeout);
     let request = || FixedDatasetRun {
+        observation_control: measurement.fresh.as_ref().map(|f| &f.observation_control),
         dataset_dir: dataset_view.directory(),
         problem_contract_id: &candidate.contract_id,
         problem_parameters: &candidate.problem_parameters,
@@ -488,7 +565,10 @@ fn execute(
         schemas: &repository.schemas,
         private_root,
         timeouts: candidate.timeouts,
-        timing: candidate.timing,
+        timing: ExecutionTimingPolicy {
+            timeout: effective_timeout.get(),
+            ..candidate.timing
+        },
         log_limits: WorkerLogLimits::new(64 * 1024, 64 * 1024),
     };
     let mut warmups = Vec::new();
@@ -511,7 +591,7 @@ fn execute(
                         process,
                         metewand_protocol::WorkerRole::Implementation,
                         candidate.implementation.identity.clone(),
-                        &[metewand_protocol::Capability::OneShot],
+                        &candidate.reuse_key.selected_capabilities,
                         candidate.timeouts,
                     )
                     .map_err(|source| FixedDatasetRunError::Implementation { source })
@@ -551,6 +631,17 @@ fn execute(
                 result.map(|_| ())
             },
             |session| {
+                if candidate.fresh_profile.is_some() {
+                    effective_timeout.set(
+                        execution
+                            .reserve_fresh_time(candidate.timing.timeout)
+                            .map_err(|error| {
+                                FixedDatasetRunError::PrivateDirectory(io::Error::other(
+                                    error.to_string(),
+                                ))
+                            })?,
+                    );
+                }
                 run_fixed_dataset_with_session(
                     request(),
                     &dataset_view,
@@ -569,6 +660,9 @@ fn execute(
             error => FixedDatasetRunError::PrivateDirectory(io::Error::other(error.to_string())),
         })
     } else {
+        if candidate.fresh_profile.is_some() {
+            effective_timeout.set(execution.reserve_fresh_time(candidate.timing.timeout)?);
+        }
         run_fixed_dataset_in_view(
             request(),
             &dataset_view,
@@ -576,8 +670,14 @@ fn execute(
             Some(&mut |phase| execution.advance(phase)),
         )
     };
+    if candidate.fresh_profile.is_some() {
+        execution.record_fresh_time(&measurements)?;
+    }
     let mut measurement = measurement.clone();
     let mut context = measurement.provenance.as_json().clone();
+    if let (Some(policy), Some(fresh)) = (&candidate.fresh_profile, &measurement.fresh) {
+        context["fresh_sequence"] = json!({"policy":policy,"measurement_index":measurement.scheduling.comparison_block.measurement_index,"control":fresh});
+    }
     context["worker_reuse"] = json!({
         "enabled": candidate.reuse_key.policy.worker_reuse,
         "worker_startup_time_ns": startup.get(),
@@ -633,6 +733,44 @@ fn execute(
             );
         }
     };
+    if let (Some(policy), Some(fresh)) = (&candidate.fresh_profile, &measurement.fresh) {
+        result.completion =
+            if let (Some(metric), Some(threshold)) = (&policy.metric, policy.threshold) {
+                let Some(value) = result
+                    .metrics
+                    .as_json()
+                    .get(metric)
+                    .and_then(Value::as_f64)
+                    .filter(|v| v.is_finite())
+                else {
+                    worker.discard();
+                    return failed_attempt(
+                        measurement,
+                        execution,
+                        started_at,
+                        "invalid_metrics",
+                        "The evaluator did not return a finite numeric target metric.".into(),
+                        &measurements,
+                    );
+                };
+                if policy.reaches(value, threshold) {
+                    metewand_core::records::CompletionStatus::Reached
+                } else {
+                    metewand_core::records::CompletionStatus::NotReached
+                }
+            } else {
+                metewand_core::records::CompletionStatus::NotRequired
+            };
+        result.execution_provenance["profile_observation"] =
+            serde_json::to_value(metewand_core::profile::FreshObservationRecord {
+                delivery: metewand_core::profile::FreshDelivery::FreshSequence,
+                measurement_basis: metewand_core::profile::ExecutorBasis::ExecutorObserved,
+                measurement_index: measurement.scheduling.comparison_block.measurement_index,
+                schedule_index: fresh.schedule_index,
+                observation_control: fresh.observation_control.clone(),
+            })
+            .expect("fresh observation evidence");
+    }
     result.execution_provenance["controls"] = json!(metewand_core::controls::local_control_report(
         &candidate.reuse_key.policy
     ));
@@ -649,7 +787,8 @@ fn execute(
         },
     )?;
     let (status, diagnostic) = match &published.attempt.record.outcome {
-        RunAttemptOutcome::Buffered { .. } => unreachable!("one-shot publisher"),
+        RunAttemptOutcome::Buffered { .. } => unreachable!("single-result publisher"),
+        RunAttemptOutcome::Censored { .. } => unreachable!("complete result publication"),
         RunAttemptOutcome::Accepted { .. } => (RunAttemptStatus::Accepted, None),
         RunAttemptOutcome::Superseded { .. } => (RunAttemptStatus::Superseded, None),
         RunAttemptOutcome::Failed { diagnostic, .. } => (
@@ -694,16 +833,26 @@ fn failed_attempt(
         code: code.to_owned(),
         message: message.clone(),
     };
+    let censored = measurement.fresh.is_some()
+        && code == "scientific_timeout"
+        && execution.fresh_budget_exhausted()?;
     let record = RunAttemptRecord {
         slot: measurement.attempt_slot.id,
         retry_index: execution.retry_index(),
-        outcome: RunAttemptOutcome::Failed {
-            diagnostic: AttemptDiagnostic {
-                code: code.to_owned(),
-                message,
-                details: None,
-            },
-            observation: None,
+        outcome: if censored {
+            RunAttemptOutcome::Censored {
+                reason: "active_time_limit".into(),
+                observation: None,
+            }
+        } else {
+            RunAttemptOutcome::Failed {
+                diagnostic: AttemptDiagnostic {
+                    code: code.to_owned(),
+                    message,
+                    details: None,
+                },
+                observation: None,
+            }
         },
         started_at,
         finished_at: SystemTime::now(),
@@ -723,7 +872,11 @@ fn failed_attempt(
         logical_slot_id: measurement.logical_slot,
         resolved_slot_id: measurement.attempt_slot.id,
         attempt_id: attempt.id,
-        status: RunAttemptStatus::Failed,
+        status: if censored {
+            RunAttemptStatus::Censored
+        } else {
+            RunAttemptStatus::Failed
+        },
         observation_id: None,
         attempt_directory,
         observation_directory: None,

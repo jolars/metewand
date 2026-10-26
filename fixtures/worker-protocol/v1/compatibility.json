@@ -26,9 +26,9 @@
       "frame": "{\"id\":\"1\",\"method\":\"execute\",\"result_dir\":\"/result\",\"scientific_budget\":{\"evaluations\":100}}\n"
     },
     {
-      "name": "execute rejects observation_control",
+      "name": "fresh execution carries a capability-gated control",
       "message_type": "execute-request",
-      "valid": false,
+      "valid": true,
       "frame": "{\"id\":\"1\",\"method\":\"execute\",\"observation_control\":{\"iterations\":10},\"result_dir\":\"/result\"}\n"
     },
     {
@@ -62,9 +62,9 @@
       "frame": "{\"id\":\"1\",\"implementation_time_ns\":null,\"ok\":true,\"result\":{\"manifest\":\"result.json\"},\"statistics\":{}}\n"
     },
     {
-      "name": "execute response rejects observation control",
+      "name": "fresh execution echoes the capability-gated control",
       "message_type": "execute-response",
-      "valid": false,
+      "valid": true,
       "frame": "{\"id\":\"1\",\"implementation_time_ns\":null,\"observation_control\":{\"iterations\":10},\"ok\":true,\"result\":{\"manifest\":\"result.json\"},\"statistics\":{}}\n"
     },
     {

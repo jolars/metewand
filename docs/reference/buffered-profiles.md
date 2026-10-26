@@ -58,8 +58,8 @@ between scheduled checks adds a terminal check at the current boundary.
 Instrumentation schemas may be inline or referenced files. Instrumentation,
 schedule, selected scope, thresholds, and bounds contribute to dependent run
 identities. Editing another implementation's binding does not invalidate an
-unchanged candidate. Scientific budgets beyond `none`, fresh sequences, and
-streaming are not implemented by this delivery.
+unchanged candidate. Scientific budgets beyond `none` and streaming remain
+unsupported. The same policy can also bind [fresh-sequence delivery](fresh-sequence-profiles.md).
 
 ## Authorizing measurement scopes
 
@@ -161,7 +161,8 @@ accepted terminal attempt, so a retry cannot splice curves. Failed and censored
 attempts retain their own unselected results. A crash before a complete buffer
 response produces no accepted trace or observations, even if files were written.
 
-Runs containing buffered profiles use SQLite run-store version 2. Existing
+Runs containing buffered profiles use SQLite run-store version 2, or version 3
+when mixed with fresh sequences. Existing
 version-1 one-shot stores remain readable and resumable without migration.
 Adding profiles requires a fresh output directory.
 

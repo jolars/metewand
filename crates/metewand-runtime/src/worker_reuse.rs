@@ -24,6 +24,8 @@ use crate::worker_session::{WorkerSession, WorkerSessionError};
 /// resource, timing, and warm-up semantics.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WorkerReuseKey {
+    /// Negotiated operations must match before a session can be retained.
+    pub selected_capabilities: Vec<metewand_protocol::Capability>,
     /// Protocol role selected before startup.
     pub role: WorkerRole,
     /// Authored worker definition, including arguments and source declarations.

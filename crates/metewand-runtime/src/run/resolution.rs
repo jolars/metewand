@@ -72,6 +72,7 @@ pub(super) struct ResolvedBatch {
 
 pub(super) struct ResolvedCandidate {
     pub profile: Option<metewand_core::profile::SelectedBufferedProfile>,
+    pub fresh_profile: Option<metewand_core::profile::ProfilePolicy>,
     pub experiment: String,
     pub logical_selection_ids: Vec<String>,
     pub applicability: IdentifiedRecord<metewand_core::applicability::ApplicabilityDecisionRecord>,
@@ -92,6 +93,7 @@ pub(super) struct ResolvedCandidate {
 
 #[derive(Clone)]
 pub(super) struct ResolvedMeasurement {
+    pub fresh: Option<metewand_core::profile::FreshControl>,
     pub observation_slots: Vec<IdentifiedRecord<ResolvedObservationSlotRecord>>,
     pub candidate: RecordId<metewand_core::records::LogicalCandidateRecord>,
     pub specification: IdentifiedRecord<ResolvedOneShotSpecificationRecord>,
@@ -688,26 +690,34 @@ fn resolve_candidate(
         .expect("checked plan problem definition")
         .0;
     let contract = &repository.problem_contracts[problem_name];
-    let profile = repository.manifest.observation_policies
+    let definition = repository.manifest.observation_policies
         [&experiment.observation_policy.record.name]
         .profile
-        .as_ref()
-        .map(|p| {
-            let name = catalog
-                .implementation_definitions
-                .iter()
-                .find(|(_, id)| **id == candidate.implementation_configuration.record.definition)
-                .expect("checked implementation")
-                .0;
-            let binding = &p.implementations[name];
-            metewand_core::profile::SelectedBufferedProfile {
-                policy: p.policy.clone(),
+        .as_ref();
+    let binding = definition.map(|p| {
+        let name = catalog
+            .implementation_definitions
+            .iter()
+            .find(|(_, id)| **id == candidate.implementation_configuration.record.definition)
+            .expect("checked implementation")
+            .0;
+        (&p.policy, &p.implementations[name])
+    });
+    let profile = binding.and_then(|(policy, binding)| match binding {
+        metewand_core::profile::ProfileBinding::Buffered(binding) => {
+            Some(metewand_core::profile::SelectedBufferedProfile {
+                policy: policy.clone(),
                 instrumented_scope: binding.instrumented_scope.clone(),
                 scope: contract.instrumented_scopes[&binding.instrumented_scope].clone(),
                 instrumentation: binding.instrumentation.clone(),
                 check_schedule: binding.check_schedule.clone(),
-            }
-        });
+            })
+        }
+        _ => None,
+    });
+    let fresh_profile = binding.and_then(|(policy, binding)| {
+        matches!(binding, metewand_core::profile::ProfileBinding::Fresh(_)).then(|| policy.clone())
+    });
     let applicability = resolve_applicability(
         candidate,
         &implementation,
@@ -770,6 +780,11 @@ fn resolve_candidate(
                 unreachable!("only measured slots were selected");
             };
             let scheduling = SchedulingSlot {
+                observation_round: logical_observation
+                    .record
+                    .fresh
+                    .as_ref()
+                    .map_or(0, |f| f.schedule_index),
                 logical_slot: slot.id,
                 comparison_block: ComparisonBlock {
                     dataset_instance: dataset_instance.id,
@@ -841,9 +856,13 @@ fn resolve_candidate(
                 .observation_slots
                 .iter()
                 .filter(|o| {
-                    o.record.measurement_index >= logical_observation.record.measurement_index
-                        && o.record.measurement_index
-                            < logical_observation.record.measurement_index + bound
+                    if fresh_profile.is_some() {
+                        o.id == logical_observation.id
+                    } else {
+                        o.record.measurement_index >= logical_observation.record.measurement_index
+                            && o.record.measurement_index
+                                < logical_observation.record.measurement_index + bound
+                    }
                 })
                 .map(|o| {
                     identify_record(ResolvedObservationSlotRecord {
@@ -871,6 +890,7 @@ fn resolve_candidate(
                 selection_ids.push(observation.record.logical_slot.to_string());
             }
             measurements.push(ResolvedMeasurement {
+                fresh: logical_observation.record.fresh.clone(),
                 observation_slots,
                 candidate: candidate.candidate.id,
                 specification: resolved.clone(),
@@ -886,6 +906,13 @@ fn resolve_candidate(
         }
     }
     let reuse_key = crate::worker_reuse::WorkerReuseKey {
+        selected_capabilities: vec![if fresh_profile.is_some() {
+            metewand_protocol::Capability::FreshSequence
+        } else if profile.is_some() {
+            metewand_protocol::Capability::BufferedProfile
+        } else {
+            metewand_protocol::Capability::OneShot
+        }],
         role: metewand_protocol::WorkerRole::Implementation,
         definition: candidate.implementation_configuration.record.definition,
         resolved: implementation.record.clone(),
@@ -893,6 +920,7 @@ fn resolve_candidate(
     };
     Ok(ResolvedCandidate {
         profile,
+        fresh_profile,
         experiment: experiment.name.to_string(),
         applicability,
         logical_selection_ids: std::iter::once(candidate.candidate.id.to_string())

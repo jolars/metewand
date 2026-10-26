@@ -423,8 +423,16 @@ fn plan_candidate(
         &manifest.observation_policies[&experiment.observation_policy].profile
     {
         let binding = &profile.implementations[&expanded.implementation.definition];
-        let value = serde_json::json!({"policy": profile.policy, "binding": profile.declaration_value()["implementations"][expanded.implementation.definition.as_str()],
-            "instrumentation_schema": catalog.schema_identities.get(binding.instrumentation_schema.as_path())});
+        let mut value = serde_json::json!({"policy": profile.policy, "binding": profile.declaration_value()["implementations"][expanded.implementation.definition.as_str()],
+            "instrumentation_schema": catalog.schema_identities.get(binding.schema().as_path())});
+        if matches!(binding, crate::profile::ProfileBinding::Fresh(_)) {
+            let schema = value
+                .as_object_mut()
+                .expect("profile object")
+                .remove("instrumentation_schema")
+                .expect("schema identity");
+            value["control_schema"] = schema;
+        }
         Some(identify_record(ObservationPolicyRecord {
             name: experiment.observation_policy.clone(),
             kind: crate::manifest::ObservationKind::Profile,
@@ -455,7 +463,12 @@ fn plan_candidate(
                 manifest.observation_policies[&experiment.observation_policy]
                     .profile
                     .as_ref()
-                    .map(|p| p.policy.max_observations),
+                    .map(|p| {
+                        (
+                            p.policy.max_observations,
+                            &p.implementations[&expanded.implementation.definition],
+                        )
+                    }),
             )
         })
         .collect::<Result<Vec<_>, LogicalPlanningError>>()?;
@@ -481,7 +494,7 @@ fn plan_specification(
     implementation_repetition: u64,
     warmup_runs: u64,
     scheduling_seed: &DerivedSeedRecord,
-    profile_bound: Option<u64>,
+    profile_bound: Option<(u64, &crate::profile::ProfileBinding)>,
 ) -> Result<OneShotSpecificationPlan, LogicalPlanningError> {
     let implementation_seed = derive_implementation_seed(
         experiment.seed,
@@ -496,7 +509,21 @@ fn plan_specification(
         implementation_seed,
     })?;
 
-    let bound = profile_bound.unwrap_or(1);
+    let controls = match profile_bound {
+        Some((bound, crate::profile::ProfileBinding::Fresh(binding))) => {
+            Some(binding.schedule.expand(bound).map_err(|name| {
+                LogicalPlanningError::MissingDefinitionIdentity {
+                    kind: "control schedule",
+                    name,
+                }
+            })?)
+        }
+        _ => None,
+    };
+    let bound = controls.as_ref().map_or_else(
+        || profile_bound.map_or(1, |(bound, _)| bound),
+        |v| v.len() as u64,
+    );
     let slot_count = experiment
         .measurement_repetitions
         .checked_mul(bound)
@@ -508,7 +535,19 @@ fn plan_specification(
         .map(|measurement_index| {
             identify_record(LogicalObservationSlotRecord {
                 specification: specification.id,
-                measurement_index,
+                fresh: controls
+                    .as_ref()
+                    .map(|controls| crate::profile::FreshControl {
+                        schedule_index: measurement_index % bound,
+                        observation_control: controls[(measurement_index % bound) as usize]
+                            .as_json()
+                            .clone(),
+                    }),
+                measurement_index: if controls.is_some() {
+                    measurement_index / bound
+                } else {
+                    measurement_index
+                },
             })
             .map_err(LogicalPlanningError::from)
         })
@@ -527,7 +566,11 @@ fn plan_specification(
             role,
         })?);
     }
-    for observation in observation_slots.iter().step_by(bound as usize) {
+    for observation in observation_slots.iter().step_by(if controls.is_some() {
+        1
+    } else {
+        bound as usize
+    }) {
         let role = AttemptSlotRole::Measured {
             observation_slot: observation.id,
         };

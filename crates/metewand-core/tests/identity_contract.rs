@@ -479,6 +479,7 @@ fn graph(mutation: Option<&str>, order: ObjectOrder, checked: bool) -> IdentityG
         &mut vectors,
         "logical-observation-slot",
         LogicalObservationSlotRecord {
+            fresh: None,
             specification: logical_specification,
             measurement_index: if is_mutated(mutation, "logical-observation-slot") {
                 1

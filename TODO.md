@@ -203,19 +203,25 @@ and scientific semantics.
 
 ### 3.4 Fresh-sequence profiles
 
-- [ ] Add fixed-count and common-metric-target profiles with finite explicit,
+- [x] Add fixed-count and common-metric-target profiles with finite explicit,
   linear, or geometric implementation-control schedules. Validate controls
   without claiming equal iterations or tolerances mean equal scientific
   work.
-- [ ] Run each observation from clean algorithmic state, preserving the
+- [x] Run each observation from clean algorithmic state, preserving the
   execution policy's worker-reuse and warm-up rules. Independently evaluate
   every returned result.
-- [ ] Keep deterministic observation ordering and identities. Stop on the
+- [x] Keep deterministic observation ordering and identities. Stop on the
   evaluator-owned target, label later slots `skipped_target_reached`, and
   preserve valid below-target observations and censored or failed attempts.
-- [ ] Exercise a black-box adapter through the public protocol and the needed
+- [x] Exercise a black-box adapter through the public protocol and the needed
   Python and R helpers. Test clean resets, target stopping, timeout, resume,
   inspection, and export.
+
+The [fresh-sequence example](examples/fresh-sequence) exercises Python bisection
+and R's `uniroot` through the public protocol. CLI tests cover selected points,
+mixed delivery, failure continuation, target skips, timeout, explicit retries,
+resume, inspection, and both exports. Layout-3 crash conformance preserves time
+reservations, conservative interrupted charges, and terminal target decisions.
 
 ### 3.5 Qualify the local MVP
 

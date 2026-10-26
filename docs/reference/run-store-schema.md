@@ -22,7 +22,7 @@ the other contracts remain at version 1.
 
 `BUFFERED_RUN_STORE_SCHEMA_VERSION = 2` and the embedded `v2.sql` add the
 `buffered` execution kind. `RunStore::open_buffered` initializes this layout for
-new runs containing profiles. Both layouts remain readable and writable under
+new runs containing buffered profiles. Both layouts remain readable and writable under
 their own exact schema checks; opening a version-1 store never migrates it.
 A fresh output directory is required when adding buffered profiles.
 
@@ -37,7 +37,7 @@ both layouts and buffered selection boundaries.
 `RunStore::open` reads `user_version` before changing the persistent journal
 mode or applying DDL. It creates version 1 only in an empty database, rejects
 unknown versions and unversioned databases with user objects, and checks an
-existing version-1 or version-2 database against its embedded tables, indexes,
+existing version-1, version-2, or version-3 database against its embedded tables, indexes,
 and triggers.
 Migration must be deliberate and transactional. The SQL intentionally omits
 `IF NOT EXISTS` so an existing, incompatible table cannot silently pass
@@ -729,3 +729,26 @@ tests cover missing, invalid, unselected, and incomplete observations, retained
 stream checkpoints, and successful retries that preserve earlier selections.
 Reopening verifies committed terminal state, history, artifacts, and claim
 release without replaying events or inferring acceptance from directories.
+
+## Fresh-sequence layout 3
+
+`FRESH_RUN_STORE_SCHEMA_VERSION = 3` and `v3.sql` retain layout 2 and add
+`fresh_sequences`, `fresh_members`, `fresh_budget`, and `fresh_dispositions`.
+`RunStore::open_fresh` initializes this layout for a new run containing fresh
+delivery. Exact schema checks, readers, publication, and recovery support all
+three layouts without automatic migration.
+
+Fresh members bind their resolved run, measurement index, schedule index, and
+canonical control. Reservation checks serialize each repetition across active
+attempts. A budget row reserves an allowance immediately before timed execution;
+measured timing can fill its evidence once. The reservation stays charged until
+terminal commit. Unknown interrupted timing retains its reserved charge.
+
+Fresh observations publish unselected. Terminal acceptance selects the producing
+point and commits budget settlement and any target or time-limit dispositions
+in the same transaction. The immutable coordination snapshot retains complete
+repetition membership, budget evidence, and the prospective stopping effect.
+Recovery uses that same effect and cannot infer attainment from an unaccepted
+observation. See [Fresh-sequence profiles](fresh-sequence-profiles.md) for user
+semantics. The crash campaign covers layout initialization, budget reservation,
+timing evidence, observation publication, target skips, and interrupted budgets.

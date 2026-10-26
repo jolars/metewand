@@ -39,7 +39,8 @@ impl ResultSet {
             matches!(
                 record.kind.as_str(),
                 "applicability" | "attempt" | "observation"
-            )
+            ) || (record.kind == "resolved-attempt-slot"
+                && record.record["fresh_sequence"]["disposition"].is_string())
         }) {
             records.push(project(source, &graph)?);
         }
@@ -254,6 +255,7 @@ fn project(
     let record_type = match source.kind.as_str() {
         "applicability" => ExportRecordType::Applicability,
         "attempt" => ExportRecordType::Attempt,
+        "resolved-attempt-slot" => ExportRecordType::Slot,
         _ => ExportRecordType::Observation,
     };
     let attempt_id = if record_type == ExportRecordType::Attempt {
@@ -262,7 +264,9 @@ fn project(
         text(row, "attempt_id")
     };
     let attempt = lookup(graph, attempt_id.as_deref());
-    let slot_id = if record_type == ExportRecordType::Observation {
+    let slot_id = if record_type == ExportRecordType::Slot {
+        Some(source.id.clone())
+    } else if record_type == ExportRecordType::Observation {
         text(row, "attempt_slot_id")
     } else {
         text(row, "slot_id")
@@ -284,7 +288,9 @@ fn project(
             "observation document disagrees with committed coordination",
         ));
     }
-    let observation_slot_id = if record_type == ExportRecordType::Observation {
+    let observation_slot_id = if record_type == ExportRecordType::Slot {
+        text(&slot["fresh_sequence"], "observation_slot_id")
+    } else if record_type == ExportRecordType::Observation {
         text(row, "slot_id")
     } else {
         None
@@ -335,7 +341,14 @@ fn project(
     let selected_profile = execution
         .get("profile_policy")
         .or_else(|| provenance["data"]["profile"].get("selected"));
-    let profile_class=selected_profile.map(|p|json!({"delivery":"buffered_profile","measurement_basis":"instrumented","instrumented_scope":p["instrumented_scope"],"clock":"monotonic_ns","scope":p["scope"]}));
+    let profile_class = if context.get("fresh_sequence").is_some()
+        || slot.get("fresh_sequence").is_some()
+        || document["profile"]["delivery"] == "fresh_sequence"
+    {
+        Some(json!({"delivery":"fresh_sequence","measurement_basis":"executor_observed"}))
+    } else {
+        selected_profile.map(|p|json!({"delivery":"buffered_profile","measurement_basis":"instrumented","instrumented_scope":p["instrumented_scope"],"clock":"monotonic_ns","scope":p["scope"]}))
+    };
     let mut compatibility = CompatibilityClass {
         profile: profile_class,
         execution_semantics_version: provenance["execution_semantics_version"]
@@ -376,7 +389,9 @@ fn project(
     );
     let state = text(&attempt, "state");
     let failure_code = text(&attempt, "failure_code");
-    let outcome = if record_type == ExportRecordType::Applicability {
+    let outcome = if record_type == ExportRecordType::Slot {
+        text(&slot["fresh_sequence"], "disposition")
+    } else if record_type == ExportRecordType::Applicability {
         Some(
             if row["applicable"] == true {
                 "applicable"
@@ -392,11 +407,25 @@ fn project(
     };
     let metrics = lookup(graph, document["metrics"]["id"].as_str());
     let result = lookup(graph, document["result"]["id"].as_str());
+    let mut profile = document
+        .get("profile")
+        .cloned()
+        .or_else(|| provenance["data"].get("profile").cloned());
+    if let Some(fresh) = slot.get("fresh_sequence") {
+        if profile.is_none() {
+            profile = Some(fresh.clone());
+        }
+        if let Some(profile) = profile.as_mut() {
+            profile["progress"] = fresh["progress"].clone();
+            profile["budget"] = row
+                .get("fresh_budget")
+                .or_else(|| attempt.get("fresh_budget"))
+                .cloned()
+                .unwrap_or(Value::Null);
+        }
+    }
     Ok(ExportRecord {
-        profile: document
-            .get("profile")
-            .cloned()
-            .or_else(|| provenance["data"].get("profile").cloned()),
+        profile,
         schema_version: EXPORT_SCHEMA_VERSION,
         record_type,
         id: source.id.clone(),

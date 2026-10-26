@@ -35,7 +35,8 @@ class GoldenImplementation(Implementation):
         self.seed = seed
 
     def execute(self, budget, observation_control):
-        assert budget is None and observation_control is None
+        assert budget is None
+        assert observation_control == ({"iterations": 4} if getattr(self, "fresh_sequence", False) else None)
         return {"seed": self.seed}
 
     def write_result(self, directory):
@@ -126,6 +127,8 @@ class ConformanceTests(unittest.TestCase):
                     "dataset_materializer": materialize,
                     "problem_evaluator": evaluate,
                 }[role]
+                if role == "implementation":
+                    worker.fresh_sequence = session.get("fresh_sequence", False)
                 calls = [
                     step["request"].replace("@ROOT@", directory).encode()
                     for step in session["exchanges"]
@@ -156,7 +159,7 @@ class ConformanceTests(unittest.TestCase):
 
                 output = InspectingWriter()
                 with patch("metewand._worker.time.perf_counter_ns", side_effect=[100, 125]):
-                    _serve(worker, role, io.BytesIO(b"".join(calls)), output)
+                    _serve(worker, role, io.BytesIO(b"".join(calls)), output, fresh_sequence=session.get("fresh_sequence", False))
                 self.assertEqual(output.getvalue(), expected)
         for vector in vectors["responses"]:
             self.assertEqual(

@@ -124,6 +124,7 @@ fn launch_record(mode: &str) -> ResolvedLaunchRecord {
 
 fn key(launch: &ResolvedLaunchRecord, reuse: bool, warmups: u64) -> WorkerReuseKey {
     WorkerReuseKey {
+        selected_capabilities: vec![metewand_protocol::Capability::OneShot],
         role: WorkerRole::Implementation,
         definition: RecordId::from_digest([2; 32]),
         resolved: ResolvedWorkerRecord {
@@ -294,6 +295,9 @@ fn every_reuse_key_component_separates_workers() {
     let launch = launch_record("normal");
     let original = key(&launch, true, 0);
     let mut variants = vec![];
+    let mut changed = original.clone();
+    changed.selected_capabilities = vec![Capability::FreshSequence];
+    variants.push(changed);
     let mut changed = original.clone();
     changed.role = WorkerRole::ProblemEvaluator;
     variants.push(changed);

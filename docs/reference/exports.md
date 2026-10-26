@@ -158,3 +158,13 @@ The `profile` object retains work counts, threshold references, and scope metada
 Compatibility classes include the instrumented measurement basis and named scope
 with its contract definition. Keep attempt identities when grouping curves.
 See [buffered profiles](buffered-profiles.md).
+
+## Fresh-sequence rows
+
+Fresh observations retain `measurement_index`, `schedule_index`, and the exact
+`observation_control` in `profile`, with executor-observed timing and independent
+metrics. Current repetition progress and budget evidence remain separate from
+the point's primary time. A skipped `slot` row records its disposition with null
+metric and attempt coordinates; any earlier failed attempts remain separate
+rows. Compatibility classes identify fresh executor-observed delivery. See
+[Fresh-sequence profiles](fresh-sequence-profiles.md).

@@ -388,7 +388,8 @@ fn coordination_snapshot(
         "observations": rows(tx, "SELECT json_object('id', o.id, 'slot_id', o.slot_id, 'producing_attempt_id', o.producing_attempt_id, 'valid', o.valid, 'completion', o.completion, 'artifact_id', o.artifact_id, 'record', json(o.record_json), 'selected_at_ns', CAST(s.selected_at_ns AS TEXT)) FROM observations o LEFT JOIN selected_observations s ON s.observation_id = o.id WHERE o.producing_attempt_id = ?1 OR (?2 AND s.observation_id IS NOT NULL AND o.slot_id IN (SELECT observation_slot_id FROM attempt_observation_slots m JOIN attempts a ON a.slot_id = m.attempt_slot_id WHERE a.id = ?1)) ORDER BY o.id", params![id, include_selected])?,
     });
     if matches!(outcome, TerminalOutcome::Accepted)
-        && snapshot["attempt_slots"][0]["kind"] == "buffered"
+        && (snapshot["attempt_slots"][0]["kind"] == "buffered"
+            || snapshot["attempt_slots"][0]["kind"] == "fresh_observation")
     {
         for observation in snapshot["observations"]
             .as_array_mut()
@@ -398,6 +399,9 @@ fn coordination_snapshot(
                 observation["selected_at_ns"] = json!(finished.to_string());
             }
         }
+    }
+    if let Some(fresh) = super::fresh::snapshot(tx, attempt, outcome)? {
+        snapshot["fresh"] = fresh;
     }
     Ok(snapshot)
 }

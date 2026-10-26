@@ -71,7 +71,7 @@ class _ImplementationLifecycle(ABC):
     def execute(self, budget, observation_control):
         """Run the computation and return diagnostic statistics or None.
 
-        Both arguments are None in the current one-shot protocol.
+        Budget is None. Fresh-sequence executions receive the selected control.
         """
 
     def reset(self):
@@ -259,12 +259,13 @@ def _completed_manifest(directory, manifest):
 
 
 class _Dispatcher:
-    def __init__(self, worker, role, semantics=False):
+    def __init__(self, worker, role, semantics=False, fresh_sequence=False):
         self.worker = worker
         self.role = role
         self.ready = False
         self.prepared = False
         self.semantics = semantics
+        self.fresh_sequence = fresh_sequence
         self.applicability = role == "implementation" and type(worker).check_applicability is not _ImplementationLifecycle.check_applicability
 
     def dispatch(self, request):
@@ -275,6 +276,12 @@ class _Dispatcher:
                 raise WorkerError(
                     "invalid_request", "Expected problem_semantics object."
                 )
+        control = None
+        if request.get("method") == "execute" and "observation_control" in request:
+            if not self.fresh_sequence or type(request["observation_control"]) is not dict:
+                raise WorkerError("invalid_request", "Observation controls require fresh_sequence support and an object.")
+            request = request.copy()
+            control = parse_json(canonical_bytes(request.pop("observation_control")))
         method = _validate_request(request)
         if not self.ready:
             if method != "hello" or request["role"] != self.role:
@@ -287,13 +294,23 @@ class _Dispatcher:
                     "unsupported_operation", "No offered protocol version is supported."
                 )
             self.ready = True
+            capabilities = []
+            if self.role == "implementation":
+                if not isinstance(self.worker, BufferedImplementation):
+                    capabilities.append("one_shot")
+                if hasattr(self.worker, "execute_buffered"):
+                    capabilities.append("buffered_profile")
+                if self.applicability:
+                    capabilities.append("applicability")
+                if self.fresh_sequence:
+                    capabilities.append("fresh_sequence")
+            elif self.semantics:
+                capabilities.append("problem_semantics")
             return {
                 "protocol": WIRE_PROTOCOL_VERSION,
                 "worker_id": request["worker_id"],
                 "sdk": {"name": "metewand-python", "version": SDK_VERSION},
-                "capabilities": ([] if isinstance(self.worker, BufferedImplementation) else ["one_shot"]) + (["buffered_profile"] if hasattr(self.worker, "execute_buffered") else []) + (["applicability"] if self.applicability else [])
-                if self.role == "implementation"
-                else (["problem_semantics"] if self.semantics else []),
+                "capabilities": capabilities,
             }
         if method == "hello":
             raise WorkerError(
@@ -340,7 +357,7 @@ class _Dispatcher:
             self.prepared = False
             execute = self.worker.execute
             start = time.perf_counter_ns()
-            output = execute(None, None)
+            output = execute(None, None if control is None else parse_json(canonical_bytes(control)))
             elapsed = time.perf_counter_ns() - start
             data_callback = isinstance(self.worker, OneShotImplementation)
             statistics = self.worker.statistics(output) if data_callback else output
@@ -355,13 +372,16 @@ class _Dispatcher:
                 self.worker.write_result(directory, output)
                 if data_callback else self.worker.write_result(directory),
             )
-            return {
+            response = {
                 "result": {"manifest": manifest},
                 "statistics": statistics,
                 "implementation_time_ns": elapsed
                 if 0 <= elapsed <= MAX_SAFE_INTEGER
                 else None,
             }
+            if control is not None:
+                response["observation_control"] = control
+            return response
         elif method == "execute_buffered":
             if not self.prepared or not hasattr(self.worker, "execute_buffered"):
                 raise WorkerError("invalid_request", "Buffered execution requires preparation and buffered_profile support.")
@@ -434,8 +454,8 @@ def _encode_failure(request_id, error):
             ) from failure
 
 
-def _serve(worker, role, reader, writer, semantics=False):
-    dispatcher = _Dispatcher(worker, role, semantics=semantics)
+def _serve(worker, role, reader, writer, semantics=False, fresh_sequence=False):
+    dispatcher = _Dispatcher(worker, role, semantics=semantics, fresh_sequence=fresh_sequence)
     while True:
         request = _read_frame(reader)
         # Check the envelope before attempting to build any failure response.
@@ -475,7 +495,7 @@ def _serve(worker, role, reader, writer, semantics=False):
             return
 
 
-def _serve_fds(worker, role, read_fd, write_fd, semantics=False):
+def _serve_fds(worker, role, read_fd, write_fd, semantics=False, fresh_sequence=False):
     if read_fd is None:
         read_fd = int(os.environ["METEWAND_PROTOCOL_READ_FD"])
     if write_fd is None:
@@ -485,14 +505,20 @@ def _serve_fds(worker, role, read_fd, write_fd, semantics=False):
     with ExitStack() as stack:
         reader = stack.enter_context(os.fdopen(os.dup(read_fd), "rb"))
         writer = stack.enter_context(os.fdopen(os.dup(write_fd), "wb"))
-        _serve(worker, role, reader, writer, semantics=semantics)
+        _serve(worker, role, reader, writer, semantics=semantics, fresh_sequence=fresh_sequence)
 
 
-def serve_implementation(implementation, *, read_fd=None, write_fd=None):
-    """Serve a one-shot Implementation on inherited or explicitly supplied pipes."""
+def serve_implementation(implementation, *, fresh_sequence=False, read_fd=None, write_fd=None):
+    """Serve implementation callbacks on inherited or explicitly supplied pipes.
+
+    fresh_sequence opts in to controlled executions through the existing execute
+    callback. The SDK preserves the selected control for the response echo.
+    """
     if not isinstance(implementation, (Implementation, OneShotImplementation, BufferedImplementation)):
         raise TypeError("Expected an Implementation or OneShotImplementation instance.")
-    _serve_fds(implementation, "implementation", read_fd, write_fd)
+    if type(fresh_sequence) is not bool:
+        raise TypeError("fresh_sequence must be a boolean.")
+    _serve_fds(implementation, "implementation", read_fd, write_fd, fresh_sequence=fresh_sequence)
 
 
 def serve_dataset_materializer(materialize, *, read_fd=None, write_fd=None):

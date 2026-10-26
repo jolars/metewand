@@ -9,6 +9,7 @@ they do not provide container isolation or a locked publication environment.
 | Form | Example | Requirements | Expected observations |
 | --- | --- | --- | --- |
 | Raw command | [Fixed dataset](fixed-dataset) | Python 3, standard library only | One answer of 8 |
+| Fresh sequences | [Black-box Python and R solvers](fresh-sequence) | Python, R, and staged SDKs | Fixed counts and independently evaluated targets |
 | Buffered profiles | [Local observers and native traces](buffered-profile) | Python 3.11+, staged SDK; optional Rust worker | Fifteen evaluated snapshots from five attempts |
 | Python-only | [Python SDK](python-sdk) | Python 3.11+, staged in-tree SDK | Two answers of 8 |
 | R-only | [R SDK](r-sdk) | R, digest, C++17 compiler, installed in-tree SDK | Two answers of 8 |

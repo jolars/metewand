@@ -57,7 +57,7 @@ pub fn parse_manifest(source_path: &Path, source: &str) -> Result<Manifest, Mani
     for policy in manifest.observation_policies.values_mut() {
         if let Some(profile) = &mut policy.profile {
             for binding in profile.implementations.values_mut() {
-                binding.instrumentation_schema.set_owner(source_path);
+                binding.schema_mut().set_owner(source_path);
             }
         }
     }
@@ -614,7 +614,7 @@ impl<'de> Deserialize<'de> for ObservationPolicyDefinition {
                 let bindings = object
                     .remove("implementations")
                     .ok_or_else(|| de::Error::missing_field("implementations"))?;
-                let implementations: BTreeMap<Name, crate::profile::BufferedBinding> =
+                let implementations: BTreeMap<Name, crate::profile::ProfileBinding> =
                     serde_json::from_value(bindings).map_err(de::Error::custom)?;
                 let policy: crate::profile::ProfilePolicy =
                     serde_json::from_value(value).map_err(de::Error::custom)?;
@@ -623,16 +623,7 @@ impl<'de> Deserialize<'de> for ObservationPolicyDefinition {
                     return Err(de::Error::custom("profile implementations cannot be empty"));
                 }
                 for binding in implementations.values() {
-                    if binding.instrumented_scope.is_empty()
-                        || !binding.instrumentation.is_object()
-                        || binding.check_schedule.every == 0
-                        || binding.check_schedule.every > crate::canonical::MAX_SAFE_INTEGER
-                        || binding.check_schedule.start > crate::canonical::MAX_SAFE_INTEGER
-                    {
-                        return Err(de::Error::custom(
-                            "buffered binding requires a scope, an instrumentation object, and a positive safe check interval",
-                        ));
-                    }
+                    binding.validate(&policy).map_err(de::Error::custom)?;
                 }
                 Ok(Self {
                     version: 1,
@@ -644,7 +635,7 @@ impl<'de> Deserialize<'de> for ObservationPolicyDefinition {
                 })
             }
             _ => Err(de::Error::custom(
-                "expected one_shot without profile fields, or profile with buffered bindings",
+                "expected one_shot without profile fields, or profile with delivery bindings",
             )),
         }
     }
@@ -765,6 +756,8 @@ pub enum ProtocolTransport {
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum ImplementationCapability {
+    /// Runs independent executions for a finite observation-control schedule.
+    FreshSequence,
     /// One request produces one final result.
     OneShot,
     /// Checks configuration-dependent support before measurement.
@@ -1255,8 +1248,11 @@ impl<'de> Deserialize<'de> for ImplementationDefinition {
             .contains(&ImplementationCapability::OneShot)
             || raw
                 .capabilities
-                .contains(&ImplementationCapability::BufferedProfile))
-            || raw.capabilities.len() > 3
+                .contains(&ImplementationCapability::BufferedProfile)
+            || raw
+                .capabilities
+                .contains(&ImplementationCapability::FreshSequence))
+            || raw.capabilities.len() > 4
             || raw
                 .capabilities
                 .iter()
@@ -1264,7 +1260,7 @@ impl<'de> Deserialize<'de> for ImplementationDefinition {
                 .any(|(i, c)| raw.capabilities[..i].contains(c))
         {
             return Err(de::Error::custom(
-                "requires `one_shot` or `buffered_profile`, with optional `applicability`, without duplicates",
+                "requires an execution capability, with optional `applicability`, without duplicates",
             ));
         }
         let worker = build_worker(

@@ -209,6 +209,7 @@ impl RunStore {
         if satisfied(&tx, &slot.to_string())? {
             return Err(RunStoreError::SatisfiedSlot);
         }
+        super::fresh::check_reservation(&tx, &slot.to_string())?;
         let previous: Option<i64> = tx.query_row(
             "SELECT max(retry_index) FROM attempts WHERE slot_id = ?1",
             [slot.to_string()],
@@ -448,7 +449,7 @@ pub(super) fn commit_terminal_in(
 ) -> Result<TerminalAttempt, RunStoreError> {
     if matches!(outcome, TerminalOutcome::Accepted) {
         let buffered: bool = tx.query_row(
-            "SELECT kind='buffered' FROM attempt_slots WHERE id=?1",
+            "SELECT kind IN ('buffered','fresh_observation') FROM attempt_slots WHERE id=?1",
             [attempt.slot().to_string()],
             |r| r.get(0),
         )?;
@@ -464,6 +465,7 @@ pub(super) fn commit_terminal_in(
     if artifact.id.is_empty() || verified > checked {
         return Err(invalid("invalid finalized artifact metadata"));
     }
+    super::fresh::finish(tx, attempt, &outcome)?;
     let details = outcome.details()?;
     let state = "finalizing";
     tx.execute("INSERT INTO artifacts(id, kind, relative_path, content_sha256, storage_kind, manifest_sha256, verified_at_ns)
@@ -703,7 +705,7 @@ pub(super) fn validate_acceptance(
     if total == 0 {
         return Err(invalid("measurement requires observation slots"));
     }
-    if kind == "buffered" {
+    if kind == "buffered" || kind == "fresh_observation" {
         let produced: i64 = tx.query_row(
             "SELECT count(*) FROM observations WHERE producing_attempt_id=?1 AND valid=1",
             [attempt.id().to_string()],

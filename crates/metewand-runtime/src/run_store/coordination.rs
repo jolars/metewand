@@ -18,6 +18,7 @@ use super::{
 /// Current execution history for one resolved slot.
 #[derive(Debug)]
 pub struct SlotProgress {
+    pub disposition: Option<String>,
     pub accepted: bool,
     pub attempts: u64,
     pub active: bool,
@@ -82,7 +83,12 @@ impl RunStore {
         let version: u32 = self
             .connection
             .pragma_query_value(None, "user_version", |r| r.get(0))?;
-        if version != super::BUFFERED_RUN_STORE_SCHEMA_VERSION {
+        if ![
+            super::BUFFERED_RUN_STORE_SCHEMA_VERSION,
+            super::FRESH_RUN_STORE_SCHEMA_VERSION,
+        ]
+        .contains(&version)
+        {
             return Err(invalid(
                 "buffered profiles require a new version-2 output directory",
             ));
@@ -90,7 +96,7 @@ impl RunStore {
         self.register_execution(candidate, run, attempt, observations, "buffered")
     }
 
-    fn register_execution(
+    pub(super) fn register_execution(
         &mut self,
         candidate: RecordId<LogicalCandidateRecord>,
         run: &IdentifiedRecord<ResolvedOneShotSpecificationRecord>,
@@ -213,7 +219,18 @@ impl RunStore {
         &self,
         slot: RecordId<ResolvedAttemptSlotRecord>,
     ) -> Result<SlotProgress, RunStoreError> {
-        Ok(self.connection.query_row("SELECT EXISTS(SELECT 1 FROM attempts WHERE slot_id = ?1 AND state = 'accepted'), count(*), coalesce(max(finished_at_ns IS NULL), 0) FROM attempts WHERE slot_id = ?1", [slot.to_string()], |r| Ok(SlotProgress { accepted: r.get(0)?, attempts: r.get::<_, i64>(1)? as u64, active: r.get(2)? }))?)
+        let disposition = if super::fresh::supported(&self.connection)? {
+            self.connection
+                .query_row(
+                    "SELECT reason FROM fresh_dispositions WHERE slot_id=?1",
+                    [slot.to_string()],
+                    |r| r.get(0),
+                )
+                .optional()?
+        } else {
+            None
+        };
+        Ok(self.connection.query_row("SELECT EXISTS(SELECT 1 FROM attempts WHERE slot_id = ?1 AND state = 'accepted'), count(*), coalesce(max(finished_at_ns IS NULL), 0) FROM attempts WHERE slot_id = ?1", [slot.to_string()], |r| Ok(SlotProgress { disposition, accepted: r.get(0)?, attempts: r.get::<_, i64>(1)? as u64, active: r.get(2)? }))?)
     }
 
     pub(crate) fn attempt_is_terminal(

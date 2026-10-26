@@ -643,7 +643,14 @@ fn later_subprotocol_capabilities_can_be_reported_but_not_selected() {
     let negotiated = validate_hello_response(&request, &response, &[Capability::OneShot])
         .expect("reported future capabilities must remain inert");
     assert_eq!(negotiated.selected_capabilities(), &[Capability::OneShot]);
-    for reserved in [Capability::FreshSequence, Capability::StreamingProfile] {
+    assert_eq!(
+        validate_hello_response(&request, &response, &[Capability::FreshSequence])
+            .unwrap()
+            .selected_capabilities(),
+        &[Capability::FreshSequence]
+    );
+    {
+        let reserved = Capability::StreamingProfile;
         assert!(matches!(
             validate_hello_response(&request, &response, &[reserved]),
             Err(HandshakeError::ReservedCapability { capability }) if capability == reserved

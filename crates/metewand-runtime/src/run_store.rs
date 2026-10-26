@@ -11,6 +11,8 @@ mod coordination;
 #[cfg(unix)]
 mod durable;
 #[cfg(unix)]
+pub(crate) mod fresh;
+#[cfg(unix)]
 pub use coordination::SlotProgress;
 #[cfg(all(test, unix))]
 mod fault_tests;
@@ -44,3 +46,7 @@ pub const BUFFERED_RUN_STORE_SCHEMA_SQL: &str = include_str!("run_store/v2.sql")
 /// in a transaction. Never apply it to an existing store without first checking
 /// its `user_version`. This schema does not configure WAL or synchronization.
 pub const RUN_STORE_SCHEMA_SQL: &str = include_str!("run_store/v1.sql");
+
+/// Fresh-sequence membership, budget accounting, and terminal slot dispositions.
+pub const FRESH_RUN_STORE_SCHEMA_VERSION: u32 = 3;
+pub const FRESH_RUN_STORE_SCHEMA_SQL: &str = include_str!("run_store/v3.sql");

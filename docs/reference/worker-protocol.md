@@ -22,8 +22,8 @@ package name and version strings. The three roles are `dataset_materializer`,
 
 The protocol recognizes `one_shot`, `applicability`, and `buffered_profile`.
 These capabilities belong to implementation workers. A session rejects a worker
-missing a selected capability. `fresh_sequence` and `streaming_profile` remain
-recognized metadata whose selection is reserved. Unselected reports are inert.
+missing a selected capability. `fresh_sequence` supports selected controlled execution; `streaming_profile`
+remains recognized metadata whose selection is reserved. Unselected reports are inert.
 
 Evaluators may report `problem_semantics`. Metewand selects it when reported
 and sends the complete canonical scientific rules in `evaluate` requests. It
@@ -268,3 +268,12 @@ manifest binds the file inventory, local stop reason, monotonic clock, scope,
 trace, selected results, and total instrumented duration. `resource_limit` is a
 worker failure code for output that cannot fit declared collection limits.
 See [buffered profiles](buffered-profiles.md) for scientific and timing rules.
+
+## Fresh-sequence execution
+
+A selected `fresh_sequence` implementation receives the canonical
+`observation_control` object in `execute`. Its response echoes that exact value;
+Metewand rejects missing or mismatched echoes and unsolicited one-shot echoes.
+Result manifests, preparation, reset, and shutdown retain their existing rules.
+Python and R workers explicitly opt in through `serve_implementation`'s
+`fresh_sequence` argument. See [Fresh-sequence profiles](fresh-sequence-profiles.md).

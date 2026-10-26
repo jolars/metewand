@@ -61,6 +61,7 @@ const reference = [
       ['fixed-dataset-run', 'Timing envelopes'],
       ['execution-measurements', 'Execution measurements'],
       ['buffered-profiles', 'Buffered profiles'],
+      ['fresh-sequence-profiles', 'Fresh-sequence profiles'],
       ['execution-controls', 'Execution controls'],
       ['worker-reuse', 'Worker reuse and warm-ups'],
       ['worker-environments', 'Worker environments'],

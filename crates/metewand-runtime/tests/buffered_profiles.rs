@@ -11,6 +11,16 @@ use std::{cell::Cell, fs, path::Path, rc::Rc};
 fn profile() -> SelectedBufferedProfile {
     serde_json::from_value(json!({"policy":{"metric":"gap","direction":"at_most","threshold":0.01,"record-thresholds":[1.0,0.1,0.01],"max-observations":3,"max-trace-points":20,"max-buffer-bytes":65536,"terminal-reserve-bytes":8192,"max-active-time":"1 s"},"instrumented_scope":"solver","scope":{"clock-origin":"before initialization","included-work":"solver and diagnostics","excluded-preparation":"dataset loading"},"instrumentation":{},"check_schedule":{"every":1,"start":0}})).unwrap()
 }
+
+#[test]
+fn buffered_collectors_still_require_collection_limits() {
+    let root = tempfile::tempdir().unwrap();
+    let mut spec = profile();
+    spec.policy.max_trace_points = 0;
+    spec.policy.max_buffer_bytes = 0;
+    spec.policy.terminal_reserve_bytes = 0;
+    assert!(BufferedTrace::new(spec, root.path().to_owned()).is_err());
+}
 fn progress(index: u64) -> Progress {
     Progress {
         check_index: index,

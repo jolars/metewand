@@ -237,7 +237,8 @@ impl CommandResult {
             return EXIT_RUN_FAILED;
         }
         if let Self::Run(report) = self
-            && (report.summary.failed_attempts > 0 || report.summary.censored_attempts > 0)
+            && (report.summary.failed_attempts > 0
+                || (report.summary.censored_attempts > 0 || report.summary.censored_profiles > 0))
         {
             EXIT_RUN_FAILED
         } else {
@@ -301,6 +302,17 @@ fn render_status(report: &StatusReport) -> String {
     }
     writeln!(output, "Slots: {} total, {} satisfied, {} pending, {} active, {} require retry, {} require recovery.", summary.attempt_slots, summary.satisfied_slots, summary.pending_slots, summary.active_slots, summary.retry_required_slots, summary.recovery_required_slots).expect("string write");
     writeln!(output, "Attempts: {} accepted, {} failed, {} superseded, {} censored, {} active.\nSelected observations: {}", summary.accepted_attempts, summary.failed_attempts, summary.superseded_attempts, summary.censored_attempts, summary.active_attempts, summary.selected_observations).expect("string write");
+    for profile in &report.fresh_sequences {
+        writeln!(
+            output,
+            "  fresh sequence {} repetition {}: {} ({} ns charged).",
+            profile.resolved_specification_id,
+            profile.measurement_index,
+            profile.status,
+            profile.consumed_time_ns
+        )
+        .expect("string write");
+    }
     for slot in &report.slots {
         let state = serde_json::to_value(slot.state).expect("slot state serializes");
         writeln!(
@@ -595,6 +607,11 @@ impl PlanResult {
                                 observation_slots += specification.observation_slots.len();
                                 attempt_slots += specification.attempt_slots.len();
                                 PlanSpecification {
+                                    fresh_observations: specification.observation_slots.iter().filter_map(|observation| observation.record.fresh.as_ref().map(|fresh| metewand_core::profile::FreshPlannedObservation {
+                                        observation_slot_id:observation.id.to_string(),
+                                        attempt_slot_id:specification.attempt_slots.iter().find(|slot|matches!(slot.record.role, metewand_core::records::AttemptSlotRole::Measured { observation_slot } if observation_slot==observation.id)).expect("fresh attempt slot").id.to_string(),
+                                        measurement_index:observation.record.measurement_index,schedule_index:fresh.schedule_index,observation_control:fresh.observation_control.clone(),
+                                    })).collect(),
                                     id: specification.specification.id.to_string(),
                                     observation_slots: specification
                                         .observation_slots
@@ -795,6 +812,16 @@ impl PlanResult {
                 for specification in &candidate.specifications {
                     writeln!(output, "    logical specification {}", specification.id)
                         .expect("writing to a string cannot fail");
+                    for point in &specification.fresh_observations {
+                        writeln!(
+                            output,
+                            "      repetition {}, point {}: control {}",
+                            point.measurement_index,
+                            point.schedule_index,
+                            point.observation_control
+                        )
+                        .expect("string write");
+                    }
                     for observation in &specification.observation_slots {
                         writeln!(output, "      observation slot {observation}")
                             .expect("writing to a string cannot fail");
@@ -1139,6 +1166,8 @@ struct CapabilityOutput {
 
 #[derive(Debug, Serialize)]
 struct PlanSpecification {
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    fresh_observations: Vec<metewand_core::profile::FreshPlannedObservation>,
     id: String,
     observation_slots: Vec<String>,
     attempt_slots: Vec<String>,
@@ -1644,16 +1673,36 @@ fn render_run_report(report: &RunReport) -> String {
         report.summary.superseded_attempts,
         report.output_directory
     );
+    for profile in &report.fresh_sequences {
+        writeln!(
+            output,
+            "  fresh sequence {} repetition {}: {} ({} of {} points, {} ns charged).",
+            profile.resolved_specification_id,
+            profile.measurement_index,
+            profile.status,
+            profile.accepted_points,
+            profile.scheduled_points,
+            profile.consumed_time_ns
+        )
+        .expect("string write");
+    }
     for attempt in &report.attempts {
         for observation in &attempt.observations {
-            writeln!(
-                output,
-                "  observation {}: instrumented {} ns, scope {}; evaluator metrics {}",
-                observation.observation_id,
-                observation.profile.instrumented_time_ns,
-                observation.profile.instrumented_scope,
-                observation.metrics
-            )
+            match &observation.profile {
+                metewand_core::records::ProfileObservationRecord::Buffered(profile) => writeln!(
+                    output,
+                    "  observation {}: instrumented {} ns, scope {}; evaluator metrics {}",
+                    observation.observation_id,
+                    profile.instrumented_time_ns,
+                    profile.instrumented_scope,
+                    observation.metrics
+                ),
+                metewand_core::records::ProfileObservationRecord::Fresh(profile) => writeln!(
+                    output,
+                    "  observation {}: control {}; evaluator metrics {}",
+                    observation.observation_id, profile.observation_control, observation.metrics
+                ),
+            }
             .expect("string write");
         }
         writeln!(
@@ -1873,6 +1922,7 @@ fn implementation_capability(capability: ImplementationCapability) -> &'static s
         ImplementationCapability::OneShot => "one_shot",
         ImplementationCapability::Applicability => "applicability",
         ImplementationCapability::BufferedProfile => "buffered_profile",
+        ImplementationCapability::FreshSequence => "fresh_sequence",
     }
 }
 

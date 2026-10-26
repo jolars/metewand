@@ -140,7 +140,8 @@
             "applicability",
             "attempt",
             "observation",
-            "trace"
+            "trace",
+            "slot"
           ]
         },
         "id": {

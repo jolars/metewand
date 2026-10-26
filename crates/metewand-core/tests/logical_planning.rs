@@ -641,6 +641,7 @@ fn scheduled_measurements(plan: &LogicalPlan) -> Vec<ScheduledMeasurement> {
                         [experiment.execution_policy.record.warmup_runs as usize + index];
                     measurements.push(ScheduledMeasurement {
                         slot: SchedulingSlot {
+                            observation_round: 0,
                             logical_slot: attempt.id,
                             comparison_block: ComparisonBlock {
                                 // A fixed synthetic resolution keeps this test independent of workers.
@@ -880,4 +881,82 @@ fn best_effort_resource_requests_survive_planning_and_are_reported() {
     );
     assert_eq!(report[7].requested, serde_json::json!(4));
     assert_eq!(report[8].requested, serde_json::json!("8 GiB"));
+}
+
+#[test]
+fn fresh_sequences_keep_repetitions_controls_and_bindings_distinct() {
+    let source = MANIFEST
+        .replace(
+            "capabilities: [\"one_shot\"]",
+            "capabilities: [\"fresh_sequence\"]",
+        )
+        .replace(
+            "kind: \"one_shot\"",
+            r#"kind: profile
+    max-observations: 3
+    max-active-time: 1 s
+    implementations:
+      alpha:
+        delivery: fresh_sequence
+        control-schema: schemas/parameters.json
+        schedule: { kind: linear, field: iterations, start: 1, step: 1, count: 3 }
+      beta:
+        delivery: fresh_sequence
+        control-schema: schemas/parameters.json
+        schedule: { kind: geometric, field: tolerance, start: 0.5, ratio: 0.5, count: 3 }"#,
+        );
+    let build = |source: &str| {
+        let manifest = manifest(source);
+        expand_manifest_logical_plan(&manifest, &contracts(&manifest), &schemas(), &catalog())
+            .unwrap()
+    };
+    let plan = build(&source);
+    for candidate in &plan.experiments[0].candidates {
+        assert_eq!(candidate.specifications.len(), 2);
+        for specification in &candidate.specifications {
+            assert_eq!(specification.observation_slots.len(), 9);
+            assert_eq!(specification.attempt_slots.len(), 11);
+            let coordinates = specification
+                .observation_slots
+                .iter()
+                .map(|s| {
+                    (
+                        s.record.measurement_index,
+                        s.record.fresh.as_ref().unwrap().schedule_index,
+                    )
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(
+                coordinates,
+                (0..3)
+                    .flat_map(|repetition| (0..3).map(move |point| (repetition, point)))
+                    .collect::<Vec<_>>()
+            );
+            assert_eq!(
+                specification
+                    .observation_slots
+                    .iter()
+                    .map(|s| s.id)
+                    .collect::<BTreeSet<_>>()
+                    .len(),
+                9
+            );
+        }
+    }
+    let changed = build(&source.replace("start: 0.5", "start: 0.25"));
+    assert_eq!(
+        plan.experiments[0].candidates[0],
+        changed.experiments[0].candidates[0]
+    );
+    assert_ne!(
+        plan.experiments[0].candidates[1].candidate.id,
+        changed.experiments[0].candidates[1].candidate.id
+    );
+    assert!(
+        parse_manifest(
+            Path::new("manifest.yaml"),
+            &source.replace("count: 3", "count: 2")
+        )
+        .is_err()
+    );
 }

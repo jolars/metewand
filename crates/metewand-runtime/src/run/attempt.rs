@@ -123,6 +123,43 @@ impl AttemptExecution {
         Ok(())
     }
 
+    pub fn reserve_fresh_time(
+        &mut self,
+        limit: Option<Duration>,
+    ) -> Result<Option<Duration>, RunError> {
+        let owned = self.owned.lock().expect("lease owner lock");
+        Ok(self
+            .store
+            .reserve_fresh_time(
+                &owned,
+                limit.and_then(|v| u64::try_from(v.as_nanos()).ok()),
+                now(),
+            )?
+            .map(Duration::from_nanos))
+    }
+
+    pub fn record_fresh_time(
+        &mut self,
+        measurements: &metewand_core::measurements::ExecutionMeasurements,
+    ) -> Result<(), RunError> {
+        use metewand_core::measurements::Measurement;
+        let measured = match measurements.timed_wall_time_ns {
+            Measurement::Complete { value } | Measurement::Partial { value, .. } => value,
+            Measurement::Unavailable {
+                reason: metewand_core::measurements::MissingReason::NotStarted,
+            } => 0,
+            Measurement::Unavailable { .. } => return Ok(()),
+        };
+        let owned = self.owned.lock().expect("lease owner lock");
+        self.store.record_fresh_time(&owned, measured, now())?;
+        Ok(())
+    }
+
+    pub fn fresh_budget_exhausted(&self) -> Result<bool, RunError> {
+        let owned = self.owned.lock().expect("lease owner lock");
+        Ok(self.store.fresh_budget_exhausted(&owned)?)
+    }
+
     pub fn publish_result(
         &mut self,
         result: &FixedDatasetResult,
@@ -167,7 +204,12 @@ impl AttemptExecution {
             &owned,
             &prepared.observation,
             &observation.artifact,
-            success && !superseded,
+            success
+                && !superseded
+                && !matches!(
+                    prepared.observation.record.profile,
+                    Some(metewand_core::records::ProfileObservationRecord::Fresh(_))
+                ),
             now(),
         )?;
         let outcome = terminal(&prepared.attempt.record.outcome)?;
@@ -345,6 +387,9 @@ fn terminal(outcome: &RunAttemptOutcome) -> Result<TerminalOutcome, RunError> {
                     .to_owned(),
                 details: CanonicalValue::try_from(serde_json::json!({"message":reason}))?,
             },
+        },
+        RunAttemptOutcome::Censored { reason, .. } => TerminalOutcome::Censored {
+            reason: reason.clone(),
         },
         RunAttemptOutcome::Accepted { .. } => TerminalOutcome::Accepted,
         RunAttemptOutcome::Superseded { .. } => TerminalOutcome::Superseded,

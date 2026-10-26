@@ -24,13 +24,21 @@
               "const": "accepted"
             }
           },
-          "required": ["kind"],
+          "required": [
+            "kind"
+          ],
           "additionalProperties": false
         },
         {
           "type": "object",
-          "properties": { "kind": { "const": "superseded" } },
-          "required": ["kind"],
+          "properties": {
+            "kind": {
+              "const": "superseded"
+            }
+          },
+          "required": [
+            "kind"
+          ],
           "additionalProperties": false
         },
         {
@@ -40,9 +48,14 @@
               "type": "string",
               "const": "failed"
             },
-            "diagnostic": { "$ref": "common.schema.json#/$defs/diagnostic" }
+            "diagnostic": {
+              "$ref": "common.schema.json#/$defs/diagnostic"
+            }
           },
-          "required": ["kind", "diagnostic"],
+          "required": [
+            "kind",
+            "diagnostic"
+          ],
           "additionalProperties": false
         },
         {
@@ -75,6 +88,23 @@
             "kind",
             "reason",
             "diagnostic"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "censored"
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "kind",
+            "reason"
           ],
           "additionalProperties": false
         }

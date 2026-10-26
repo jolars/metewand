@@ -229,3 +229,12 @@ publication. The development environment and CI include R and `digest`.
 cargo test -p metewand-runtime --test r_sdk --locked
 cargo test -p metewand-cli --test r_sdk --locked
 ```
+
+## Fresh-sequence controls
+
+Opt in with `serve_implementation(..., fresh_sequence=TRUE)` to report
+`fresh_sequence`. The existing execute callback receives the selected
+`observation_control`; the scientific budget remains absent. The SDK forwards
+the control and preserves its response echo before user code can mutate it.
+Existing result conversion, serialization, reset, and shutdown callbacks apply.
+See [Fresh-sequence profiles](fresh-sequence-profiles.md) for a complete example.

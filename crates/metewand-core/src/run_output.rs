@@ -129,6 +129,8 @@ pub enum RunEventKind {
 #[derive(Debug, Serialize)]
 pub struct RunSummary {
     #[serde(skip_serializing_if = "is_zero")]
+    pub censored_profiles: usize,
+    #[serde(skip_serializing_if = "is_zero")]
     pub censored_attempts: usize,
     /// Number of measured slots selected from the logical plan.
     pub attempt_slots: usize,
@@ -143,6 +145,8 @@ pub struct RunSummary {
 /// Final command output rendered by both human and machine interfaces.
 #[derive(Debug, Serialize)]
 pub struct RunReport {
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub fresh_sequences: Vec<crate::profile::FreshSequenceProgress>,
     /// Command that produced the report.
     pub command: &'static str,
     /// Authored benchmark name.

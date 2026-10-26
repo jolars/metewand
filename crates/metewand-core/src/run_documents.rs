@@ -76,6 +76,10 @@ pub fn attempt_document(record: &RunAttemptRecord) -> Result<CanonicalValue, Run
     }
     let (outcome, observation) = match &record.outcome {
         RunAttemptOutcome::Buffered { .. } => unreachable!("handled buffered outcome"),
+        RunAttemptOutcome::Censored {
+            reason,
+            observation,
+        } => (json!({"kind":"censored","reason":reason}), *observation),
         RunAttemptOutcome::Accepted { observation } => {
             (json!({"kind": "accepted"}), Some(*observation))
         }
