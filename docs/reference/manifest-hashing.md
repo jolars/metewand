@@ -46,7 +46,8 @@ paths by the parser.
 
 Inline schemas contribute their normalized mappings, including the inherited
 Draft 2020-12 `$schema`. Inline contracts contribute their complete typed
-envelopes and normalized schema declarations. Omitting the inherited dialect
+envelopes and normalized schema declarations. Flat problem fields normalize to
+the same inline contract, including the inherited version and problem name. Omitting the inherited dialect
 or spelling it explicitly produces identical bytes. Referenced schemas and
 contracts retain their path representation here; their contents and resolved
 dependencies belong to resource and component identities.

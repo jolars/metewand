@@ -7,7 +7,10 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use serde::{Deserialize, Deserializer, de};
+use serde::{
+    Deserialize, Deserializer,
+    de::{self, DeserializeSeed, MapAccess, Visitor},
+};
 use serde_json::Value as JsonValue;
 use thiserror::Error;
 
@@ -90,7 +93,7 @@ struct RawManifest {
     name: Name,
     #[serde(default)]
     datasets: BTreeMap<Name, DatasetDefinition>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_problems")]
     problems: BTreeMap<Name, ProblemDefinition>,
     #[serde(default)]
     implementations: BTreeMap<Name, ImplementationDefinition>,
@@ -211,7 +214,7 @@ pub struct GeneratedDatasetDefinition {
 /// A problem contract and its independent evaluator.
 #[derive(Debug)]
 pub struct ProblemDefinition {
-    /// Repository-relative problem-contract path or inline contract.
+    /// Repository-relative contract or normalized inline problem fields.
     pub contract: ContractDeclaration,
     /// Literal problem-parameter defaults.
     pub parameter_defaults: Option<CanonicalValue>,
@@ -1021,29 +1024,136 @@ impl<'de> Deserialize<'de> for DatasetDefinition {
     }
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
-struct RawProblemDefinition {
-    contract: ContractDeclaration,
-    #[serde(default, deserialize_with = "deserialize_parameter_defaults")]
-    parameter_defaults: Option<CanonicalValue>,
-    evaluator: WorkerDefinition,
-}
-
 impl<'de> Deserialize<'de> for ProblemDefinition {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let raw = RawProblemDefinition::deserialize(deserializer)?;
-        if raw.parameter_defaults.is_some()
-            && matches!(&raw.contract, ContractDeclaration::Inline(contract) if contract.compact_parameters)
+        ProblemDefinitionSeed { name: None }.deserialize(deserializer)
+    }
+}
+
+fn deserialize_problems<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<BTreeMap<Name, ProblemDefinition>, D::Error> {
+    struct ProblemsVisitor;
+
+    impl<'de> Visitor<'de> for ProblemsVisitor {
+        type Value = BTreeMap<Name, ProblemDefinition>;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+            formatter.write_str("a mapping of problem names to definitions")
+        }
+
+        fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
+            let mut problems = BTreeMap::new();
+            while let Some(name) = map.next_key::<Name>()? {
+                let problem = map.next_value_seed(ProblemDefinitionSeed { name: Some(&name) })?;
+                if problems.insert(name, problem).is_some() {
+                    return Err(de::Error::custom("duplicate problem name"));
+                }
+            }
+            Ok(problems)
+        }
+    }
+
+    deserializer.deserialize_map(ProblemsVisitor)
+}
+
+struct ProblemDefinitionSeed<'a> {
+    name: Option<&'a Name>,
+}
+
+struct ProblemField(String);
+
+#[derive(Deserialize)]
+#[serde(transparent)]
+struct ProblemParameterDefaults(
+    #[serde(deserialize_with = "deserialize_parameter_defaults")] Option<CanonicalValue>,
+);
+
+impl<'de> Deserialize<'de> for ProblemField {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let key = String::deserialize(deserializer)?;
+        if matches!(
+            key.as_str(),
+            "contract" | "evaluator" | "parameter-defaults"
+        ) || crate::problem_contract::CONTRACT_FIELDS.contains(&key.as_str())
+        {
+            Ok(Self(key))
+        } else {
+            Err(de::Error::unknown_field(
+                &key,
+                crate::problem_contract::CONTRACT_FIELDS,
+            ))
+        }
+    }
+}
+
+impl<'de> DeserializeSeed<'de> for ProblemDefinitionSeed<'_> {
+    type Value = ProblemDefinition;
+
+    fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<Self::Value, D::Error> {
+        deserializer.deserialize_map(self)
+    }
+}
+
+impl<'de> Visitor<'de> for ProblemDefinitionSeed<'_> {
+    type Value = ProblemDefinition;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("a problem definition with an independent evaluator")
+    }
+
+    fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
+        let mut contract = None;
+        let mut parameter_defaults = None;
+        let mut evaluator = None;
+        let mut fields = serde_json::Map::new();
+        while let Some(ProblemField(key)) = map.next_key()? {
+            match key.as_str() {
+                "contract" => contract = Some(map.next_value::<ContractDeclaration>()?),
+                "evaluator" => evaluator = Some(map.next_value::<WorkerDefinition>()?),
+                "parameter-defaults" => {
+                    parameter_defaults = map.next_value::<ProblemParameterDefaults>()?.0;
+                }
+                key => {
+                    fields.insert(key.to_owned(), map.next_value::<JsonValue>()?);
+                }
+            }
+        }
+
+        let contract = match contract {
+            Some(contract) => {
+                if let Some(key) = fields.keys().next() {
+                    return Err(de::Error::custom(format_args!(
+                        "`contract` cannot be combined with problem `{key}`"
+                    )));
+                }
+                contract
+            }
+            None => {
+                // Flat declarations inherit only envelope metadata; scientific
+                // choices still pass through the complete contract parser.
+                fields.entry("version").or_insert(JsonValue::from(1));
+                if let Some(name) = self.name {
+                    fields
+                        .entry("name")
+                        .or_insert_with(|| JsonValue::from(name.as_str()));
+                }
+                let contract = ProblemContract::deserialize(JsonValue::Object(fields))
+                    .map_err(de::Error::custom)?;
+                ContractDeclaration::Inline(Box::new(contract))
+            }
+        };
+        if parameter_defaults.is_some()
+            && matches!(&contract, ContractDeclaration::Inline(contract) if contract.compact_parameters)
         {
             return Err(de::Error::custom(
                 "contract `parameters` cannot be combined with problem `parameter-defaults`",
             ));
         }
-        Ok(Self {
-            contract: raw.contract,
-            parameter_defaults: raw.parameter_defaults,
-            evaluator: raw.evaluator,
+        Ok(ProblemDefinition {
+            contract,
+            parameter_defaults,
+            evaluator: evaluator.ok_or_else(|| de::Error::missing_field("evaluator"))?,
         })
     }
 }

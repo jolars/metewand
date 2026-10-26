@@ -83,6 +83,13 @@ scope and primary clock. Existing authoring files that omitted those choices
 must add them. These pre-MVP authoring changes retain compatibility version 1;
 wire messages, persisted records, and execution semantics are unchanged.
 
+Flat problem declarations also retain authoring and public-schema version 1.
+They inherit the contract version and mapping name, then use the same typed
+contract, canonical manifest bytes, schema resources, and component identities
+as equivalent wrapped inline declarations. Referenced and explicit inline
+contracts remain supported. Combining either with flat contract fields is an
+error. This changes no persisted records, wire messages, or execution semantics.
+
 Optional family semantics schemas, applicability
 selection, profiles, scientific budgets, and instrumentation settings remain
 planned implementation work.

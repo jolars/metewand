@@ -2,6 +2,62 @@
   "version": 1,
   "valid": [
     {
+      "name": "manifest-with-flat-problem-declaration",
+      "schema": "manifest",
+      "instance": {
+        "version": 1,
+        "name": "flat-problem",
+        "problems": {
+          "sum": {
+            "family": "arithmetic",
+            "parameters": {
+              "offset": {
+                "type": "integer",
+                "default": 0
+              }
+            },
+            "dataset-schemas": [],
+            "result": {
+              "answer": "integer"
+            },
+            "metrics": {
+              "error": {
+                "type": "number",
+                "minimum": 0
+              }
+            },
+            "semantics-schema": {
+              "type": "object"
+            },
+            "allowed-timing-scopes": [
+              "prepare_and_execute"
+            ],
+            "supported-budgets": [
+              "none"
+            ],
+            "semantics": {
+              "validity": {
+                "finite": true
+              },
+              "one_shot_completion": {
+                "exact": true
+              }
+            },
+            "reference-cases": [
+              {
+                "result": "result.json",
+                "expected-metrics": "metrics.json"
+              }
+            ],
+            "evaluator": {
+              "runner": "command",
+              "program": "evaluate"
+            }
+          }
+        }
+      }
+    },
+    {
       "name": "manifest-with-compact-dataset-and-problem-boundaries",
       "schema": "manifest",
       "instance": {
@@ -1680,6 +1736,63 @@
     }
   ],
   "invalid": [
+    {
+      "name": "manifest-rejects-competing-contract-and-flat-problem",
+      "schema": "manifest",
+      "instance": {
+        "version": 1,
+        "name": "flat-problem",
+        "problems": {
+          "sum": {
+            "family": "arithmetic",
+            "parameters": {
+              "offset": {
+                "type": "integer",
+                "default": 0
+              }
+            },
+            "dataset-schemas": [],
+            "result": {
+              "answer": "integer"
+            },
+            "metrics": {
+              "error": {
+                "type": "number",
+                "minimum": 0
+              }
+            },
+            "semantics-schema": {
+              "type": "object"
+            },
+            "allowed-timing-scopes": [
+              "prepare_and_execute"
+            ],
+            "supported-budgets": [
+              "none"
+            ],
+            "semantics": {
+              "validity": {
+                "finite": true
+              },
+              "one_shot_completion": {
+                "exact": true
+              }
+            },
+            "reference-cases": [
+              {
+                "result": "result.json",
+                "expected-metrics": "metrics.json"
+              }
+            ],
+            "evaluator": {
+              "runner": "command",
+              "program": "evaluate"
+            },
+            "contract": "problem.yaml"
+          }
+        }
+      }
+    },
     {
       "name": "compact-result-rejects-default",
       "schema": "problem-contract",

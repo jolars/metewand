@@ -193,7 +193,7 @@ fn accepts_existing_dataset_inventory_and_checks_each_case() {
     let contract = fs::read_to_string(&path)
         .unwrap()
         .replace("dataset: data.json", "dataset: reference/dataset");
-    let case = "        - dataset: reference/dataset\n          result: reference/result.json\n          expected-metrics: reference/metrics.json";
+    let case = "      - dataset: reference/dataset\n        result: reference/result.json\n        expected-metrics: reference/metrics.json";
     assert!(contract.contains(case));
     fs::write(path, contract.replace(case, &format!("{case}\n{case}"))).unwrap();
     let output = check(repository.path());

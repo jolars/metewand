@@ -30,64 +30,51 @@ datasets:
     parameter-defaults: { values: [1, 2, 3] }
 problems:
   sum:
-    contract:
-      version: 1
-      name: sum
-      family: arithmetic
-      parameter-schema:
-        type: object
-        properties: { offset: { type: integer } }
-        required: [offset]
-        additionalProperties: false
-      dataset-schemas: [*dataset-schema]
-      result-schema:
-        type: object
-        properties: { answer: { type: integer } }
-        required: [answer]
-        additionalProperties: false
-      metric-schema:
-        type: object
-        properties: { absolute_error: { type: integer, minimum: 0 } }
-        required: [absolute_error]
-        additionalProperties: false
-      semantics-schema:
-        type: object
-        properties:
-          preprocessing:
-            type: object
-            properties:
-              shared_materialization: { const: canonical_integer_json }
-              implementation_conversion: { const: preserve_integer_values_and_order }
-              allowed_outside_timed_scope:
-                type: array
-                items: { enum: [integer_packing] }
-                uniqueItems: true
-            required: [shared_materialization, implementation_conversion, allowed_outside_timed_scope]
-            additionalProperties: false
-          validity: { $ref: "#/$defs/exact" }
-          one_shot_completion: { $ref: "#/$defs/exact" }
-        required: [preprocessing, validity, one_shot_completion]
-        additionalProperties: false
-        $defs:
-          exact:
-            type: object
-            properties: { exact_sum: { const: true } }
-            required: [exact_sum]
-            additionalProperties: false
-      allowed-timing-scopes: [prepare_and_execute]
-      supported-budgets: [none]
-      semantics:
+    family: arithmetic
+    parameters:
+      offset: { type: integer, default: 2 }
+    dataset-schemas: [*dataset-schema]
+    result:
+      answer: integer
+    metrics:
+      absolute_error: { type: integer, minimum: 0 }
+    semantics-schema:
+      type: object
+      properties:
         preprocessing:
-          shared_materialization: canonical_integer_json
-          implementation_conversion: preserve_integer_values_and_order
-          allowed_outside_timed_scope: []
-        validity: { exact_sum: true }
-        one_shot_completion: { exact_sum: true }
-      reference-cases:
-        - dataset: data.json
-          result: reference/result.json
-          expected-metrics: reference/metrics.json
-    parameter-defaults: { offset: 2 }
+          type: object
+          properties:
+            shared_materialization: { const: canonical_integer_json }
+            implementation_conversion: { const: preserve_integer_values_and_order }
+            allowed_outside_timed_scope:
+              type: array
+              items: { enum: [integer_packing] }
+              uniqueItems: true
+          required: [shared_materialization, implementation_conversion, allowed_outside_timed_scope]
+          additionalProperties: false
+        validity: { $ref: "#/$defs/exact" }
+        one_shot_completion: { $ref: "#/$defs/exact" }
+      required: [preprocessing, validity, one_shot_completion]
+      additionalProperties: false
+      $defs:
+        exact:
+          type: object
+          properties: { exact_sum: { const: true } }
+          required: [exact_sum]
+          additionalProperties: false
+    allowed-timing-scopes: [prepare_and_execute]
+    supported-budgets: [none]
+    semantics:
+      preprocessing:
+        shared_materialization: canonical_integer_json
+        implementation_conversion: preserve_integer_values_and_order
+        allowed_outside_timed_scope: []
+      validity: { exact_sum: true }
+      one_shot_completion: { exact_sum: true }
+    reference-cases:
+      - dataset: data.json
+        result: reference/result.json
+        expected-metrics: reference/metrics.json
     evaluator:
       runner: "command"
       program: "python3"

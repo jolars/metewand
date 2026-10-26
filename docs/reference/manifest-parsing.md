@@ -72,7 +72,9 @@ explicitly. Explicit selections always take precedence, and managed backends
 are never inferred from a worker language or project files.
 
 Nested execution and observation policies default their `version` to `1`.
-The manifest and problem contract still require their own version. Both
+The manifest and standalone or wrapped problem contracts still require their
+own version. Flat problem declarations inherit contract version `1` and their
+mapping name; see [problem contracts](problem-contracts.md). Both
 `implementation-repetitions` and `measurement-repetitions` default to `1`;
 `seed` remains explicit. One-shot execution also resolves these mechanical
 policy defaults:

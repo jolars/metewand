@@ -92,7 +92,7 @@ a new compatibility review is a prerequisite.
   grids select runs without narrowing that domain. Treat block and flow YAML
   mappings identically, require fields and close objects by default, and retain
   explicit schemas for complex or reusable contracts.
-- [ ] Let authors define a problem's parameters, `result`, `metrics`, scientific
+- [x] Let authors define a problem's parameters, `result`, `metrics`, scientific
   rules, reference cases, and evaluator directly under `problems.<name>` without
   an inline `contract` wrapper. Normalize these fields into the same internal
   contract and identities. Preserve referenced contracts and supported explicit

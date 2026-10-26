@@ -56,6 +56,127 @@ fn parse(document: &Value) -> Manifest {
     parse_manifest(Path::new("metewand.yaml"), &document.to_string()).unwrap()
 }
 
+fn flatten_problem(document: &mut Value) {
+    let problem = document["problems"]["sum"].as_object_mut().unwrap();
+    let mut contract = problem
+        .remove("contract")
+        .unwrap()
+        .as_object()
+        .unwrap()
+        .clone();
+    contract.remove("version");
+    contract.remove("name");
+    problem.extend(contract);
+}
+
+#[test]
+fn flat_problems_normalize_to_wrapped_contracts() {
+    let wrapped = document();
+    let mut flat = wrapped.clone();
+    flatten_problem(&mut flat);
+    let schemas = public_schema_catalog().unwrap();
+    schemas
+        .validate(PublicSchema::Manifest.repository_path(), &flat)
+        .unwrap();
+    assert_eq!(
+        canonical_manifest_bytes(&parse(&flat)).unwrap(),
+        canonical_manifest_bytes(&parse(&wrapped)).unwrap()
+    );
+    assert_eq!(expand(&flat), expand(&wrapped));
+
+    flat["problems"]["sum"]["version"] = json!(1);
+    flat["problems"]["sum"]["name"] = json!("sum");
+    assert_eq!(
+        canonical_manifest_bytes(&parse(&flat)).unwrap(),
+        canonical_manifest_bytes(&parse(&wrapped)).unwrap()
+    );
+
+    // Explicit schemas can be chosen independently in a flat problem, too.
+    let problem = flat["problems"]["sum"].as_object_mut().unwrap();
+    problem.remove("parameters");
+    problem.insert("parameter-schema".into(), json!("parameters.json"));
+    problem.insert("parameter-defaults".into(), json!({"offset": 0}));
+    problem.remove("result");
+    problem.insert("result-schema".into(), json!("result.json"));
+    problem.remove("metrics");
+    problem.insert("metric-schema".into(), json!({"type": "object"}));
+    schemas
+        .validate(PublicSchema::Manifest.repository_path(), &flat)
+        .unwrap();
+    parse(&flat);
+}
+
+#[test]
+fn flat_problems_reject_competing_and_invalid_declarations() {
+    let schemas = public_schema_catalog().unwrap();
+    let mut flat = document();
+    flatten_problem(&mut flat);
+    let mut invalid = Vec::new();
+    for contract in [
+        json!("problem.yaml"),
+        document()["problems"]["sum"]["contract"].clone(),
+    ] {
+        for (field, value) in document()["problems"]["sum"]["contract"]
+            .as_object()
+            .unwrap()
+        {
+            let mut document = document();
+            document["problems"]["sum"]["contract"] = contract.clone();
+            document["problems"]["sum"][field] = value.clone();
+            invalid.push(document);
+        }
+    }
+    for (field, value) in [
+        ("contract", json!("problem.yaml")),
+        (
+            "contract",
+            document()["problems"]["sum"]["contract"].clone(),
+        ),
+        ("parameter-schema", json!("parameters.json")),
+        ("parameter-defaults", json!({})),
+        ("result-schema", json!("result.json")),
+        ("metric-schema", json!("metrics.json")),
+        ("parameters", Value::Null),
+        ("semantics", json!({"validity": {"finite": true}})),
+        ("reference-cases", json!([])),
+        ("unexpected", json!(true)),
+        ("version", json!(2)),
+        ("name", Value::Null),
+    ] {
+        let mut document = flat.clone();
+        document["problems"]["sum"][field] = value;
+        invalid.push(document);
+    }
+    for field in [
+        "family",
+        "result",
+        "metrics",
+        "semantics-schema",
+        "semantics",
+        "reference-cases",
+        "evaluator",
+    ] {
+        let mut document = flat.clone();
+        document["problems"]["sum"]
+            .as_object_mut()
+            .unwrap()
+            .remove(field);
+        invalid.push(document);
+    }
+    for document in invalid {
+        assert!(
+            parse_manifest(Path::new("metewand.yaml"), &document.to_string()).is_err(),
+            "{document}"
+        );
+        assert!(
+            schemas
+                .validate(PublicSchema::Manifest.repository_path(), &document)
+                .is_err(),
+            "{document}"
+        );
+    }
+}
+
 fn contracts_and_schemas(manifest: &Manifest) -> (BTreeMap<Name, ProblemContract>, SchemaCatalog) {
     let contracts = manifest
         .problems

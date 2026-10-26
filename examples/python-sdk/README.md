@@ -4,7 +4,9 @@ This benchmark generates `[1, 2, 3]`, sums the values and adds two, then
 evaluates the answer independently. It exercises the three SDK worker roles, two
 measured slots, process reuse, and durable result publication.
 
-The problem contract and every scientific schema are inline in `metewand.yaml`.
+The problem's parameters, results, metrics, scientific rules, reference cases,
+and evaluator live directly under `problems.sum` in `metewand.yaml`, with no
+`contract` wrapper. Every scientific schema is inline.
 The dataset schema uses a YAML anchor so the dataset and problem share one
 declaration. The worker writes result and metric envelopes without schema paths;
 Metewand validates them against the selected problem contract.

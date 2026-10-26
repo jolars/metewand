@@ -158,6 +158,55 @@ fn inline_and_referenced_contracts_share_effective_identity() {
     );
 }
 
+#[test]
+fn flat_wrapped_and_referenced_problems_share_effective_identities() {
+    for mut manifest in [manifest(), compact_manifest()] {
+        if let Some(parameters) = manifest["problems"]["sum"]["contract"].get_mut("parameters") {
+            parameters["scale"] = json!({"type": "integer", "minimum": 1, "grid": [1, 2]});
+        }
+        let root = repository(&manifest);
+        let wrapped = check(root.path());
+        let problem = manifest["problems"]["sum"].as_object_mut().unwrap();
+        let contract = problem.remove("contract").unwrap();
+        problem.extend(contract.as_object().unwrap().clone());
+        problem.remove("version");
+        problem.remove("name");
+        write(root.path(), "metewand.yaml", &manifest);
+        let flat = check(root.path());
+        assert_eq!(flat.manifest_hash, wrapped.manifest_hash);
+        assert_eq!(flat.resources.schemas, wrapped.resources.schemas);
+        assert_eq!(
+            flat.resources.problem_contracts,
+            wrapped.resources.problem_contracts
+        );
+        assert_eq!(
+            flat.planning_catalog.problem_definitions,
+            wrapped.planning_catalog.problem_definitions
+        );
+        assert_eq!(
+            flat.logical_plan().unwrap(),
+            wrapped.logical_plan().unwrap()
+        );
+
+        write(root.path(), "problem.yaml", &contract);
+        manifest["problems"]["sum"] = json!({
+            "contract": "problem.yaml",
+            "evaluator": manifest["problems"]["sum"]["evaluator"]
+        });
+        write(root.path(), "metewand.yaml", &manifest);
+        let referenced = check(root.path());
+        assert_eq!(flat.resources.schemas, referenced.resources.schemas);
+        assert_eq!(
+            flat.resources.problem_contracts,
+            referenced.resources.problem_contracts
+        );
+        assert_eq!(
+            flat.planning_catalog.problem_definitions,
+            referenced.planning_catalog.problem_definitions
+        );
+    }
+}
+
 fn compact_manifest() -> Value {
     let mut manifest = manifest();
     manifest["datasets"]["numbers"] = json!({

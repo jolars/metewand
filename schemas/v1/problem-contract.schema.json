@@ -4,107 +4,109 @@
   "x-metewand-compatibility-version": 1,
   "title": "Metewand problem contract",
   "description": "The common, language-neutral envelope for a version-1 problem and its family-specific semantics.",
-  "type": "object",
-  "properties": {
-    "version": {
-      "type": "integer",
-      "const": 1
-    },
-    "name": { "$ref": "common.schema.json#/$defs/name" },
-    "family": { "$ref": "common.schema.json#/$defs/name" },
-    "parameters": { "$ref": "common.schema.json#/$defs/compact_parameters" },
-    "result": { "$ref": "common.schema.json#/$defs/compact_outputs" },
-    "metrics": { "$ref": "common.schema.json#/$defs/compact_outputs" },
-    "parameter-schema": {
-      "$ref": "common.schema.json#/$defs/schema_declaration"
-    },
-    "dataset-schemas": {
-      "type": "array",
-      "items": { "$ref": "common.schema.json#/$defs/schema_declaration" },
-      "uniqueItems": true
-    },
-    "result-schema": {
-      "$ref": "common.schema.json#/$defs/schema_declaration"
-    },
-    "metric-schema": {
-      "$ref": "common.schema.json#/$defs/schema_declaration"
-    },
-    "semantics-schema": {
-      "$ref": "common.schema.json#/$defs/schema_declaration"
-    },
-    "allowed-timing-scopes": {
-      "type": "array",
-      "items": {
-        "type": "string",
-        "enum": ["cold_end_to_end", "prepare_and_execute", "execute_only"]
-      },
-      "minItems": 1,
-      "uniqueItems": true
-    },
-    "supported-budgets": {
-      "type": "array",
-      "const": ["none"]
-    },
-    "semantics": {
+  "allOf": [{ "$ref": "#/$defs/body" }],
+  "required": ["version", "name"],
+  "unevaluatedProperties": false,
+  "$defs": {
+    "body": {
       "type": "object",
       "properties": {
-        "validity": {
-          "type": "object",
-          "minProperties": 1
+        "version": {
+          "type": "integer",
+          "const": 1
         },
-        "one_shot_completion": {
+        "name": { "$ref": "common.schema.json#/$defs/name" },
+        "family": { "$ref": "common.schema.json#/$defs/name" },
+        "parameters": { "$ref": "common.schema.json#/$defs/compact_parameters" },
+        "result": { "$ref": "common.schema.json#/$defs/compact_outputs" },
+        "metrics": { "$ref": "common.schema.json#/$defs/compact_outputs" },
+        "parameter-schema": {
+          "$ref": "common.schema.json#/$defs/schema_declaration"
+        },
+        "dataset-schemas": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/schema_declaration" },
+          "uniqueItems": true
+        },
+        "result-schema": {
+          "$ref": "common.schema.json#/$defs/schema_declaration"
+        },
+        "metric-schema": {
+          "$ref": "common.schema.json#/$defs/schema_declaration"
+        },
+        "semantics-schema": {
+          "$ref": "common.schema.json#/$defs/schema_declaration"
+        },
+        "allowed-timing-scopes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["cold_end_to_end", "prepare_and_execute", "execute_only"]
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "supported-budgets": {
+          "type": "array",
+          "const": ["none"]
+        },
+        "semantics": {
           "type": "object",
-          "minProperties": 1
+          "properties": {
+            "validity": {
+              "type": "object",
+              "minProperties": 1
+            },
+            "one_shot_completion": {
+              "type": "object",
+              "minProperties": 1
+            }
+          },
+          "required": ["validity", "one_shot_completion"]
+        },
+        "reference-cases": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/reference_case" },
+          "minItems": 1
         }
       },
-      "required": ["validity", "one_shot_completion"]
+      "required": [
+        "family",
+        "dataset-schemas",
+        "semantics-schema",
+        "allowed-timing-scopes",
+        "supported-budgets",
+        "semantics",
+        "reference-cases"
+      ],
+      "allOf": [
+        { "not": { "required": ["parameters", "parameter-schema"] } },
+        { "oneOf": [{ "required": ["result"] }, { "required": ["result-schema"] }] },
+        { "oneOf": [{ "required": ["metrics"] }, { "required": ["metric-schema"] }] },
+        {
+          "if": {
+            "properties": {
+              "dataset-schemas": { "maxItems": 0 }
+            },
+            "required": ["dataset-schemas"]
+          },
+          "then": {
+            "properties": {
+              "reference-cases": {
+                "items": { "not": { "required": ["dataset"] } }
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "reference-cases": {
+                "items": { "required": ["dataset"] }
+              }
+            }
+          }
+        }
+      ]
     },
-    "reference-cases": {
-      "type": "array",
-      "items": { "$ref": "#/$defs/reference_case" },
-      "minItems": 1
-    }
-  },
-  "required": [
-    "version",
-    "name",
-    "family",
-    "dataset-schemas",
-    "semantics-schema",
-    "allowed-timing-scopes",
-    "supported-budgets",
-    "semantics",
-    "reference-cases"
-  ],
-  "allOf": [
-    { "not": { "required": ["parameters", "parameter-schema"] } },
-    { "oneOf": [{ "required": ["result"] }, { "required": ["result-schema"] }] },
-    { "oneOf": [{ "required": ["metrics"] }, { "required": ["metric-schema"] }] },
-    {
-      "if": {
-        "properties": {
-          "dataset-schemas": { "maxItems": 0 }
-        },
-        "required": ["dataset-schemas"]
-      },
-      "then": {
-        "properties": {
-          "reference-cases": {
-            "items": { "not": { "required": ["dataset"] } }
-          }
-        }
-      },
-      "else": {
-        "properties": {
-          "reference-cases": {
-            "items": { "required": ["dataset"] }
-          }
-        }
-      }
-    }
-  ],
-  "additionalProperties": false,
-  "$defs": {
     "reference_case": {
       "type": "object",
       "properties": {

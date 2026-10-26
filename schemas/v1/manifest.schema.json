@@ -176,6 +176,21 @@
       ]
     },
     "problem": {
+      "oneOf": [
+        { "$ref": "#/$defs/wrapped_problem" },
+        {
+          "allOf": [{ "$ref": "problem-contract.schema.json#/$defs/body" }],
+          "properties": {
+            "evaluator": { "$ref": "#/$defs/worker" },
+            "parameter-defaults": { "type": "object" }
+          },
+          "required": ["evaluator"],
+          "not": { "required": ["parameters", "parameter-defaults"] },
+          "unevaluatedProperties": false
+        }
+      ]
+    },
+    "wrapped_problem": {
       "type": "object",
       "properties": {
         "contract": {

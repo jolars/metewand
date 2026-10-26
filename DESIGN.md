@@ -389,12 +389,17 @@ rules stay in the authored scientific contract. Plans expose effective parameter
 mappings, environments, repetitions, and execution controls, and execution
 retains the same resolved records.
 
-#### Planned compact authoring
+#### Compact authoring
 
-The following combined syntax uses the planned flat problem form. Compact
-implementation parameters and declaration grids are supported; problem fields
-currently live inside `contract` or a standalone contract document. These
-fragments show the intended authoring shape; complete benchmarks also declare their
+A problem's contract fields and evaluator may live directly under
+`problems.<name>`. The flat form inherits contract version 1 and the mapping
+name, normalizes through the same internal contract as a wrapped inline
+mapping, and preserves equivalent identities. Explicit inline and referenced
+contracts remain supported; standalone and wrapped contracts still require
+`version` and `name`.
+
+The following fragments show compact implementation parameters, declaration
+grids, and a flat problem. Complete benchmarks also declare their
 sources, environments, accepted datasets, scientific rules, reference cases,
 and experiments.
 

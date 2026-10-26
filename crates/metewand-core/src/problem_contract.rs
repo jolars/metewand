@@ -22,6 +22,24 @@ use crate::{
     schema::{SchemaCatalog, SchemaDeclaration, SchemaValidationError},
 };
 
+pub(crate) const CONTRACT_FIELDS: &[&str] = &[
+    "version",
+    "name",
+    "family",
+    "parameters",
+    "parameter-schema",
+    "dataset-schemas",
+    "result",
+    "result-schema",
+    "metrics",
+    "metric-schema",
+    "semantics-schema",
+    "allowed-timing-scopes",
+    "supported-budgets",
+    "semantics",
+    "reference-cases",
+];
+
 /// An inline problem contract or a reusable repository YAML document.
 #[derive(Debug)]
 pub enum ContractDeclaration {
