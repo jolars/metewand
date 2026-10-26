@@ -1,7 +1,7 @@
 # Problem contracts
 
 `metewand-core` parses each version-1 problem contract into a strict typed
-envelope and validates its family-owned semantics with repository schemas. The
+envelope and optionally validates its family-owned semantics with repository schemas. The
 caller supplies the contract text, its logical repository path, and a complete
 offline `SchemaCatalog`; parsing and validation perform no filesystem or network
 access.
@@ -20,7 +20,6 @@ problems:
       answer: integer
     metrics:
       absolute_error: { type: integer, minimum: 0 }
-    semantics-schema: schemas/sum-semantics.json
     allowed-timing-scopes: [prepare_and_execute]
     supported-budgets: [none]
     semantics:
@@ -63,7 +62,9 @@ fields accept neither. Competing forms for the same boundary are errors.
 Contract version, scientific semantics, reference cases, and validation rules
 are identical in both forms. File paths in the envelope remain relative to the
 repository root. Relative `$ref` values inside an inline schema use the owning
-document's directory. Separate semantics schemas remain required.
+document's directory. `semantics-schema` is optional. When supplied, it adds
+offline family-specific validation without changing the required scientific
+rule groups.
 
 ```rust
 use std::path::{Path, PathBuf};
@@ -92,22 +93,25 @@ fn load_contract(
 
 ## Validation boundary
 
-The common envelope requires parameter, accepted-dataset, result, metric, and
-semantics schemas; a nonempty, duplicate-free set of timing scopes; the Gate 1
+The common envelope requires parameter, accepted-dataset, result, and metric
+schemas; a nonempty, duplicate-free set of timing scopes; the Gate 1
 `none` budget; and at least one reference case. Every referenced schema must be
 present in the supplied catalog, including schemas generated from compact
 declarations. Dataset-backed reference cases require a
 dataset path, while dataset-free cases must omit it.
 
-The `semantics` mapping is otherwise family-owned, but it always separates two
-operational concerns:
+The `semantics` mapping is otherwise family-owned, but it requires three explicit
+rule groups:
 
+- `preprocessing` defines shared construction, implementation conversion, and
+  any work allowed outside the timed scope. An empty object declares no rules.
 - `validity` defines whether a schema-valid result is semantically usable; and
 - `one_shot_completion` defines whether a valid final result completes a
   one-shot attempt.
 
-Both rule mappings must be present and nonempty. Their exact fields, along with
-all other family-specific semantics, are validated against `semantics-schema`.
+Validity and completion mappings must be nonempty. When `semantics-schema` is
+supplied, Metewand validates all family-specific fields against it. Otherwise,
+Metewand validates the common structure and hashes the complete canonical rules.
 This separation lets later profile observations remain valid without implying
 that a one-shot completion threshold has been reached.
 
@@ -123,6 +127,14 @@ An evaluator is not embedded in the language-neutral contract. The owning
 problem definition in `metewand.yaml` must declare its evaluator worker,
 including its environment and, for interpreted workers, its complete source
 bundle. The manifest parser rejects problem definitions without an evaluator.
+
+An evaluator that reports the `problem_semantics` capability receives the entire
+canonical `semantics` object with the contract identity and resolved parameters,
+both during runs and reference checks. Python evaluators opt in with
+`serve_evaluator(evaluate, semantics=True)`; R evaluators use
+`semantics = TRUE`. The rules follow parameters in the callback signature.
+Read declared tolerances from these rules rather than repeating them in code.
+Legacy evaluators retain their original request and callback shapes.
 
 Typed-envelope failures retain the decoder's source span. Missing schemas name
 their role and repository path, while family-schema failures retain every JSON

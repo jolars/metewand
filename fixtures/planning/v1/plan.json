@@ -22,13 +22,13 @@
       "problems": [
         {
           "name": "sum",
-          "id": "mw1-problem-definition-4576c29e2be1ca4a6b5680f92628cdef77150422ea045583107291e762e96139"
+          "id": "mw1-problem-definition-4c8c7d3fe71903ead12ad444c15182fc63c8f163edf0994735b8dc0888ae704c"
         }
       ],
       "implementations": [
         {
           "name": "reference",
-          "id": "mw1-implementation-definition-13ce9a0eae5151d21e2733863e3c40fc6429cb245465260778a975c56b23f887"
+          "id": "mw1-implementation-definition-bc9885019e1e2cfb76ebd695f01e96ec856a4537a76ce756a8bf1f5eb8477eb8"
         }
       ]
     },
@@ -52,13 +52,13 @@
         },
         {
           "path": "schemas/semantics.json",
-          "id": "mw1-schema-9936ebc2893d0a4da4e0d367bfcdc21b0fecd8c486c340920253fe758d8bbbb6"
+          "id": "mw1-schema-67c87dbf2683f698927eb37b5e77f16d5c42b5f3a682525b0c36868db7daa5c8"
         }
       ],
       "problem_contracts": [
         {
           "name": "sum",
-          "id": "mw1-problem-contract-6962bc6101ad4eab537b838a520b746f951cf6d837757302c819ef387849a440"
+          "id": "mw1-problem-contract-db7880a66f82ca75bfe3df6eee301064bef6b81d39aaa6e6a877ad6ca537e34a"
         }
       ],
       "source_bundles": [
@@ -121,13 +121,13 @@
         "observation_policy": "mw1-observation-policy-7ab610c92432eb64c53468035b88dd50d822ccf28213e385f51164bff0d2ff19",
         "candidates": [
           {
-            "id": "mw1-logical-candidate-e06217beabf88b837a685bd3fe311e7dd47363c4896f60c8f4f41cc3ca509ec5",
+            "id": "mw1-logical-candidate-367b2c16f119995148af737015957ea7656f1c9df8f7a48059595f73aa1afa96",
             "source": {
               "kind": "experiment"
             },
             "dataset_configuration": "mw1-dataset-configuration-1f20ab1fc35f4da45fb2e9b169813fa3d55c1d374a0a617f9a243aad8019fc36",
-            "problem_configuration": "mw1-problem-configuration-a1e5d81f2dc951c03c923f47ae66e77ff6531ae36262156f33f70321f9623809",
-            "implementation_configuration": "mw1-implementation-configuration-2290ddc88809daec68d2f61728cc88a0532f62f208ae391882800d3523c13527",
+            "problem_configuration": "mw1-problem-configuration-f9e66b6b738c50d31d9cc6fc70570139f1f5d6c5b36d0554da3b392bfdfbb489",
+            "implementation_configuration": "mw1-implementation-configuration-e88c1f5860ddcaf4ac76d5a25e4cd68d3c61a128c254747a79207bee5b1dcca9",
             "parameters": {
               "dataset": {},
               "problem": {},
@@ -141,14 +141,14 @@
             ],
             "specifications": [
               {
-                "id": "mw1-logical-specification-76a2b6d4b5c28ce139aa76088fabfc881ab8378e9858dbb621d0de5bb74a33f6",
+                "id": "mw1-logical-specification-eac7ddc4e5be473497458753f1970ffe3e74967ba9ec060527d76db358e7b94c",
                 "observation_slots": [
-                  "mw1-logical-observation-slot-27cfcba89d5cac83f890a5e6f2d6a90936dbf9a7ad52a1020ea2c5d67dce5551",
-                  "mw1-logical-observation-slot-de3209d4cdf16c6ef40d72a1701ddfb43fee822806faa0ea5326aebe3380357c"
+                  "mw1-logical-observation-slot-a74a1f8501b9b2621452aa7fd51c52f210945f4776bf60e305bdf56217f4ae48",
+                  "mw1-logical-observation-slot-433c5fd76bf7655182ddb63487e528018d72fa192bfc2681d2ba3fa890ff67ad"
                 ],
                 "attempt_slots": [
-                  "mw1-logical-attempt-slot-df9489d16b611166233a7cdcd388e8ef950561a6334c984326a435d2e5a56cc7",
-                  "mw1-logical-attempt-slot-76d7b303524b3c315c7294d14916cfbaa4eb7ecce9e9952c86108a124fcdb1b8"
+                  "mw1-logical-attempt-slot-9d0976c7ea3325d16ab3c8f3b97e8c3a40e129c7c2c926bd2585def9530faada",
+                  "mw1-logical-attempt-slot-5f9fbf24e141939decd259cd7705c72242c713e5dcc5cdf598b6e81a2902e4fd"
                 ]
               }
             ]

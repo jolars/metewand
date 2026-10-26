@@ -784,7 +784,7 @@ fn contract_identity_value(
         "reference_cases": reference_cases,
         "result_schema": schema_id(schemas, contract.result_schema.as_path())?.to_string(),
         "semantics": contract.semantics.as_canonical().as_json(),
-        "semantics_schema": schema_id(schemas, contract.semantics_schema.as_path())?.to_string(),
+        "semantics_schema": contract.semantics_schema.as_ref().map(|schema| schema_id(schemas, schema.as_path()).map(|id| id.to_string())).transpose()?,
         "supported_budgets": contract.supported_budgets.iter().map(ToString::to_string).collect::<Vec<_>>(),
         "version": contract.version,
     }))

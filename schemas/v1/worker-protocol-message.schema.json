@@ -18,7 +18,7 @@
     },
     "capability": {
       "type": "string",
-      "enum": ["one_shot", "applicability", "fresh_sequence", "streaming_profile"]
+      "enum": ["one_shot", "applicability", "fresh_sequence", "streaming_profile", "problem_semantics"]
     },
     "path": {
       "type": "string",
@@ -174,6 +174,7 @@
         "dataset_dir": { "$ref": "#/$defs/path" },
         "problem_contract_id": { "type": "string", "minLength": 1 },
         "problem_parameters": { "$ref": "#/$defs/parameters" },
+        "problem_semantics": { "type": "object" },
         "result_dir": { "$ref": "#/$defs/path" },
         "metrics_path": { "$ref": "#/$defs/path" }
       },

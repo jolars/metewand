@@ -255,6 +255,7 @@ pub fn check_repository_workers(
                     text(&dataset)?,
                     repository.resources.problem_contracts[name.as_str()].to_string(),
                     parameters.clone(),
+                    contract.semantics.as_canonical().as_json().clone(),
                     text(&result)?,
                     text(&output.path().join("metrics.json"))?,
                 )?;

@@ -6,6 +6,57 @@ use serde_json::Value;
 use tempfile::TempDir;
 
 #[test]
+fn declared_completion_tolerance_controls_independent_evaluation() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let benchmark = TempDir::new().unwrap();
+    copy_tree(&root.join("examples/python-sdk"), benchmark.path());
+    copy_tree(
+        &root.join("sdk/python/src/metewand"),
+        &benchmark.path().join("metewand"),
+    );
+    let worker = benchmark.path().join("worker.py");
+    let source = fs::read_to_string(&worker).unwrap();
+    fs::write(
+        &worker,
+        source.replace(
+            "self.answer = sum(self.values) + self.offset",
+            "self.answer = sum(self.values) + self.offset + 1",
+        ),
+    )
+    .unwrap();
+    let manifest = benchmark.path().join("metewand.yaml");
+    let original = fs::read_to_string(&manifest).unwrap();
+    for (tolerance, status) in [(0, "failed"), (1, "accepted")] {
+        fs::write(
+            &manifest,
+            original.replace(
+                "one_shot_completion: { absolute_error: 0 }",
+                &format!("one_shot_completion: {{ absolute_error: {tolerance} }}"),
+            ),
+        )
+        .unwrap();
+        let output = Command::new(env!("CARGO_BIN_EXE_metewand"))
+            .current_dir(benchmark.path())
+            .args([
+                "run",
+                "--output-dir",
+                &format!("run-{tolerance}"),
+                "--output",
+                "json",
+            ])
+            .output()
+            .unwrap();
+        let report: Value =
+            serde_json::from_slice(&output.stdout).unwrap_or_else(|_| panic!("{output:?}"));
+        assert_eq!(output.status.success(), tolerance == 1, "{report}");
+        for attempt in report["data"]["attempts"].as_array().unwrap() {
+            assert_eq!(attempt["status"], status, "{attempt}");
+            assert_eq!(attempt["metrics"], serde_json::json!({"absolute_error": 1}));
+        }
+    }
+}
+
+#[test]
 fn python_sdk_example_publishes_two_accepted_observations() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let benchmark = TempDir::new().unwrap();

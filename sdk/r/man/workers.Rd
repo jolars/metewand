@@ -11,7 +11,7 @@ and publication.}
 serve_implementation(prepare, execute, result, reset = NULL, shutdown = NULL,
                      statistics = NULL, read_fd = NULL, write_fd = NULL)
 serve_dataset_materializer(materialize, read_fd = NULL, write_fd = NULL)
-serve_evaluator(evaluate, read_fd = NULL, write_fd = NULL)
+serve_evaluator(evaluate, read_fd = NULL, write_fd = NULL, semantics = FALSE)
 worker_error(code, message, details = NULL)
 }
 \arguments{
@@ -33,6 +33,9 @@ worker_error(code, message, details = NULL)
   \item{evaluate}{Function of dataset directory, contract identity, problem
   parameters, result directory, and metrics path. Writes and closes metrics,
   then returns invalid, reached, not_reached, or not_required.}
+  \item{semantics}{When TRUE, negotiate scientific rules and pass the complete
+  contract semantics object after problem parameters in the evaluator callback.
+  FALSE preserves the original five-argument callback.}
   \item{code}{One of invalid_request, unsupported_operation, operation_failed,
   or internal_error.}
   \item{message}{A nonempty string describing the failure.}

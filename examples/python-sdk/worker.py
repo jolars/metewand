@@ -1,5 +1,6 @@
 """A generated dataset, sum implementation, and independent evaluator."""
 
+import math
 import sys
 
 from metewand import (
@@ -49,13 +50,21 @@ class Sum(Implementation):
 
 
 def evaluate(
-    dataset_instance, problem_contract, problem_parameters, result_dir, metrics_path
+    dataset_instance,
+    problem_contract,
+    problem_parameters,
+    problem_semantics,
+    result_dir,
+    metrics_path,
 ):
     values = read_json(dataset_instance / "data.json")["values"]
     answer = read_json(result_dir / "result.json")["data"]["answer"]
     error = abs(answer - (sum(values) + problem_parameters["offset"]))
     write_metrics(metrics_path, {"absolute_error": error})
-    return "reached" if error == 0 else "invalid"
+    if problem_semantics["validity"]["finite_integer"] and not math.isfinite(answer):
+        return "invalid"
+    target = problem_semantics["one_shot_completion"]["absolute_error"]
+    return "reached" if error <= target else "not_reached"
 
 
 if __name__ == "__main__":
@@ -67,6 +76,6 @@ if __name__ == "__main__":
     elif role == "dataset_materializer":
         serve_dataset_materializer(materialize)
     elif role == "problem_evaluator":
-        serve_evaluator(evaluate)
+        serve_evaluator(evaluate, semantics=True)
     else:
         raise ValueError(f"Unknown worker role: {role}.")

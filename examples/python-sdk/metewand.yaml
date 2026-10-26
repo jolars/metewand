@@ -38,30 +38,6 @@ problems:
       answer: integer
     metrics:
       absolute_error: { type: integer, minimum: 0 }
-    semantics-schema:
-      type: object
-      properties:
-        preprocessing:
-          type: object
-          properties:
-            shared_materialization: { const: canonical_integer_json }
-            implementation_conversion: { const: preserve_integer_values_and_order }
-            allowed_outside_timed_scope:
-              type: array
-              items: { enum: [integer_packing] }
-              uniqueItems: true
-          required: [shared_materialization, implementation_conversion, allowed_outside_timed_scope]
-          additionalProperties: false
-        validity: { $ref: "#/$defs/exact" }
-        one_shot_completion: { $ref: "#/$defs/exact" }
-      required: [preprocessing, validity, one_shot_completion]
-      additionalProperties: false
-      $defs:
-        exact:
-          type: object
-          properties: { exact_sum: { const: true } }
-          required: [exact_sum]
-          additionalProperties: false
     allowed-timing-scopes: [prepare_and_execute]
     supported-budgets: [none]
     semantics:
@@ -69,8 +45,8 @@ problems:
         shared_materialization: canonical_integer_json
         implementation_conversion: preserve_integer_values_and_order
         allowed_outside_timed_scope: []
-      validity: { exact_sum: true }
-      one_shot_completion: { exact_sum: true }
+      validity: { finite_integer: true }
+      one_shot_completion: { absolute_error: 0 }
     reference-cases:
       - dataset: data.json
         result: reference/result.json

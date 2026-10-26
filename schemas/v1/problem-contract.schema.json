@@ -53,6 +53,7 @@
         "semantics": {
           "type": "object",
           "properties": {
+            "preprocessing": { "type": "object" },
             "validity": {
               "type": "object",
               "minProperties": 1
@@ -62,7 +63,7 @@
               "minProperties": 1
             }
           },
-          "required": ["validity", "one_shot_completion"]
+          "required": ["preprocessing", "validity", "one_shot_completion"]
         },
         "reference-cases": {
           "type": "array",
@@ -73,7 +74,6 @@
       "required": [
         "family",
         "dataset-schemas",
-        "semantics-schema",
         "allowed-timing-scopes",
         "supported-budgets",
         "semantics",

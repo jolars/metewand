@@ -15,6 +15,57 @@ const WORKER_ID: &str =
     "mw1-resolved-worker-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
 #[test]
+fn scientific_rules_extend_only_negotiated_evaluator_requests() {
+    let id = RequestId::from_str("1").unwrap();
+    let rules = json!({"preprocessing": {}, "validity": {"finite": true}, "one_shot_completion": {"error": 0.01}});
+    let request = EvaluateRequest::new(
+        id.clone(),
+        "/data",
+        "contract",
+        json!({}),
+        "/result",
+        "/metrics",
+    )
+    .with_problem_semantics(rules.clone());
+    let bytes = encode_message(&request).unwrap();
+    assert_eq!(bytes, b"{\"dataset_dir\":\"/data\",\"id\":\"1\",\"method\":\"evaluate\",\"metrics_path\":\"/metrics\",\"problem_contract_id\":\"contract\",\"problem_parameters\":{},\"problem_semantics\":{\"one_shot_completion\":{\"error\":0.01},\"preprocessing\":{},\"validity\":{\"finite\":true}},\"result_dir\":\"/result\"}\n");
+    let mut value = serde_json::to_value(&request).unwrap();
+    assert_eq!(
+        decode_message::<EvaluateRequest>(value.clone())
+            .unwrap()
+            .problem_semantics(),
+        Some(&rules)
+    );
+    for invalid in [json!(null), json!([]), json!(true)] {
+        value["problem_semantics"] = invalid;
+        assert!(decode_message::<EvaluateRequest>(value.clone()).is_err());
+    }
+    for role in [
+        WorkerRole::Implementation,
+        WorkerRole::DatasetMaterializer,
+        WorkerRole::ProblemEvaluator,
+    ] {
+        let hello = HelloRequest::new(id.clone(), role, WORKER_ID.parse().unwrap());
+        let response = HelloResponse::new(
+            id.clone(),
+            WORKER_ID.parse().unwrap(),
+            None,
+            [Capability::ProblemSemantics],
+        );
+        let selected = validate_hello_response(&hello, &response, &[Capability::ProblemSemantics]);
+        assert_eq!(selected.is_ok(), role == WorkerRole::ProblemEvaluator);
+        assert!(
+            validate_hello_response(
+                &hello,
+                &HelloResponse::new(id.clone(), WORKER_ID.parse().unwrap(), None, []),
+                &[Capability::ProblemSemantics]
+            )
+            .is_err()
+        );
+    }
+}
+
+#[test]
 fn hello_messages_have_the_exact_version_one_wire_shape() {
     let request = HelloRequest::new(
         RequestId::from_str("0").expect("request ID must be valid"),

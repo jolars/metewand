@@ -115,7 +115,7 @@ pub enum WorkerRole {
     ProblemEvaluator,
 }
 
-/// A protocol capability reported by an implementation worker.
+/// A protocol capability reported by a worker.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Capability {
@@ -127,6 +127,8 @@ pub enum Capability {
     FreshSequence,
     /// Can publish bounded checkpoints during one execution.
     StreamingProfile,
+    /// Receives declared scientific rules in independent evaluation requests.
+    ProblemSemantics,
 }
 
 /// Identifies the language SDK used by a worker.
@@ -348,6 +350,13 @@ where
         return Err(de::Error::custom("value must be an object"));
     }
     Ok(value)
+}
+
+fn deserialize_present_object<'de, D>(deserializer: D) -> Result<Option<Value>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    deserialize_object(deserializer).map(Some)
 }
 
 impl private::Sealed for HelloResponse {}
@@ -673,6 +682,12 @@ pub struct EvaluateRequest {
     problem_contract_id: String,
     #[serde(deserialize_with = "deserialize_object")]
     problem_parameters: Value,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_present_object"
+    )]
+    problem_semantics: Option<Value>,
     #[serde(deserialize_with = "deserialize_nonempty_string")]
     result_dir: String,
     #[serde(deserialize_with = "deserialize_nonempty_string")]
@@ -700,6 +715,7 @@ impl EvaluateRequest {
             dataset_dir: dataset_dir.into(),
             problem_contract_id: problem_contract_id.into(),
             problem_parameters,
+            problem_semantics: None,
             result_dir: result_dir.into(),
             metrics_path: metrics_path.into(),
         }
@@ -709,6 +725,19 @@ impl EvaluateRequest {
     #[must_use]
     pub const fn id(&self) -> &RequestId {
         &self.id
+    }
+
+    /// Adds scientific rules after negotiating `problem_semantics` support.
+    #[must_use]
+    pub fn with_problem_semantics(mut self, semantics: Value) -> Self {
+        self.problem_semantics = Some(semantics);
+        self
+    }
+
+    /// Returns scientific rules when the evaluator negotiated their delivery.
+    #[must_use]
+    pub const fn problem_semantics(&self) -> Option<&Value> {
+        self.problem_semantics.as_ref()
     }
 
     /// Returns the evaluator's private dataset-view directory.
@@ -1376,18 +1405,24 @@ pub fn validate_hello_response(
             actual: response.worker_id.clone(),
         });
     }
-    if request.role != WorkerRole::Implementation
-        && let Some(capability) = selected_capabilities.first()
+    if let Some(capability) = selected_capabilities
+        .iter()
+        .find(|capability| match capability {
+            Capability::ProblemSemantics => request.role != WorkerRole::ProblemEvaluator,
+            _ => request.role != WorkerRole::Implementation,
+        })
     {
         return Err(HandshakeError::CapabilityRoleMismatch {
             role: request.role,
             capability: *capability,
         });
     }
-    if let Some(capability) = selected_capabilities
-        .iter()
-        .find(|capability| **capability != Capability::OneShot)
-    {
+    if let Some(capability) = selected_capabilities.iter().find(|capability| {
+        !matches!(
+            capability,
+            Capability::OneShot | Capability::ProblemSemantics
+        )
+    }) {
         return Err(HandshakeError::ReservedCapability {
             capability: *capability,
         });

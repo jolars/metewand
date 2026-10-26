@@ -108,6 +108,8 @@ pub struct FixedDatasetRun<'a> {
     pub problem_contract_id: &'a str,
     /// Resolved problem parameters.
     pub problem_parameters: &'a Value,
+    /// Resolved scientific rules owned and hashed by the problem contract.
+    pub problem_semantics: &'a Value,
     /// Resolved implementation parameters.
     pub implementation_parameters: &'a Value,
     /// Deterministic resolved implementation seed.
@@ -579,6 +581,7 @@ fn run_workers(
                 dataset_dir,
                 request.problem_contract_id,
                 request.problem_parameters.clone(),
+                request.problem_semantics.clone(),
                 result_path,
                 metrics_path_string,
             )

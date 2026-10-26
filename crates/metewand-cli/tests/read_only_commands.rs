@@ -23,6 +23,7 @@ const SEMANTICS_SCHEMA: &str = r#"{
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "properties": {
+    "preprocessing": {"type": "object", "maxProperties": 0},
     "validity": {
       "type": "object",
       "properties": {"finite": {"const": true}},
@@ -53,6 +54,7 @@ semantics-schema: "schemas/semantics.json"
 allowed-timing-scopes: ["prepare_and_execute"]
 supported-budgets: ["none"]
 semantics:
+  preprocessing: {}
   validity:
     finite: true
   one_shot_completion:

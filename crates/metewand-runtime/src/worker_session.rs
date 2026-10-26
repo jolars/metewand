@@ -190,7 +190,16 @@ impl WorkerSession {
         let timeout = session.timeouts.hello;
         let response =
             session.exchange::<_, HelloResponse>(WorkerPhase::Hello, &request, timeout)?;
-        let negotiated = match validate_hello_response(&request, &response, selected_capabilities) {
+        let mut selected_capabilities = selected_capabilities.to_vec();
+        if role == WorkerRole::ProblemEvaluator
+            && response
+                .capabilities()
+                .contains(&Capability::ProblemSemantics)
+        {
+            selected_capabilities.push(Capability::ProblemSemantics);
+        }
+        let negotiated = match validate_hello_response(&request, &response, &selected_capabilities)
+        {
             Ok(negotiated) => negotiated,
             Err(source) => {
                 session.discard();
@@ -359,12 +368,13 @@ impl WorkerSession {
         dataset_dir: impl Into<String>,
         problem_contract_id: impl Into<String>,
         problem_parameters: Value,
+        problem_semantics: Value,
         result_dir: impl Into<String>,
         metrics_path: impl Into<String>,
     ) -> Result<EvaluateResponse, WorkerSessionError> {
         self.require_role(WorkerPhase::Evaluate, WorkerRole::ProblemEvaluator)?;
         let id = self.begin_request(WorkerPhase::Evaluate)?;
-        let request = EvaluateRequest::new(
+        let mut request = EvaluateRequest::new(
             id,
             dataset_dir,
             problem_contract_id,
@@ -372,6 +382,13 @@ impl WorkerSession {
             result_dir,
             metrics_path,
         );
+        if self
+            .negotiated()
+            .selected_capabilities()
+            .contains(&Capability::ProblemSemantics)
+        {
+            request = request.with_problem_semantics(problem_semantics);
+        }
         let timeout = self.timeouts.evaluate;
         self.exchange(WorkerPhase::Evaluate, &request, timeout)
     }

@@ -81,6 +81,48 @@ fn check(root: &Path) -> CheckedRepository {
 }
 
 #[test]
+fn optional_family_schemas_preserve_rules_in_contract_identities() {
+    let mut manifest = manifest();
+    manifest["problems"]["sum"]["contract"]
+        .as_object_mut()
+        .unwrap()
+        .remove("semantics-schema");
+    let root = repository(&manifest);
+    let inline = check(root.path());
+    let declaration = manifest["problems"]["sum"]["contract"].clone();
+    write(root.path(), "problem.yaml", &declaration);
+    manifest["problems"]["sum"]["contract"] = json!("problem.yaml");
+    write(root.path(), "metewand.yaml", &manifest);
+    let referenced = check(root.path());
+    assert_eq!(
+        inline.resources.problem_contracts,
+        referenced.resources.problem_contracts
+    );
+    manifest["problems"]["sum"]
+        .as_object_mut()
+        .unwrap()
+        .remove("contract");
+    manifest["problems"]["sum"]
+        .as_object_mut()
+        .unwrap()
+        .extend(declaration.as_object().unwrap().clone());
+    write(root.path(), "metewand.yaml", &manifest);
+    assert_eq!(
+        inline.resources.problem_contracts,
+        check(root.path()).resources.problem_contracts
+    );
+    for group in ["preprocessing", "validity", "one_shot_completion"] {
+        let mut changed = manifest.clone();
+        changed["problems"]["sum"]["semantics"][group]["new_rule"] = json!(1);
+        write(root.path(), "metewand.yaml", &changed);
+        assert_ne!(
+            inline.resources.problem_contracts,
+            check(root.path()).resources.problem_contracts
+        );
+    }
+}
+
+#[test]
 fn inline_schemas_and_contracts_use_normalized_contents() {
     let mut manifest = manifest();
     let root = repository(&manifest);

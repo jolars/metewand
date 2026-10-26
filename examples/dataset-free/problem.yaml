@@ -9,6 +9,7 @@ semantics-schema: "schemas/semantics.json"
 allowed-timing-scopes: ["prepare_and_execute"]
 supported-budgets: ["none"]
 semantics:
+  preprocessing: {}
   validity:
     exact_sum: true
   one_shot_completion:

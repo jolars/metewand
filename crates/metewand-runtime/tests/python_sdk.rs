@@ -107,6 +107,7 @@ fn python_sdk_roles_complete_a_validated_chain_over_dedicated_pipes() {
             dataset.path().to_str().unwrap(),
             "mw1-problem-contract-fixture",
             json!({"offset": 2}),
+            contract.semantics.as_canonical().as_json().clone(),
             result.path().to_str().unwrap(),
             metrics_path.to_str().unwrap(),
         )

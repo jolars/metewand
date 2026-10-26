@@ -383,7 +383,7 @@ fn yaml_accepts_json_core_tags_and_rejects_binary_and_timestamp_tags() {
 
 #[test]
 fn problem_contract_uses_the_same_yaml_document_rules() {
-    let source = "version: 1\nname: yaml\nfamily: optimization\nparameter-schema: schemas/parameters.json\ndataset-schemas: []\nresult-schema: schemas/result.json\nmetric-schema: schemas/metrics.json\nsemantics-schema: schemas/semantics.json\nallowed-timing-scopes: [execute_only]\nsupported-budgets: [none]\nsemantics: {validity: {nonfinite: reject, missing: null}, one_shot_completion: {maximum_error: 0.001}}\nreference-cases:\n  - result: fixtures/result.json\n    expected-metrics: fixtures/metrics.json\n";
+    let source = "version: 1\nname: yaml\nfamily: optimization\nparameter-schema: schemas/parameters.json\ndataset-schemas: []\nresult-schema: schemas/result.json\nmetric-schema: schemas/metrics.json\nsemantics-schema: schemas/semantics.json\nallowed-timing-scopes: [execute_only]\nsupported-budgets: [none]\nsemantics: {preprocessing: {}, validity: {nonfinite: reject, missing: null}, one_shot_completion: {maximum_error: 0.001}}\nreference-cases:\n  - result: fixtures/result.json\n    expected-metrics: fixtures/metrics.json\n";
     let contract = parse_problem_contract_document(Path::new("problem.yaml"), source).unwrap();
     assert_eq!(contract.name.as_str(), "yaml");
     for value in ["null", "~", ""] {

@@ -82,11 +82,16 @@ worker_error <- function(code, message, details = NULL) {
 }
 .clock <- function() .native(C_mw_clock, error = stop)
 
-.serve <- function(worker, role, reader, writer) {
+.serve <- function(worker, role, reader, writer, semantics = FALSE) {
   ready <- FALSE
   prepared <- FALSE
   state <- NULL
   dispatch <- function(request) {
+    if (identical(request$method, "evaluate") && semantics) {
+      rules <- request$problem_semantics
+      if (!.is_object(rules)) .fail("invalid_request", "Expected problem_semantics object.")
+      request$problem_semantics <- NULL
+    }
     method <- .validate_request(request)
     if (!ready) {
       if (method != "hello" || request$role != role) {
@@ -96,7 +101,8 @@ worker_error <- function(code, message, details = NULL) {
       ready <<- TRUE
       return(list(protocol = 1, worker_id = request$worker_id,
                   sdk = list(name = "metewand-r", version = "0.1.0"),
-                  capabilities = if (role == "implementation") list("one_shot") else list()))
+                  capabilities = if (role == "implementation") list("one_shot") else
+                    if (semantics) list("problem_semantics") else list()))
     }
     if (method == "hello") .fail("invalid_request", "The worker session has already negotiated a protocol.")
     if (!method %in% .methods[[role]]) .fail("unsupported_operation", "This role does not accept the requested method.")
@@ -131,8 +137,9 @@ worker_error <- function(code, message, details = NULL) {
       manifest <- worker(request$source_dir, request$dataset_parameters, request$dataset_seed, request$output_dir)
       return(list(dataset = list(manifest = .completed_manifest(request$output_dir, manifest))))
     } else if (method == "evaluate") {
-      verdict <- worker(request$dataset_dir, request$problem_contract_id, request$problem_parameters,
-                        request$result_dir, request$metrics_path)
+      arguments <- list(request$dataset_dir, request$problem_contract_id, request$problem_parameters)
+      if (semantics) arguments <- c(arguments, list(rules))
+      verdict <- do.call(worker, c(arguments, list(request$result_dir, request$metrics_path)))
       if (!is.character(verdict) || length(verdict) != 1L || is.na(verdict) ||
           !verdict %in% c("invalid", "reached", "not_reached", "not_required")) {
         stop("Evaluators must return a version-1 scientific verdict.", call. = FALSE)
@@ -166,7 +173,7 @@ worker_error <- function(code, message, details = NULL) {
   }
 }
 
-.serve_fds <- function(worker, role, read_fd, write_fd) {
+.serve_fds <- function(worker, role, read_fd, write_fd, semantics = FALSE) {
   if (is.null(read_fd)) read_fd <- suppressWarnings(as.double(Sys.getenv("METEWAND_PROTOCOL_READ_FD")))
   if (is.null(write_fd)) write_fd <- suppressWarnings(as.double(Sys.getenv("METEWAND_PROTOCOL_WRITE_FD")))
   if (!.is_integer(read_fd, .Machine$integer.max) || !.is_integer(write_fd, .Machine$integer.max)) {
@@ -174,7 +181,7 @@ worker_error <- function(code, message, details = NULL) {
   }
   pipes <- .native(C_mw_open, read_fd, write_fd, error = stop)
   on.exit(.Call(C_mw_close, pipes))
-  .serve(worker, role, pipes, pipes)
+  .serve(worker, role, pipes, pipes, semantics = semantics)
 }
 
 serve_implementation <- function(prepare, execute, result, reset = NULL, shutdown = NULL,
@@ -193,7 +200,10 @@ serve_dataset_materializer <- function(materialize, read_fd = NULL, write_fd = N
   .serve_fds(materialize, "dataset_materializer", read_fd, write_fd)
 }
 
-serve_evaluator <- function(evaluate, read_fd = NULL, write_fd = NULL) {
+serve_evaluator <- function(evaluate, read_fd = NULL, write_fd = NULL, semantics = FALSE) {
   if (!is.function(evaluate)) stop("Expected an evaluator callback.", call. = FALSE)
-  .serve_fds(evaluate, "problem_evaluator", read_fd, write_fd)
+  if (!is.logical(semantics) || length(semantics) != 1L || is.na(semantics)) {
+    stop("semantics must be a boolean.", call. = FALSE)
+  }
+  .serve_fds(evaluate, "problem_evaluator", read_fd, write_fd, semantics = semantics)
 }

@@ -17,7 +17,12 @@
       "additionalProperties": false
     },
     "validity": { "$ref": "#/$defs/exact" },
-    "one_shot_completion": { "$ref": "#/$defs/exact" }
+    "one_shot_completion": {
+      "type": "object",
+      "properties": { "absolute_error": { "type": "number", "minimum": 0 } },
+      "required": ["absolute_error"],
+      "additionalProperties": false
+    }
   },
   "required": ["preprocessing", "validity", "one_shot_completion"],
   "additionalProperties": false,

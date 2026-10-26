@@ -111,7 +111,7 @@ a new compatibility review is a prerequisite.
   unambiguous local-environment and one-shot-policy defaults, recording all
   resolved values and exposing effective settings through planning. Keep profile
   selection, preprocessing, validity, completion, and timing choices explicit.
-- [ ] Make a separately authored family `semantics-schema` optional. Keep
+- [x] Make a separately authored family `semantics-schema` optional. Keep
   preprocessing, validity, and completion rules explicit in the problem
   declaration, with an independent evaluator and reference cases. Pass the
   resolved scientific rules to the evaluator so authors do not repeat declared

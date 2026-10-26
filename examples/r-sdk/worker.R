@@ -26,12 +26,13 @@ result <- function(state, directory) {
 }
 
 evaluate <- function(dataset_instance, problem_contract, problem_parameters,
-                     result_dir, metrics_path) {
+                     problem_semantics, result_dir, metrics_path) {
   values <- read_json(file.path(dataset_instance, "data.json"))$values
   answer <- read_json(file.path(result_dir, "result.json"))$data$answer
   error <- abs(answer - (sum(unlist(values)) + problem_parameters$offset))
   write_metrics(metrics_path, list(absolute_error = error), schema = "schemas/metrics.json")
-  if (error == 0) "reached" else "invalid"
+  if (problem_semantics$validity$exact_sum && error != 0) return("invalid")
+  if (error <= problem_semantics$one_shot_completion$absolute_error) "reached" else "not_reached"
 }
 
 role <- commandArgs(trailingOnly = TRUE)[[1L]]
@@ -43,5 +44,5 @@ switch(role,
     reset = function(state) NULL,
     statistics = function(state) list(input_count = length(state$values))),
   dataset_materializer = serve_dataset_materializer(materialize),
-  problem_evaluator = serve_evaluator(evaluate),
+  problem_evaluator = serve_evaluator(evaluate, semantics = TRUE),
   stop("Unknown worker role: ", role))

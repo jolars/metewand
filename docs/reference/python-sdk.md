@@ -102,26 +102,31 @@ from metewand import read_json, serve_evaluator, write_metrics
 
 
 def evaluate(dataset_instance, problem_contract, problem_parameters,
-             result_dir, metrics_path):
+             problem_semantics, result_dir, metrics_path):
     values = read_json(dataset_instance / "data.json")["values"]
     expected = sum(values) + problem_parameters["offset"]
     actual = read_json(result_dir / "result.json")["data"]["answer"]
     error = abs(actual - expected)
     write_metrics(metrics_path, {"absolute_error": error},
                   schema="schemas/metrics.json")
-    return "reached" if error == 0 else "invalid"
+    target = problem_semantics["one_shot_completion"]["absolute_error"]
+    return "reached" if error <= target else "not_reached"
 
 
-serve_evaluator(evaluate)
+serve_evaluator(evaluate, semantics=True)
 ```
 
 The callback receives dataset and result directories as `Path` objects, the
-problem contract identity, the resolved problem parameter dictionary, and the
-exact assigned metrics path. It writes and closes the metrics document before
+problem contract identity, the resolved problem parameter dictionary, the
+canonical scientific rules, and the exact assigned metrics path. It writes and closes the metrics document before
 returning one of `invalid`, `reached`, `not_reached`, or `not_required`. The SDK
 does not compute metrics or infer a verdict. Metewand independently validates
 the result and metrics against the problem's schemas and applies the observation
 policy.
+
+With `semantics=True`, the SDK advertises `problem_semantics` and requires its
+object in evaluation requests. The default `semantics=False` preserves the
+five-argument callback and original wire shape for existing evaluators.
 
 ## JSON and output helpers
 
@@ -185,9 +190,9 @@ active execution phase.
 ## Compatibility and verification
 
 The wire, public-schema, canonicalization, identity, and execution-semantics
-versions are unchanged. This SDK implements the current contracts without adding
-messages, fields, or orchestrator policy. Applicability, scientific budgets, and
-profile subprotocols remain reserved for later roadmap slices.
+versions are unchanged. The optional `problem_semantics` request field is
+guarded by the evaluator capability of the same name. Applicability, scientific
+budgets, and profile subprotocols remain reserved for later roadmap slices.
 
 The Python tests consume shared canonicalization, identity, seed, error, and
 protocol vectors, check lifecycle dispatch, callback errors, malformed frames,

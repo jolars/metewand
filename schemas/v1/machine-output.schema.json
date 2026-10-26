@@ -157,7 +157,8 @@
                     "one_shot",
                     "applicability",
                     "fresh_sequence",
-                    "streaming_profile"
+                    "streaming_profile",
+                    "problem_semantics"
                   ]
                 }
               },
@@ -169,7 +170,8 @@
                     "one_shot",
                     "applicability",
                     "fresh_sequence",
-                    "streaming_profile"
+                    "streaming_profile",
+                    "problem_semantics"
                   ]
                 }
               }

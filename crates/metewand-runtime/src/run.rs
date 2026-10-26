@@ -436,6 +436,7 @@ fn execute(
         dataset_dir: dataset_view.directory(),
         problem_contract_id: &candidate.contract_id,
         problem_parameters: &candidate.problem_parameters,
+        problem_semantics: &candidate.problem_semantics,
         implementation_parameters: &candidate.implementation_parameters,
         implementation_seed: measurement.seed,
         implementation_launch: &candidate.implementation.launch,

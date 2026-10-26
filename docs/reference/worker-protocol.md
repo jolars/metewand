@@ -22,11 +22,15 @@ package name and version strings. The three roles are `dataset_materializer`,
 
 The protocol recognizes the `one_shot`, `applicability`, `fresh_sequence`, and
 `streaming_profile` capability names. A session fails if the worker omits a
-capability selected by the plan, and capabilities may be selected only for the
+capability selected by the plan. These four capabilities belong to the
 implementation role. Gate 1 selects only `one_shot`. Workers may report the
 other three capabilities, and Metewand records those reports, but version-1
 sessions reject attempts to select them until their request subprotocols are
 implemented. An unselected report remains inert.
+
+Evaluators may report `problem_semantics`. Metewand selects it when reported
+and sends the complete canonical scientific rules in `evaluate` requests. It
+cannot be selected for implementation or materializer workers.
 
 ## Validation and negotiation
 
@@ -44,7 +48,7 @@ After schema-compatible decoding, the orchestrator verifies that:
 2. protocol 1 was offered and selected;
 3. the response repeats the resolved worker identity from the request; and
 4. every capability selected by the plan was reported by the worker;
-5. capabilities were selected only for an implementation worker; and
+5. capabilities match the worker role, including evaluator-only `problem_semantics`; and
 6. no reserved applicability or profile capability was selected.
 
 These checks produce typed `HandshakeError` values. The
@@ -118,6 +122,14 @@ which it must finish the metrics document:
 ```json
 {"dataset_dir":"/private/dataset","id":"1","method":"evaluate","metrics_path":"/private/metrics.json","problem_contract_id":"mw1-problem-contract-abc","problem_parameters":{"lambda":0.1},"result_dir":"/private/result"}
 ```
+
+When the evaluator negotiated `problem_semantics`, the request also contains
+`"problem_semantics": { ... }`, holding the entire contract `semantics` object.
+This includes preprocessing, validity, completion, and other family-owned rules.
+The field must be an object and is required in sessions that select this
+capability. It is omitted for legacy evaluators. Run execution and reference
+checks deliver the same rules. Evaluator code should read declared tolerances
+from this object.
 
 Evaluation returns a required problem-owned verdict after writing metrics:
 

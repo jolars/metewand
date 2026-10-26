@@ -49,6 +49,39 @@ fn schema_catalog() -> SchemaCatalog {
 }
 
 #[test]
+fn family_schema_is_optional_but_scientific_rules_remain_explicit() {
+    let mut source: Value = serde_saphyr::from_str(COMPLETE_CONTRACT).unwrap();
+    source.as_object_mut().unwrap().remove("semantics-schema");
+    source["semantics"]["preprocessing"] = json!({"allowed_outside_timed_scope": []});
+    let path = Path::new("problems/regression.yaml");
+    let catalog = SchemaCatalog::try_new(
+        schema_documents()
+            .into_iter()
+            .filter(|(path, _)| path != Path::new("schemas/semantics.json")),
+    )
+    .unwrap();
+    parse_problem_contract(path, &source.to_string(), &catalog).unwrap();
+    for group in ["preprocessing", "validity", "one_shot_completion"] {
+        for replacement in [None, Some(Value::Null), Some(json!([]))] {
+            let mut invalid = source.clone();
+            let rules = invalid["semantics"].as_object_mut().unwrap();
+            match replacement {
+                None => {
+                    rules.remove(group);
+                }
+                Some(value) => {
+                    rules.insert(group.to_owned(), value);
+                }
+            }
+            let error = parse_problem_contract(path, &invalid.to_string(), &catalog).unwrap_err();
+            assert!(error.to_string().contains(group), "{error}");
+        }
+    }
+    source["semantics-schema"] = Value::Null;
+    assert!(parse_problem_contract(path, &source.to_string(), &catalog).is_err());
+}
+
+#[test]
 fn parses_and_validates_a_complete_problem_contract() {
     let contract = parse_problem_contract(
         Path::new("problems/regression.yaml"),
@@ -77,7 +110,7 @@ fn repository_loaders_can_parse_before_compiling_the_schema_catalog() {
     let path = Path::new("problems/regression.yaml");
     let contract = parse_problem_contract_document(path, COMPLETE_CONTRACT).unwrap();
     assert_eq!(
-        contract.semantics_schema.as_path(),
+        contract.semantics_schema.as_ref().unwrap().as_path(),
         Path::new("schemas/semantics.json")
     );
 

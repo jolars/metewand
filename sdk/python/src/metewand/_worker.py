@@ -190,13 +190,21 @@ def _completed_manifest(directory, manifest):
 
 
 class _Dispatcher:
-    def __init__(self, worker, role):
+    def __init__(self, worker, role, semantics=False):
         self.worker = worker
         self.role = role
         self.ready = False
         self.prepared = False
+        self.semantics = semantics
 
     def dispatch(self, request):
+        if request.get("method") == "evaluate" and self.semantics:
+            request = request.copy()
+            semantics = request.pop("problem_semantics", None)
+            if type(semantics) is not dict:
+                raise WorkerError(
+                    "invalid_request", "Expected problem_semantics object."
+                )
         method = _validate_request(request)
         if not self.ready:
             if method != "hello" or request["role"] != self.role:
@@ -213,7 +221,9 @@ class _Dispatcher:
                 "protocol": WIRE_PROTOCOL_VERSION,
                 "worker_id": request["worker_id"],
                 "sdk": {"name": "metewand-python", "version": SDK_VERSION},
-                "capabilities": ["one_shot"] if self.role == "implementation" else [],
+                "capabilities": ["one_shot"]
+                if self.role == "implementation"
+                else (["problem_semantics"] if self.semantics else []),
             }
         if method == "hello":
             raise WorkerError(
@@ -279,6 +289,7 @@ class _Dispatcher:
                 Path(request["dataset_dir"]),
                 request["problem_contract_id"],
                 request["problem_parameters"],
+                *([semantics] if self.semantics else []),
                 Path(request["result_dir"]),
                 metrics_path,
             )
@@ -321,8 +332,8 @@ def _encode_failure(request_id, error):
             ) from failure
 
 
-def _serve(worker, role, reader, writer):
-    dispatcher = _Dispatcher(worker, role)
+def _serve(worker, role, reader, writer, semantics=False):
+    dispatcher = _Dispatcher(worker, role, semantics=semantics)
     while True:
         request = _read_frame(reader)
         # Check the envelope before attempting to build any failure response.
@@ -360,7 +371,7 @@ def _serve(worker, role, reader, writer):
             return
 
 
-def _serve_fds(worker, role, read_fd, write_fd):
+def _serve_fds(worker, role, read_fd, write_fd, semantics=False):
     if read_fd is None:
         read_fd = int(os.environ["METEWAND_PROTOCOL_READ_FD"])
     if write_fd is None:
@@ -370,7 +381,7 @@ def _serve_fds(worker, role, read_fd, write_fd):
     with ExitStack() as stack:
         reader = stack.enter_context(os.fdopen(os.dup(read_fd), "rb"))
         writer = stack.enter_context(os.fdopen(os.dup(write_fd), "wb"))
-        _serve(worker, role, reader, writer)
+        _serve(worker, role, reader, writer, semantics=semantics)
 
 
 def serve_implementation(implementation, *, read_fd=None, write_fd=None):
@@ -390,12 +401,15 @@ def serve_dataset_materializer(materialize, *, read_fd=None, write_fd=None):
     _serve_fds(materialize, "dataset_materializer", read_fd, write_fd)
 
 
-def serve_evaluator(evaluate, *, read_fd=None, write_fd=None):
+def serve_evaluator(evaluate, *, semantics=False, read_fd=None, write_fd=None):
     """Serve evaluate(dataset, contract, parameters, result_dir, metrics_path).
 
     The callback writes metrics and returns invalid, reached, not_reached, or
     not_required. Only benchmark-owned evaluator code supplies this verdict.
+    With semantics=True, declared scientific rules follow parameters in the callback.
     """
     if not callable(evaluate):
         raise TypeError("Expected an evaluator callback.")
-    _serve_fds(evaluate, "problem_evaluator", read_fd, write_fd)
+    if type(semantics) is not bool:
+        raise TypeError("semantics must be a boolean.")
+    _serve_fds(evaluate, "problem_evaluator", read_fd, write_fd, semantics=semantics)

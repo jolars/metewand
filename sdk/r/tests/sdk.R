@@ -68,12 +68,12 @@ hello <- function(role = "implementation") list(
   id = "0", method = "hello", protocols = list(1), role = role,
   worker_id = paste0("mw1-resolved-worker-", strrep("a", 64)))
 request <- function(method, ...) c(list(id = "1", method = method), list(...))
-exchange <- function(worker, role, requests) {
+exchange <- function(worker, role, requests, semantics = FALSE) {
   bytes <- do.call(c, lapply(requests, function(r) c(canonical_bytes(r), as.raw(10))))
   input <- rawConnection(bytes)
   output <- rawConnection(raw(), "wb")
   on.exit({close(input); close(output)})
-  metewand:::.serve(worker, role, input, output)
+  metewand:::.serve(worker, role, input, output, semantics = semantics)
   lines <- strsplit(rawToChar(rawConnectionValue(output)), "\n", fixed = TRUE)[[1]]
   lapply(lines, function(line) {
     value <- parse_json(line)
@@ -143,6 +143,28 @@ for (callback in list(function(...) stop("unexpected failure"), function(...) "m
 evaluate_request <- request("evaluate", dataset_dir = directory, problem_contract_id = "c",
   problem_parameters = json_object(), result_dir = directory,
   metrics_path = file.path(directory, "metrics.json"))
+rules <- list(preprocessing = json_object(), validity = list(finite = TRUE),
+              one_shot_completion = list(absolute_error = 0.25))
+evaluate_rules <- function(dataset, contract, parameters, semantics, result, metrics) {
+  stopifnot(identical(semantics, rules))
+  write_metrics(metrics, list(error = 0.2))
+  if (0.2 <= semantics$one_shot_completion$absolute_error) "reached" else "not_reached"
+}
+rules_request <- c(evaluate_request, list(problem_semantics = rules))
+responses <- exchange(evaluate_rules, "problem_evaluator", list(
+  hello("problem_evaluator"), rules_request, request("shutdown")), semantics = TRUE)
+stopifnot(identical(responses[[1]]$capabilities, list("problem_semantics")),
+          responses[[2]]$verdict == "reached")
+for (invalid in list(NULL, list(), TRUE)) {
+  bad <- evaluate_request
+  bad["problem_semantics"] <- list(invalid)
+  responses <- exchange(evaluate_rules, "problem_evaluator", list(
+    hello("problem_evaluator"), bad, request("shutdown")), semantics = TRUE)
+  stopifnot(responses[[2]]$error$code == "invalid_request")
+}
+responses <- exchange(evaluate_rules, "problem_evaluator", list(
+  hello("problem_evaluator"), rules_request, request("shutdown")))
+stopifnot(responses[[2]]$error$code == "invalid_request")
 responses <- exchange(function(...) "reached", "problem_evaluator", list(
   hello("problem_evaluator"), evaluate_request, request("shutdown")))
 stopifnot(responses[[2]]$error$code == "operation_failed")

@@ -94,6 +94,7 @@ fn raw_role_workers_form_a_complete_validated_chain() {
             path_string(dataset.path()),
             "mw1-problem-contract-fixture",
             json!({"offset": 2}),
+            json!({}),
             path_string(result.path()),
             path_string(&metrics_path),
         )

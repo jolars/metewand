@@ -109,6 +109,7 @@ fn r_sdk_contracts_and_roles_complete_a_validated_chain() {
             dataset.path().to_str().unwrap(),
             "mw1-problem-contract-fixture",
             json!({"offset": 2}),
+            json!({"validity": {"exact_sum": true}, "one_shot_completion": {"absolute_error": 0}}),
             result.path().to_str().unwrap(),
             metrics_path.to_str().unwrap(),
         )

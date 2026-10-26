@@ -21,7 +21,13 @@ from metewand import (
     write_metrics,
     write_result,
 )
-from metewand._worker import MAX_LINE_BYTES, ProtocolError, _encode_response, _object, _serve
+from metewand._worker import (
+    MAX_LINE_BYTES,
+    ProtocolError,
+    _encode_response,
+    _object,
+    _serve,
+)
 
 ROOT = Path(__file__).resolve().parents[3]
 WORKER_ID = "mw1-resolved-worker-" + "a" * 64
@@ -37,10 +43,10 @@ def request(method, **fields):
     return dict(id="1", method=method, **fields)
 
 
-def exchange(worker, role, requests):
+def exchange(worker, role, requests, semantics=False):
     source = io.BytesIO(b"".join(canonical_bytes(r) + b"\n" for r in requests))
     output = io.BytesIO()
-    _serve(worker, role, source, output)
+    _serve(worker, role, source, output, semantics=semantics)
     lines = output.getvalue().splitlines()
     for line in lines:
         assert canonical_bytes(parse_json(line)) == line
@@ -183,6 +189,57 @@ class ArtifactTests(unittest.TestCase):
 
 
 class WorkerTests(unittest.TestCase):
+    def test_evaluator_negotiates_scientific_rules_and_rejects_bad_shapes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            rules = {
+                "preprocessing": {},
+                "validity": {"finite": True},
+                "one_shot_completion": {"absolute_error": 0.25},
+            }
+
+            def evaluate(dataset, contract, parameters, semantics, result, metrics):
+                self.assertEqual(semantics, rules)
+                write_metrics(metrics, {"error": 0.2})
+                return (
+                    "reached"
+                    if 0.2 <= semantics["one_shot_completion"]["absolute_error"]
+                    else "not_reached"
+                )
+
+            call = request(
+                "evaluate",
+                dataset_dir=directory,
+                problem_contract_id="c",
+                problem_parameters={},
+                problem_semantics=rules,
+                result_dir=directory,
+                metrics_path=str(root / "metrics.json"),
+            )
+            responses = exchange(
+                evaluate,
+                "problem_evaluator",
+                [hello("problem_evaluator"), call, request("shutdown")],
+                semantics=True,
+            )
+            self.assertEqual(responses[0]["capabilities"], ["problem_semantics"])
+            self.assertEqual(responses[1]["verdict"], "reached")
+            for invalid in [None, [], True]:
+                bad = dict(call, problem_semantics=invalid)
+                responses = exchange(
+                    evaluate,
+                    "problem_evaluator",
+                    [hello("problem_evaluator"), bad, request("shutdown")],
+                    semantics=True,
+                )
+                self.assertEqual(responses[1]["error"]["code"], "invalid_request")
+            responses = exchange(
+                evaluate,
+                "problem_evaluator",
+                [hello("problem_evaluator"), call, request("shutdown")],
+            )
+            self.assertEqual(responses[1]["error"]["code"], "invalid_request")
+
     def test_implementation_lifecycle_and_callback_timing(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -234,7 +291,8 @@ class WorkerTests(unittest.TestCase):
             ):
                 responses = exchange(worker, "implementation", calls)
             self.assertEqual(
-                events, ["prepare", "clock", "execute", "clock", "statistics", "write_result"]
+                events,
+                ["prepare", "clock", "execute", "clock", "statistics", "write_result"],
             )
             self.assertEqual(
                 responses[0],

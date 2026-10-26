@@ -646,9 +646,10 @@ schemas, metric schema, and supported timing scopes and budgets. The problem
 definition owns an independent evaluator worker, including its source bundle and
 environment; it is not a separately selectable benchmark component. The `family`
 value is an open, stable tag rather than a closed Metewand enumeration. A
-family-specific `semantics` object binds the remaining rules and is validated
-against the contract's `semantics-schema`. Metewand hashes this object but does
-not need to understand it. For example, an optimization contract binds its
+family-specific `semantics` object binds the remaining rules. It requires explicit
+`preprocessing`, `validity`, and `one_shot_completion` mappings. An optional
+`semantics-schema` adds family-specific validation. Metewand hashes the complete
+object but does not need to understand its scientific fields. For example, an optimization contract binds its
 objective, constraints, scaling, preprocessing, result-validity rules, and
 one-shot completion tolerances; other problem families bind their own
 domain-specific semantics. A contract may link explanatory prose, but every rule
@@ -1469,6 +1470,13 @@ and `shutdown` calls return the common acknowledgment
 `verdict` is `invalid`, `reached`, `not_reached`, or `not_required`: it applies the
 problem-owned validity and one-shot completion rules. Transport success alone
 does not imply scientific validity.
+
+Evaluators may report the `problem_semantics` capability during the version-1
+handshake. Metewand selects that capability when reported and includes the full
+canonical `problem_semantics` object in `evaluate` requests, including reference
+checks. Evaluators without it receive the original request shape. Python and R
+SDK evaluators opt in with the `semantics` argument to `serve_evaluator`; their
+callbacks receive the rules after problem parameters.
 
 The canonical result schema belongs to the problem contract. For a lasso problem
 it might require `coefficients` and `intercept`, regardless of how individual

@@ -29,7 +29,7 @@ fn document() -> Value {
                 "semantics-schema": {"type": "object"},
                 "allowed-timing-scopes": ["prepare_and_execute"],
                 "supported-budgets": ["none"],
-                "semantics": {"validity": {"finite": true}, "one_shot_completion": {"exact": true}},
+                "semantics": {"preprocessing": {}, "validity": {"finite": true}, "one_shot_completion": {"exact": true}},
                 "reference-cases": [{"dataset": "data.json", "result": "result.json", "expected-metrics": "metrics.json"}]
             },
             "evaluator": {"runner": "command", "program": "evaluate", "environment": "local"}
@@ -151,7 +151,6 @@ fn flat_problems_reject_competing_and_invalid_declarations() {
         "family",
         "result",
         "metrics",
-        "semantics-schema",
         "semantics",
         "reference-cases",
         "evaluator",

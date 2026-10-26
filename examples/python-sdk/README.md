@@ -6,7 +6,8 @@ measured slots, process reuse, and durable result publication.
 
 The problem's parameters, results, metrics, scientific rules, reference cases,
 and evaluator live directly under `problems.sum` in `metewand.yaml`, with no
-`contract` wrapper. Every scientific schema is inline.
+`contract` wrapper or separate family semantics schema. Result and metric shapes
+use compact declarations.
 The dataset schema uses a YAML anchor so the dataset and problem share one
 declaration. The worker writes result and metric envelopes without schema paths;
 Metewand validates them against the selected problem contract.
@@ -36,7 +37,9 @@ three operations; the secondary SDK `implementation_time_ns` covers only the
 `execute` callback. The runtime resets the implementation between slots.
 
 The evaluator computes the expected answer from its private dataset view and
-supplied problem parameters. The SDK handles protocol messages and error
+supplied problem parameters. `serve_evaluator(..., semantics=True)` passes the
+contract rules to the evaluator, which reads its completion tolerance from
+`one_shot_completion.absolute_error`. The SDK handles protocol messages and error
 responses; the runtime owns scheduling, validation, and publication. See the
 [Python SDK guide](../../docs/reference/python-sdk.md) for callback signatures and output
 helpers.

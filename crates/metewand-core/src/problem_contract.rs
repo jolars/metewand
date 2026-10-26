@@ -155,15 +155,17 @@ pub fn validate_problem_contract(
     schemas: &SchemaCatalog,
 ) -> Result<(), ProblemContractError> {
     validate_schema_references(source_path, contract, schemas)?;
-    schemas
-        .validate(
-            contract.semantics_schema.as_path(),
-            contract.semantics.as_canonical().as_json(),
-        )
-        .map_err(|source| ProblemContractError::InvalidSemantics {
-            contract_path: source_path.to_path_buf(),
-            source,
-        })?;
+    if let Some(schema) = &contract.semantics_schema {
+        schemas
+            .validate(
+                schema.as_path(),
+                contract.semantics.as_canonical().as_json(),
+            )
+            .map_err(|source| ProblemContractError::InvalidSemantics {
+                contract_path: source_path.to_path_buf(),
+                source,
+            })?;
+    }
 
     Ok(())
 }
@@ -192,8 +194,8 @@ pub struct ProblemContract {
     pub result_schema: SchemaDeclaration,
     /// Schema for independent evaluator metrics.
     pub metric_schema: SchemaDeclaration,
-    /// Schema that owns the family-specific semantics object.
-    pub semantics_schema: SchemaDeclaration,
+    /// Optional additional validation of the family-specific semantics object.
+    pub semantics_schema: Option<SchemaDeclaration>,
     /// Timing scopes under which the problem may be measured.
     pub allowed_timing_scopes: Vec<TimingScope>,
     /// Scientific budgets supported by the contract.
@@ -211,9 +213,9 @@ impl ProblemContract {
             &self.parameter_schema,
             &self.result_schema,
             &self.metric_schema,
-            &self.semantics_schema,
         ]
         .into_iter()
+        .chain(&self.semantics_schema)
         .chain(&self.dataset_schemas)
     }
 
@@ -222,9 +224,9 @@ impl ProblemContract {
             &mut self.parameter_schema,
             &mut self.result_schema,
             &mut self.metric_schema,
-            &mut self.semantics_schema,
         ]
         .into_iter()
+        .chain(&mut self.semantics_schema)
         .chain(&mut self.dataset_schemas)
         {
             schema.set_owner(owner);
@@ -238,7 +240,7 @@ impl ProblemContract {
             "dataset_schemas": self.dataset_schemas.iter().map(SchemaDeclaration::declaration_value).collect::<Vec<_>>(),
             "result_schema": self.result_schema.declaration_value(),
             "metric_schema": self.metric_schema.declaration_value(),
-            "semantics_schema": self.semantics_schema.declaration_value(),
+            "semantics_schema": self.semantics_schema.as_ref().map(SchemaDeclaration::declaration_value),
             "allowed_timing_scopes": self.allowed_timing_scopes.iter().map(ToString::to_string).collect::<Vec<_>>(),
             "supported_budgets": self.supported_budgets.iter().map(ToString::to_string).collect::<Vec<_>>(),
             "semantics": self.semantics.as_canonical().as_json(),
@@ -270,7 +272,8 @@ struct RawProblemContract {
     metrics: Option<OutputDeclarations>,
     #[serde(default, deserialize_with = "deserialize_optional_non_null")]
     metric_schema: Option<SchemaDeclaration>,
-    semantics_schema: SchemaDeclaration,
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
+    semantics_schema: Option<SchemaDeclaration>,
     allowed_timing_scopes: Vec<TimingScope>,
     supported_budgets: Vec<ScientificBudget>,
     semantics: ProblemSemantics,
@@ -399,11 +402,11 @@ impl<'de> Deserialize<'de> for ProblemSemantics {
             .as_object()
             .ok_or_else(|| de::Error::custom("`semantics` must be an object"))?;
 
-        for rule in ["validity", "one_shot_completion"] {
+        for rule in ["preprocessing", "validity", "one_shot_completion"] {
             let rules = object.get(rule).and_then(Value::as_object).ok_or_else(|| {
                 de::Error::custom(format_args!("`semantics.{rule}` must be a present object"))
             })?;
-            if rules.is_empty() {
+            if rule != "preprocessing" && rules.is_empty() {
                 return Err(de::Error::custom(format_args!(
                     "`semantics.{rule}` cannot be empty"
                 )));
@@ -560,12 +563,9 @@ fn validate_schema_references(
         &contract.metric_schema,
         schemas,
     )?;
-    require_schema(
-        contract_path,
-        ProblemSchemaRole::Semantics,
-        &contract.semantics_schema,
-        schemas,
-    )?;
+    if let Some(schema) = &contract.semantics_schema {
+        require_schema(contract_path, ProblemSchemaRole::Semantics, schema, schemas)?;
+    }
     Ok(())
 }
 

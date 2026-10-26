@@ -214,6 +214,7 @@ fn evaluate(
             dataset.to_str().unwrap(),
             CONTRACT_ID,
             parameters.clone(),
+            json!({}),
             result.to_str().unwrap(),
             metrics.path().join("metrics.json").to_str().unwrap(),
         )

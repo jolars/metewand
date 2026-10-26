@@ -90,21 +90,26 @@ path. The SDK does not download inputs or publish datasets.
 
 ```r
 serve_evaluator(function(dataset_instance, problem_contract, problem_parameters,
-                         result_dir, metrics_path) {
+                         problem_semantics, result_dir, metrics_path) {
   values <- read_json(file.path(dataset_instance, "data.json"))$values
   actual <- read_json(file.path(result_dir, "result.json"))$data$answer
   error <- abs(actual - (sum(unlist(values)) + problem_parameters$offset))
   write_metrics(metrics_path, list(absolute_error = error),
                 schema = "schemas/metrics.json")
-  if (error == 0) "reached" else "invalid"
-})
+  target <- problem_semantics$one_shot_completion$absolute_error
+  if (error <= target) "reached" else "not_reached"
+}, semantics = TRUE)
 ```
 
 The callback receives directory strings, the problem contract identity, resolved
-problem parameters, and the exact assigned metrics path. It writes and closes
-metrics before returning `invalid`, `reached`, `not_reached`, or `not_required`.
+problem parameters, canonical scientific rules, and the exact assigned metrics
+path. It writes and closes metrics before returning `invalid`, `reached`, `not_reached`, or `not_required`.
 Only user-supplied evaluator code computes trusted metrics and chooses a verdict.
 Metewand independently validates all outputs against the problem's schemas.
+
+With `semantics = TRUE`, the SDK advertises `problem_semantics` and requires
+the rules object in evaluation requests. The default `FALSE` preserves the
+five-argument callback and original wire shape for existing evaluators.
 
 ## Canonical values
 
@@ -196,8 +201,9 @@ room for a bounded failure terminates serving.
 ## Compatibility and verification
 
 This SDK uses the existing protocol, schema, canonicalization, identity, and
-execution-semantics versions. It introduces no messages or fields. Applicability,
-scientific budgets, and profile subprotocols remain reserved for later slices.
+execution-semantics versions. The optional `problem_semantics` request field is
+guarded by the evaluator capability of the same name. Applicability, scientific
+budgets, and profile subprotocols remain reserved for later slices.
 
 The R contract suite consumes shared canonicalization, identity, seed, error,
 and protocol vectors and checks R value restrictions, inventories, lifecycle,

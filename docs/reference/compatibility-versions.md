@@ -96,9 +96,23 @@ hashing and expansion, so equivalent explicit axes keep their canonical bytes,
 plans, and component identities. YAML source locations are diagnostic metadata
 and do not enter identities or persisted records.
 
-Optional family semantics schemas, applicability
-selection, profiles, scientific budgets, and instrumentation settings remain
-planned implementation work.
+Family `semantics-schema` declarations are optional within authoring version 1.
+Preprocessing, validity, and completion mappings remain explicit, and contracts
+still require an independent evaluator and reference cases. Existing declarations
+with schemas and explicit preprocessing retain their canonical representation.
+Older authoring files without preprocessing must add its mapping. Contracts without a schema
+record a null schema identity while hashing all scientific rules.
+
+Wire protocol 1 adds the evaluator capability `problem_semantics`. Only
+evaluators that report it receive the optional object of the same name in
+`evaluate` requests, including reference checks. Existing evaluators keep the
+original wire shape. Python and R SDKs require explicit opt-in through
+`serve_evaluator`'s `semantics` argument. This changes no persisted formats or
+execution semantics. Older runtimes reject this new capability; pin a matching
+Metewand revision when opting in.
+
+Applicability selection, profiles, scientific budgets, and instrumentation
+settings remain planned implementation work.
 
 The handshake recognizes `applicability`, `fresh_sequence`, and
 `streaming_profile` as capability metadata, but their work exchanges are not

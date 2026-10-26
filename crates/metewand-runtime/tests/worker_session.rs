@@ -88,6 +88,7 @@ fn runs_evaluate_and_shutdown_exchanges() {
             "/dataset",
             "mw1-problem-contract-abc",
             json!({"lambda": 0.1}),
+            json!({}),
             "/result",
             "/metrics.json",
         )

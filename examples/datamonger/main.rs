@@ -179,6 +179,10 @@ fn compare(
             dataset_dir: view.directory(),
             problem_contract_id: &contract_id,
             problem_parameters: candidate.problem_configuration.record.parameters.as_json(),
+            problem_semantics: repository.problem_contracts[&sum]
+                .semantics
+                .as_canonical()
+                .as_json(),
             implementation_parameters: candidate
                 .implementation_configuration
                 .record

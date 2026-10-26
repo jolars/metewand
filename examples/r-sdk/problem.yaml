@@ -16,7 +16,7 @@ semantics:
   validity:
     exact_sum: true
   one_shot_completion:
-    exact_sum: true
+    absolute_error: 0
 reference-cases:
   - dataset: "data.json"
     result: "reference/result.json"

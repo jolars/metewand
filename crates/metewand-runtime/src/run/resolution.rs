@@ -78,6 +78,7 @@ pub(super) struct ResolvedCandidate {
     pub measurements: Vec<ResolvedMeasurement>,
     pub contract_id: String,
     pub problem_parameters: Value,
+    pub problem_semantics: Value,
     pub implementation_parameters: Value,
     pub result_schema: PathBuf,
     pub metric_schema: PathBuf,
@@ -809,6 +810,7 @@ fn resolve_candidate(
         evaluator,
         measurements,
         contract_id: repository.resources.problem_contracts[problem_name].to_string(),
+        problem_semantics: contract.semantics.as_canonical().as_json().clone(),
         problem_parameters: candidate
             .problem_configuration
             .record
