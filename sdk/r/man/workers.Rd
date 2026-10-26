@@ -3,24 +3,30 @@
 \alias{serve_dataset_materializer}
 \alias{serve_evaluator}
 \alias{worker_error}
+\alias{evaluation}
 \title{Serve Version-1 One-Shot Workers}
 \description{Dispatch benchmark-owned callbacks over dedicated protocol pipes.
 Metewand owns environments, source acquisition, seeds, scheduling, validation,
 and publication.}
 \usage{
-serve_implementation(prepare, execute, result, reset = NULL, shutdown = NULL,
-                     statistics = NULL, read_fd = NULL, write_fd = NULL)
+serve_implementation(prepare, execute, result = NULL, reset = NULL, shutdown = NULL,
+                     statistics = NULL, read_fd = NULL, write_fd = NULL,
+                     result_data = NULL)
 serve_dataset_materializer(materialize, read_fd = NULL, write_fd = NULL)
 serve_evaluator(evaluate, read_fd = NULL, write_fd = NULL, semantics = FALSE)
 worker_error(code, message, details = NULL)
+evaluation(metrics, verdict)
 }
 \arguments{
   \item{prepare}{Function of dataset directory, contract identity, problem
   parameters, implementation parameters, and seed; returns clean state.}
   \item{execute}{Function of state, budget, and observation control; returns
   updated state. Budget and observation control are NULL in one-shot mode.}
-  \item{result}{Function of state and result directory; closes all result files
-  and returns the relative manifest path.}
+  \item{result}{Optional custom function of state and result directory; closes
+  all result files and returns the relative manifest path. When omitted, the
+  SDK writes the standard result envelope from execute output or result_data.}
+  \item{result_data}{Optional function converting execute output to scientific
+  JSON data outside diagnostic solve timing. Supply either this or result.}
   \item{reset}{Optional function of state that releases slot-scoped resources.
   Its return value is discarded. Without it, reset is unsupported.}
   \item{shutdown}{Optional function of state that releases resources before exit.}
@@ -32,7 +38,10 @@ worker_error(code, message, details = NULL)
   output directory. Closes all files and returns the relative dataset manifest.}
   \item{evaluate}{Function of dataset directory, contract identity, problem
   parameters, result directory, and metrics path. Writes and closes metrics,
-  then returns invalid, reached, not_reached, or not_required.}
+  then returns invalid, reached, not_reached, or not_required. Alternatively,
+  return evaluation(metrics, verdict) to let the SDK write metrics.}
+  \item{metrics}{A canonical JSON object of evaluator-owned metric data.}
+  \item{verdict}{One of invalid, reached, not_reached, or not_required.}
   \item{semantics}{When TRUE, negotiate scientific rules and pass the complete
   contract semantics object after problem parameters in the evaluator callback.
   FALSE preserves the original five-argument callback.}
@@ -56,4 +65,5 @@ Use \code{stop(worker_error(...))} for a structured failure. Other callback erro
 are logged to stderr and produce operation_failed. Oversized failures become
 bounded internal_error responses.}
 \value{Serve functions return invisibly after shutdown or a rejected handshake.
-\code{worker_error} returns an error condition with class metewand_worker_error.}
+\code{worker_error} returns an error condition with class metewand_worker_error.
+\code{evaluation} pairs metrics with an explicit scientific verdict.}

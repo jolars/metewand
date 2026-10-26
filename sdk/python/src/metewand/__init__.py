@@ -11,7 +11,9 @@ from ._artifacts import (
 from ._canonical import CanonicalJsonError, canonical_bytes, parse_json
 from ._worker import (
     SDK_VERSION,
+    Evaluation,
     Implementation,
+    OneShotImplementation,
     ProtocolError,
     WorkerError,
     serve_dataset_materializer,
@@ -23,7 +25,9 @@ __version__ = SDK_VERSION
 
 __all__ = [
     "CanonicalJsonError",
+    "Evaluation",
     "Implementation",
+    "OneShotImplementation",
     "ProtocolError",
     "WorkerError",
     "canonical_bytes",

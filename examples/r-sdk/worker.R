@@ -17,12 +17,8 @@ prepare <- function(dataset_instance, problem_contract, problem_parameters,
 }
 
 execute <- function(state, budget, observation_control) {
-  state$answer <- sum(unlist(state$values)) + state$offset
-  state
-}
-
-result <- function(state, directory) {
-  write_result(directory, list(answer = state$answer), schema = "schemas/result.json")
+  list(answer = sum(unlist(state$values)) + state$offset,
+       input_count = length(state$values))
 }
 
 evaluate <- function(dataset_instance, problem_contract, problem_parameters,
@@ -30,9 +26,9 @@ evaluate <- function(dataset_instance, problem_contract, problem_parameters,
   values <- read_json(file.path(dataset_instance, "data.json"))$values
   answer <- read_json(file.path(result_dir, "result.json"))$data$answer
   error <- abs(answer - (sum(unlist(values)) + problem_parameters$offset))
-  write_metrics(metrics_path, list(absolute_error = error), schema = "schemas/metrics.json")
-  if (problem_semantics$validity$exact_sum && error != 0) return("invalid")
-  if (error <= problem_semantics$one_shot_completion$absolute_error) "reached" else "not_reached"
+  verdict <- if (problem_semantics$validity$exact_sum && error != 0) "invalid" else
+    if (error <= problem_semantics$one_shot_completion$absolute_error) "reached" else "not_reached"
+  evaluation(list(absolute_error = error), verdict)
 }
 
 role <- commandArgs(trailingOnly = TRUE)[[1L]]
@@ -40,9 +36,10 @@ cat(role, "stdout\n")
 cat(role, "stderr\n", file = stderr())
 switch(role,
   implementation = serve_implementation(
-    prepare, execute, result,
+    prepare, execute,
+    result_data = function(output) list(answer = output$answer),
     reset = function(state) NULL,
-    statistics = function(state) list(input_count = length(state$values))),
+    statistics = function(output) list(input_count = output$input_count)),
   dataset_materializer = serve_dataset_materializer(materialize),
   problem_evaluator = serve_evaluator(evaluate, semantics = TRUE),
   stop("Unknown worker role: ", role))

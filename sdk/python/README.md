@@ -17,6 +17,10 @@ acquisition, seeds, scheduling, worker lifecycle, artifact validation, and
 durable publication. The SDK does not set random generators or infer scientific
 semantics.
 
+For simple adapters, subclass `OneShotImplementation` and return scientific data
+from `execute`. Evaluators return `Evaluation(metrics, verdict)`. The SDK writes
+standard envelopes; custom result and metrics writers remain supported.
+
 See [the API guide](../../docs/reference/python-sdk.md) in the repository and the runnable
 [Python SDK example](../../examples/python-sdk). Run the SDK tests from the
 repository root with:

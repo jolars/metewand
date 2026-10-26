@@ -82,6 +82,15 @@ worker_error <- function(code, message, details = NULL) {
 }
 .clock <- function() .native(C_mw_clock, error = stop)
 
+evaluation <- function(metrics, verdict) {
+  .object(metrics, "Metrics data")
+  if (!is.character(verdict) || length(verdict) != 1L || is.na(verdict) ||
+      !verdict %in% c("invalid", "reached", "not_reached", "not_required")) {
+    stop("Evaluators must return a version-1 scientific verdict.", call. = FALSE)
+  }
+  structure(list(metrics = metrics, verdict = verdict), class = "metewand_evaluation")
+}
+
 .serve <- function(worker, role, reader, writer, semantics = FALSE) {
   ready <- FALSE
   prepared <- FALSE
@@ -124,7 +133,13 @@ worker_error <- function(code, message, details = NULL) {
       statistics <- if (is.function(worker$statistics)) worker$statistics(state) else NULL
       if (is.null(statistics)) statistics <- json_object()
       statistics <- .object(statistics, "Implementation statistics")
-      manifest <- .completed_manifest(request$result_dir, worker$result(state, request$result_dir))
+      result_writer <- worker[["result"]]
+      convert <- worker[["result_data"]]
+      manifest <- if (is.function(result_writer)) result_writer(state, request$result_dir) else {
+        data <- if (is.function(convert)) convert(state) else state
+        write_result(request$result_dir, data)
+      }
+      manifest <- .completed_manifest(request$result_dir, manifest)
       return(list(result = list(manifest = manifest), statistics = statistics,
                   implementation_time_ns = if (.is_integer(elapsed)) elapsed else NULL))
     } else if (method == "reset") {
@@ -140,6 +155,10 @@ worker_error <- function(code, message, details = NULL) {
       arguments <- list(request$dataset_dir, request$problem_contract_id, request$problem_parameters)
       if (semantics) arguments <- c(arguments, list(rules))
       verdict <- do.call(worker, c(arguments, list(request$result_dir, request$metrics_path)))
+      if (inherits(verdict, "metewand_evaluation")) {
+        write_metrics(request$metrics_path, verdict$metrics)
+        verdict <- verdict$verdict
+      }
       if (!is.character(verdict) || length(verdict) != 1L || is.na(verdict) ||
           !verdict %in% c("invalid", "reached", "not_reached", "not_required")) {
         stop("Evaluators must return a version-1 scientific verdict.", call. = FALSE)
@@ -184,13 +203,18 @@ worker_error <- function(code, message, details = NULL) {
   .serve(worker, role, pipes, pipes, semantics = semantics)
 }
 
-serve_implementation <- function(prepare, execute, result, reset = NULL, shutdown = NULL,
-                                 statistics = NULL, read_fd = NULL, write_fd = NULL) {
+serve_implementation <- function(prepare, execute, result = NULL, reset = NULL, shutdown = NULL,
+                                 statistics = NULL, read_fd = NULL, write_fd = NULL,
+                                 result_data = NULL) {
   callbacks <- list(prepare = prepare, execute = execute, result = result,
-                    reset = reset, shutdown = shutdown, statistics = statistics)
-  if (!all(vapply(callbacks[1:3], is.function, logical(1))) ||
-      !all(vapply(callbacks[4:6], function(f) is.null(f) || is.function(f), logical(1)))) {
-    stop("Supply prepare, execute, and result functions and optional reset, shutdown, and statistics functions.", call. = FALSE)
+                    reset = reset, shutdown = shutdown, statistics = statistics,
+                    result_data = result_data)
+  if (!all(vapply(callbacks[1:2], is.function, logical(1))) ||
+      !all(vapply(callbacks[3:7], function(f) is.null(f) || is.function(f), logical(1)))) {
+    stop("Supply prepare and execute functions; other callbacks must be functions or NULL.", call. = FALSE)
+  }
+  if (!is.null(result) && !is.null(result_data)) {
+    stop("Supply result or result_data, not both.", call. = FALSE)
   }
   .serve_fds(callbacks, "implementation", read_fd, write_fd)
 }

@@ -46,6 +46,8 @@ pub mod worker_output;
 #[cfg(unix)]
 pub mod worker_process;
 #[cfg(unix)]
+pub mod worker_sdk;
+#[cfg(unix)]
 pub mod worker_session;
 
 #[cfg(unix)]

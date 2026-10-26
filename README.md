@@ -8,11 +8,12 @@ The [website](https://metewand.org) provides a
 [getting started guide](docs/guide/getting-started.md) and
 [reference documentation](docs/reference/index.md).
 
-The local one-shot runner, durable recovery, JSONL and CSV exports, and Python
-and R SDKs are implemented. The next milestone makes local comparisons practical
-for Basin and clustlasso-cd, with simpler authoring and all three profile modes:
+The local one-shot runner, durable recovery, JSONL and CSV exports, native Rust
+helpers, and Python and R SDKs are implemented. The next milestone makes local
+comparisons practical for Basin and clustlasso-cd, with simpler authoring and all three profile modes:
 fresh sequences, streaming checkpoints, and buffered instrumented traces.
-Those profile modes and the compact authoring form are planned work.
+Those profile modes remain planned work; compact authoring supports inline
+contracts, schemas, and parameter declarations.
 [TODO.md](TODO.md) records the active roadmap; [DESIGN.md](DESIGN.md) defines
 semantics and intended interfaces.
 
@@ -40,7 +41,7 @@ Start your own benchmark with `metewand init [PATH]`, then add components with
 `metewand scaffold dataset|problem|implementation NAME --environment NAME`.
 Both commands support `--dry-run` and refuse to overwrite existing files.
 The [authoring reference](docs/reference/authoring-cli.md) describes the current
-requirements. The [examples](examples) include raw-command, Python, R,
+requirements. The [examples](examples) include raw-command, Rust, Python, R,
 dataset-free, generated-data, and parameter-matrix benchmarks.
 
 ## Architecture and interfaces
@@ -54,6 +55,7 @@ The workspace separates domain and execution layers:
 
 Core and protocol are independent foundation crates. Runtime depends on both,
 and the CLI composes all three. Workers can use the
+[native Rust helpers](docs/reference/rust-sdk.md),
 [Python SDK](docs/reference/python-sdk.md),
 [R SDK](docs/reference/r-sdk.md), or implement the
 [worker protocol](docs/reference/worker-protocol.md) directly.

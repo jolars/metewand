@@ -74,6 +74,7 @@ const reference = [
     items: [
       ['worker-protocol-framing', 'Protocol framing'],
       ['worker-protocol', 'Worker sessions'],
+      ['rust-sdk', 'Rust helpers'],
       ['python-sdk', 'Python SDK'],
       ['r-sdk', 'R SDK'],
       ['sdk-conformance', 'SDK conformance'],
@@ -144,6 +145,7 @@ export default defineConfig({
         {
           text: 'SDKs',
           items: [
+            { text: 'Rust', link: '/reference/rust-sdk' },
             { text: 'Python', link: '/reference/python-sdk' },
             { text: 'R', link: '/reference/r-sdk' },
           ],

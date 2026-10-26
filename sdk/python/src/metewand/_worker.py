@@ -6,9 +6,10 @@ import time
 import traceback
 from abc import ABC, abstractmethod
 from contextlib import ExitStack
+from dataclasses import dataclass
 from pathlib import Path
 
-from ._artifacts import _object, _output_path
+from ._artifacts import _object, _output_path, write_metrics, write_result
 from ._canonical import MAX_SAFE_INTEGER, canonical_bytes, parse_json
 
 SDK_VERSION = "0.1.0"
@@ -43,8 +44,8 @@ class WorkerError(Exception):
         self.details = details
 
 
-class Implementation(ABC):
-    """A one-shot implementation whose state belongs entirely to benchmark code."""
+class _ImplementationLifecycle(ABC):
+    """Shared lifecycle for data callbacks and custom artifact writers."""
 
     @abstractmethod
     def prepare(
@@ -64,10 +65,6 @@ class Implementation(ABC):
         Both arguments are None in the current one-shot protocol.
         """
 
-    @abstractmethod
-    def write_result(self, directory):
-        """Close all result files and return a manifest path relative to directory."""
-
     def reset(self):
         """Override to clear slot-scoped state when process reuse is appropriate."""
         raise WorkerError(
@@ -76,6 +73,52 @@ class Implementation(ABC):
 
     def shutdown(self):
         """Release benchmark-owned resources before the process exits."""
+
+
+class Implementation(_ImplementationLifecycle):
+    """An implementation with diagnostic execute output and a custom writer."""
+
+    @abstractmethod
+    def write_result(self, directory):
+        """Close all result files and return a manifest path relative to directory."""
+
+
+class OneShotImplementation(_ImplementationLifecycle):
+    """Return scientific data from execute, with optional conversion afterward.
+
+    prepare, execute, reset, and shutdown have the same arguments as Implementation.
+    execute returns the value passed to statistics and write_result. Only execute
+    is included in the SDK's diagnostic implementation time.
+    """
+
+    @abstractmethod
+    def execute(self, budget, observation_control):
+        """Run the computation and return scientific data or a solver-owned value."""
+
+    def result(self, output):
+        """Convert solver output to a JSON object outside diagnostic solve timing."""
+        return output
+
+    def statistics(self, output):
+        """Return optional diagnostic statistics outside diagnostic solve timing."""
+        return None
+
+    def write_result(self, directory, output):
+        """Write the standard envelope, or override for custom artifact files."""
+        return write_result(directory, self.result(output))
+
+
+@dataclass(frozen=True)
+class Evaluation:
+    """Evaluator-owned metric data and an explicit version-1 scientific verdict."""
+
+    metrics: dict
+    verdict: str
+
+    def __post_init__(self):
+        _object(self.metrics, "Metrics data")
+        if type(self.verdict) is not str or self.verdict not in _VERDICTS:
+            raise ValueError("Evaluators must return a version-1 scientific verdict.")
 
 
 _FIELDS = {
@@ -253,8 +296,10 @@ class _Dispatcher:
             self.prepared = False
             execute = self.worker.execute
             start = time.perf_counter_ns()
-            statistics = execute(None, None)
+            output = execute(None, None)
             elapsed = time.perf_counter_ns() - start
+            data_callback = isinstance(self.worker, OneShotImplementation)
+            statistics = self.worker.statistics(output) if data_callback else output
             statistics = (
                 {}
                 if statistics is None
@@ -262,7 +307,9 @@ class _Dispatcher:
             )
             directory = Path(request["result_dir"])
             manifest = _completed_manifest(
-                directory, self.worker.write_result(directory)
+                directory,
+                self.worker.write_result(directory, output)
+                if data_callback else self.worker.write_result(directory),
             )
             return {
                 "result": {"manifest": manifest},
@@ -293,6 +340,9 @@ class _Dispatcher:
                 Path(request["result_dir"]),
                 metrics_path,
             )
+            if isinstance(verdict, Evaluation):
+                write_metrics(metrics_path, verdict.metrics)
+                verdict = verdict.verdict
             if type(verdict) is not str or verdict not in _VERDICTS:
                 raise ValueError(
                     "Evaluators must return a version-1 scientific verdict."
@@ -386,8 +436,8 @@ def _serve_fds(worker, role, read_fd, write_fd, semantics=False):
 
 def serve_implementation(implementation, *, read_fd=None, write_fd=None):
     """Serve a one-shot Implementation on inherited or explicitly supplied pipes."""
-    if not isinstance(implementation, Implementation):
-        raise TypeError("Expected an Implementation instance.")
+    if not isinstance(implementation, (Implementation, OneShotImplementation)):
+        raise TypeError("Expected an Implementation or OneShotImplementation instance.")
     _serve_fds(implementation, "implementation", read_fd, write_fd)
 
 
@@ -404,8 +454,9 @@ def serve_dataset_materializer(materialize, *, read_fd=None, write_fd=None):
 def serve_evaluator(evaluate, *, semantics=False, read_fd=None, write_fd=None):
     """Serve evaluate(dataset, contract, parameters, result_dir, metrics_path).
 
-    The callback writes metrics and returns invalid, reached, not_reached, or
-    not_required. Only benchmark-owned evaluator code supplies this verdict.
+    Return Evaluation(metrics, verdict) to write the standard envelope, or write
+    metrics directly and return invalid, reached, not_reached, or not_required.
+    Only benchmark-owned evaluator code supplies this verdict.
     With semantics=True, declared scientific rules follow parameters in the callback.
     """
     if not callable(evaluate):

@@ -9,7 +9,9 @@ from unittest.mock import patch
 
 from metewand import (
     CanonicalJsonError,
+    Evaluation,
     Implementation,
+    OneShotImplementation,
     WorkerError,
     canonical_bytes,
     file_entry,
@@ -189,6 +191,95 @@ class ArtifactTests(unittest.TestCase):
 
 
 class WorkerTests(unittest.TestCase):
+    def test_data_callbacks_retain_custom_writers_and_consume_failed_results(self):
+        class Solver(OneShotImplementation):
+            def prepare(self, *args):
+                pass
+
+            def execute(self, *args):
+                return {"answer": 8}
+
+            def write_result(self, directory, output):
+                write_json(directory / "answer.json", output)
+                return write_result(directory, output, manifest="custom.json",
+                    files=[file_entry(directory, "answer.json", "application/json")])
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            calls = [hello(), request("prepare", dataset_dir=directory,
+                problem_contract_id="c", problem_parameters={},
+                implementation_parameters={}, implementation_seed=0),
+                request("execute", result_dir=directory), request("shutdown")]
+            responses = exchange(Solver(), "implementation", calls)
+            self.assertEqual(responses[2]["result"], {"manifest": "custom.json"})
+            self.assertEqual(read_json(root / "answer.json"), {"answer": 8})
+            self.assertEqual(read_json(root / "custom.json")["files"][0]["path"], "answer.json")
+
+            class Invalid(Solver):
+                def result(self, output):
+                    return {"answer": float("nan")}
+
+                write_result = OneShotImplementation.write_result
+
+            with redirect_stderr(io.StringIO()):
+                responses = exchange(Invalid(), "implementation", calls[:-1] + calls[-2:])
+            self.assertEqual(responses[2]["error"]["code"], "operation_failed")
+            self.assertEqual(responses[3]["error"]["code"], "invalid_request")
+
+    def test_data_callbacks_write_envelopes_outside_solve_timing(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            events = []
+
+            class Solver(OneShotImplementation):
+                def prepare(self, dataset, contract, problem, implementation, seed):
+                    self.value = problem["offset"]
+
+                def execute(self, budget, observation_control):
+                    events.append("solve")
+                    return self.value + 6
+
+                def result(self, output):
+                    events.append("convert")
+                    return {"answer": output}
+
+                def statistics(self, output):
+                    events.append("statistics")
+                    return {"iterations": 1}
+
+            def clock():
+                events.append("clock")
+                return len(events)
+
+            with patch("metewand._worker.time.perf_counter_ns", side_effect=clock):
+                responses = exchange(Solver(), "implementation", [
+                    hello(), request("prepare", dataset_dir=directory,
+                        problem_contract_id="c", problem_parameters={"offset": 2},
+                        implementation_parameters={}, implementation_seed=0),
+                    request("execute", result_dir=directory), request("shutdown"),
+                ])
+            self.assertEqual(events, ["clock", "solve", "clock", "statistics", "convert"])
+            self.assertEqual(responses[2]["implementation_time_ns"], 2)
+            self.assertEqual(responses[2]["statistics"], {"iterations": 1})
+            self.assertEqual((root / "result.json").read_bytes(),
+                b'{"data":{"answer":8},"files":[],"schema_version":1}')
+
+            def evaluate(dataset, contract, parameters, semantics, result, metrics):
+                return Evaluation({"error": 1}, "not_reached")
+
+            responses = exchange(evaluate, "problem_evaluator", [
+                hello("problem_evaluator"), request("evaluate", dataset_dir=directory,
+                    problem_contract_id="c", problem_parameters={}, problem_semantics={},
+                    result_dir=directory, metrics_path=str(root / "assigned.json")),
+                request("shutdown"),
+            ], semantics=True)
+            self.assertEqual(responses[1]["verdict"], "not_reached")
+            self.assertEqual((root / "assigned.json").read_bytes(),
+                b'{"data":{"error":1},"schema_version":1}')
+            for metrics, verdict in [({}, "yes"), ([], "reached"), ({"x": float("nan")}, "invalid")]:
+                with self.subTest(metrics=metrics, verdict=verdict), self.assertRaises(ValueError):
+                    Evaluation(metrics, verdict)
+
     def test_evaluator_negotiates_scientific_rules_and_rejects_bad_shapes(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

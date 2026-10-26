@@ -245,6 +245,29 @@ responses <- exchange(fail, "dataset_materializer", list(
 stopifnot(responses[[2]]$error$code == "internal_error")
 fails(metewand:::.encode_failure(strrep("i", limit), worker_error("operation_failed", "bad")),
       "metewand_protocol_error")
+write_json(file.path(directory, "data.json"), list(values = list(1, 2, 3)))
+data_worker <- worker
+data_worker$execute <- function(state, budget, observation_control) list(answer = state$answer)
+data_worker$result <- NULL
+responses <- exchange(data_worker, "implementation", list(hello(), prepare_request,
+  request("execute", result_dir = directory), request("shutdown")))
+stopifnot(responses[[3]]$ok,
+          text(read_json(file.path(directory, "result.json"))) ==
+            '{"data":{"answer":8},"files":[],"schema_version":1}')
+data_worker$execute <- function(state, budget, observation_control) state$answer
+data_worker$result_data <- function(output) list(answer = output)
+responses <- exchange(data_worker, "implementation", list(hello(), prepare_request,
+  request("execute", result_dir = directory), request("shutdown")))
+stopifnot(responses[[3]]$ok, read_json(file.path(directory, "result.json"))$data$answer == 8)
+evaluate_data <- function(...) evaluation(list(error = 1), "not_reached")
+responses <- exchange(evaluate_data, "problem_evaluator", list(
+  hello("problem_evaluator"), evaluate_request, request("shutdown")))
+stopifnot(responses[[2]]$verdict == "not_reached",
+          text(read_json(evaluate_request$metrics_path)) ==
+            '{"data":{"error":1},"schema_version":1}')
+fails(evaluation(list(error = 0), "invented"))
+fails(evaluation(list(), "reached"))
+fails(evaluation(list(error = NaN), "invalid"))
 fails(serve_implementation(NULL, function(...) NULL, function(...) NULL))
 fails(serve_dataset_materializer(NULL))
 fails(serve_evaluator(NULL))

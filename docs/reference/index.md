@@ -38,7 +38,7 @@ explicit recovery.
 ## Worker protocol and SDKs
 
 The [worker protocol](worker-protocol.md) defines communication between Metewand
-and worker processes. The [Python SDK](python-sdk.md) and [R SDK](r-sdk.md)
+and worker processes. The [Rust helpers](rust-sdk.md), [Python SDK](python-sdk.md), and [R SDK](r-sdk.md)
 provide callback dispatch, serialization, output helpers, and structured errors.
 [Shared conformance suites](sdk-conformance.md) check their compatibility with
 the Rust implementation.

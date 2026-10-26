@@ -164,4 +164,24 @@ responses <- with_bindings(list(.clock = clock, .encode_response = inspect),
     request("execute", result_dir = directory), request("shutdown"))))
 stopifnot(identical(events, c("prepare", "clock", "execute", "clock", "statistics", "result", "reply")),
           responses[[3]]$implementation_time_ns == 25)
+events <- character()
+callbacks$result <- NULL
+callbacks$result_data <- function(state) {
+  events <<- c(events, "convert")
+  list(answer = state$answer)
+}
+inspect <- function(response) {
+  if (!is.null(response$result)) {
+    events <<- c(events, "reply")
+    stopifnot(read_json(file.path(directory, response$result$manifest))$data$answer == 7)
+  }
+  encode(response)
+}
+responses <- with_bindings(list(.clock = clock, .encode_response = inspect),
+  exchange(callbacks, "implementation", list(hello(),
+    request("prepare", dataset_dir = directory, problem_contract_id = "c", problem_parameters = json_object(),
+            implementation_parameters = json_object(), implementation_seed = 23),
+    request("execute", result_dir = directory), request("shutdown"))))
+stopifnot(identical(events, c("prepare", "clock", "execute", "clock", "statistics", "convert", "reply")),
+          responses[[3]]$implementation_time_ns == 25)
 unlink(directory, recursive = TRUE)

@@ -9,25 +9,23 @@ by the trusted local launcher.
 
 ## Implementation workers
 
-Subclass `Implementation` and pass an instance to `serve_implementation`:
+Subclass `OneShotImplementation` and pass an instance to `serve_implementation`:
 
 ```python
-from metewand import Implementation, read_json, serve_implementation, write_result
+from metewand import OneShotImplementation, read_json, serve_implementation
 
 
-class Sum(Implementation):
+class Sum(OneShotImplementation):
     def prepare(self, dataset_instance, problem_contract, problem_parameters,
                 implementation_parameters, seed):
         self.values = read_json(dataset_instance / "data.json")["values"]
         self.offset = problem_parameters["offset"]
 
     def execute(self, budget, observation_control):
-        self.answer = sum(self.values) + self.offset
-        return {"input_count": len(self.values)}
+        return {"answer": sum(self.values) + self.offset}
 
-    def write_result(self, directory):
-        return write_result(directory, {"answer": self.answer},
-                            schema="schemas/result.json")
+    def statistics(self, output):
+        return {"input_count": len(self.values)}
 
     def reset(self):
         self.__dict__.clear()
@@ -42,11 +40,20 @@ nonnegative 53-bit implementation seed. Each call must establish clean state.
 Benchmark code chooses how its own random generators consume the supplied seed.
 
 `execute` receives `None` for both budget and observation control in the current
-one-shot protocol. It returns a JSON object of diagnostic statistics, or `None`
-for an empty object. Store the computed result on the instance for
-`write_result`, which receives the assigned result directory as a `Path` and
-returns the relative path of a completed result manifest. The SDK replies only
-after `write_result` returns and that manifest exists. Callbacks must close all
+one-shot protocol. It returns scientific result data as a JSON object. The SDK
+writes `result.json` with the standard version-1 envelope and an empty file
+inventory. For a solver that returns its own object, override `result(output)`
+to convert it to scientific JSON data. This conversion and the optional
+`statistics(output)` callback run after diagnostic solve timing. Statistics
+must be a JSON object or `None`; they never replace independent metrics.
+
+Override `write_result(directory, output)` to write custom artifact files and
+return a completed manifest path relative to the assigned `Path`. The existing
+`Implementation` class also remains available: its `execute` returns diagnostic
+statistics, and its required `write_result(directory)` writes benchmark-owned
+results stored on the instance. Existing callbacks keep their original meaning.
+
+The SDK replies only after the result manifest exists. Callbacks must close all
 files before returning. An execution requires a successful preparation and
 consumes that prepared state, including when execution fails.
 
@@ -98,7 +105,7 @@ download inputs or publish dataset instances.
 Pass a problem-owned evaluation function to `serve_evaluator`:
 
 ```python
-from metewand import read_json, serve_evaluator, write_metrics
+from metewand import Evaluation, read_json, serve_evaluator
 
 
 def evaluate(dataset_instance, problem_contract, problem_parameters,
@@ -107,10 +114,9 @@ def evaluate(dataset_instance, problem_contract, problem_parameters,
     expected = sum(values) + problem_parameters["offset"]
     actual = read_json(result_dir / "result.json")["data"]["answer"]
     error = abs(actual - expected)
-    write_metrics(metrics_path, {"absolute_error": error},
-                  schema="schemas/metrics.json")
     target = problem_semantics["one_shot_completion"]["absolute_error"]
-    return "reached" if error <= target else "not_reached"
+    return Evaluation({"absolute_error": error},
+                      "reached" if error <= target else "not_reached")
 
 
 serve_evaluator(evaluate, semantics=True)
@@ -118,8 +124,11 @@ serve_evaluator(evaluate, semantics=True)
 
 The callback receives dataset and result directories as `Path` objects, the
 problem contract identity, the resolved problem parameter dictionary, the
-canonical scientific rules, and the exact assigned metrics path. It writes and closes the metrics document before
-returning one of `invalid`, `reached`, `not_reached`, or `not_required`. The SDK
+canonical scientific rules, and the exact assigned metrics path. Return
+`Evaluation(metrics, verdict)` to have the SDK write and close the standard
+metrics envelope at that path. Metrics must be a canonical JSON object, and the
+verdict must be `invalid`, `reached`, `not_reached`, or `not_required`. A custom
+callback can still write metrics itself and return the verdict string. The SDK
 does not compute metrics or infer a verdict. Metewand independently validates
 the result and metrics against the problem's schemas and applies the observation
 policy.

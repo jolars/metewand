@@ -34,3 +34,7 @@ rusqlite = { version = "0.40.2", features = ["trace"] }
 [[example]]
 name = "datamonger"
 path = "../../examples/datamonger/main.rs"
+
+[[example]]
+name = "rust-worker"
+path = "../../examples/rust-sdk/main.rs"

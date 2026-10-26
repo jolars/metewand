@@ -116,7 +116,7 @@ a new compatibility review is a prerequisite.
   declaration, with an independent evaluator and reference cases. Pass the
   resolved scientific rules to the evaluator so authors do not repeat declared
   tolerances or other constants in evaluator code.
-- [ ] Provide small Rust worker helpers for Basin and improve the Python and R
+- [x] Provide small Rust worker helpers for Basin and improve the Python and R
   helpers where adopters still write protocol boilerplate. Let simple one-shot
   adapters return result data, and evaluators return metric data and an explicit
   verdict; helpers handle handshakes, transport, errors, standard envelopes, and

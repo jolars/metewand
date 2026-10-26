@@ -16,6 +16,11 @@ reports structured failures. Metewand owns environments, source acquisition,
 seeds, scheduling, validation, and publication. Benchmark code owns scientific
 semantics and its random generators.
 
+Simple implementations return scientific data from `execute`; optional
+`result_data` converts solver state after diagnostic timing. Evaluators return
+`evaluation(metrics, verdict)`. The SDK writes standard envelopes, while custom
+`result` writers and evaluator-written metrics remain supported.
+
 See the [API guide](../../docs/reference/r-sdk.md) and the runnable
 [R SDK example](../../examples/r-sdk). The normal Rust workspace tests install
 the SDK into temporary libraries, run its contracts, and exercise all three

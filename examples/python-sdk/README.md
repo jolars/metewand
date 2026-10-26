@@ -9,8 +9,9 @@ and evaluator live directly under `problems.sum` in `metewand.yaml`, with no
 `contract` wrapper or separate family semantics schema. Result and metric shapes
 use compact declarations.
 The dataset schema uses a YAML anchor so the dataset and problem share one
-declaration. The worker writes result and metric envelopes without schema paths;
-Metewand validates them against the selected problem contract.
+declaration. The adapters return result data and an explicit metric verdict;
+the SDK writes the envelopes, and Metewand validates them against the selected
+problem contract.
 
 From the repository root, copy the example and SDK into a temporary benchmark
 directory and run it:
@@ -31,7 +32,7 @@ or later must be on `PATH`. The SDK has no runtime dependencies.
 
 Both observations contain `{"answer":8}` and evaluator metrics
 `{"absolute_error":0}`. Dataset construction happens once. `prepare` loads the
-private dataset view, `execute` computes the answer, and `write_result` writes
+private dataset view, `execute` returns the answer, and the SDK writes
 the completed result envelope. The `prepare_and_execute` scope includes all
 three operations; the secondary SDK `implementation_time_ns` covers only the
 `execute` callback. The runtime resets the implementation between slots.

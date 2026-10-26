@@ -26,14 +26,11 @@ serve_implementation(
          offset = problem_parameters$offset)
   },
   execute = function(state, budget, observation_control) {
-    state$answer <- sum(unlist(state$values)) + state$offset
-    state
+    list(answer = sum(unlist(state$values)) + state$offset,
+         input_count = length(state$values))
   },
-  result = function(state, directory) {
-    write_result(directory, list(answer = state$answer),
-                 schema = "schemas/result.json")
-  },
-  statistics = function(state) list(input_count = length(state$values)),
+  result_data = function(output) list(answer = output$answer),
+  statistics = function(output) list(input_count = output$input_count),
   reset = function(state) NULL
 )
 ```
@@ -44,15 +41,21 @@ as strings, two resolved parameter objects as lists, and the supplied nonnegativ
 every call and returns the state passed to `execute`. Benchmark code chooses
 how its random generators consume the seed; the SDK never calls `set.seed`.
 
-`execute(state, budget, observation_control)` returns the state passed to the
-result writer and optional statistics callback. Budget and observation control
+`execute(state, budget, observation_control)` returns scientific result data or
+the state passed to conversion and statistics callbacks. Budget and observation control
 are both `NULL` in the current one-shot protocol. State can be any R value,
 including an environment or a library object; only values passed to JSON helpers
 must obey the canonical restrictions below.
 
-`result(state, directory)` writes and closes all result files, then returns a
-manifest path relative to the assigned directory. The SDK replies only after
-this callback returns and the manifest exists. `statistics(state)` optionally
+Omit `result` to have the SDK write `result.json` with the standard envelope and
+an empty file inventory. Without `result_data`, the execute output must be a JSON
+object. For a solver that returns its own state, supply `result_data(state)` to
+convert it to a scientific JSON object after diagnostic solve timing.
+
+The optional `result(state, directory)` remains the custom artifact writer. It
+writes and closes all result files, then returns a manifest path relative to
+the assigned directory. Supply either `result` or `result_data`. The SDK replies
+only after the manifest exists. `statistics(state)` optionally
 returns a JSON object of diagnostic statistics; omission or `NULL` produces an
 empty object. These diagnostics never replace independently evaluated metrics.
 
@@ -94,16 +97,18 @@ serve_evaluator(function(dataset_instance, problem_contract, problem_parameters,
   values <- read_json(file.path(dataset_instance, "data.json"))$values
   actual <- read_json(file.path(result_dir, "result.json"))$data$answer
   error <- abs(actual - (sum(unlist(values)) + problem_parameters$offset))
-  write_metrics(metrics_path, list(absolute_error = error),
-                schema = "schemas/metrics.json")
   target <- problem_semantics$one_shot_completion$absolute_error
-  if (error <= target) "reached" else "not_reached"
+  evaluation(list(absolute_error = error),
+             if (error <= target) "reached" else "not_reached")
 }, semantics = TRUE)
 ```
 
 The callback receives directory strings, the problem contract identity, resolved
 problem parameters, canonical scientific rules, and the exact assigned metrics
-path. It writes and closes metrics before returning `invalid`, `reached`, `not_reached`, or `not_required`.
+path. Return `evaluation(metrics, verdict)` to have the SDK write and close the
+standard metrics envelope. Metrics must be a canonical JSON object; the verdict
+must be `invalid`, `reached`, `not_reached`, or `not_required`. A custom evaluator
+can still write metrics itself and return the verdict string.
 Only user-supplied evaluator code computes trusted metrics and chooses a verdict.
 Metewand independently validates all outputs against the problem's schemas.
 

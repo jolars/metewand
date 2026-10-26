@@ -2154,9 +2154,13 @@ knowledge of the orchestrator internals. Add callbacks as adopter workflows
 need them. The Julia SDK follows the local MVP; raw executables, including
 Rust workers, can use the protocol directly.
 
-Planned one-shot convenience callbacks should let an implementation return
+One-shot convenience callbacks let an implementation return
 scientific result data and an evaluator return metric data with an explicit
-validity and completion verdict. Helpers handle handshakes, protocol transport,
+validity and completion verdict. Rust helpers live in
+`metewand_runtime::worker_sdk`; Python provides `OneShotImplementation` and
+`Evaluation`; R accepts execute output with optional `result_data` conversion
+and provides `evaluation`. Existing lifecycle callbacks and custom writers
+remain available. Helpers handle handshakes, protocol transport,
 errors, standard artifact envelopes, and artifact writing. Adapters retain
 dataset preparation, solving, scientific result conversion, and metric
 formulas. Give evaluators the resolved scientific rules so manifest settings

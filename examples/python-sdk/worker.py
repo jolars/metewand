@@ -4,7 +4,8 @@ import math
 import sys
 
 from metewand import (
-    Implementation,
+    Evaluation,
+    OneShotImplementation,
     file_entry,
     read_json,
     serve_dataset_materializer,
@@ -12,8 +13,6 @@ from metewand import (
     serve_implementation,
     write_dataset_manifest,
     write_json,
-    write_metrics,
-    write_result,
 )
 
 
@@ -26,7 +25,7 @@ def materialize(source_dir, dataset_parameters, seed, output_dir):
     )
 
 
-class Sum(Implementation):
+class Sum(OneShotImplementation):
     def prepare(
         self,
         dataset_instance,
@@ -40,10 +39,10 @@ class Sum(Implementation):
 
     def execute(self, budget, observation_control):
         self.answer = sum(self.values) + self.offset
-        return {"input_count": len(self.values)}
+        return {"answer": self.answer}
 
-    def write_result(self, directory):
-        return write_result(directory, {"answer": self.answer})
+    def statistics(self, output):
+        return {"input_count": len(self.values)}
 
     def reset(self):
         self.__dict__.clear()
@@ -60,11 +59,11 @@ def evaluate(
     values = read_json(dataset_instance / "data.json")["values"]
     answer = read_json(result_dir / "result.json")["data"]["answer"]
     error = abs(answer - (sum(values) + problem_parameters["offset"]))
-    write_metrics(metrics_path, {"absolute_error": error})
     if problem_semantics["validity"]["finite_integer"] and not math.isfinite(answer):
-        return "invalid"
+        return Evaluation({"absolute_error": error}, "invalid")
     target = problem_semantics["one_shot_completion"]["absolute_error"]
-    return "reached" if error <= target else "not_reached"
+    return Evaluation({"absolute_error": error},
+                      "reached" if error <= target else "not_reached")
 
 
 if __name__ == "__main__":

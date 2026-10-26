@@ -1,0 +1,76 @@
+version: 1
+name: rust-sdk
+datasets:
+  numbers:
+    output-schema: &dataset-schema
+      type: object
+      properties:
+        schema_version: { const: 1 }
+        complete: { const: true }
+        files:
+          type: array
+          minItems: 1
+          maxItems: 1
+          items:
+            type: object
+            properties: { path: { const: data.json } }
+            required: [path]
+      required: [schema_version, complete, files]
+    sources: [data.json]
+problems:
+  sum:
+    family: arithmetic
+    parameters:
+      offset: { type: integer, default: 2 }
+    dataset-schemas: [*dataset-schema]
+    result:
+      answer: integer
+    metrics:
+      absolute_error: { type: integer, minimum: 0 }
+    allowed-timing-scopes: [prepare_and_execute]
+    supported-budgets: [none]
+    semantics:
+      preprocessing:
+        shared_materialization: fixed_integer_json
+        implementation_conversion: preserve_integer_values_and_order
+        allowed_outside_timed_scope: []
+      validity: { finite_integer: true }
+      one_shot_completion: { absolute_error: 0 }
+    reference-cases:
+      - dataset: data.json
+        result: reference/result.json
+        expected-metrics: reference/metrics.json
+    evaluator:
+      runner: command
+      program: ./worker
+      args: [problem_evaluator]
+      sources: [worker]
+implementations:
+  reference:
+    runner: command
+    program: ./worker
+    args: [implementation]
+    sources: [worker]
+    problem-contracts: [sum]
+    capabilities: [one_shot]
+    parameters:
+      bias: { type: integer, default: 0 }
+experiments:
+  - name: main
+    problem: sum
+    datasets: [numbers]
+    implementations: [reference]
+    measurement-repetitions: 2
+    execution-policy: local
+    observation-policy: final
+    seed: 7
+execution-policies:
+  local:
+    version: 1
+    timing-scope: prepare_and_execute
+    primary-time: timed_wall_time
+    worker-reuse: true
+observation-policies:
+  final:
+    version: 1
+    kind: one_shot
