@@ -664,6 +664,7 @@ fn nix_output_kind(kind: NixOutputKind) -> &'static str {
 fn implementation_capability(capability: ImplementationCapability) -> &'static str {
     match capability {
         ImplementationCapability::OneShot => "one_shot",
+        ImplementationCapability::Applicability => "applicability",
     }
 }
 

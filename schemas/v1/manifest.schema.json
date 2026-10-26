@@ -223,7 +223,9 @@
         "parameter-defaults": { "type": "object" },
         "capabilities": {
           "type": "array",
-          "const": ["one_shot"]
+          "items": {"enum": ["one_shot", "applicability"]},
+          "contains": {"const": "one_shot"},
+          "uniqueItems": true
         }
       },
       "required": ["problem-contracts", "capabilities"],

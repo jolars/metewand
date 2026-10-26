@@ -111,12 +111,15 @@ original wire shape. Python and R SDKs require explicit opt-in through
 execution semantics. Older runtimes reject this new capability; pin a matching
 Metewand revision when opting in.
 
-Applicability selection, profiles, scientific budgets, and instrumentation
-settings remain planned implementation work.
+Profiles, scientific budgets, and instrumentation settings remain planned
+implementation work. Applicability is optional alongside `one_shot`. Plans
+record unchecked candidates; resolution records support decisions and binds
+checked evidence to resolved execution identities. Unconditional execution
+identities and persisted records retain their existing representation.
 
-The handshake recognizes `applicability`, `fresh_sequence`, and
-`streaming_profile` as capability metadata, but their work exchanges are not
-implemented. `buffered_profile` is absent from the current capability set.
+The handshake and typed session implement `check_applicability`.
+`fresh_sequence` and `streaming_profile` remain capability metadata whose work
+exchanges are not implemented. `buffered_profile` is absent from the current capability set.
 The current `execute` request admits only `id`, `method`, and
 `result_dir`.
 

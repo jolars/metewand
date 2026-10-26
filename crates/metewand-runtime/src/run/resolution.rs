@@ -72,6 +72,8 @@ pub(super) struct ResolvedBatch {
 
 pub(super) struct ResolvedCandidate {
     pub experiment: String,
+    pub logical_selection_ids: Vec<String>,
+    pub applicability: IdentifiedRecord<metewand_core::applicability::ApplicabilityDecisionRecord>,
     pub dataset: Arc<DatasetSnapshot>,
     pub implementation: ResolvedWorker,
     pub evaluator: ResolvedWorker,
@@ -118,6 +120,7 @@ pub(super) struct Snapshot {
 }
 
 pub(super) struct DatasetSnapshot {
+    manifest: Option<String>,
     pub materialization_time_ns: Measurement,
     pub artifact: StoredArtifact,
     original: Option<Snapshot>,
@@ -380,6 +383,12 @@ pub(super) fn resolve(
                             materialization_time_ns: Measurement::unavailable(
                                 MissingReason::ProvidedDataset,
                             ),
+                            manifest: snapshot
+                                .directory
+                                .path()
+                                .join("dataset-manifest.json")
+                                .exists()
+                                .then(|| "dataset-manifest.json".into()),
                             artifact,
                             original: Some(snapshot),
                         }),
@@ -407,7 +416,7 @@ pub(super) fn resolve(
                         source.as_ref(),
                         &materializer.record,
                     )?;
-                    let (artifact, provenance, materialization_time_ns) =
+                    let (artifact, provenance, materialization_time_ns, manifest) =
                         if let Some(cached) = store.lookup_dataset(&derivation)? {
                             WorkerOutputValidator::new(&repository.schemas)?
                                 .validate_materialized_dataset(
@@ -422,6 +431,7 @@ pub(super) fn resolve(
                                 cached.artifact,
                                 cached.provenance,
                                 Measurement::unavailable(MissingReason::CacheHit),
+                                cached.manifest.as_path().to_string_lossy().into_owned(),
                             )
                         } else {
                             let materialized = materialize_dataset(DatasetMaterialization {
@@ -441,12 +451,18 @@ pub(super) fn resolve(
                                 artifact,
                                 materialized.provenance.clone(),
                                 materialized.materialization_time_ns,
+                                materialized
+                                    .manifest
+                                    .manifest_path()
+                                    .to_string_lossy()
+                                    .into_owned(),
                             )
                         };
                     materializer.verify()?;
                     (
                         Arc::new(DatasetSnapshot {
                             materialization_time_ns,
+                            manifest: Some(manifest),
                             artifact,
                             original: None,
                         }),
@@ -670,9 +686,25 @@ fn resolve_candidate(
         .expect("checked plan problem definition")
         .0;
     let contract = &repository.problem_contracts[problem_name];
+    let applicability = resolve_applicability(
+        candidate,
+        &implementation,
+        &dataset,
+        dataset_instance.id,
+        repository.resources.problem_contracts[problem_name].to_string(),
+        &policy,
+    )?;
     let mut measurements = Vec::new();
-    for specification in &candidate.specifications {
+    for specification in candidate.specifications.iter().filter(|_| {
+        applicability.record.outcome
+            != metewand_core::applicability::ApplicabilityOutcome::NotApplicable
+    }) {
         let resolved = identify_record(ResolvedOneShotSpecificationRecord {
+            applicability: applicability
+                .record
+                .checked_inputs
+                .as_ref()
+                .map(|_| applicability.id),
             logical_specification: specification.specification.id,
             problem_instance: problem_instance.id,
             implementation: implementation.record.clone(),
@@ -730,6 +762,7 @@ fn resolve_candidate(
                 specification: resolved.id,
             })?;
             let provenance = canonical(json!({
+                "applicability": applicability.record,
                 "controls": metewand_core::controls::local_control_report(&policy),
                 "execution_policy": record_document(&policy)?,
                 "manifest_hash": repository.manifest_hash.to_string(),
@@ -784,7 +817,11 @@ fn resolve_candidate(
                     attempt_slot.id.to_string(),
                     logical_observation.id.to_string(),
                     observation_slot.id.to_string(),
-                    format!("run-store-v1:unconditional:{}", candidate.candidate.id),
+                    if applicability.record.checked_inputs.is_some() {
+                        applicability.id.to_string()
+                    } else {
+                        format!("run-store-v1:unconditional:{}", candidate.candidate.id)
+                    },
                 ],
                 scheduling,
                 warmups: warmups.clone(),
@@ -804,6 +841,14 @@ fn resolve_candidate(
     };
     Ok(ResolvedCandidate {
         experiment: experiment.name.to_string(),
+        applicability,
+        logical_selection_ids: std::iter::once(candidate.candidate.id.to_string())
+            .chain(candidate.specifications.iter().flat_map(|s| {
+                std::iter::once(s.specification.id.to_string())
+                    .chain(s.attempt_slots.iter().map(|slot| slot.id.to_string()))
+                    .chain(s.observation_slots.iter().map(|slot| slot.id.to_string()))
+            }))
+            .collect(),
         reuse_key,
         dataset,
         implementation,
@@ -828,6 +873,138 @@ fn resolve_candidate(
         timeouts: PhaseTimeouts::default(),
         timing,
     })
+}
+
+fn resolve_applicability(
+    candidate: &LogicalCandidatePlan,
+    implementation: &ResolvedWorker,
+    dataset: &DatasetSnapshot,
+    dataset_instance: RecordId<DatasetInstanceRecord>,
+    contract_id: String,
+    policy: &metewand_core::records::ExecutionPolicyRecord,
+) -> Result<IdentifiedRecord<metewand_core::applicability::ApplicabilityDecisionRecord>, RunError> {
+    use metewand_core::{
+        applicability::{ApplicabilityDecisionRecord, ApplicabilityOutcome},
+        manifest::ImplementationCapability,
+    };
+    let declared = candidate
+        .implementation_capabilities
+        .iter()
+        .any(|c| c.capability == ImplementationCapability::Applicability);
+    if !declared {
+        return Ok(identify_record(ApplicabilityDecisionRecord {
+            candidate_id: candidate.candidate.id,
+            outcome: ApplicabilityOutcome::Applicable,
+            code: "unconditional_one_shot".into(),
+            reason: "The implementation declares support for every admitted configuration.".into(),
+            checked_inputs: None,
+            evidence: None,
+            details: None,
+        })?);
+    }
+    let private = Builder::new().prefix("metewand-applicability-").tempdir()?;
+    let view = dataset.artifact.private_view(private.path())?;
+    let manifest_path = if let Some(path) = &dataset.manifest {
+        view.directory().join(path)
+    } else {
+        let path = private.path().join("unit-dataset-manifest.json");
+        fs::write(
+            &path,
+            b"{\"complete\":true,\"files\":[],\"schema_version\":1}",
+        )?;
+        path
+    };
+    let manifest = CanonicalValue::from_slice(&fs::read(&manifest_path)?)?;
+    let problem_parameters = candidate
+        .problem_configuration
+        .record
+        .parameters
+        .as_json()
+        .clone();
+    let implementation_parameters = candidate
+        .implementation_configuration
+        .record
+        .parameters
+        .as_json()
+        .clone();
+    let checked_inputs = canonical(json!({
+        "dataset_instance": dataset_instance,
+        "dataset_manifest": manifest.as_json(),
+        "dataset_manifest_path": dataset.manifest,
+        "problem_contract_id": contract_id,
+        "problem_parameters": problem_parameters,
+        "implementation_parameters": implementation_parameters,
+    }))?;
+    implementation.verify()?;
+    dataset.verify()?;
+    let checked = (|| {
+        let process = crate::local_worker::launch_trusted_local_worker(
+            &implementation.launch,
+            private.path(),
+            WorkerLogLimits::new(64 * 1024, 64 * 1024),
+        )?;
+        let mut session = crate::worker_session::WorkerSession::connect(
+            process,
+            metewand_protocol::WorkerRole::Implementation,
+            implementation.identity.clone(),
+            &[metewand_protocol::Capability::Applicability],
+            PhaseTimeouts::default(),
+        )?;
+        let environment = session.environment().map(|environment| {
+            let directory = environment.working_directory.to_string_lossy();
+            let private_directory = private.path().to_string_lossy();
+            let variables: BTreeMap<_, _> = environment
+                .environment_variables
+                .iter()
+                .map(|(key, value)| {
+                    (
+                        key.clone(),
+                        value
+                            .replace(directory.as_ref(), "{worker}")
+                            .replace(private_directory.as_ref(), "{private}"),
+                    )
+                })
+                .collect();
+            json!({"version": environment.version, "working_directory": "{worker}",
+                "environment_variables": variables, "umask": environment.umask})
+        });
+        let checked = session.check_applicability(
+            view.directory().to_string_lossy().into_owned(),
+            manifest_path.to_string_lossy().into_owned(),
+            contract_id,
+            problem_parameters,
+            implementation_parameters,
+        );
+        let stopped = session.shutdown();
+        let (_, response) = checked?;
+        stopped?;
+        Ok::<_, RunError>((response, environment))
+    })();
+    // Verify after every exit path, including handshake and callback failures.
+    view.verify()?;
+    dataset.verify()?;
+    implementation.verify()?;
+    if CanonicalValue::from_slice(&fs::read(&manifest_path)?)? != manifest {
+        return Err(RunError::ChangedInput);
+    }
+    let (response, environment) = checked?;
+    let outcome = match response.outcome {
+        metewand_protocol::ApplicabilityOutcome::Applicable => ApplicabilityOutcome::Applicable,
+        metewand_protocol::ApplicabilityOutcome::NotApplicable => {
+            ApplicabilityOutcome::NotApplicable
+        }
+    };
+    Ok(identify_record(ApplicabilityDecisionRecord {
+        candidate_id: candidate.candidate.id,
+        outcome,
+        code: response.code,
+        reason: response.reason,
+        checked_inputs: Some(checked_inputs.as_json().clone()),
+        details: response.details,
+        evidence: Some(json!({"worker": record_document(&implementation.record)?,
+            "wire_protocol_version": metewand_protocol::WIRE_PROTOCOL_VERSION,
+            "environment": environment, "controls": metewand_core::controls::local_control_report(policy)})),
+    })?)
 }
 
 pub(super) fn resolve_worker(

@@ -262,3 +262,42 @@ fn worker_schema_matches_the_gate3_protocol_compatibility_vectors() {
         );
     }
 }
+
+#[test]
+fn applicability_schema_accepts_only_checked_outcomes_and_exact_input_shapes() {
+    let catalog = public_schema_catalog().unwrap();
+    let schema = PublicSchema::WorkerProtocolMessage.repository_path();
+    let request = serde_json::json!({"id":"1","method":"check_applicability",
+        "dataset_dir":"/private/data","dataset_manifest":"dataset-manifest.json",
+        "problem_contract_id":"contract","problem_parameters":{"intercept":true},
+        "implementation_parameters":{}});
+    catalog.validate(schema, &request).unwrap();
+    let response = serde_json::json!({"id":"1","ok":true,"outcome":"not_applicable",
+        "code":"unsupported_intercept","reason":"Only zero intercepts are supported."});
+    catalog.validate(schema, &response).unwrap();
+    let mut applicable = response.clone();
+    applicable["outcome"] = serde_json::json!("applicable");
+    applicable["details"] = serde_json::json!({"intercept":true});
+    catalog.validate(schema, &applicable).unwrap();
+    for (field, value) in [
+        ("outcome", serde_json::json!("unchecked")),
+        ("code", serde_json::json!("")),
+        ("reason", serde_json::json!("")),
+        ("details", serde_json::json!([])),
+    ] {
+        let mut invalid = response.clone();
+        invalid[field] = value;
+        assert!(catalog.validate(schema, &invalid).is_err());
+    }
+    for field in [
+        "dataset_dir",
+        "dataset_manifest",
+        "problem_contract_id",
+        "problem_parameters",
+        "implementation_parameters",
+    ] {
+        let mut invalid = request.clone();
+        invalid.as_object_mut().unwrap().remove(field);
+        assert!(catalog.validate(schema, &invalid).is_err());
+    }
+}

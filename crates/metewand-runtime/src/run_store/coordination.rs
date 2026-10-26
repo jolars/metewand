@@ -24,10 +24,38 @@ pub struct SlotProgress {
 }
 
 impl RunStore {
+    /// Persists an immutable support decision without allocating attempt slots.
+    pub fn register_applicability(
+        &mut self,
+        decision: &IdentifiedRecord<metewand_core::applicability::ApplicabilityDecisionRecord>,
+    ) -> Result<(), RunStoreError> {
+        use metewand_core::applicability::ApplicabilityOutcome;
+        if record_id(&decision.record)? != decision.id
+            || decision.record.outcome == ApplicabilityOutcome::Unchecked
+        {
+            return Err(invalid(
+                "applicability decision must be resolved and match its identity",
+            ));
+        }
+        let record = String::from_utf8(canonical_identity_bytes(&decision.record)?)
+            .expect("canonical UTF-8");
+        self.connection.execute("INSERT INTO applicability_decisions VALUES (?1, ?2, ?3, ?4) ON CONFLICT(id) DO NOTHING",
+            params![decision.id.to_string(), decision.record.candidate_id.to_string(), decision.record.outcome == ApplicabilityOutcome::Applicable, record])?;
+        let existing: String = self.connection.query_row(
+            "SELECT record_json FROM applicability_decisions WHERE id = ?1",
+            [decision.id.to_string()],
+            |r| r.get(0),
+        )?;
+        if existing != record {
+            return Err(invalid("applicability identity has conflicting contents"));
+        }
+        Ok(())
+    }
+
     /// Registers immutable one-shot coordination records in one transaction.
     ///
-    /// Gate 2 has unconditional applicability. Its internal decision key remains
-    /// separate from the future public applicability protocol and identities.
+    /// Checked runs require an already registered applicable decision. Legacy
+    /// unconditional runs retain their existing coordination identity.
     pub fn register_one_shot(
         &mut self,
         candidate: RecordId<LogicalCandidateRecord>,
@@ -47,12 +75,20 @@ impl RunStore {
         let tx = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let decision = format!("run-store-v1:unconditional:{candidate}");
-        let decision_record = json!({"candidate_id": candidate, "applicable": true, "basis": "unconditional_one_shot"}).to_string();
-        tx.execute(
-            "INSERT INTO applicability_decisions VALUES (?1, ?2, 1, ?3) ON CONFLICT(id) DO NOTHING",
-            params![decision, candidate.to_string(), decision_record],
-        )?;
+        let decision = if let Some(decision) = run.record.applicability {
+            let valid: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM applicability_decisions WHERE id = ?1 AND candidate_id = ?2 AND applicable = 1)",
+                params![decision.to_string(), candidate.to_string()], |r| r.get(0))?;
+            if !valid {
+                return Err(invalid("run requires a registered applicable decision"));
+            }
+            decision.to_string()
+        } else {
+            let decision = format!("run-store-v1:unconditional:{candidate}");
+            let decision_record = json!({"candidate_id": candidate, "applicable": true, "outcome": "applicable", "code": "unconditional_one_shot", "reason": "The implementation declares support for every admitted configuration.", "checked_inputs": null, "basis": "unconditional_one_shot"}).to_string();
+            tx.execute("INSERT INTO applicability_decisions VALUES (?1, ?2, 1, ?3) ON CONFLICT(id) DO NOTHING",
+                params![decision, candidate.to_string(), decision_record])?;
+            decision
+        };
         let run_record =
             String::from_utf8(canonical_identity_bytes(&run.record)?).expect("canonical UTF-8");
         tx.execute(

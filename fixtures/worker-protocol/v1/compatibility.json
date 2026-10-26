@@ -38,7 +38,7 @@
       "frame": "{\"id\":\"1\",\"instrumentation\":{\"scope\":\"solver\"},\"method\":\"execute\",\"result_dir\":\"/result\"}\n"
     },
     {
-      "name": "execute rejects unimplemented check_applicability",
+      "name": "execute rejects the separate check_applicability method",
       "message_type": "execute-request",
       "valid": false,
       "frame": "{\"id\":\"1\",\"method\":\"check_applicability\",\"result_dir\":\"/result\"}\n"

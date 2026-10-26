@@ -83,9 +83,12 @@ the configuration identities; machine output groups them under the candidate's
 The plan also shows declared worker commands, environment provisioning needs,
 execution controls, source artifacts, and capabilities. Capability evidence is
 always `declared`: a read-only plan never promotes a manifest assertion to
-`verified_now` or `previously_verified`. Version 1 has no conditional
-applicability capability, so admitted candidates and their attempt slots are
-reported as known applicable, with no unchecked decisions.
+`verified_now` or `previously_verified`. Candidates whose implementations declare
+`applicability` report `unchecked` with reason code `check_pending`. Their
+potential slots remain in the logical plan, but the summary does not count them
+as known applicable. Candidates without that capability assert unconditional
+support. Only execution resolution can check materialized inputs and record an
+`applicable` or `not_applicable` decision.
 
 The dataset-free path uses Metewand's repository-independent, versioned unit
 dataset definition. Repository schemas, validated contracts, environments, and

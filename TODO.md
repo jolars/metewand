@@ -156,7 +156,7 @@ Existing external contract and schema files remain supported.
 
 ### 3.2 Configuration-dependent applicability
 
-- [ ] Add the optional `check_applicability` exchange before measured
+- [x] Add the optional `check_applicability` exchange before measured
   preparation. Record `unchecked`, `applicable`, and `not_applicable`
   outcomes with stable reason codes and the exact checked inputs.
 - [ ] Bind applicability evidence to dependent execution identities, protect the

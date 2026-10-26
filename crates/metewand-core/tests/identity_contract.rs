@@ -570,6 +570,7 @@ fn graph(mutation: Option<&str>, order: ObjectOrder) -> IdentityGraph {
         &mut vectors,
         "resolved-specification",
         ResolvedOneShotSpecificationRecord {
+            applicability: None,
             logical_specification,
             problem_instance,
             implementation: resolved_worker.clone(),

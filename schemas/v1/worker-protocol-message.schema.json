@@ -244,6 +244,78 @@
       "required": ["id", "ok", "implementation_time_ns", "result", "statistics"],
       "additionalProperties": false
     },
+    "check_applicability_request": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/request_id"
+        },
+        "method": {
+          "const": "check_applicability"
+        },
+        "dataset_dir": {
+          "$ref": "#/$defs/path"
+        },
+        "dataset_manifest": {
+          "$ref": "#/$defs/path"
+        },
+        "problem_contract_id": {
+          "$ref": "#/$defs/path"
+        },
+        "problem_parameters": {
+          "$ref": "#/$defs/parameters"
+        },
+        "implementation_parameters": {
+          "$ref": "#/$defs/parameters"
+        }
+      },
+      "required": [
+        "id",
+        "method",
+        "dataset_dir",
+        "dataset_manifest",
+        "problem_contract_id",
+        "problem_parameters",
+        "implementation_parameters"
+      ],
+      "additionalProperties": false
+    },
+    "check_applicability_response": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/request_id"
+        },
+        "ok": {
+          "const": true
+        },
+        "outcome": {
+          "enum": [
+            "applicable",
+            "not_applicable"
+          ]
+        },
+        "code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "details": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "id",
+        "ok",
+        "outcome",
+        "code",
+        "reason"
+      ],
+      "additionalProperties": false
+    },
     "failure_response": {
       "type": "object",
       "properties": {
@@ -268,6 +340,8 @@
     { "$ref": "#/$defs/evaluate_response" },
     { "$ref": "#/$defs/materialize_response" },
     { "$ref": "#/$defs/execute_response" },
+    { "$ref": "#/$defs/check_applicability_request" },
+    { "$ref": "#/$defs/check_applicability_response" },
     { "$ref": "#/$defs/failure_response" }
   ]
 }

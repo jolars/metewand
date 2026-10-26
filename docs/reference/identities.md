@@ -80,6 +80,7 @@ identical artifact contents have one content address.
 | `resolved-launch` | `ResolvedLaunchRecord` |
 | `executor-definition` | `ExecutorDefinitionRecord` |
 | `resolved-worker` | `ResolvedWorkerRecord` |
+| `applicability` | `ApplicabilityDecisionRecord` |
 | `resolved-specification` | `ResolvedOneShotSpecificationRecord` |
 | `resolved-observation-slot` | `ResolvedObservationSlotRecord` |
 | `resolved-attempt-slot` | `ResolvedAttemptSlotRecord` |
@@ -137,7 +138,8 @@ The version-1 record fields are:
 | Resolved launch | resolved-environment ID, exact program, ordered arguments, allowlisted environment map, and working-directory convention |
 | Executor definition | executor kind and canonical configuration |
 | Resolved worker | optional source-bundle artifact ID, resolved-environment ID, and resolved-launch ID |
-| Resolved specification | `one_shot` kind, logical-specification ID, problem-instance ID, implementation and evaluator resolutions, executor ID, wire-protocol version, and execution-semantics version |
+| Applicability decision | candidate ID, outcome, stable code, reason, exact checked inputs, resolved worker and environment evidence, controls, and optional details |
+| Resolved specification | optional checked applicability ID, `one_shot` kind, logical-specification ID, problem-instance ID, implementation and evaluator resolutions, executor ID, wire-protocol version, and execution-semantics version |
 | Resolved observation slot | logical-slot ID and resolved-specification ID |
 | Resolved attempt slot | logical-slot ID and resolved-specification ID |
 | Observation | resolved-slot ID, producing-attempt ID, result and metric artifact references, timings, and completion status |

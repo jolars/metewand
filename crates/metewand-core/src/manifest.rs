@@ -706,6 +706,8 @@ pub enum ProtocolTransport {
 pub enum ImplementationCapability {
     /// One request produces one final result.
     OneShot,
+    /// Checks configuration-dependent support before measurement.
+    Applicability,
 }
 
 /// A pinned remote input to a dataset materializer.
@@ -1185,9 +1187,18 @@ impl<'de> Deserialize<'de> for ImplementationDefinition {
                 .map_err(de::Error::custom)?;
         ensure_nonempty_unique(&raw.problem_contracts, "`problem-contracts`")
             .map_err(de::Error::custom)?;
-        if raw.capabilities != [ImplementationCapability::OneShot] {
+        if !raw
+            .capabilities
+            .contains(&ImplementationCapability::OneShot)
+            || raw.capabilities.len() > 2
+            || raw
+                .capabilities
+                .iter()
+                .enumerate()
+                .any(|(i, c)| raw.capabilities[..i].contains(c))
+        {
             return Err(de::Error::custom(
-                "version 1 requires `capabilities: [\"one_shot\"]`",
+                "version 1 requires `one_shot` with optional `applicability`, without duplicates",
             ));
         }
         let worker = build_worker(

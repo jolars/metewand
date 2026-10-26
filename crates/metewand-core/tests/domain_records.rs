@@ -206,6 +206,7 @@ fn separates_logical_records_from_resolved_runtime_dependencies() {
         configuration: value(r#"{"serial":true}"#),
     };
     let resolved_specification = ResolvedOneShotSpecificationRecord {
+        applicability: None,
         logical_specification: id::<OneShotLogicalSpecificationRecord>(33),
         problem_instance: id::<ProblemInstanceRecord>(34),
         implementation: ResolvedWorkerRecord {

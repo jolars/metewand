@@ -251,9 +251,11 @@ Recorded attempt and observation IDs can also select their producing slot when
 using `--resume`. Unknown IDs fail with `invalid_run_selection`; filters never
 silently expand to the complete benchmark. A selection containing only logical
 IDs narrows the plan before acquisition. Resolving other IDs may require dataset
-construction and launch resolution before filtering. Gate 2 also recognizes the
-store's internal `run-store-v1:unconditional:<logical-candidate-id>` decision key;
-public, configuration-dependent applicability identities belong to Gate 3.
+construction and launch resolution before filtering. Checked applicability IDs
+select their candidate's slots. Selecting a candidate that resolves to
+`not_applicable` retains the exclusion without executing a measured attempt.
+Unconditional runs also recognize the store's existing
+`run-store-v1:unconditional:<logical-candidate-id>` decision key.
 
 `--max-attempts N` limits the new measured attempts allocated by this invocation.
 It accepts a positive integer up to `9007199254740991`. Filtering preserves the

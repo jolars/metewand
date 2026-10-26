@@ -2,13 +2,6 @@
   "version": 1,
   "extensions": [
     {
-      "name": "manifest applicability selection",
-      "template": "complete one-shot benchmark manifest",
-      "pointer": "/implementations/native",
-      "field": "capabilities",
-      "value": ["one_shot", "applicability"]
-    },
-    {
       "name": "manifest fresh-sequence selection",
       "template": "complete one-shot benchmark manifest",
       "pointer": "/implementations/native",

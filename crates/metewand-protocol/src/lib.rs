@@ -4,7 +4,8 @@ pub mod framing;
 mod messages;
 
 pub use messages::{
-    Acknowledgement, Capability, EvaluateRequest, EvaluateResponse, EvaluationVerdict,
+    Acknowledgement, ApplicabilityOutcome, Capability, CheckApplicabilityRequest,
+    CheckApplicabilityResponse, EvaluateRequest, EvaluateResponse, EvaluationVerdict,
     ExecuteRequest, ExecuteResponse, HandshakeError, HelloRequest, HelloResponse,
     MaterializeRequest, MaterializeResponse, MessageDecodeError, MessageEncodeError, MetadataError,
     NegotiatedSession, OperationResponse, OperationResponseDecodeError, PrepareRequest, RequestId,

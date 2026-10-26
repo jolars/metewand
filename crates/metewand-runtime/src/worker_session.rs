@@ -9,12 +9,12 @@ use std::{
 };
 
 use metewand_protocol::{
-    Acknowledgement, Capability, EvaluateRequest, EvaluateResponse, ExecuteRequest,
-    ExecuteResponse, HandshakeError, HelloRequest, HelloResponse, MaterializeRequest,
-    MaterializeResponse, MessageEncodeError, NegotiatedSession, OperationResponse,
-    OperationResponseDecodeError, PrepareRequest, RequestId, RequestTracker, RequestTrackerError,
-    ResetRequest, ShutdownRequest, WireMessage, WireResponse, WorkerFailure, WorkerIdentity,
-    WorkerRole, decode_operation_response, encode_message,
+    Acknowledgement, Capability, CheckApplicabilityRequest, CheckApplicabilityResponse,
+    EvaluateRequest, EvaluateResponse, ExecuteRequest, ExecuteResponse, HandshakeError,
+    HelloRequest, HelloResponse, MaterializeRequest, MaterializeResponse, MessageEncodeError,
+    NegotiatedSession, OperationResponse, OperationResponseDecodeError, PrepareRequest, RequestId,
+    RequestTracker, RequestTrackerError, ResetRequest, ShutdownRequest, WireMessage, WireResponse,
+    WorkerFailure, WorkerIdentity, WorkerRole, decode_operation_response, encode_message,
     framing::{FrameError, FrameReader},
     validate_hello_response,
 };
@@ -83,6 +83,8 @@ pub enum WorkerPhase {
     Hello,
     /// Dataset materialization.
     Materialize,
+    /// Untimed implementation support check.
+    CheckApplicability,
     /// Implementation preparation.
     Prepare,
     /// One-shot implementation execution.
@@ -100,6 +102,7 @@ impl std::fmt::Display for WorkerPhase {
         formatter.write_str(match self {
             Self::Hello => "hello",
             Self::Materialize => "materialize",
+            Self::CheckApplicability => "check_applicability",
             Self::Prepare => "prepare",
             Self::Execute => "execute",
             Self::Reset => "reset",
@@ -127,7 +130,7 @@ pub struct WorkerSession {
 impl WorkerSession {
     /// Starts protocol I/O and establishes a negotiated worker session.
     ///
-    /// Selected applicability, fresh-sequence, and streaming-profile
+    /// Selected fresh-sequence and streaming-profile
     /// capabilities remain reserved until their subprotocols are implemented.
     ///
     /// # Errors
@@ -279,6 +282,45 @@ impl WorkerSession {
             MaterializeRequest::new(id, source_dir, dataset_parameters, dataset_seed, output_dir);
         let timeout = self.timeouts.materialize;
         self.exchange(WorkerPhase::Materialize, &request, timeout)
+    }
+
+    /// Checks intrinsic support before entering any measured scope.
+    ///
+    /// # Errors
+    ///
+    /// Returns a typed failure for an unselected capability, wrong role,
+    /// worker failure, timeout, or protocol violation.
+    pub fn check_applicability(
+        &mut self,
+        dataset_dir: String,
+        dataset_manifest: String,
+        problem_contract_id: String,
+        problem_parameters: Value,
+        implementation_parameters: Value,
+    ) -> Result<(CheckApplicabilityRequest, CheckApplicabilityResponse), WorkerSessionError> {
+        let phase = WorkerPhase::CheckApplicability;
+        self.require_role(phase, WorkerRole::Implementation)?;
+        if !self
+            .negotiated()
+            .selected_capabilities()
+            .contains(&Capability::Applicability)
+        {
+            return Err(WorkerSessionError::CapabilityNotSelected {
+                phase,
+                capability: Capability::Applicability,
+            });
+        }
+        let id = self.begin_request(phase)?;
+        let request = CheckApplicabilityRequest::new(
+            id,
+            dataset_dir,
+            dataset_manifest,
+            problem_contract_id,
+            problem_parameters,
+            implementation_parameters,
+        );
+        let response = self.exchange(phase, &request, self.timeouts.prepare)?;
+        Ok((request, response))
     }
 
     /// Establishes clean implementation state for one attempt.

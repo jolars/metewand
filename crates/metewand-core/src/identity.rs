@@ -13,6 +13,7 @@ use thiserror::Error;
 
 use crate::{
     IDENTITY_VERSION,
+    applicability::ApplicabilityDecisionRecord,
     canonical::{CanonicalJsonError, CanonicalValue},
     manifest::{
         Enforcement, ImplementationCapability, InterpretedRunner, NixOutputKind, ObservationKind,
@@ -409,6 +410,7 @@ fn enforcement(value: Enforcement) -> &'static str {
 fn implementation_capability(value: ImplementationCapability) -> &'static str {
     match value {
         ImplementationCapability::OneShot => "one_shot",
+        ImplementationCapability::Applicability => "applicability",
     }
 }
 
@@ -444,6 +446,7 @@ identity_kind!("resolved-environment" => ResolvedEnvironmentRecord);
 identity_kind!("resolved-launch" => ResolvedLaunchRecord);
 identity_kind!("executor-definition" => ExecutorDefinitionRecord);
 identity_kind!("resolved-worker" => ResolvedWorkerRecord);
+identity_kind!("applicability" => ApplicabilityDecisionRecord);
 identity_kind!("resolved-specification" => ResolvedOneShotSpecificationRecord);
 identity_kind!("resolved-observation-slot" => ResolvedObservationSlotRecord);
 identity_kind!("resolved-attempt-slot" => ResolvedAttemptSlotRecord);
@@ -770,9 +773,23 @@ impl IdentityRecord for ResolvedWorkerRecord {
     }
 }
 
-impl IdentityRecord for ResolvedOneShotSpecificationRecord {
+impl IdentityRecord for ApplicabilityDecisionRecord {
     fn identity_fields(&self) -> Map<String, Value> {
         fields([
+            ("candidate_id", id(&self.candidate_id)),
+            ("outcome", json!(self.outcome)),
+            ("code", json!(self.code)),
+            ("reason", json!(self.reason)),
+            ("checked_inputs", json!(self.checked_inputs)),
+            ("evidence", json!(self.evidence)),
+            ("details", json!(self.details)),
+        ])
+    }
+}
+
+impl IdentityRecord for ResolvedOneShotSpecificationRecord {
+    fn identity_fields(&self) -> Map<String, Value> {
+        let mut result = fields([
             ("kind", json!("one_shot")),
             ("logical_specification", id(&self.logical_specification)),
             ("problem_instance", id(&self.problem_instance)),
@@ -784,7 +801,11 @@ impl IdentityRecord for ResolvedOneShotSpecificationRecord {
                 "execution_semantics_version",
                 json!(self.execution_semantics_version),
             ),
-        ])
+        ]);
+        if let Some(decision) = self.applicability {
+            result.insert("applicability".into(), id(&decision));
+        }
+        result
     }
 }
 

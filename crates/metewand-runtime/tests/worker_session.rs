@@ -30,6 +30,7 @@ fn fixture_worker() {
     match env::var(FIXTURE_MODE).as_deref() {
         Ok("materializer") => run_materializer_fixture(),
         Ok("implementation") => run_implementation_fixture(),
+        Ok("applicability") => run_applicability_fixture(),
         Ok("evaluator") => run_evaluator_fixture(),
         Ok("failure") => run_failure_fixture(),
         Ok("timeout") => run_timeout_fixture(),
@@ -784,4 +785,56 @@ os._exit(0)
         );
         assert!(started.elapsed() < Duration::from_secs(3));
     }
+}
+
+#[test]
+fn applicability_exchange_returns_exact_inputs_before_preparation() {
+    let mut session = connect(
+        "applicability",
+        WorkerRole::Implementation,
+        &[Capability::Applicability],
+    );
+    let (request, response) = session
+        .check_applicability(
+            "/dataset".into(),
+            "dataset-manifest.json".into(),
+            "contract".into(),
+            json!({"intercept":true}),
+            json!({"solver":"restricted"}),
+        )
+        .unwrap();
+    assert_eq!(request.problem_parameters, json!({"intercept":true}));
+    assert_eq!(
+        request.implementation_parameters,
+        json!({"solver":"restricted"})
+    );
+    assert_eq!(
+        response.outcome,
+        metewand_protocol::ApplicabilityOutcome::NotApplicable
+    );
+    assert_eq!(response.code, "unsupported_intercept");
+    assert!(session.shutdown().unwrap().status.success());
+}
+
+fn run_applicability_fixture() {
+    let (mut reader, mut writer) = protocol_streams();
+    accept_hello(
+        &mut reader,
+        &mut writer,
+        "implementation",
+        json!(["applicability"]),
+    );
+    assert_eq!(
+        read_message(&mut reader),
+        json!({"id":"1", "method":"check_applicability",
+        "dataset_dir":"/dataset", "dataset_manifest":"dataset-manifest.json",
+        "problem_contract_id":"contract", "problem_parameters":{"intercept":true},
+        "implementation_parameters":{"solver":"restricted"}})
+    );
+    write_message(
+        &mut writer,
+        &json!({"id":"1", "ok":true, "outcome":"not_applicable",
+        "code":"unsupported_intercept", "reason":"Only zero intercepts are supported."}),
+    );
+    accept_shutdown(&mut reader, &mut writer, "2");
 }

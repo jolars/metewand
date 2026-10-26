@@ -504,6 +504,124 @@ enum MaterializeMethod {
     Materialize,
 }
 
+/// Exact inputs supplied to an implementation support check.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CheckApplicabilityRequest {
+    /// Identifier echoed by the response.
+    pub id: RequestId,
+    method: CheckApplicabilityMethod,
+    /// Private immutable dataset view.
+    #[serde(deserialize_with = "deserialize_nonempty_string")]
+    pub dataset_dir: String,
+    /// Dataset manifest path beneath the view.
+    #[serde(deserialize_with = "deserialize_nonempty_string")]
+    pub dataset_manifest: String,
+    /// Exact selected problem contract identity.
+    #[serde(deserialize_with = "deserialize_nonempty_string")]
+    pub problem_contract_id: String,
+    /// Resolved problem configuration.
+    #[serde(deserialize_with = "deserialize_object")]
+    pub problem_parameters: Value,
+    /// Resolved implementation configuration.
+    #[serde(deserialize_with = "deserialize_object")]
+    pub implementation_parameters: Value,
+}
+
+impl private::Sealed for CheckApplicabilityRequest {}
+impl WireMessage for CheckApplicabilityRequest {}
+
+impl CheckApplicabilityRequest {
+    /// Creates a check outside measured preparation and execution.
+    #[must_use]
+    pub fn new(
+        id: RequestId,
+        dataset_dir: String,
+        dataset_manifest: String,
+        problem_contract_id: String,
+        problem_parameters: Value,
+        implementation_parameters: Value,
+    ) -> Self {
+        Self {
+            id,
+            method: CheckApplicabilityMethod::CheckApplicability,
+            dataset_dir,
+            dataset_manifest,
+            problem_contract_id,
+            problem_parameters,
+            implementation_parameters,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum CheckApplicabilityMethod {
+    CheckApplicability,
+}
+
+/// An intrinsic support decision, independent of execution success.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ApplicabilityOutcome {
+    /// The implementation supports the checked configuration.
+    Applicable,
+    /// The configuration violates an implementation support constraint.
+    NotApplicable,
+}
+
+/// Successful support check with a stable machine code and human reason.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CheckApplicabilityResponse {
+    id: RequestId,
+    ok: Success,
+    /// Support decision for the exact requested inputs.
+    pub outcome: ApplicabilityOutcome,
+    /// Implementation-owned stable reason code.
+    #[serde(deserialize_with = "deserialize_nonempty_string")]
+    pub code: String,
+    /// Human-readable explanation of the decision.
+    #[serde(deserialize_with = "deserialize_nonempty_string")]
+    pub reason: String,
+    /// Optional structured evidence supporting the reason.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_present_object"
+    )]
+    pub details: Option<Value>,
+}
+
+impl private::Sealed for CheckApplicabilityResponse {}
+impl WireMessage for CheckApplicabilityResponse {}
+impl WireResponse for CheckApplicabilityResponse {
+    fn id(&self) -> &RequestId {
+        &self.id
+    }
+}
+
+impl CheckApplicabilityResponse {
+    /// Creates a response to a support check.
+    #[must_use]
+    pub fn new(
+        id: RequestId,
+        outcome: ApplicabilityOutcome,
+        code: String,
+        reason: String,
+        details: Option<Value>,
+    ) -> Self {
+        Self {
+            id,
+            ok: Success,
+            outcome,
+            code,
+            reason,
+            details,
+        }
+    }
+}
+
 /// A request to establish clean implementation state for one attempt.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -1420,7 +1538,7 @@ pub fn validate_hello_response(
     if let Some(capability) = selected_capabilities.iter().find(|capability| {
         !matches!(
             capability,
-            Capability::OneShot | Capability::ProblemSemantics
+            Capability::OneShot | Capability::Applicability | Capability::ProblemSemantics
         )
     }) {
         return Err(HandshakeError::ReservedCapability {

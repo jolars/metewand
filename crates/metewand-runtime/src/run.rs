@@ -162,7 +162,12 @@ pub fn run_repository_with_options(
             .map(|store| store.slots_for_record(id))
             .transpose()?
             .unwrap_or_default();
-        let mut matched = false;
+        let mut matched = resolved.candidates.iter().any(|candidate| {
+            candidate.applicability.record.outcome
+                == metewand_core::applicability::ApplicabilityOutcome::NotApplicable
+                && (candidate.logical_selection_ids.contains(id)
+                    || candidate.applicability.id.to_string() == *id)
+        });
         for &(candidate, measurement) in &resolved.schedule {
             let slot = &resolved.candidates[candidate].measurements[measurement];
             if slot.selection_ids.contains(id) || previous.contains(&slot.attempt_slot.id) {
@@ -187,6 +192,11 @@ pub fn run_repository_with_options(
     let mut store = store.expect("new or resumed store");
     if options.resume {
         store.recover(attempt::now)?;
+    }
+    for candidate in &resolved.candidates {
+        if candidate.applicability.record.checked_inputs.is_some() {
+            store.register_applicability(&candidate.applicability)?;
+        }
     }
     let mut schedule = Vec::new();
     for &(candidate, measurement) in &resolved.schedule {
@@ -748,6 +758,12 @@ fn destination(path: &Path, resume: bool) -> Result<PathBuf, RunError> {
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum RunError {
+    /// Applicability worker launch failed before measured execution.
+    #[error(transparent)]
+    ApplicabilityLaunch(#[from] crate::local_worker::LocalWorkerLaunchError),
+    /// Applicability could not be determined.
+    #[error(transparent)]
+    ApplicabilityCheck(#[from] crate::worker_session::WorkerSessionError),
     /// Invalid execution selection or bound.
     #[error("{0}")]
     Selection(String),

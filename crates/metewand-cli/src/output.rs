@@ -561,6 +561,9 @@ impl PlanResult {
         let mut logical_specifications = 0;
         let mut observation_slots = 0;
         let mut attempt_slots = 0;
+        let mut unchecked_candidates = 0;
+        let mut unchecked_slots = 0;
+        let mut unchecked_runs = 0;
         let experiments = plan
             .experiments
             .iter()
@@ -570,6 +573,12 @@ impl PlanResult {
                     .iter()
                     .map(|candidate| {
                         logical_candidates += 1;
+                        let needs_check = candidate.implementation_capabilities.iter().any(|c| c.capability == ImplementationCapability::Applicability);
+                        if needs_check {
+                            unchecked_candidates += 1;
+                            unchecked_runs += candidate.specifications.len();
+                            unchecked_slots += candidate.specifications.iter().map(|s| s.attempt_slots.len()).sum::<usize>();
+                        }
                         let specifications = candidate
                             .specifications
                             .iter()
@@ -593,6 +602,12 @@ impl PlanResult {
                             })
                             .collect();
                         PlanCandidate {
+                            applicability: needs_check.then(|| metewand_core::applicability::ApplicabilityDecisionRecord {
+                                candidate_id: candidate.candidate.id,
+                                outcome: metewand_core::applicability::ApplicabilityOutcome::Unchecked,
+                                code: "check_pending".into(), reason: "Applicability requires a materialized dataset and worker check.".into(),
+                                checked_inputs: None, evidence: None, details: None,
+                            }),
                             id: candidate.candidate.id.to_string(),
                             source: PlanConfigurationSource::new(&candidate.source),
                             dataset_configuration: candidate.dataset_configuration.id.to_string(),
@@ -657,11 +672,11 @@ impl PlanResult {
                 logical_specifications,
                 observation_slots,
                 attempt_slots,
-                applicable_runs: logical_specifications,
+                applicable_runs: logical_specifications - unchecked_runs,
                 execution_slots: attempt_slots,
-                known_applicable_candidates: logical_candidates,
-                known_applicable_attempt_slots: attempt_slots,
-                unchecked_candidates: 0,
+                known_applicable_candidates: logical_candidates - unchecked_candidates,
+                known_applicable_attempt_slots: attempt_slots - unchecked_slots,
+                unchecked_candidates,
                 known_exclusions: 0,
             },
             side_effects: SideEffectSummary {
@@ -752,6 +767,14 @@ impl PlanResult {
                     candidate.parameters.implementation,
                 )
                 .expect("writing to a string cannot fail");
+                if let Some(applicability) = &candidate.applicability {
+                    writeln!(
+                        output,
+                        "    applicability: unchecked ({})\n    reason: {}",
+                        applicability.code, applicability.reason
+                    )
+                    .expect("writing to a string cannot fail");
+                }
                 for capability in &candidate.capabilities {
                     writeln!(
                         output,
@@ -1049,6 +1072,8 @@ struct PlanExperiment {
 
 #[derive(Debug, Serialize)]
 struct PlanCandidate {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    applicability: Option<metewand_core::applicability::ApplicabilityDecisionRecord>,
     id: String,
     source: PlanConfigurationSource,
     dataset_configuration: String,
@@ -1821,6 +1846,7 @@ fn enforcement(value: Enforcement) -> &'static str {
 fn implementation_capability(capability: ImplementationCapability) -> &'static str {
     match capability {
         ImplementationCapability::OneShot => "one_shot",
+        ImplementationCapability::Applicability => "applicability",
     }
 }
 

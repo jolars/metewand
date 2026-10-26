@@ -562,11 +562,7 @@ fn later_subprotocol_capabilities_can_be_reported_but_not_selected() {
     let negotiated = validate_hello_response(&request, &response, &[Capability::OneShot])
         .expect("reported future capabilities must remain inert");
     assert_eq!(negotiated.selected_capabilities(), &[Capability::OneShot]);
-    for reserved in [
-        Capability::Applicability,
-        Capability::FreshSequence,
-        Capability::StreamingProfile,
-    ] {
+    for reserved in [Capability::FreshSequence, Capability::StreamingProfile] {
         assert!(matches!(
             validate_hello_response(&request, &response, &[reserved]),
             Err(HandshakeError::ReservedCapability { capability }) if capability == reserved
@@ -645,4 +641,44 @@ fn evaluation_requires_an_explicit_scientific_verdict() {
     ] {
         assert!(serde_json::from_value::<EvaluateResponse>(value).is_err());
     }
+}
+
+#[test]
+fn applicability_exchange_preserves_checked_inputs_and_structured_reasons() {
+    use metewand_protocol::{CheckApplicabilityRequest, CheckApplicabilityResponse};
+    let request = json!({
+        "id": "check-1", "method": "check_applicability",
+        "dataset_dir": "/private/data", "dataset_manifest": "dataset-manifest.json",
+        "problem_contract_id": "contract", "problem_parameters": {"intercept": true},
+        "implementation_parameters": {"representation": "dense"}
+    });
+    let checked = decode_message::<CheckApplicabilityRequest>(request.clone()).unwrap();
+    assert_eq!(serde_json::to_value(checked).unwrap(), request);
+    let response = json!({"id":"check-1", "ok":true, "outcome":"not_applicable",
+        "code":"unsupported_intercept", "reason":"This solver requires a zero intercept.",
+        "details":{"intercept":true}});
+    let parsed = decode_message::<CheckApplicabilityResponse>(response.clone()).unwrap();
+    assert_eq!(serde_json::to_value(parsed).unwrap(), response);
+    for (field, invalid) in [
+        ("outcome", json!("unchecked")),
+        ("code", json!("")),
+        ("reason", json!("")),
+        ("details", json!([])),
+    ] {
+        let mut malformed = response.clone();
+        malformed[field] = invalid;
+        assert!(decode_message::<CheckApplicabilityResponse>(malformed).is_err());
+    }
+    let hello = HelloRequest::new(
+        "0".parse().unwrap(),
+        WorkerRole::Implementation,
+        WORKER_ID.parse().unwrap(),
+    );
+    let response = HelloResponse::new(
+        "0".parse().unwrap(),
+        WORKER_ID.parse().unwrap(),
+        None,
+        [Capability::Applicability],
+    );
+    assert!(validate_hello_response(&hello, &response, &[Capability::Applicability]).is_ok());
 }

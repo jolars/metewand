@@ -23,10 +23,11 @@ package name and version strings. The three roles are `dataset_materializer`,
 The protocol recognizes the `one_shot`, `applicability`, `fresh_sequence`, and
 `streaming_profile` capability names. A session fails if the worker omits a
 capability selected by the plan. These four capabilities belong to the
-implementation role. Gate 1 selects only `one_shot`. Workers may report the
-other three capabilities, and Metewand records those reports, but version-1
-sessions reject attempts to select them until their request subprotocols are
-implemented. An unselected report remains inert.
+implementation role. The typed session supports `one_shot` and `applicability`.
+The manifest-driven runner selects `applicability` when the implementation
+declares it alongside `one_shot`. Workers may
+report profile capabilities, but sessions reject attempts to select them until
+their request subprotocols are implemented. An unselected report remains inert.
 
 Evaluators may report `problem_semantics`. Metewand selects it when reported
 and sends the complete canonical scientific rules in `evaluate` requests. It
@@ -49,7 +50,7 @@ After schema-compatible decoding, the orchestrator verifies that:
 3. the response repeats the resolved worker identity from the request; and
 4. every capability selected by the plan was reported by the worker;
 5. capabilities match the worker role, including evaluator-only `problem_semantics`; and
-6. no reserved applicability or profile capability was selected.
+6. no reserved profile capability was selected.
 
 These checks produce typed `HandshakeError` values. The
 `metewand-protocol` crate exposes the strict `HelloRequest` and `HelloResponse`
@@ -181,6 +182,64 @@ scientific deadline before untimed phases without changing their operational
 limits. The fixed-dataset runtime and CLI use this mechanism for all three
 [timing envelopes](fixed-dataset-run.md).
 
+## Optional applicability exchange
+
+An implementation session that selects `applicability` may send
+`check_applicability` before measured preparation:
+
+```json
+{"id":"1","method":"check_applicability","dataset_dir":"/private/data","dataset_manifest":"dataset-manifest.json","problem_contract_id":"contract-id","problem_parameters":{"intercept":true},"implementation_parameters":{}}
+```
+
+The successful response distinguishes intrinsic support from a failed worker
+operation. Both outcomes require an implementation-owned stable reason code
+and a human-readable reason. Optional `details` must be an object:
+
+```json
+{"id":"1","ok":true,"outcome":"not_applicable","code":"unsupported_intercept","reason":"This solver requires a zero intercept.","details":{"intercept":true}}
+```
+
+The other successful outcome is `applicable`. `unchecked` describes the absence
+of a check and is never a worker response. A worker that cannot determine support
+returns the usual `ok: false` failure envelope.
+
+`WorkerSession::check_applicability` returns both the exact request and the
+response so callers can retain the checked inputs. It requires the implementation
+role and selected capability and uses the preparation operational timeout.
+Callers must clear the scientific deadline and provide a private immutable
+dataset view before this untimed exchange. The manifest path may be absolute
+or relative to that view.
+
+Native workers can opt in through `worker_sdk::Implementation` by returning
+`true` from `supports_applicability` and implementing `check_applicability`.
+The default remains unsupported, so existing native workers keep their current
+handshake and behavior. Python workers opt in by overriding `check_applicability(dataset_instance,
+dataset_manifest, problem_contract, problem_parameters, implementation_parameters)`
+and returning a dictionary with `outcome`, `code`, `reason`, and optional
+`details`. `dataset_instance` and `dataset_manifest` are `Path` objects.
+
+Declare `capabilities: [one_shot, applicability]` in the manifest. `plan` then
+records `unchecked` with code `check_pending` without launching workers. During
+`run`, Metewand materializes the dataset and checks each logical candidate in a
+separate worker before allocating measured slots. Checks run outside all
+performance timing scopes, including cold end-to-end timing. An exclusion is a
+successful decision and creates no measured attempts. A failed callback or
+invalid response aborts resolution with an error.
+
+Persisted decisions retain the exact problem and implementation parameters,
+problem contract identity, dataset instance identity, dataset manifest content
+and relative path, worker and environment identities, observed local controls,
+and structured response. Temporary view and worker paths are normalized in
+evidence so repeated resolution preserves identities. For the built-in empty
+unit dataset, the manifest path in the record is null, and the callback receives
+a separate synthesized manifest. The runner verifies the private dataset view
+and canonical dataset after the check, including failed checks.
+
+`explain <decision-id> --output-dir <run>` exposes this evidence, and `export`
+retains it for both applicable and excluded candidates. Implementations without
+the capability keep unconditional support, recorded as `applicable` with code
+`unconditional_one_shot`, without a worker check.
+
 ## Encoding boundary
 
 `encode_message` emits the canonical JSON representation followed by exactly
@@ -194,5 +253,4 @@ line-size limit.
 The wire-protocol version and public-schema compatibility version both remain
 1. These one-shot messages complete another part of the initial, unreleased
 contracts; they do not revise an earlier released format. Returned artifact
-validation and the applicability and profile subprotocols remain separate
-roadmap slices.
+validation and profile subprotocols remain separate roadmap slices.

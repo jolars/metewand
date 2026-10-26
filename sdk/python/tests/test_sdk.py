@@ -191,6 +191,28 @@ class ArtifactTests(unittest.TestCase):
 
 
 class WorkerTests(unittest.TestCase):
+    def test_applicability_is_optional_and_rejects_invalid_decisions(self):
+        class Restricted(Sum):
+            def check_applicability(self, *args):
+                return self.decision
+
+        check = request("check_applicability", dataset_dir="/data",
+                        dataset_manifest="/data/dataset-manifest.json",
+                        problem_contract_id="contract", problem_parameters={},
+                        implementation_parameters={})
+        solver = Restricted()
+        for decision in [dict(outcome="unchecked", code="pending", reason="Pending"),
+                         dict(outcome="applicable", code="", reason="Supported"),
+                         dict(outcome="applicable", code="supported", reason="Supported", details=[])]:
+            solver.decision = decision
+            with redirect_stderr(io.StringIO()):
+                replies = exchange(solver, "implementation", [hello(), check, request("shutdown")])
+            self.assertEqual(replies[0]["capabilities"], ["one_shot", "applicability"])
+            self.assertFalse(replies[1]["ok"])
+        replies = exchange(Sum(), "implementation", [hello(), check, request("shutdown")])
+        self.assertEqual(replies[0]["capabilities"], ["one_shot"])
+        self.assertEqual(replies[1]["error"]["code"], "unsupported_operation")
+
     def test_data_callbacks_retain_custom_writers_and_consume_failed_results(self):
         class Solver(OneShotImplementation):
             def prepare(self, *args):

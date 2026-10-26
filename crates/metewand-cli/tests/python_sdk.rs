@@ -225,3 +225,161 @@ fn copy_tree(source: &Path, destination: &Path) {
         }
     }
 }
+
+#[test]
+fn applicability_checks_precede_preparation_and_preserve_exact_inputs() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let benchmark = TempDir::new().unwrap();
+    copy_tree(&root.join("examples/python-sdk"), benchmark.path());
+    copy_tree(
+        &root.join("sdk/python/src/metewand"),
+        &benchmark.path().join("metewand"),
+    );
+    let manifest = benchmark.path().join("metewand.yaml");
+    let source = fs::read_to_string(&manifest)
+        .unwrap()
+        .replace(
+            "capabilities: [\"one_shot\"]",
+            "capabilities: [\"one_shot\", \"applicability\"]",
+        )
+        .replace(
+            "    measurement-repetitions: 2",
+            "    problem-parameters: {offset: {grid: [2, 3]}}\n    measurement-repetitions: 2",
+        );
+    fs::write(manifest, source).unwrap();
+    let worker = benchmark.path().join("worker.py");
+    let source = fs::read_to_string(&worker).unwrap().replace("class Sum(OneShotImplementation):", r#"class Sum(OneShotImplementation):
+    def check_applicability(self, dataset_instance, dataset_manifest, problem_contract,
+                            problem_parameters, implementation_parameters):
+        assert not hasattr(self, 'values'), 'check must run before prepare'
+        manifest = read_json(dataset_manifest)
+        assert manifest['complete'] and manifest['files'][0]['path'] == 'data.json'
+        assert read_json(dataset_instance / 'data.json')['values'] == [1, 2, 3]
+        excluded = problem_parameters['offset'] == 3
+        return dict(outcome='not_applicable' if excluded else 'applicable',
+                    code='unsupported_offset' if excluded else 'supported',
+                    reason='Only offset 2 is supported.' if excluded else 'Supported configuration.',
+                    details=dict(offset=problem_parameters['offset']))
+"#).replace("        self.values = read_json", "        assert problem_parameters['offset'] == 2, 'excluded candidate prepared'\n        self.values = read_json");
+    fs::write(worker, source).unwrap();
+    let invoke = |args: &[&str]| {
+        let output = Command::new(env!("CARGO_BIN_EXE_metewand"))
+            .current_dir(benchmark.path())
+            .args(args)
+            .args(["--output", "json"])
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+        serde_json::from_slice::<Value>(&output.stdout).unwrap()
+    };
+    let plan = invoke(&["plan"]);
+    assert_eq!(plan["data"]["summary"]["unchecked_candidates"], 2);
+    assert_eq!(plan["data"]["summary"]["known_applicable_candidates"], 0);
+    for candidate in plan["data"]["experiments"][0]["candidates"]
+        .as_array()
+        .unwrap()
+    {
+        assert_eq!(candidate["applicability"]["outcome"], "unchecked");
+        assert_eq!(candidate["applicability"]["code"], "check_pending");
+        assert!(candidate["applicability"]["checked_inputs"].is_null());
+    }
+    let excluded_id = plan["data"]["experiments"][0]["candidates"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["parameters"]["problem"]["offset"] == 3)
+        .unwrap()["id"]
+        .as_str()
+        .unwrap();
+    let selected = invoke(&["run", "--output-dir", "excluded", "--select", excluded_id]);
+    assert!(selected["data"]["attempts"].as_array().unwrap().is_empty());
+    let run = invoke(&["run", "--output-dir", "run"]);
+    assert_eq!(run["data"]["attempts"].as_array().unwrap().len(), 2);
+    invoke(&["export", "--output-dir", "run", "--destination", "exported"]);
+    let records: Vec<Value> = fs::read_to_string(benchmark.path().join("exported/results.jsonl"))
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    let decisions: Vec<_> = records
+        .iter()
+        .filter(|r| r["record_type"] == "applicability")
+        .collect();
+    assert_eq!(decisions.len(), 2, "{records:?}");
+    for decision in &decisions {
+        let id = decision["id"].as_str().unwrap();
+        let explanation = invoke(&["explain", id, "--output-dir", "run"]);
+        let definition = &explanation["data"]["subject"]["record"]["definition"];
+        let inputs = &definition["checked_inputs"];
+        assert_eq!(
+            inputs["dataset_manifest"]["complete"], true,
+            "{explanation}"
+        );
+        assert_eq!(inputs["dataset_manifest"]["files"][0]["path"], "data.json");
+        assert_eq!(inputs["dataset_manifest_path"], "dataset-manifest.json");
+        assert_eq!(inputs["implementation_parameters"], serde_json::json!({}));
+        let offset = inputs["problem_parameters"]["offset"].as_i64().unwrap();
+        assert_eq!(definition["details"]["offset"], offset);
+        assert_eq!(
+            definition["code"],
+            if offset == 3 {
+                "unsupported_offset"
+            } else {
+                "supported"
+            }
+        );
+        let text = explanation.to_string();
+        assert!(text.contains("dataset_manifest"), "{explanation}");
+        assert!(text.contains("implementation_parameters"), "{explanation}");
+        assert!(text.contains("problem_contract_id"), "{explanation}");
+        assert!(text.contains("dataset_instance"), "{explanation}");
+    }
+    assert!(decisions.iter().any(|r| r["outcome"] == "not_applicable"));
+    assert!(decisions.iter().any(|r| r["outcome"] == "applicable"));
+    let resumed = invoke(&["run", "--output-dir", "run", "--resume"]);
+    assert!(
+        resumed["data"]["attempts"].as_array().unwrap().is_empty(),
+        "{resumed}"
+    );
+}
+
+#[test]
+fn failed_applicability_checks_never_become_measured_attempts() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    for (callback, expected) in [
+        (
+            "raise RuntimeError('support inspection failed')",
+            "support inspection failed",
+        ),
+        (
+            "(dataset_instance / 'data.json').write_text('mutated')\n        return dict(outcome='applicable', code='supported', reason='Supported.')",
+            "artifact bytes or completion inventory changed",
+        ),
+    ] {
+        let benchmark = TempDir::new().unwrap();
+        copy_tree(&root.join("examples/python-sdk"), benchmark.path());
+        copy_tree(
+            &root.join("sdk/python/src/metewand"),
+            &benchmark.path().join("metewand"),
+        );
+        let manifest = benchmark.path().join("metewand.yaml");
+        let source = fs::read_to_string(&manifest).unwrap().replace(
+            "capabilities: [\"one_shot\"]",
+            "capabilities: [\"one_shot\", \"applicability\"]",
+        );
+        fs::write(manifest, source).unwrap();
+        let worker = benchmark.path().join("worker.py");
+        let source = fs::read_to_string(&worker).unwrap().replace("class Sum(OneShotImplementation):",
+            &format!("class Sum(OneShotImplementation):\n    def check_applicability(self, dataset_instance, *args):\n        {callback}\n"));
+        fs::write(worker, source).unwrap();
+        let output = Command::new(env!("CARGO_BIN_EXE_metewand"))
+            .current_dir(benchmark.path())
+            .args(["run", "--output-dir", "run", "--output", "json"])
+            .output()
+            .unwrap();
+        assert!(!output.status.success(), "{output:?}");
+        let text = String::from_utf8(output.stdout).unwrap();
+        assert!(text.contains(expected), "{text}");
+        assert!(!benchmark.path().join("run").exists());
+    }
+}

@@ -47,6 +47,14 @@ class WorkerError(Exception):
 class _ImplementationLifecycle(ABC):
     """Shared lifecycle for data callbacks and custom artifact writers."""
 
+    def check_applicability(self, dataset_instance, dataset_manifest, problem_contract,
+                            problem_parameters, implementation_parameters):
+        """Override to return outcome, code, reason, and optional details as a dict.
+
+        The callback runs before measured preparation and must not mutate data.
+        """
+        raise WorkerError("unsupported_operation", "Applicability is not implemented.")
+
     @abstractmethod
     def prepare(
         self,
@@ -129,6 +137,11 @@ _FIELDS = {
         "dataset_seed": "seed",
         "output_dir": "string",
     },
+    "check_applicability": {
+        "dataset_dir": "string", "dataset_manifest": "string",
+        "problem_contract_id": "string", "problem_parameters": "object",
+        "implementation_parameters": "object",
+    },
     "prepare": {
         "dataset_dir": "string",
         "problem_contract_id": "string",
@@ -148,7 +161,7 @@ _FIELDS = {
     "shutdown": {},
 }
 _METHODS = {
-    "implementation": {"prepare", "execute", "reset", "shutdown"},
+    "implementation": {"check_applicability", "prepare", "execute", "reset", "shutdown"},
     "dataset_materializer": {"materialize", "shutdown"},
     "problem_evaluator": {"evaluate", "shutdown"},
 }
@@ -239,6 +252,7 @@ class _Dispatcher:
         self.ready = False
         self.prepared = False
         self.semantics = semantics
+        self.applicability = role == "implementation" and type(worker).check_applicability is not _ImplementationLifecycle.check_applicability
 
     def dispatch(self, request):
         if request.get("method") == "evaluate" and self.semantics:
@@ -264,7 +278,7 @@ class _Dispatcher:
                 "protocol": WIRE_PROTOCOL_VERSION,
                 "worker_id": request["worker_id"],
                 "sdk": {"name": "metewand-python", "version": SDK_VERSION},
-                "capabilities": ["one_shot"]
+                "capabilities": ["one_shot"] + (["applicability"] if self.applicability else [])
                 if self.role == "implementation"
                 else (["problem_semantics"] if self.semantics else []),
             }
@@ -278,6 +292,23 @@ class _Dispatcher:
                 "unsupported_operation",
                 f"The {self.role} role does not accept {method}.",
             )
+        if method == "check_applicability":
+            result = self.worker.check_applicability(
+                Path(request["dataset_dir"]), Path(request["dataset_manifest"]),
+                request["problem_contract_id"], request["problem_parameters"],
+                request["implementation_parameters"],
+            )
+            _object(result, "Applicability decision")
+            if set(result) - {"outcome", "code", "reason", "details"}:
+                raise ValueError("Unknown applicability decision field.")
+            if result.get("outcome") not in {"applicable", "not_applicable"}:
+                raise ValueError("Expected applicable or not_applicable outcome.")
+            for field in ("code", "reason"):
+                if type(result.get(field)) is not str or not result[field]:
+                    raise ValueError(f"Expected nonempty applicability {field}.")
+            if "details" in result:
+                _object(result["details"], "Applicability details")
+            return result
         if method == "prepare":
             self.prepared = False
             self.worker.prepare(

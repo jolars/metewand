@@ -572,3 +572,59 @@ fn custom_result_and_metrics_writers_complete_before_their_responses() {
     );
     assert!(!path.with_extension("pending").exists());
 }
+
+#[test]
+fn optional_applicability_callback_runs_without_preparation() {
+    use metewand_protocol::{
+        ApplicabilityOutcome, CheckApplicabilityRequest, CheckApplicabilityResponse,
+    };
+    struct Restricted;
+    impl Implementation for Restricted {
+        type Output = Value;
+        fn supports_applicability(&self) -> bool {
+            true
+        }
+        fn check_applicability(
+            &mut self,
+            request: &CheckApplicabilityRequest,
+        ) -> WorkerResult<CheckApplicabilityResponse> {
+            assert_eq!(request.problem_parameters, json!({"intercept":true}));
+            Ok(CheckApplicabilityResponse::new(
+                request.id.clone(),
+                ApplicabilityOutcome::NotApplicable,
+                "unsupported_intercept".into(),
+                "Only zero intercepts are supported.".into(),
+                None,
+            ))
+        }
+        fn prepare(&mut self, _: &PrepareRequest) -> WorkerResult<()> {
+            panic!("check must not prepare")
+        }
+        fn execute(&mut self) -> WorkerResult<Value> {
+            panic!("check must not execute")
+        }
+    }
+    let mut output = Vec::new();
+    serve_implementation_on(
+        &mut Restricted,
+        frames(vec![
+            hello("implementation"),
+            json!({"id":"1","method":"check_applicability","dataset_dir":"dataset",
+            "dataset_manifest":"dataset-manifest.json","problem_contract_id":"c",
+            "problem_parameters":{"intercept":true},"implementation_parameters":{}}),
+            json!({"id":"2","method":"shutdown"}),
+        ]),
+        &mut output,
+    )
+    .unwrap();
+    let replies = responses(&output);
+    assert_eq!(
+        replies[0]["capabilities"],
+        json!(["one_shot", "applicability"])
+    );
+    assert_eq!(
+        replies[1],
+        json!({"id":"1","ok":true,"outcome":"not_applicable",
+        "code":"unsupported_intercept","reason":"Only zero intercepts are supported."})
+    );
+}

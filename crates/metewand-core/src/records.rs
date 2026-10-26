@@ -599,6 +599,8 @@ pub struct ResolvedWorkerRecord {
 /// A one-shot logical run bound to all immutable execution dependencies.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ResolvedOneShotSpecificationRecord {
+    /// Checked applicability evidence; absent for legacy unconditional runs.
+    pub applicability: Option<RecordId<crate::applicability::ApplicabilityDecisionRecord>>,
     /// Resolution-free logical run.
     pub logical_specification: RecordId<OneShotLogicalSpecificationRecord>,
     /// Materialized dataset bound to the configured problem.

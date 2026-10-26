@@ -16,11 +16,12 @@ use std::{
 
 use metewand_core::canonical::{CanonicalJsonError, CanonicalValue, MAX_SAFE_INTEGER};
 use metewand_protocol::{
-    Acknowledgement, Capability, EvaluateRequest, EvaluateResponse, EvaluationVerdict,
-    ExecuteRequest, ExecuteResponse, HelloRequest, HelloResponse, MaterializeRequest,
-    MaterializeResponse, PrepareRequest, RequestId, ResetRequest, SdkMetadata, ShutdownRequest,
-    WireMessage, WorkerFailure, WorkerFailureCode, WorkerFailureResponse, WorkerRole,
-    decode_message, encode_message, framing::FrameReader, negotiate_protocol,
+    Acknowledgement, Capability, CheckApplicabilityRequest, CheckApplicabilityResponse,
+    EvaluateRequest, EvaluateResponse, EvaluationVerdict, ExecuteRequest, ExecuteResponse,
+    HelloRequest, HelloResponse, MaterializeRequest, MaterializeResponse, PrepareRequest,
+    RequestId, ResetRequest, SdkMetadata, ShutdownRequest, WireMessage, WorkerFailure,
+    WorkerFailureCode, WorkerFailureResponse, WorkerRole, decode_message, encode_message,
+    framing::FrameReader, negotiate_protocol,
 };
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -96,6 +97,25 @@ pub enum ServeError {
 pub trait Implementation {
     /// Solver output converted and serialized after diagnostic solve timing.
     type Output: Serialize;
+
+    /// Declares whether the optional support callback is implemented.
+    fn supports_applicability(&self) -> bool {
+        false
+    }
+
+    /// Checks support without preparing or executing the solver.
+    ///
+    /// # Errors
+    /// Returns a failure when support cannot be determined.
+    fn check_applicability(
+        &mut self,
+        _request: &CheckApplicabilityRequest,
+    ) -> WorkerResult<CheckApplicabilityResponse> {
+        Err(failure(
+            WorkerFailureCode::UnsupportedOperation,
+            "This implementation does not support applicability checks.",
+        ))
+    }
 
     /// Establishes clean state, consuming the supplied parameters and seed.
     ///
@@ -278,12 +298,20 @@ fn implementation_on(
     mut clock: impl FnMut() -> u128,
 ) -> Result<(), ServeError> {
     let mut prepared = false;
+    let mut capabilities = vec![Capability::OneShot];
+    if worker.supports_applicability() {
+        capabilities.push(Capability::Applicability);
+    }
     serve_on(
         WorkerRole::Implementation,
-        [Capability::OneShot],
+        capabilities,
         reader,
         writer,
         |request| match request["method"].as_str().unwrap_or_default() {
+            "check_applicability" => {
+                let request: CheckApplicabilityRequest = decode(request)?;
+                response(&worker.check_applicability(&request)?)
+            }
             "prepare" => {
                 let request: PrepareRequest = decode(request)?;
                 prepared = false;
@@ -384,9 +412,9 @@ pub fn serve_evaluator_on(
     )
 }
 
-fn serve_on<const N: usize>(
+fn serve_on(
     role: WorkerRole,
-    capabilities: [Capability; N],
+    capabilities: impl AsRef<[Capability]>,
     reader: impl Read,
     mut writer: impl Write,
     mut dispatch: impl FnMut(Value) -> WorkerResult<Vec<u8>>,
@@ -407,7 +435,7 @@ fn serve_on<const N: usize>(
             .unwrap_or_default()
             .to_owned();
         let result = if !ready {
-            hello(request, role, capabilities).inspect(|_| {
+            hello(request, role, capabilities.as_ref()).inspect(|_| {
                 ready = true;
             })
         } else if method.is_empty() || method == "hello" {
@@ -445,11 +473,7 @@ fn serve_on<const N: usize>(
     }
 }
 
-fn hello<const N: usize>(
-    request: Value,
-    role: WorkerRole,
-    capabilities: [Capability; N],
-) -> WorkerResult<Vec<u8>> {
+fn hello(request: Value, role: WorkerRole, capabilities: &[Capability]) -> WorkerResult<Vec<u8>> {
     let request: HelloRequest = decode(request)?;
     if request.role() != role {
         return Err(failure(
@@ -466,7 +490,7 @@ fn hello<const N: usize>(
             SdkMetadata::new("metewand-rust", env!("CARGO_PKG_VERSION"))
                 .expect("nonempty SDK metadata"),
         ),
-        capabilities,
+        capabilities.iter().copied(),
     ))
 }
 
