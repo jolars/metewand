@@ -7,8 +7,9 @@ use metewand_protocol::{
     WorkerIdentity, WorkerRole,
 };
 use metewand_runtime::worker_sdk::{
-    Evaluation, Implementation, WorkerError, WorkerResult, serve_evaluator_on,
-    serve_implementation, serve_implementation_on,
+    Evaluation, Implementation, WorkerError, WorkerResult, serve_dataset_materializer_on,
+    serve_evaluator_on, serve_implementation, serve_implementation_on, write_dataset_manifest,
+    write_json,
 };
 use serde_json::{Value, json};
 use tempfile::TempDir;
@@ -65,6 +66,107 @@ fn responses(bytes: &[u8]) -> Vec<Value> {
             canonical.as_json().clone()
         })
         .collect()
+}
+
+#[test]
+fn materializers_write_canonical_inventories_and_validate_requests() {
+    let directory = TempDir::new().unwrap();
+    let request = json!({"id":"1", "method":"materialize", "source_dir":"source",
+        "dataset_parameters":{"values":[1,2,3]}, "dataset_seed":17,
+        "output_dir":directory.path()});
+    let mut invalid = request.clone();
+    invalid["dataset_seed"] = json!(true);
+    let mut output = Vec::new();
+    serve_dataset_materializer_on(
+        &mut |request| {
+            assert_eq!(request.dataset_seed(), 17);
+            write_json(
+                &directory.path().join("data.json"),
+                request.dataset_parameters().clone(),
+            )?;
+            write_dataset_manifest(directory.path(), &[("data.json", "application/json")])
+        },
+        frames(vec![
+            hello("dataset_materializer"),
+            invalid,
+            request,
+            json!({"id":"2", "method":"execute"}),
+            json!({"id":"3", "method":"shutdown"}),
+        ]),
+        &mut output,
+    )
+    .unwrap();
+    let replies = responses(&output);
+    assert_eq!(replies[0]["sdk"]["name"], "metewand-rust");
+    assert_eq!(replies[1]["error"]["code"], "invalid_request");
+    assert_eq!(replies[2]["dataset"]["manifest"], "dataset-manifest.json");
+    assert_eq!(replies[3]["error"]["code"], "unsupported_operation");
+    let bytes = fs::read(directory.path().join("dataset-manifest.json")).unwrap();
+    assert_eq!(bytes, br#"{"complete":true,"files":[{"media_type":"application/json","path":"data.json","sha256":"abe0a9abcc957f9f5aa04d68c4f49fadee7c4b62343e403a3a1c0b646519d53c","size_bytes":18}],"schema_version":1}"#);
+    let catalog = metewand_core::schema::SchemaCatalog::try_new([(
+        "dataset.json".into(),
+        json!({"$schema":"https://json-schema.org/draft/2020-12/schema", "type":"object"}),
+    )])
+    .unwrap();
+    let response: metewand_protocol::MaterializeResponse =
+        metewand_protocol::decode_message(replies[2].clone()).unwrap();
+    metewand_runtime::worker_output::WorkerOutputValidator::new(&catalog)
+        .unwrap()
+        .validate_materialized_dataset(directory.path(), &response, Path::new("dataset.json"))
+        .unwrap();
+}
+
+#[test]
+fn materializers_report_callback_and_inventory_failures() {
+    let directory = TempDir::new().unwrap();
+    write_json(&directory.path().join("data.json"), json!({})).unwrap();
+    std::os::unix::fs::symlink("data.json", directory.path().join("link.json")).unwrap();
+    for files in [
+        vec![("../escape", "application/json")],
+        vec![("data.json", "")],
+        vec![
+            ("data.json", "application/json"),
+            ("data.json", "application/json"),
+        ],
+        vec![("dataset-manifest.json", "application/json")],
+        vec![("missing", "application/json")],
+        vec![("link.json", "application/json")],
+    ] {
+        assert!(write_dataset_manifest(directory.path(), &files).is_err());
+    }
+    for result in [
+        Ok("missing.json".to_owned()),
+        Ok("../escape".to_owned()),
+        Err(WorkerError::operation_failed("TODO: Author the dataset.")),
+    ] {
+        let mut result = Some(result);
+        let mut output = Vec::new();
+        serve_dataset_materializer_on(&mut |_| result.take().unwrap(), frames(vec![
+            hello("dataset_materializer"),
+            json!({"id":"1", "method":"materialize", "source_dir":"source", "dataset_parameters":{}, "dataset_seed":1, "output_dir":directory.path()}),
+            json!({"id":"2", "method":"shutdown"})]), &mut output).unwrap();
+        assert_eq!(responses(&output)[1]["error"]["code"], "operation_failed");
+        assert_eq!(responses(&output)[2]["ok"], true);
+    }
+}
+
+#[test]
+fn dataset_inventories_have_the_same_bytes_for_every_input_order() {
+    let directory = TempDir::new().unwrap();
+    write_json(&directory.path().join("a.json"), json!({"a": 1})).unwrap();
+    write_json(&directory.path().join("z.json"), json!({"z": 2})).unwrap();
+    let mut files = [
+        ("z.json", "application/json"),
+        ("a.json", "application/json"),
+    ];
+    let manifest = write_dataset_manifest(directory.path(), &files).unwrap();
+    let original = fs::read(directory.path().join(&manifest)).unwrap();
+    files.reverse();
+    write_dataset_manifest(directory.path(), &files).unwrap();
+    assert_eq!(original, fs::read(directory.path().join(manifest)).unwrap());
+    let document: Value = serde_json::from_slice(&original).unwrap();
+    assert_eq!(document["files"][0]["path"], "a.json");
+    assert_eq!(document["files"][1]["path"], "z.json");
 }
 
 #[test]

@@ -899,6 +899,7 @@ dependencies = [
  "metewand-protocol",
  "metewand-runtime",
  "serde",
+ "serde-saphyr",
  "serde_json",
  "sha2",
  "tempfile",

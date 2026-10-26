@@ -8,11 +8,7 @@ use std::{
     str::FromStr as _,
 };
 
-use metewand_core::{
-    MANIFEST_VERSION,
-    manifest::{Name, SourceSpan, parse_manifest},
-    schema::DRAFT_2020_12_DIALECT,
-};
+use metewand_core::manifest::{EnvironmentDefinition, Manifest, Name, SourceSpan, parse_manifest};
 use serde::Serialize;
 use serde_json::Value;
 use thiserror::Error;
@@ -53,6 +49,31 @@ impl ScaffoldComponent {
     }
 }
 
+/// SDK language used by a generated adapter.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum WorkerLanguage {
+    /// Python callbacks using the Python SDK.
+    #[default]
+    Python,
+    /// R callbacks using the R SDK.
+    R,
+    /// Native callbacks using the Rust worker helpers.
+    Rust,
+}
+
+impl WorkerLanguage {
+    /// Parses a supported language name.
+    #[must_use]
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "python" => Some(Self::Python),
+            "r" => Some(Self::R),
+            "rust" => Some(Self::Rust),
+            _ => None,
+        }
+    }
+}
+
 /// An explicit component addition, independent of command-line syntax.
 #[derive(Debug)]
 pub struct ScaffoldRequest {
@@ -60,8 +81,10 @@ pub struct ScaffoldRequest {
     pub component: ScaffoldComponent,
     /// New manifest-local component name.
     pub name: String,
-    /// Existing environment selected by the author for the worker stub.
-    pub environment: String,
+    /// Existing environment, or the manifest's unambiguous local default.
+    pub environment: Option<String>,
+    /// SDK language for the generated adapter.
+    pub language: WorkerLanguage,
     /// Existing problem selected for an implementation, and only for it.
     pub problem: Option<String>,
 }
@@ -168,10 +191,9 @@ impl ScaffoldError {
 
 /// Adds only the requested component and its structural files.
 ///
-/// All generated schemas reject every instance until the author replaces the
-/// placeholder. Workers fail explicitly until implemented. Problem contracts
-/// omit scientific choices and reference data, so they require author edits
-/// before repository validation can succeed. No external programs are invoked.
+/// Adapters fail explicitly until implemented. Inline problem declarations omit
+/// scientific choices and reference data, so they require author edits before
+/// repository validation can succeed. No external programs are invoked.
 ///
 /// The operation validates every target before writing and uses exclusive file
 /// creation. A nonblocking manifest lock serializes cooperating authors without
@@ -195,15 +217,7 @@ pub fn scaffold_component(
     manifest_file
         .read_to_string(&mut original)
         .map_err(|error| ScaffoldError::io(manifest_path, error))?;
-    let manifest = parse_manifest(manifest_path, &original).map_err(|error| {
-        let mut diagnostic = ScaffoldError::new(
-            ScaffoldErrorKind::InvalidManifest,
-            manifest_path,
-            error.to_string(),
-        );
-        diagnostic.source_span = error.source_span().cloned().map(Box::new);
-        diagnostic
-    })?;
+    let manifest = authoring_manifest(manifest_path, &original)?;
     let exists = match request.component {
         ScaffoldComponent::Dataset => manifest.datasets.contains_key(request.name.as_str()),
         ScaffoldComponent::Problem => manifest.problems.contains_key(request.name.as_str()),
@@ -222,17 +236,31 @@ pub fn scaffold_component(
             ),
         ));
     }
-    if !manifest
-        .environments
-        .contains_key(request.environment.as_str())
+    if let Some(environment) = &request.environment
+        && !manifest.environments.contains_key(environment.as_str())
     {
         return Err(ScaffoldError::new(
             ScaffoldErrorKind::InvalidRequest,
             manifest_path,
             format!(
                 "environment `{}` is not defined; add it explicitly before scaffolding",
-                request.environment
+                environment
             ),
+        ));
+    }
+    if request.environment.is_none()
+        && !manifest.environments.is_empty()
+        && manifest
+            .environments
+            .values()
+            .filter(|environment| matches!(environment, EnvironmentDefinition::Local {}))
+            .count()
+            != 1
+    {
+        return Err(ScaffoldError::new(
+            ScaffoldErrorKind::InvalidRequest,
+            manifest_path,
+            "select an existing worker environment with `--environment NAME`; no unambiguous local default is available",
         ));
     }
     if let Some(problem) = &request.problem
@@ -297,12 +325,15 @@ fn validate_request(path: &Path, request: &ScaffoldRequest) -> Result<(), Scaffo
     if path.as_os_str().is_empty() || path.to_str().is_none() {
         return Err(invalid("manifest path must be nonempty UTF-8".to_owned()));
     }
-    for (label, value) in [
-        ("component", &request.name),
-        ("environment", &request.environment),
-    ]
-    .into_iter()
-    .chain(request.problem.as_ref().map(|problem| ("problem", problem)))
+    for (label, value) in [("component", &request.name)]
+        .into_iter()
+        .chain(
+            request
+                .environment
+                .as_ref()
+                .map(|environment| ("environment", environment)),
+        )
+        .chain(request.problem.as_ref().map(|problem| ("problem", problem)))
     {
         serde_json::from_value::<Name>(serde_json::Value::String(value.clone()))
             .map_err(|error| invalid(format!("invalid {label} name: {error}")))?;
@@ -429,7 +460,7 @@ fn add_definition(
         root.set(namespace, mapping);
     }
     let updated = file.to_string();
-    parse_manifest(path, &updated).map_err(|error| invalid(error.to_string()))?;
+    authoring_manifest(path, &updated)?;
     let mut expected = before;
     expected
         .as_object_mut()
@@ -471,74 +502,126 @@ fn yaml_value(path: &Path, source: &str) -> Result<Value, ScaffoldError> {
     })
 }
 
+// Scientific contracts can remain unfinished between component additions. Validate
+// the surrounding manifest and worker declarations without inventing those rules.
+fn authoring_manifest(path: &Path, source: &str) -> Result<Manifest, ScaffoldError> {
+    let original_error = match parse_manifest(path, source) {
+        Ok(manifest) => return Ok(manifest),
+        Err(error) => error,
+    };
+    let mut value = yaml_value(path, source)?;
+    if let Some(problems) = value.get_mut("problems").and_then(Value::as_object_mut) {
+        for problem in problems.values_mut().filter_map(Value::as_object_mut) {
+            if !problem.contains_key("contract") {
+                problem.retain(|key, _| matches!(key.as_str(), "evaluator" | "parameter-defaults"));
+                problem.insert(
+                    "contract".to_owned(),
+                    Value::from("unfinished-contract.yaml"),
+                );
+            }
+        }
+    }
+    parse_manifest(path, &value.to_string()).map_err(|_| {
+        let mut error = ScaffoldError::new(
+            ScaffoldErrorKind::InvalidManifest,
+            path,
+            original_error.to_string(),
+        );
+        error.source_span = original_error.source_span().cloned().map(Box::new);
+        error
+    })
+}
+
 type TemplateFiles = Vec<(PathBuf, String)>;
 
 fn templates(request: &ScaffoldRequest) -> (Mapping, TemplateFiles) {
     let directory = format!("{}/{}", request.component.namespace(), request.name);
     let quote = |text: &str| serde_json::to_string(text).expect("strings can be serialized");
-    let schema_path = |role: &str| format!("{directory}/{role}.schema.json");
-    let worker_name = match request.component {
-        ScaffoldComponent::Dataset => "materializer.sh",
-        ScaffoldComponent::Problem => "evaluator.sh",
-        ScaffoldComponent::Implementation => "worker.sh",
+    let basename = match request.component {
+        ScaffoldComponent::Dataset => "materializer",
+        ScaffoldComponent::Problem => "evaluator",
+        ScaffoldComponent::Implementation => "worker",
     };
-    let worker = format!("{directory}/{worker_name}");
-    let launch = format!(
-        "runner: command\nprogram: sh\nargs: [{}]\nsources: [{}]\nenvironment: {}\n",
-        quote(&format!("{{sources}}/{worker}")),
-        quote(&worker),
-        quote(&request.environment),
-    );
-    let mut files = Vec::new();
+    let (extension, template) = match (request.language, request.component) {
+        (WorkerLanguage::Python, ScaffoldComponent::Dataset) => {
+            ("py", include_str!("templates/materializer.py"))
+        }
+        (WorkerLanguage::Python, ScaffoldComponent::Problem) => {
+            ("py", include_str!("templates/evaluator.py"))
+        }
+        (WorkerLanguage::Python, ScaffoldComponent::Implementation) => {
+            ("py", include_str!("templates/worker.py"))
+        }
+        (WorkerLanguage::R, ScaffoldComponent::Dataset) => {
+            ("R", include_str!("templates/materializer.R"))
+        }
+        (WorkerLanguage::R, ScaffoldComponent::Problem) => {
+            ("R", include_str!("templates/evaluator.R"))
+        }
+        (WorkerLanguage::R, ScaffoldComponent::Implementation) => {
+            ("R", include_str!("templates/worker.R"))
+        }
+        (WorkerLanguage::Rust, ScaffoldComponent::Dataset) => {
+            ("rs", include_str!("templates/materializer.rs"))
+        }
+        (WorkerLanguage::Rust, ScaffoldComponent::Problem) => {
+            ("rs", include_str!("templates/evaluator.rs"))
+        }
+        (WorkerLanguage::Rust, ScaffoldComponent::Implementation) => {
+            ("rs", include_str!("templates/worker.rs"))
+        }
+    };
+    let worker = format!("{directory}/{basename}.{extension}");
+    let mut launch = match request.language {
+        WorkerLanguage::Python | WorkerLanguage::R => format!(
+            "runner: {}\nentrypoint: {}\nsources: [{}]\n",
+            if request.language == WorkerLanguage::Python {
+                "python"
+            } else {
+                "r"
+            },
+            quote(&worker),
+            quote(&worker),
+        ),
+        WorkerLanguage::Rust => format!(
+            "runner: command\nprogram: {}\nsources: [{}, {}]\n",
+            quote(&format!("./{directory}/{basename}")),
+            quote(&worker),
+            quote(&format!("{directory}/{basename}")),
+        ),
+    };
+    if let Some(environment) = &request.environment {
+        launch.push_str(&format!("environment: {}\n", quote(environment)));
+    }
+    let parameters = "parameters: {} # TODO: Declare typed scientific parameters and selections.\n";
     let definition = match request.component {
         ScaffoldComponent::Dataset => format!(
-            "parameter-schema: {}\noutput-schema: {}\n{launch}",
-            quote(&schema_path("parameters")),
-            quote(&schema_path("dataset"))
+            "{parameters}# TODO: Define the dataset artifact shape, then remove the rejecting not clause.\noutput-schema: {{not: {{}}}}\n{launch}"
         ),
         ScaffoldComponent::Problem => {
-            files.push((PathBuf::from(format!("{directory}/contract.yaml")), format!(
-                "# TODO: Define the scientific contract before checking or running this problem.\nversion: {MANIFEST_VERSION}\nname: {}\nparameter-schema: {}\nresult-schema: {}\nmetric-schema: {}\nsemantics-schema: {}\nsupported-budgets: [none]\n\n# TODO: Add a family name, dataset-schemas (or [] for a dataset-free problem),\n# and allowed-timing-scopes chosen for your measurement contract.\n\nsemantics:\n  # TODO: Define preprocessing and any work allowed outside the timed scope.\n  preprocessing: {{}}\n  # TODO: Define what makes a result scientifically valid.\n  validity: {{}}\n  # TODO: Define when a valid result completes the computation.\n  one_shot_completion: {{}}\n\n# TODO: Add reference cases with author-supplied results and expected metrics.\n# reference-cases:\n#   - result: ...\n#     expected-metrics: ...\n# Include a dataset path only when dataset-schemas is nonempty.\n",
-                quote(&request.name), quote(&schema_path("parameters")), quote(&schema_path("result")), quote(&schema_path("metrics")), quote(&schema_path("semantics")),
-            )));
             let launch = launch
                 .lines()
                 .map(|line| format!("  {line}\n"))
                 .collect::<String>();
             format!(
-                "contract: {}\nevaluator:\n{launch}",
-                quote(&format!("{directory}/contract.yaml"))
+                "{parameters}# TODO: Choose a family.\n# TODO: Declare accepted dataset schemas, or [] for a dataset-free problem.\n# TODO: Declare result fields and metric shapes; formulas belong in the evaluator.\nresult: {{}}\nmetrics: {{}}\n# TODO: Choose allowed timing scopes.\nsupported-budgets: [none]\nsemantics:\n  # TODO: Define shared preprocessing, implementation conversion, and untimed work.\n  preprocessing: {{}}\n  # TODO: Define scientific validity rules.\n  validity: {{}}\n  # TODO: Define the completion target, consumed by the independent evaluator.\n  one_shot_completion: {{}}\n# TODO: Supply scientific fixtures; add dataset only if this problem accepts datasets.\n# reference-cases:\n#   - result: ...\n#     expected-metrics: ...\nevaluator:\n{launch}"
             )
         }
         ScaffoldComponent::Implementation => format!(
-            "parameter-schema: {}\nproblem-contracts: [{}]\ncapabilities: [one_shot]\n{launch}",
-            quote(&schema_path("parameters")),
+            "{parameters}problem-contracts: [{}]\ncapabilities: [one_shot]\n{launch}",
             quote(
                 request
                     .problem
                     .as_deref()
                     .expect("implementation problem was validated")
-            )
+            ),
         ),
     };
-    let roles: &[&str] = match request.component {
-        ScaffoldComponent::Dataset => &["parameters", "dataset"],
-        ScaffoldComponent::Problem => &["parameters", "result", "metrics", "semantics"],
-        ScaffoldComponent::Implementation => &["parameters"],
-    };
-    for role in roles {
-        files.push((PathBuf::from(schema_path(role)), format!(
-            "{{\n  \"$schema\": \"{DRAFT_2020_12_DIALECT}\",\n  \"$comment\": \"TODO: Define this {role} schema, then remove the rejecting not clause. No scientific constraints have been supplied.\",\n  \"not\": {{}}\n}}\n"
-        )));
-    }
-    files.push((PathBuf::from(worker), format!(
-        "#!/bin/sh\n# Fail explicitly until the author supplies a version-1 protocol worker.\nprintf '%s\\n' 'TODO: Implement {worker_name} using the Metewand worker protocol or an SDK.' >&2\nexit 1\n"
-    )));
     let mapping = Document::from_str(&definition)
         .expect("scaffold templates contain valid YAML")
         .as_mapping()
         .expect("scaffold definitions are mappings");
-    (mapping, files)
+    (mapping, vec![(PathBuf::from(worker), template.to_owned())])
 }
 
 fn require_absent(path: &Path) -> Result<(), ScaffoldError> {

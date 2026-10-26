@@ -38,7 +38,9 @@ an interrupted run without repeating accepted slots. See
 [exporting results](docs/reference/exports.md) for analysis.
 
 Start your own benchmark with `metewand init [PATH]`, then add components with
-`metewand scaffold dataset|problem|implementation NAME --environment NAME`.
+`metewand scaffold dataset|problem|implementation NAME --language python|r|rust`.
+Scaffolds add compact declarations and small SDK adapters; implementation
+scaffolds also require `--problem NAME`.
 Both commands support `--dry-run` and refuse to overwrite existing files.
 The [authoring reference](docs/reference/authoring-cli.md) describes the current
 requirements. The [examples](examples) include raw-command, Rust, Python, R,

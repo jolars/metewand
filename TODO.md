@@ -124,7 +124,7 @@ a new compatibility review is a prerequisite.
   formulas in adapters. Retain lifecycle hooks and custom artifact writers for
   more involved cases, preserve timing boundaries, and support native process
   workers without requiring a Python host.
-- [ ] Update scaffolding and one small example so a benchmark needs one
+- [x] Update scaffolding and one small example so a benchmark needs one
   manifest, small adapters, and scientific reference fixtures. Separate
   contract and schema files remain available for reuse. Let authors select a
   worker language and generate small SDK adapters with scientific decisions

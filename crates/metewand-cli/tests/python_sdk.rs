@@ -73,10 +73,31 @@ fn python_sdk_example_publishes_two_accepted_observations() {
     ] {
         let output = Command::new(env!("CARGO_BIN_EXE_metewand"))
             .current_dir(benchmark.path())
-            .args(command)
+            .args(&command)
             .output()
             .unwrap();
         assert!(output.status.success(), "{output:?}");
+        if command[0] == "plan" {
+            let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+            let candidates = report["data"]["experiments"][0]["candidates"]
+                .as_array()
+                .unwrap();
+            assert_eq!(candidates.len(), 1);
+            assert_eq!(
+                candidates[0]["parameters"],
+                serde_json::json!({
+                    "dataset": {"values": [1, 2, 3]}, "problem": {"offset": 2}, "implementation": {}
+                })
+            );
+            assert_eq!(candidates[0]["specifications"].as_array().unwrap().len(), 1);
+            assert_eq!(
+                candidates[0]["specifications"][0]["attempt_slots"]
+                    .as_array()
+                    .unwrap()
+                    .len(),
+                2
+            );
+        }
     }
     let output = Command::new(env!("CARGO_BIN_EXE_metewand"))
         .current_dir(benchmark.path())

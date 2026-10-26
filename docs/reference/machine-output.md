@@ -147,8 +147,9 @@ The CLI emits these stable codes:
 | `init_path_exists` | A manifest path or required directory conflicts with an existing entry. |
 | `init_io_failed` | Initialization could not validate or create a path. |
 | `invalid_scaffold_component` | The scaffold component is missing or is not dataset, problem, or implementation. |
+| `invalid_scaffold_language` | The worker language is not python, r, or rust. |
 | `invalid_scaffold_argument` | A scaffold name or path is empty or is not UTF-8. |
-| `missing_scaffold_argument` | A required scaffold name, environment, or option value is missing. |
+| `missing_scaffold_argument` | A required scaffold name, problem, or option value is missing. |
 | `duplicate_scaffold_flag` | A scaffold option was supplied more than once. |
 | `scaffold_invalid_request` | A component name is invalid, an environment or problem is undefined, or the problem selection does not match the component. |
 | `scaffold_component_exists` | The requested component name is already defined in its manifest namespace. |

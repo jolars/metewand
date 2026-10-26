@@ -1,14 +1,37 @@
 # Native Rust worker helpers
 
-`metewand_runtime::worker_sdk` provides POSIX one-shot implementation and
-independent evaluator helpers. Workers run as native executables and need no
-Python or R process. The helpers reuse the existing version-1 protocol and
+`metewand_runtime::worker_sdk` provides POSIX dataset materializer, one-shot
+implementation, and independent evaluator helpers. Workers run as native
+executables and need no Python or R process. The helpers reuse the existing version-1 protocol and
 canonical JSON implementation.
 
 The crates are not published yet. Add local path dependencies on
 `metewand-runtime` and `metewand-protocol`, plus `serde_json`, in the worker's
 Cargo project. The [runnable Rust example](https://github.com/jolars/metewand/tree/main/examples/rust-sdk)
 builds in this workspace and includes a complete manifest and reference data.
+`metewand scaffold dataset|problem|implementation NAME --language rust` generates
+an adapter for each role; implementations also require `--problem NAME`. Add the
+adapter as a binary target in your Cargo project and copy its executable beside
+the `.rs` file, using the same basename without an extension. See
+[component scaffolding](authoring-cli.md#component-scaffolding) for source bundles
+and the scientific declarations to complete.
+
+## Dataset materializers
+
+Call `serve_dataset_materializer(&mut callback)`. The callback accepts
+`&MaterializeRequest`, which exposes `source_dir()`, `dataset_parameters()`,
+`dataset_seed()`, and `output_dir()`. It constructs and converts the scientific
+data, writes files beneath the assigned output directory, and returns a
+`WorkerResult<String>` containing the relative completed manifest path.
+
+Use `write_json(path, data)` for canonical JSON files and
+`write_dataset_manifest(directory, &[("data.json", "application/json")])` to
+hash completed files and write the standard inventory last. Entries have unique
+relative paths and author-selected media types. The helper sorts entries by
+path, rejects unsafe paths and symbolic links, and records file sizes and
+SHA-256 digests. A custom manifest writer can add representation metadata.
+The SDK verifies that the returned manifest exists before responding; the
+runtime validates the full artifact against the selected dataset schema.
 
 ## Implementations
 

@@ -19,7 +19,7 @@ Metewand reproducible benchmark runner
 
 Usage:
   metewand [--output FORMAT] init [PATH] [--dry-run]
-  metewand [--output FORMAT] scaffold <component> NAME --environment NAME [OPTIONS]
+  metewand [--output FORMAT] scaffold <component> NAME [OPTIONS]
   metewand [--output FORMAT] schema [SCHEMA]
   metewand [--output FORMAT] check [--manifest PATH] [--workers]
   metewand [--output FORMAT] plan [--manifest PATH]

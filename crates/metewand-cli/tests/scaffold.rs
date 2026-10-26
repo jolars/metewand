@@ -6,9 +6,8 @@ use std::{
 };
 
 use metewand_core::{
-    manifest::{DatasetDefinition, WorkerDefinition, parse_manifest},
+    manifest::{DatasetDefinition, InterpretedRunner, WorkerDefinition, parse_manifest},
     public_schemas::{PublicSchema, public_schema_catalog},
-    schema::SchemaCatalog,
 };
 use serde_json::{Value, json};
 use tempfile::TempDir;
@@ -70,30 +69,19 @@ fn scaffolds_all_three_components_incrementally_without_scientific_defaults() {
             "dataset",
             "sample.data",
             vec!["--environment", "local"],
-            vec![
-                "parameters.schema.json",
-                "dataset.schema.json",
-                "materializer.sh",
-            ],
+            vec!["materializer.py"],
         ),
         (
             "problem",
             "sample.problem",
             vec!["--environment", "local"],
-            vec![
-                "contract.yaml",
-                "parameters.schema.json",
-                "result.schema.json",
-                "metrics.schema.json",
-                "semantics.schema.json",
-                "evaluator.sh",
-            ],
+            vec!["evaluator.py"],
         ),
         (
             "implementation",
             "sample.impl",
             vec!["--environment", "local", "--problem", "sample.problem"],
-            vec!["parameters.schema.json", "worker.sh"],
+            vec!["worker.py"],
         ),
     ] {
         let before = files(root.path());
@@ -142,7 +130,14 @@ fn scaffolds_all_three_components_incrementally_without_scientific_defaults() {
     }
     let source = fs::read_to_string(root.path().join("metewand.yaml")).unwrap();
     assert!(source.starts_with(MANIFEST));
-    let manifest = parse_manifest(Path::new("metewand.yaml"), &source).unwrap();
+    assert!(!source.contains("contract:"));
+    assert!(!source.contains("parameter-schema:"));
+    assert!(!source.contains("semantics-schema:"));
+    assert!(source.contains("one_shot_completion: {}"));
+    assert!(source.contains("# TODO:"));
+    // Scientific placeholders remain invalid until the author supplies rules.
+    assert!(parse_manifest(Path::new("metewand.yaml"), &source).is_err());
+    let manifest = parse_manifest(Path::new("metewand.yaml"), &complete_problems(&source)).unwrap();
     assert_eq!(manifest.datasets.len(), 1);
     assert_eq!(manifest.problems.len(), 1);
     assert_eq!(manifest.implementations.len(), 1);
@@ -153,34 +148,19 @@ fn scaffolds_all_three_components_incrementally_without_scientific_defaults() {
     let DatasetDefinition::Generated(dataset) = &manifest.datasets["sample.data"] else {
         panic!("expected materializer");
     };
-    let WorkerDefinition::Command(worker) = &dataset.worker else {
-        panic!("expected raw worker");
+    let WorkerDefinition::Interpreted(worker) = &dataset.worker else {
+        panic!("expected SDK worker");
     };
-    assert_eq!(worker.program, "sh");
+    assert_eq!(worker.runner, InterpretedRunner::Python);
     assert_eq!(worker.environment.as_str(), "local");
     assert_eq!(
         manifest.implementations["sample.impl"].problem_contracts[0].as_str(),
         "sample.problem"
     );
-    let documents = files(root.path())
-        .into_iter()
-        .filter(|(path, _)| path.to_string_lossy().ends_with(".schema.json"))
-        .map(|(path, contents)| (path, serde_json::from_slice(&contents).unwrap()))
-        .collect::<Vec<_>>();
-    let schemas = SchemaCatalog::try_new(documents.clone()).unwrap();
-    for (path, _) in documents {
-        for value in [json!({}), json!(null), json!([]), json!(1), json!("text")] {
-            assert!(schemas.validate(&path, &value).is_err());
-        }
-    }
-    let contract =
-        fs::read_to_string(root.path().join("problems/sample.problem/contract.yaml")).unwrap();
     assert!(
-        metewand_core::problem_contract::parse_problem_contract_document(
-            Path::new("contract.yaml"),
-            &contract
-        )
-        .is_err()
+        files(root.path())
+            .keys()
+            .all(|path| !path.to_string_lossy().ends_with(".schema.json"))
     );
     assert!(
         !root
@@ -204,7 +184,7 @@ fn scaffolds_component_names_that_yaml_can_resolve_as_other_scalar_types() {
                 }
                 envelope(&scaffold(root.path(), component, name, &options), true);
                 let source = fs::read_to_string(&path).unwrap();
-                let manifest = parse_manifest(&path, &source).unwrap();
+                let manifest = parse_manifest(&path, &complete_problems(&source)).unwrap();
                 match component {
                     "dataset" => assert!(manifest.datasets.contains_key(name)),
                     "problem" => assert!(manifest.problems.contains_key(name)),
@@ -284,7 +264,7 @@ fn supports_custom_manifests_and_flow_mappings_without_rewriting_other_fields() 
     );
     assert!(
         directory
-            .join("datasets/with.dots/materializer.sh")
+            .join("datasets/with.dots/materializer.py")
             .exists()
     );
     assert!(!root.path().join("datasets").exists());
@@ -292,7 +272,7 @@ fn supports_custom_manifests_and_flow_mappings_without_rewriting_other_fields() 
     assert!(changed.starts_with("# Author's header.\nversion: 1\nname: 'benchmark'\n"));
     assert!(changed.contains("environments: { local: { kind: 'local' } }\n"));
     assert!(changed.contains("# Dataset choices."));
-    let manifest = parse_manifest(Path::new("custom.yaml"), &changed).unwrap();
+    let manifest = parse_manifest(Path::new("custom.yaml"), &complete_problems(&changed)).unwrap();
     assert!(manifest.datasets.contains_key("with.dots"));
 }
 
@@ -341,7 +321,8 @@ fn adds_each_component_to_flow_mappings_with_independent_namespaces() {
     assert!(changed.starts_with("version: 1\nname: 'benchmark'\ndatasets: {"));
     assert!(changed.ends_with("environments: { local: { kind: 'local' } }\n"));
     assert!(changed.contains("# Preserve this comment."));
-    let manifest = parse_manifest(Path::new("metewand.yaml"), &changed).unwrap();
+    let manifest =
+        parse_manifest(Path::new("metewand.yaml"), &complete_problems(&changed)).unwrap();
     assert_eq!(manifest.datasets.len(), 2);
     assert_eq!(manifest.problems.len(), 2);
     assert_eq!(manifest.implementations.len(), 2);
@@ -351,14 +332,15 @@ fn adds_each_component_to_flow_mappings_with_independent_namespaces() {
 #[test]
 fn rejects_duplicate_components_and_every_existing_target_before_mutating() {
     for dry_run in [false, true] {
-        for collision in [
-            "datasets/new/dataset.schema.json",
-            "datasets/new/materializer.sh",
-        ] {
+        {
             let root = TempDir::new().unwrap();
             fs::write(root.path().join("metewand.yaml"), MANIFEST).unwrap();
             fs::create_dir_all(root.path().join("datasets/new")).unwrap();
-            fs::write(root.path().join(collision), "preserve\n").unwrap();
+            fs::write(
+                root.path().join("datasets/new/materializer.py"),
+                "preserve\n",
+            )
+            .unwrap();
             let before = files(root.path());
             let mut extra = vec!["--environment", "local"];
             if dry_run {
@@ -398,7 +380,6 @@ fn rejects_invalid_or_incomplete_requests_without_writes() {
         vec!["dataset"],
         vec!["experiment", "new"],
         vec!["dataset", "../escape", "--environment", "local"],
-        vec!["dataset", "new"],
         vec!["dataset", "new", "--environment", "missing"],
         vec!["implementation", "new", "--environment", "local"],
         vec![
@@ -434,6 +415,9 @@ fn rejects_invalid_or_incomplete_requests_without_writes() {
             "local",
         ],
         vec!["dataset", "new", "--template", "lasso"],
+        vec!["dataset", "new", "--language", "julia"],
+        vec!["dataset", "new", "--language"],
+        vec!["dataset", "new", "--language", "python", "--language", "r"],
     ] {
         let output = command(root.path())
             .args(["--output", "json", "scaffold"])
@@ -453,8 +437,7 @@ fn refuses_symlinked_manifests_and_generated_paths_including_dangling_links() {
         "metewand.yaml",
         "datasets",
         "datasets/new",
-        "datasets/new/materializer.sh",
-        "datasets/new/parameters.schema.json",
+        "datasets/new/materializer.py",
     ] {
         for dangling in [false, true] {
             let root = TempDir::new().unwrap();
@@ -467,7 +450,7 @@ fn refuses_symlinked_manifests_and_generated_paths_including_dangling_links() {
             }
             let destination = outside.path().join("target");
             if !dangling {
-                if target.ends_with(".yaml") || target.ends_with(".sh") || target.ends_with(".json")
+                if target.ends_with(".yaml") || target.ends_with(".py") || target.ends_with(".json")
                 {
                     fs::write(&destination, MANIFEST).unwrap();
                 } else {
@@ -526,7 +509,7 @@ fn concurrent_component_additions_preserve_both_successful_updates() {
     }
     assert!(!successful.is_empty());
     let source = fs::read_to_string(root.path().join("metewand.yaml")).unwrap();
-    let manifest = parse_manifest(Path::new("metewand.yaml"), &source).unwrap();
+    let manifest = parse_manifest(Path::new("metewand.yaml"), &complete_problems(&source)).unwrap();
     assert_eq!(manifest.datasets.len(), successful.len());
     for name in successful {
         assert!(manifest.datasets.contains_key(name.as_str()));
@@ -557,9 +540,7 @@ fn compact_and_human_reports_list_the_same_paths_in_execution_order() {
             "{\"schema_version\":1,\"kind\":\"result\",\"data\":{\"command\":\"scaffold\",\"component\":\"dataset\",\"name\":\"new\",\"dry_run\":true,\"manifest\":\"metewand.yaml\",\"paths\":[",
             "{\"path\":\"datasets\",\"kind\":\"directory\",\"action\":\"create\"},",
             "{\"path\":\"datasets/new\",\"kind\":\"directory\",\"action\":\"create\"},",
-            "{\"path\":\"datasets/new/parameters.schema.json\",\"kind\":\"file\",\"action\":\"create\"},",
-            "{\"path\":\"datasets/new/dataset.schema.json\",\"kind\":\"file\",\"action\":\"create\"},",
-            "{\"path\":\"datasets/new/materializer.sh\",\"kind\":\"file\",\"action\":\"create\"},",
+            "{\"path\":\"datasets/new/materializer.py\",\"kind\":\"file\",\"action\":\"create\"},",
             "{\"path\":\"metewand.yaml\",\"kind\":\"file\",\"action\":\"modify\"}]}}\n"
         )
     );
@@ -570,9 +551,7 @@ fn compact_and_human_reports_list_the_same_paths_in_execution_order() {
         concat!(
             "Would create directory: datasets\n",
             "Would create directory: datasets/new\n",
-            "Would create file: datasets/new/parameters.schema.json\n",
-            "Would create file: datasets/new/dataset.schema.json\n",
-            "Would create file: datasets/new/materializer.sh\n",
+            "Would create file: datasets/new/materializer.py\n",
             "Would modify file: metewand.yaml\n"
         )
     );
@@ -586,9 +565,7 @@ fn compact_and_human_reports_list_the_same_paths_in_execution_order() {
         concat!(
             "Created directory: datasets\n",
             "Created directory: datasets/new\n",
-            "Created file: datasets/new/parameters.schema.json\n",
-            "Created file: datasets/new/dataset.schema.json\n",
-            "Created file: datasets/new/materializer.sh\n",
+            "Created file: datasets/new/materializer.py\n",
             "Modified file: metewand.yaml\n"
         )
     );
@@ -742,4 +719,108 @@ fn supports_flow_roots_standard_mapping_tags_and_unrelated_root_merges() {
             assert!(updated.contains("datasets: !!map {"));
         }
     }
+}
+
+fn complete_problems(source: &str) -> String {
+    let mut value: Value = serde_saphyr::from_str(source).unwrap();
+    if let Some(problems) = value.get_mut("problems").and_then(Value::as_object_mut) {
+        for problem in problems.values_mut() {
+            if problem.get("contract").is_none() {
+                problem["family"] = json!("author-supplied");
+                problem["dataset-schemas"] = json!([]);
+                problem["allowed-timing-scopes"] = json!(["prepare_and_execute"]);
+                problem["semantics"]["validity"] = json!({"author_supplied": true});
+                problem["semantics"]["one_shot_completion"] = json!({"author_supplied": true});
+                problem["reference-cases"] = json!([{"result": "reference/result.json", "expected-metrics": "reference/metrics.json"}]);
+            }
+        }
+    }
+    value.to_string()
+}
+
+#[test]
+fn languages_generate_only_small_sdk_adapters_and_inline_declarations() {
+    for (language, extension) in [("python", "py"), ("r", "R"), ("rust", "rs")] {
+        let root = TempDir::new().unwrap();
+        fs::write(
+            root.path().join("metewand.yaml"),
+            "version: 1\nname: benchmark\n",
+        )
+        .unwrap();
+        for (component, filename) in [
+            ("dataset", "materializer"),
+            ("problem", "evaluator"),
+            ("implementation", "worker"),
+        ] {
+            let mut options = vec!["--language", language];
+            if component == "implementation" {
+                options.extend(["--problem", "new"]);
+            }
+            let mut preview = options.clone();
+            preview.push("--dry-run");
+            let before = files(root.path());
+            let proposed = envelope(&scaffold(root.path(), component, "new", &preview), true);
+            assert_eq!(files(root.path()), before);
+            let actual = envelope(&scaffold(root.path(), component, "new", &options), true);
+            assert_eq!(proposed["data"]["paths"], actual["data"]["paths"]);
+            let path = format!("{component}s/new/{filename}.{extension}");
+            let adapter = fs::read_to_string(root.path().join(&path)).unwrap();
+            assert!(adapter.contains("TODO:"), "{path}");
+            assert!(!adapter.contains("METEWAND_PROTOCOL_"), "{path}");
+            assert_eq!(
+                actual["data"]["paths"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .filter(|p| p["kind"] == "file")
+                    .count(),
+                2
+            );
+        }
+        let source = fs::read_to_string(root.path().join("metewand.yaml")).unwrap();
+        assert!(!source.contains("schema.json"));
+        assert!(!source.contains("contract.yaml"));
+        assert!(!source.contains("environments:"));
+        let manifest =
+            parse_manifest(Path::new("metewand.yaml"), &complete_problems(&source)).unwrap();
+        assert_eq!(manifest.environments.len(), 1);
+        assert!(manifest.environments.contains_key("local"));
+    }
+}
+
+#[test]
+fn scaffold_environment_defaults_require_an_unambiguous_local_choice() {
+    for environments in [
+        "environments: {first: {kind: local}, second: {kind: local}}\n",
+        "environments: {managed: {kind: uv, project: ., lockfile: uv.lock}}\n",
+    ] {
+        let root = TempDir::new().unwrap();
+        fs::write(
+            root.path().join("metewand.yaml"),
+            format!("version: 1\nname: benchmark\n{environments}"),
+        )
+        .unwrap();
+        let before = files(root.path());
+        for options in [vec![], vec!["--dry-run"]] {
+            let diagnostic = envelope(&scaffold(root.path(), "dataset", "sample", &options), false);
+            assert_eq!(diagnostic["data"]["code"], "scaffold_invalid_request");
+            assert_eq!(files(root.path()), before);
+        }
+    }
+    let root = TempDir::new().unwrap();
+    fs::write(
+        root.path().join("metewand.yaml"),
+        "version: 1\nname: benchmark\nenvironments: {host: {kind: local}}\n",
+    )
+    .unwrap();
+    envelope(&scaffold(root.path(), "dataset", "sample", &[]), true);
+    let source = fs::read_to_string(root.path().join("metewand.yaml")).unwrap();
+    let manifest = parse_manifest(Path::new("metewand.yaml"), &source).unwrap();
+    let DatasetDefinition::Generated(dataset) = &manifest.datasets["sample"] else {
+        panic!("expected generated dataset");
+    };
+    let WorkerDefinition::Interpreted(worker) = &dataset.worker else {
+        panic!("expected SDK worker");
+    };
+    assert_eq!(worker.environment.as_str(), "host");
 }

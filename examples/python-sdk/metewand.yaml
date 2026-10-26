@@ -16,18 +16,16 @@ datasets:
             properties: { path: { const: "data.json" } }
             required: [path]
       required: [schema_version, complete, files]
-    runner: "command"
-    program: "python3"
-    args: ["{sources}/worker.py", "dataset_materializer"]
+    runner: python
+    entrypoint: worker.py
+    args: [dataset_materializer]
     sources: ["worker.py", "metewand/*.py"]
-    environment: "local"
-    parameter-schema:
-      type: object
-      properties:
-        values: { type: array, items: { type: integer }, minItems: 1 }
-      required: [values]
-      additionalProperties: false
-    parameter-defaults: { values: [1, 2, 3] }
+    parameters:
+      values:
+        type: array
+        items: { type: integer }
+        minItems: 1
+        default: [1, 2, 3]
 problems:
   sum:
     family: arithmetic
@@ -52,23 +50,18 @@ problems:
         result: reference/result.json
         expected-metrics: reference/metrics.json
     evaluator:
-      runner: "command"
-      program: "python3"
-      args: ["{sources}/worker.py", "problem_evaluator"]
+      runner: python
+      entrypoint: worker.py
+      args: [problem_evaluator]
       sources: ["worker.py", "metewand/*.py"]
-      environment: "local"
 implementations:
   reference:
-    runner: "command"
-    program: "python3"
-    args: ["{sources}/worker.py", "implementation"]
+    runner: python
+    entrypoint: worker.py
+    args: [implementation]
     sources: ["worker.py", "metewand/*.py"]
-    environment: "local"
     problem-contracts: ["sum"]
     capabilities: ["one_shot"]
-environments:
-  local:
-    kind: "local"
 experiments:
   - name: "main"
     problem: "sum"
@@ -76,16 +69,13 @@ experiments:
     implementations: ["reference"]
     execution-policy: "local"
     observation-policy: "final"
-    implementation-repetitions: 1
     measurement-repetitions: 2
     seed: 7
 execution-policies:
   local:
-    version: 1
     timing-scope: "prepare_and_execute"
     primary-time: "timed_wall_time"
     worker-reuse: true
 observation-policies:
   final:
-    version: 1
     kind: "one_shot"

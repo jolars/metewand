@@ -65,14 +65,20 @@ Create a minimal manifest with:
 
 ```sh
 target/release/metewand init benchmark
+cd benchmark
+../target/release/metewand scaffold problem target --language python
+../target/release/metewand scaffold implementation candidate --language python --problem target
 ```
 
-The manifest starts with a version and a name. Add your environments, scientific
-contracts, datasets, implementations, and experiments explicitly. The [authoring
+Initialization creates a version and a name. Scaffolding adds compact inline
+declarations and SDK adapters. Supply scientific rules, data shapes, reference
+fixtures, and experiments in the generated manifest and callbacks. Select
+`--language r` or `--language rust` for another worker language. An omitted
+environment uses the unambiguous local default. The [authoring
 reference](../reference/authoring-cli.md) explains initialization and component
 scaffolding. A [runnable example](examples.md) is a useful starting point for a
 complete benchmark.
 
-Use the [Python SDK](../reference/python-sdk.md) or [R
-SDK](../reference/r-sdk.md) to write workers in those languages. Any executable
-can instead implement the [worker protocol](../reference/worker-protocol.md).
+Use the [Python SDK](../reference/python-sdk.md), [R
+SDK](../reference/r-sdk.md), or [Rust helpers](../reference/rust-sdk.md) for
+workers. Any executable can instead implement the [worker protocol](../reference/worker-protocol.md).

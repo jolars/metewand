@@ -337,7 +337,10 @@ merge keys in that namespace, or a namespace inherited through a root merge
 before creating files. The diagnostic directs the author to expand the mapping
 manually. Anchors on unrelated definitions and unrelated root merges remain
 supported. The proposed manifest is reparsed to verify that only the requested
-definition changes.
+definition changes. Scaffolding validates the structural manifest and worker
+declarations while allowing unfinished flat scientific definitions between
+component additions. Full repository validation still requires those
+definitions and author-supplied reference fixtures.
 
 Metewand does not replace native environment initialization commands such as
 `uv init` or `renv::init()`. Complete runnable benchmarks, including examples
@@ -345,8 +348,9 @@ such as a Python lasso comparison, are distributed under `examples/` rather than
 exposed as privileged built-in templates.
 
 The local MVP simplifies authoring around the Basin and clustlasso-cd
-integrations. Inline contracts and schemas are supported; scaffolds still emit
-the reusable external files documented in the
+integrations. Scaffolds emit compact declarations in the manifest and small
+SDK adapters in the selected Python, R, or Rust language. Reusable external
+contracts and schemas remain supported. See the
 [authoring reference](docs/reference/authoring-cli.md).
 
 A problem contract and its schemas may be inline or referenced from reusable
@@ -493,11 +497,14 @@ by evaluator code rather than repeated as a hard-coded constant. Reference cases
 continue to check scientific behavior. Metric declarations describe data shape;
 they do not infer scientific formulas, validity, or completion thresholds.
 
-Scaffolds should emit the compact form once implemented. Keep the actual
+Scaffolds emit the compact form and one SDK adapter per component. Keep the actual
 scientific rules and adapter translations visible; defaults supply mechanical
-settings. Let authors choose a worker language and generate small SDK adapters
-with scientific decisions clearly left for them to supply. The complete
-comparison should need one manifest, small adapters, and scientific reference
+settings. Authors choose a worker language with `--language python|r|rust`;
+adapter callbacks fail with TODO diagnostics until the scientific decisions are
+supplied. An omitted worker environment uses the same unambiguous local default
+as other declarations. Native adapters are built in the author's Cargo project,
+without scaffolding invoking a package manager or generating a native lockfile.
+The complete comparison should need one manifest, small adapters, and scientific reference
 fixtures, without hand-written protocol transport or artifact envelopes. New
 public schemas should reuse authoritative boundary types where practical.
 Rewriting the existing schema catalog is not a prerequisite for these

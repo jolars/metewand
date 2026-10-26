@@ -7,7 +7,9 @@ measured slots, process reuse, and durable result publication.
 The problem's parameters, results, metrics, scientific rules, reference cases,
 and evaluator live directly under `problems.sum` in `metewand.yaml`, with no
 `contract` wrapper or separate family semantics schema. Result and metric shapes
-use compact declarations.
+use compact declarations, as do dataset parameters. The manifest relies on
+unambiguous local-environment and one-shot defaults, keeping timing and
+scientific choices explicit. No separate contract or schema files are needed.
 The dataset schema uses a YAML anchor so the dataset and problem share one
 declaration. The adapters return result data and an explicit metric verdict;
 the SDK writes the envelopes, and Metewand validates them against the selected
@@ -24,6 +26,12 @@ cargo run --locked -p metewand-cli -- run \
   --manifest "$demo_dir/metewand.yaml" \
   --output-dir "$demo_dir/run" --output jsonl
 ```
+
+Start a benchmark with the same structure using `metewand init`, then
+`metewand scaffold dataset|problem|implementation NAME --language python`
+(with `--problem NAME` for implementations). Fill the scientific TODOs and
+reference fixtures, then add experiments and policies. See the
+[authoring guide](../../docs/reference/authoring-cli.md) for all three languages.
 
 The explicit source bundle includes `worker.py` and the SDK's Python files, so
 Metewand hashes and stages them together. Python imports the staged package

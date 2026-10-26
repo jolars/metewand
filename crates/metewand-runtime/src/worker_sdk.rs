@@ -5,6 +5,7 @@
 //! validates outputs and owns authoritative timing and publication.
 
 use std::{
+    collections::BTreeMap,
     fs::{self, File},
     io::{self, Read, Write},
     os::fd::{FromRawFd, OwnedFd},
@@ -16,13 +17,14 @@ use std::{
 use metewand_core::canonical::{CanonicalJsonError, CanonicalValue, MAX_SAFE_INTEGER};
 use metewand_protocol::{
     Acknowledgement, Capability, EvaluateRequest, EvaluateResponse, EvaluationVerdict,
-    ExecuteRequest, ExecuteResponse, HelloRequest, HelloResponse, PrepareRequest, RequestId,
-    ResetRequest, SdkMetadata, ShutdownRequest, WireMessage, WorkerFailure, WorkerFailureCode,
-    WorkerFailureResponse, WorkerRole, decode_message, encode_message, framing::FrameReader,
-    negotiate_protocol,
+    ExecuteRequest, ExecuteResponse, HelloRequest, HelloResponse, MaterializeRequest,
+    MaterializeResponse, PrepareRequest, RequestId, ResetRequest, SdkMetadata, ShutdownRequest,
+    WireMessage, WorkerFailure, WorkerFailureCode, WorkerFailureResponse, WorkerRole,
+    decode_message, encode_message, framing::FrameReader, negotiate_protocol,
 };
 use serde::Serialize;
 use serde_json::{Value, json};
+use sha2::{Digest as _, Sha256};
 use thiserror::Error;
 
 /// A callback result that can become a structured worker failure.
@@ -209,6 +211,52 @@ pub fn serve_evaluator(worker: &mut impl Evaluator) -> Result<(), ServeError> {
     serve_evaluator_on(worker, reader, writer)
 }
 
+/// Serves a dataset callback on inherited pipes. The callback returns a completed
+/// manifest path relative to the assigned output directory.
+///
+/// # Errors
+/// Returns a terminal transport error. Callback failures become wire responses.
+pub fn serve_dataset_materializer(
+    worker: &mut impl FnMut(&MaterializeRequest) -> WorkerResult<String>,
+) -> Result<(), ServeError> {
+    let (reader, writer) = inherited_pipes()?;
+    serve_dataset_materializer_on(worker, reader, writer)
+}
+
+/// Serves a dataset callback on explicit streams.
+///
+/// # Errors
+/// Returns a terminal transport error. Invalid requests and incomplete manifests
+/// produce structured failures without terminating the session.
+pub fn serve_dataset_materializer_on(
+    worker: &mut impl FnMut(&MaterializeRequest) -> WorkerResult<String>,
+    reader: impl Read,
+    writer: impl Write,
+) -> Result<(), ServeError> {
+    serve_on(
+        WorkerRole::DatasetMaterializer,
+        [],
+        reader,
+        writer,
+        |request| match request["method"].as_str().unwrap_or_default() {
+            "materialize" => {
+                let request: MaterializeRequest = decode(request)?;
+                let manifest = worker(&request)?;
+                completed_manifest(Path::new(request.output_dir()), &manifest)?;
+                response(&MaterializeResponse::new(request.id().clone(), manifest))
+            }
+            "shutdown" => {
+                let request: ShutdownRequest = decode(request)?;
+                response(&Acknowledgement::new(request.id().clone()))
+            }
+            _ => Err(failure(
+                WorkerFailureCode::UnsupportedOperation,
+                "This materializer does not accept the requested method.",
+            )),
+        },
+    )
+}
+
 /// Serves an implementation on explicit streams without taking their descriptors.
 ///
 /// # Errors
@@ -336,9 +384,9 @@ pub fn serve_evaluator_on(
     )
 }
 
-fn serve_on(
+fn serve_on<const N: usize>(
     role: WorkerRole,
-    capabilities: [Capability; 1],
+    capabilities: [Capability; N],
     reader: impl Read,
     mut writer: impl Write,
     mut dispatch: impl FnMut(Value) -> WorkerResult<Vec<u8>>,
@@ -388,7 +436,11 @@ fn serve_on(
     }
 }
 
-fn hello(request: Value, role: WorkerRole, capabilities: [Capability; 1]) -> WorkerResult<Vec<u8>> {
+fn hello<const N: usize>(
+    request: Value,
+    role: WorkerRole,
+    capabilities: [Capability; N],
+) -> WorkerResult<Vec<u8>> {
     let request: HelloRequest = decode(request)?;
     if request.role() != role {
         return Err(failure(
@@ -548,6 +600,55 @@ pub fn write_json(path: &Path, data: Value) -> WorkerResult<()> {
     let bytes = CanonicalValue::try_from(data)?.to_canonical_bytes()?;
     fs::write(path, bytes)?;
     Ok(())
+}
+
+/// Hashes completed files and writes a standard dataset inventory last.
+///
+/// Each pair supplies a relative path and an author-selected media type. Use a
+/// custom writer when the benchmark needs additional representation metadata.
+///
+/// # Errors
+/// Returns an error for duplicate or unsafe paths, nonregular files, empty media
+/// types, invalid canonical JSON, or I/O failures.
+pub fn write_dataset_manifest(directory: &Path, files: &[(&str, &str)]) -> WorkerResult<String> {
+    let mut entries = BTreeMap::new();
+    for &(path, media_type) in files {
+        if path == "dataset-manifest.json" || entries.contains_key(path) || media_type.is_empty() {
+            return Err(WorkerError::operation_failed(
+                "Dataset files must be unique, exclude the manifest, and have media types.",
+            ));
+        }
+        let target = output_path(directory, path)?;
+        let mut file = File::open(target)?;
+        let metadata = file.metadata()?;
+        if !metadata.is_file() {
+            return Err(WorkerError::operation_failed(
+                "Dataset entries must be regular files.",
+            ));
+        }
+        let mut digest = Sha256::new();
+        let mut buffer = [0; 8192];
+        loop {
+            let length = file.read(&mut buffer)?;
+            if length == 0 {
+                break;
+            }
+            digest.update(&buffer[..length]);
+        }
+        entries.insert(
+            path,
+            json!({
+                "path": path, "media_type": media_type,
+                "sha256": digest.finalize().iter().map(|byte| format!("{byte:02x}")).collect::<String>(),
+                "size_bytes": metadata.len(),
+            }),
+        );
+    }
+    write_json(
+        &output_path(directory, "dataset-manifest.json")?,
+        json!({"schema_version": 1, "complete": true, "files": entries.into_values().collect::<Vec<_>>()}),
+    )?;
+    Ok("dataset-manifest.json".to_owned())
 }
 
 /// Writes the standard result envelope, using the selected contract's schema.

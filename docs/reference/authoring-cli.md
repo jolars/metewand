@@ -1,9 +1,9 @@
 # Benchmark authoring
 
-This page describes the implemented CLI. Manually authored benchmarks may use
-[inline contracts](problem-contracts.md) and [schemas](schema-validation.md#inline-declarations).
-Scaffolds still emit the reusable external files listed below. Implementations
-and generated datasets may use [compact parameter declarations](parameter-namespaces.md#compact-implementation-parameters)
+Scaffolds create compact declarations in one manifest and small SDK adapters.
+[Separate contracts](problem-contracts.md) and [schemas](schema-validation.md#inline-declarations)
+remain supported for reuse. Implementations and generated datasets use
+[compact parameter declarations](parameter-namespaces.md#compact-implementation-parameters)
 with literal defaults or default grids. Problem contracts accept the same
 `parameters` form and compact `result` and `metrics` declarations. Each boundary
 can independently use a compact declaration or an explicit schema. Problem
@@ -13,9 +13,8 @@ Experiment axes override declaration grids, and named cases override experiment
 axes. Experiment and case parameters accept plain scalar literals; arrays and
 objects use `value`, and sweeps use `grid`. Parameter diagnostics point to the
 authored declaration or effective supplied value in YAML. Local-environment and
-one-shot policy defaults resolve before planning. Language-specific SDK
-scaffolds and an optional family semantics schema remain planned MVP
-work; see the [roadmap](https://github.com/jolars/metewand/blob/main/TODO.md).
+one-shot policy defaults resolve before planning. A separate family
+`semantics-schema` is optional; scientific rules and reference cases remain explicit.
 
 ## Initialization
 
@@ -81,28 +80,23 @@ I/O failure. Inspect the reported paths before retrying.
 
 ## Component scaffolding
 
-`metewand scaffold <dataset|problem|implementation> NAME --environment NAME`
-adds one named component to an existing manifest. The environment must already
-be defined. Implementation scaffolds also require `--problem NAME`, naming an
-existing problem. These choices are explicit so scaffolding does not add or
-change environments, other components, experiments, or policies.
-
-For example, after initialization, add your chosen environment to the manifest:
-
-```yaml
-environments:
-  host:
-    kind: "local"
-```
-
-Then add components incrementally:
+`metewand scaffold <dataset|problem|implementation> NAME` adds one named
+component to an existing manifest. Select `--language python|r|rust`; the default
+is `python`. Implementation scaffolds require `--problem NAME`, naming an
+existing problem. Add components incrementally after initialization:
 
 ```sh
-metewand scaffold dataset observations --environment host --dry-run
-metewand scaffold dataset observations --environment host
-metewand scaffold problem target --environment host
-metewand scaffold implementation candidate --environment host --problem target
+metewand scaffold dataset observations --language python --dry-run
+metewand scaffold dataset observations --language python
+metewand scaffold problem target --language python
+metewand scaffold implementation candidate --language python --problem target
 ```
+
+An omitted `--environment` uses the sole declared local environment, or the
+implicit `local` environment if none are declared. Multiple local environments
+or exclusively managed environments require an explicit selection. Use
+`--environment NAME` to select an existing environment. Scaffolding does not
+write environment definitions, other components, experiments, or policies.
 
 `--manifest PATH` selects a custom manifest. Generated paths are relative to
 that manifest's parent directory, including when the manifest is outside the
@@ -121,42 +115,57 @@ edits are reparsed and checked to change only the requested component.
 
 ### Generated files and author responsibilities
 
-Each scaffold creates only the following files beneath its component directory:
+Each scaffold creates one adapter beneath its component directory and updates
+the manifest. The extension is `.py`, `.R`, or `.rs` for Python, R, or Rust:
 
-| Component | Directory | Files |
+| Component | Directory | Adapter basename |
 | --- | --- | --- |
-| Dataset | `datasets/NAME/` | `parameters.schema.json`, `dataset.schema.json`, `materializer.sh` |
-| Problem | `problems/NAME/` | `contract.yaml`, `parameters.schema.json`, `result.schema.json`, `metrics.schema.json`, `semantics.schema.json`, `evaluator.sh` |
-| Implementation | `implementations/NAME/` | `parameters.schema.json`, `worker.sh` |
+| Dataset | `datasets/NAME/` | `materializer` |
+| Problem | `problems/NAME/` | `evaluator` |
+| Implementation | `implementations/NAME/` | `worker` |
 
-The dataset scaffold declares a generated dataset with a materializer. The
-problem scaffold declares a contract and an independent evaluator. The
-implementation scaffold declares support for the selected problem and the
-version-1 `one_shot` capability. Each worker uses the raw-command runner,
-`program: "sh"`, its explicitly declared source file, and the selected
-environment. The shell file only prints a TODO diagnostic and exits with `1`.
-Replace it with your protocol worker or use a
-[Python](python-sdk.md) or [R](r-sdk.md) SDK adapter, updating the launch and
-complete source bundle as needed.
+Parameters start as `parameters: {}`, a closed empty object. Add typed scientific
+parameters, defaults, and grids as needed. The generated dataset has an inline
+`output-schema: {not: {}}`; define the artifact shape and remove the rejecting
+clause. Problem fields live directly under `problems.NAME`, with compact `result`
+and `metrics` mappings. No separate contract, schema, or reference files are
+created. You can replace any boundary with a reusable external declaration later.
 
-The generated Draft 2020-12 schemas contain `"not": {}`, which rejects every
-instance. Define the schema yourself, then remove that rejecting clause.
-Scaffolding supplies no parameter meanings, dataset values, result fields,
-metrics, or library translations.
-
-The problem contract deliberately omits a family, accepted dataset schemas,
-allowed timing scopes, validity rules, completion rules, and reference cases.
-Its comments identify each author responsibility. Choose these explicitly,
-including preprocessing rules and independently justified reference results
-and metrics. `dataset-schemas: []` is an author decision for a dataset-free
-problem. No reference data or results are generated, and the contract fails
-`check` until its required definitions are complete. Schema and worker stubs
-also require author edits before they can be used for execution. See
+The problem deliberately leaves its family, accepted dataset schemas, timing
+scopes, preprocessing, validity, completion target, and reference cases for the
+author. Choose `dataset-schemas: []` explicitly for a dataset-free problem.
+Supply independently justified reference results and metrics. Scaffolding
+checks YAML structure and worker declarations while allowing unfinished flat
+scientific definitions between component additions. `check`, `plan`, and `run`
+require complete declarations and reference fixtures. See
 [problem contracts](problem-contracts.md) for the full contract.
 
-Scaffolding never launches a worker or package manager, initializes a native
-environment, or changes a native lockfile. Use the ecosystem's own tools for
-environment setup. Complete runnable benchmarks belong in `examples/`.
+Python and R adapters use the [Python](python-sdk.md) and [R](r-sdk.md) runners.
+Install the matching SDK into the selected environment. The [Rust](rust-sdk.md)
+adapters use native helpers through the command runner. Add them as binaries to
+your Cargo project with local path dependencies on `metewand-runtime` and
+`metewand-protocol`, plus `serde_json`. Build and copy each executable beside its
+`.rs` adapter with the same basename and no extension. The generated manifest
+includes both the source and executable in its source bundle. Add other solver
+sources and native lockfiles to `sources` as needed. Scaffolding creates no
+Cargo project and runs no build or package manager.
+
+Adapters already serve handshakes, dispatch callbacks, and report structured
+errors through the SDK. Their scientific callbacks raise TODO failures until
+you implement them. Implementations own preparation, solving, and conversion
+into scientific result data; the SDK writes the standard result envelope.
+Evaluators independently compute metrics and choose an explicit verdict,
+consuming declared rules through `problem_semantics`. Dataset callbacks write
+scientific files and use SDK inventory helpers. Add lifecycle hooks or custom
+artifact writers when needed, preserving the chosen timing boundary.
+
+Finish the benchmark by declaring an experiment and choosing its execution and
+observation policies. Keep `timing-scope`, `primary-time`, scientific rules, and
+profile selection explicit. The
+[Python SDK example](https://github.com/jolars/metewand/tree/main/examples/python-sdk)
+shows a complete benchmark with one manifest, small adapters, and reference
+fixtures. Use ecosystem tools to initialize environments and install the SDKs;
+scaffolding never changes native lockfiles or launches workers.
 
 ### Dry runs, path reports, and conflicts
 
@@ -206,6 +215,8 @@ The generated manifest uses `MANIFEST_VERSION = 1`, and machine results use
 `PUBLIC_SCHEMA_VERSION = 1`. The `init` and `scaffold` results add command shapes
 to the existing machine envelope without changing other command records,
 manifest semantics, identities, execution semantics, or the worker protocol.
+Compact scaffolds use existing authoring syntax and SDKs, so this change needs
+no compatibility version bump. Existing external declarations remain supported.
 The compatibility constants remain unchanged. The published `machine-output`
 schema defines both results, and conformance fixtures cover creation, dry runs,
 and malformed records.
