@@ -145,6 +145,13 @@ The version-1 record fields are:
 | Observation | resolved-slot ID, producing-attempt ID, result and metric artifact references, timings, and completion status |
 | Attempt | resolved-slot ID and retry index |
 
+A checked applicability decision is a dependency of the resolved specification.
+Changing its inputs, response, worker, environment, or observed controls changes
+that specification and its resolved attempt slots, observation slots, attempts,
+and observations. The logical candidate and logical slots remain stable when
+only the checked evidence changes. During resume, an accepted attempt under the
+previous decision cannot satisfy a slot under the new decision.
+
 Nested definitions use the same field representation as their standalone
 record, without a second nested `version`. Raw SHA-256 values use 64 lowercase
 hexadecimal digits. Durations use an object with integral `seconds` and
@@ -165,6 +172,10 @@ absolute path into an identity. Wall-clock timestamps are never identity inputs.
 canonical representation, kind, and identity of every version-1 resource and
 record in one complete dependency graph. The fixture is language-neutral so
 each SDK can verify the same bytes and digests.
+
+[`fixtures/identities/applicability-v1.json`](https://github.com/jolars/metewand/blob/main/fixtures/identities/applicability-v1.json)
+adds exact bytes and identities for a checked decision and every dependent
+execution record. Unconditional runs retain the original vectors.
 
 The Rust conformance tests rebuild that graph with object members, set-valued
 problem contracts, and environment variables supplied in different orders and

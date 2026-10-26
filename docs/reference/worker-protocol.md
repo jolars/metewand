@@ -223,8 +223,9 @@ records `unchecked` with code `check_pending` without launching workers. During
 `run`, Metewand materializes the dataset and checks each logical candidate in a
 separate worker before allocating measured slots. Checks run outside all
 performance timing scopes, including cold end-to-end timing. An exclusion is a
-successful decision and creates no measured attempts. A failed callback or
-invalid response aborts resolution with an error.
+successful decision and creates no resolved runs, attempt slots, or observation
+slots. It runs no warm-ups, preparation, execution, or evaluation. A failed
+callback or invalid response aborts resolution with an error.
 
 Persisted decisions retain the exact problem and implementation parameters,
 problem contract identity, dataset instance identity, dataset manifest content
@@ -232,8 +233,11 @@ and relative path, worker and environment identities, observed local controls,
 and structured response. Temporary view and worker paths are normalized in
 evidence so repeated resolution preserves identities. For the built-in empty
 unit dataset, the manifest path in the record is null, and the callback receives
-a separate synthesized manifest. The runner verifies the private dataset view
-and canonical dataset after the check, including failed checks.
+a separate synthesized manifest. The private dataset view contains independent
+copies, so writes through that view cannot change the shared dataset. The runner
+verifies the view, its manifest, and the canonical dataset after shutdown,
+including failed checks and exclusions. A changed view aborts resolution before
+the runner allocates slots or initializes a new run store.
 
 `explain <decision-id> --output-dir <run>` exposes this evidence, and `export`
 retains it for both applicable and excluded candidates. Implementations without

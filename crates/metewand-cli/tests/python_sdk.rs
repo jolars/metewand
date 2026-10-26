@@ -245,6 +245,10 @@ fn applicability_checks_precede_preparation_and_preserve_exact_inputs() {
         .replace(
             "    measurement-repetitions: 2",
             "    problem-parameters: {offset: {grid: [2, 3]}}\n    measurement-repetitions: 2",
+        )
+        .replace(
+            "    worker-reuse: true",
+            "    worker-reuse: true\n    warmup-runs: 1",
         );
     fs::write(manifest, source).unwrap();
     let worker = benchmark.path().join("worker.py");
@@ -293,8 +297,26 @@ fn applicability_checks_precede_preparation_and_preserve_exact_inputs() {
         .unwrap();
     let selected = invoke(&["run", "--output-dir", "excluded", "--select", excluded_id]);
     assert!(selected["data"]["attempts"].as_array().unwrap().is_empty());
+    let excluded = invoke(&["status", "--output-dir", "excluded"]);
+    assert_eq!(excluded["data"]["summary"]["attempt_slots"], 0);
+    assert!(excluded["data"]["slots"].as_array().unwrap().is_empty());
+    assert!(
+        excluded["data"]["observations"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
     let run = invoke(&["run", "--output-dir", "run"]);
     assert_eq!(run["data"]["attempts"].as_array().unwrap().len(), 2);
+    let status = invoke(&["status", "--output-dir", "run"]);
+    assert_eq!(status["data"]["summary"]["attempt_slots"], 2);
+    assert!(
+        status["data"]["slots"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|slot| { slot["candidate_id"] != excluded_id })
+    );
     invoke(&["export", "--output-dir", "run", "--destination", "exported"]);
     let records: Vec<Value> = fs::read_to_string(benchmark.path().join("exported/results.jsonl"))
         .unwrap()
@@ -344,6 +366,128 @@ fn applicability_checks_precede_preparation_and_preserve_exact_inputs() {
 }
 
 #[test]
+fn changed_applicability_evidence_invalidates_execution_and_resume_identities() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let benchmark = TempDir::new().unwrap();
+    copy_tree(&root.join("examples/python-sdk"), benchmark.path());
+    copy_tree(
+        &root.join("sdk/python/src/metewand"),
+        &benchmark.path().join("metewand"),
+    );
+    let manifest = benchmark.path().join("metewand.yaml");
+    let source = fs::read_to_string(&manifest)
+        .unwrap()
+        .replace(
+            "capabilities: [\"one_shot\"]",
+            "capabilities: [\"one_shot\", \"applicability\"]",
+        )
+        .replace("measurement-repetitions: 2", "measurement-repetitions: 1");
+    fs::write(manifest, source).unwrap();
+    // Keep the worker and declared inputs fixed while changing only its response.
+    let support = benchmark.path().join("support.txt");
+    fs::write(&support, "supported_a").unwrap();
+    let worker = benchmark.path().join("worker.py");
+    let source = fs::read_to_string(&worker).unwrap().replace(
+        "class Sum(OneShotImplementation):",
+        &format!(
+            r#"class Sum(OneShotImplementation):
+    def check_applicability(self, *args):
+        from pathlib import Path
+        code = Path({support:?}).read_text()
+        return dict(outcome='not_applicable' if code == 'excluded' else 'applicable',
+                    code=code, reason='Support decision for this configuration.')
+"#
+        ),
+    );
+    fs::write(worker, source).unwrap();
+    let invoke = |args: &[&str]| {
+        let output = Command::new(env!("CARGO_BIN_EXE_metewand"))
+            .current_dir(benchmark.path())
+            .args(args)
+            .args(["--output", "json"])
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+        serde_json::from_slice::<Value>(&output.stdout).unwrap()
+    };
+    let run_args = ["run", "--output-dir", "run", "--cache-dir", "cache"];
+    let resume_args = [
+        "run",
+        "--output-dir",
+        "run",
+        "--cache-dir",
+        "cache",
+        "--resume",
+    ];
+    let first = invoke(&run_args);
+    assert_eq!(first["data"]["attempts"].as_array().unwrap().len(), 1);
+    assert!(
+        invoke(&resume_args)["data"]["attempts"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    fs::write(&support, "supported_b").unwrap();
+    let second = invoke(&resume_args);
+    assert_eq!(second["data"]["attempts"].as_array().unwrap().len(), 1);
+    let first = &first["data"]["attempts"][0];
+    let second = &second["data"]["attempts"][0];
+    assert_eq!(first["logical_slot_id"], second["logical_slot_id"]);
+    for field in ["resolved_slot_id", "attempt_id", "observation_id"] {
+        assert!(first[field].is_string(), "{first}");
+        assert_ne!(first[field], second[field], "{field}");
+    }
+    let mut decisions = Vec::new();
+    for (attempt, code) in [(first, "supported_a"), (second, "supported_b")] {
+        let slot = invoke(&[
+            "explain",
+            attempt["resolved_slot_id"].as_str().unwrap(),
+            "--output-dir",
+            "run",
+        ]);
+        let run_id = slot["data"]["subject"]["record"]["resolved_run_id"]
+            .as_str()
+            .unwrap();
+        let run = invoke(&["explain", run_id, "--output-dir", "run"]);
+        let record = &run["data"]["subject"]["record"];
+        assert_eq!(
+            record["applicability_id"],
+            record["definition"]["applicability"]
+        );
+        let decision_id = record["applicability_id"].as_str().unwrap();
+        let decision = invoke(&["explain", decision_id, "--output-dir", "run"]);
+        assert_eq!(
+            decision["data"]["subject"]["record"]["definition"]["code"],
+            code
+        );
+        decisions.push(decision_id.to_owned());
+    }
+    assert_ne!(decisions[0], decisions[1]);
+    assert!(
+        invoke(&resume_args)["data"]["attempts"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    fs::write(&support, "excluded").unwrap();
+    assert!(
+        invoke(&resume_args)["data"]["attempts"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    let status = invoke(&["status", "--output-dir", "run"]);
+    assert_eq!(status["data"]["summary"]["attempt_slots"], 2);
+    fs::write(&support, "supported_a").unwrap();
+    assert!(
+        invoke(&resume_args)["data"]["attempts"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[test]
 fn failed_applicability_checks_never_become_measured_attempts() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     for (callback, expected) in [
@@ -353,6 +497,18 @@ fn failed_applicability_checks_never_become_measured_attempts() {
         ),
         (
             "(dataset_instance / 'data.json').write_text('mutated')\n        return dict(outcome='applicable', code='supported', reason='Supported.')",
+            "artifact bytes or completion inventory changed",
+        ),
+        (
+            "(dataset_instance / 'data.json').unlink()\n        return dict(outcome='not_applicable', code='unsupported', reason='Unsupported.')",
+            "artifact bytes or completion inventory changed",
+        ),
+        (
+            "(dataset_instance / 'dataset-manifest.json').write_text('{}')\n        return dict(outcome='applicable', code='supported', reason='Supported.')",
+            "artifact bytes or completion inventory changed",
+        ),
+        (
+            "(dataset_instance / 'data.json').write_text('mutated')\n        raise RuntimeError('support inspection failed')",
             "artifact bytes or completion inventory changed",
         ),
     ] {
@@ -374,12 +530,33 @@ fn failed_applicability_checks_never_become_measured_attempts() {
         fs::write(worker, source).unwrap();
         let output = Command::new(env!("CARGO_BIN_EXE_metewand"))
             .current_dir(benchmark.path())
-            .args(["run", "--output-dir", "run", "--output", "json"])
+            .args([
+                "run",
+                "--output-dir",
+                "run",
+                "--cache-dir",
+                "cache",
+                "--output",
+                "json",
+            ])
             .output()
             .unwrap();
         assert!(!output.status.success(), "{output:?}");
         let text = String::from_utf8(output.stdout).unwrap();
         assert!(text.contains(expected), "{text}");
         assert!(!benchmark.path().join("run").exists());
+        let cache = benchmark.path().join("cache");
+        let objects = fs::read_dir(cache.join("objects"))
+            .unwrap()
+            .map(|entry| entry.unwrap().path().join("data"))
+            .collect::<Vec<_>>();
+        assert_eq!(objects.len(), 1);
+        let data: Value =
+            serde_json::from_slice(&fs::read(objects[0].join("data.json")).unwrap()).unwrap();
+        assert_eq!(data["values"], serde_json::json!([1, 2, 3]));
+        let digest = metewand_runtime::local_tree::hash_local_tree(&objects[0]).unwrap();
+        let cache = metewand_runtime::artifact_store::ArtifactStore::open_existing(&cache).unwrap();
+        cache.get(digest).unwrap().unwrap().verify().unwrap();
+        assert!(cache.active_leases().unwrap().is_empty());
     }
 }

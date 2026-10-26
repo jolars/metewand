@@ -6,6 +6,7 @@ use std::{
 
 use metewand_core::{
     IDENTITY_VERSION,
+    applicability::{ApplicabilityDecisionRecord, ApplicabilityOutcome},
     canonical::CanonicalValue,
     identity::{
         CanonicalResource, IdentityRecord, canonical_identity_bytes,
@@ -36,6 +37,8 @@ use metewand_core::{
 use serde::{Deserialize, Serialize};
 
 const GOLDEN_VECTORS: &str = include_str!("../../../fixtures/identities/v1.json");
+const CHECKED_GOLDEN_VECTORS: &str =
+    include_str!("../../../fixtures/identities/applicability-v1.json");
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -130,7 +133,7 @@ fn add_record<T: IdentityRecord>(
     identified.id
 }
 
-fn graph(mutation: Option<&str>, order: ObjectOrder) -> IdentityGraph {
+fn graph(mutation: Option<&str>, order: ObjectOrder, checked: bool) -> IdentityGraph {
     let mut vectors = BTreeMap::new();
 
     let parameter_schema_value = if is_mutated(mutation, "parameter-schema") {
@@ -302,7 +305,14 @@ fn graph(mutation: Option<&str>, order: ObjectOrder) -> IdentityGraph {
             problem_contracts,
             parameter_schema: Some(parameter_schema),
             parameter_defaults: Some(canonical(r#"{"tolerance":1e-8}"#)),
-            capabilities: vec![ImplementationCapability::OneShot],
+            capabilities: if checked {
+                vec![
+                    ImplementationCapability::OneShot,
+                    ImplementationCapability::Applicability,
+                ]
+            } else {
+                vec![ImplementationCapability::OneShot]
+            },
         },
     );
 
@@ -566,11 +576,46 @@ fn graph(mutation: Option<&str>, order: ObjectOrder) -> IdentityGraph {
     };
     add_record(&mut vectors, "resolved-worker", resolved_worker.clone());
 
+    let applicability = checked.then(|| {
+        let parameters = |label: &str| {
+            serde_json::from_str::<serde_json::Value>(&vectors[label].canonical).unwrap()
+                ["parameters"]
+                .clone()
+        };
+        let decision = ApplicabilityDecisionRecord {
+            candidate_id: logical_candidate,
+            outcome: ApplicabilityOutcome::Applicable,
+            code: if is_mutated(mutation, "applicability") {
+                "supported_v2"
+            } else {
+                "supported"
+            }
+            .into(),
+            reason: "This configuration is supported.".into(),
+            checked_inputs: Some(serde_json::json!({
+                "dataset_instance": dataset_instance,
+                "dataset_manifest": {"schema_version": 1, "complete": true, "files": []},
+                "dataset_manifest_path": "dataset-manifest.json",
+                "problem_contract_id": problem_contract,
+                "problem_parameters": parameters("problem-configuration"),
+                "implementation_parameters": parameters("implementation-configuration"),
+            })),
+            evidence: Some(serde_json::json!({
+                "worker": resolved_worker.identity_fields(),
+                "wire_protocol_version": 1,
+                "environment": {"working_directory": "{worker}", "umask": "0077"},
+                "controls": {"isolation": "unsupported"},
+            })),
+            details: Some(serde_json::json!({"representation": "dense"})),
+        };
+        add_record(&mut vectors, "applicability", decision)
+    });
+
     let resolved_specification = add_record(
         &mut vectors,
         "resolved-specification",
         ResolvedOneShotSpecificationRecord {
-            applicability: None,
+            applicability,
             logical_specification,
             problem_instance,
             implementation: resolved_worker.clone(),
@@ -687,7 +732,7 @@ fn graph(mutation: Option<&str>, order: ObjectOrder) -> IdentityGraph {
 #[test]
 fn version_one_golden_vectors_pin_the_complete_identity_graph() {
     let golden: GoldenFile = serde_json::from_str(GOLDEN_VECTORS).unwrap();
-    let actual = graph(None, ObjectOrder::Forward).vectors;
+    let actual = graph(None, ObjectOrder::Forward, false).vectors;
 
     assert_eq!(golden.version, IDENTITY_VERSION);
     assert_eq!(
@@ -700,10 +745,26 @@ fn version_one_golden_vectors_pin_the_complete_identity_graph() {
 
 #[test]
 fn nonsemantic_ordering_preserves_every_identity() {
-    let forward = graph(None, ObjectOrder::Forward).vectors;
-    let reverse = graph(None, ObjectOrder::Reverse).vectors;
+    for checked in [false, true] {
+        let forward = graph(None, ObjectOrder::Forward, checked).vectors;
+        let reverse = graph(None, ObjectOrder::Reverse, checked).vectors;
+        assert_eq!(forward, reverse);
+    }
+}
 
-    assert_eq!(forward, reverse);
+#[test]
+fn checked_applicability_has_exact_vectors_for_every_dependent_identity() {
+    let golden: GoldenFile = serde_json::from_str(CHECKED_GOLDEN_VECTORS).unwrap();
+    let mut actual = graph(None, ObjectOrder::Forward, true).vectors;
+    let dependents = transitive_dependents("applicability", true);
+    actual.retain(|label, _| dependents.contains(label));
+    assert_eq!(golden.version, IDENTITY_VERSION);
+    assert_eq!(
+        actual,
+        golden.vectors,
+        "actual vectors:\n{}",
+        serde_json::to_string_pretty(&actual).unwrap()
+    );
 }
 
 const DEPENDENCIES: &[(&str, &[&str])] = &[
@@ -804,11 +865,24 @@ const DEPENDENCIES: &[(&str, &[&str])] = &[
     ),
 ];
 
-fn transitive_dependents(changed: &str) -> BTreeSet<String> {
+fn transitive_dependents(changed: &str, checked: bool) -> BTreeSet<String> {
     let mut affected = BTreeSet::from([changed.to_owned()]);
+    let mut dependencies = DEPENDENCIES.to_vec();
+    if checked {
+        dependencies.push((
+            "applicability",
+            &[
+                "logical-candidate",
+                "dataset-instance",
+                "problem-contract",
+                "resolved-worker",
+            ],
+        ));
+        dependencies.push(("resolved-specification", &["applicability"]));
+    }
     loop {
         let before = affected.len();
-        for (node, dependencies) in DEPENDENCIES {
+        for (node, dependencies) in &dependencies {
             if dependencies
                 .iter()
                 .any(|dependency| affected.contains(*dependency))
@@ -824,25 +898,31 @@ fn transitive_dependents(changed: &str) -> BTreeSet<String> {
 
 #[test]
 fn every_dependency_change_invalidates_exactly_its_transitive_dependents() {
-    let baseline = graph(None, ObjectOrder::Forward).vectors;
-    assert_eq!(
-        baseline.keys().map(String::as_str).collect::<BTreeSet<_>>(),
-        DEPENDENCIES
+    for checked in [false, true] {
+        let baseline = graph(None, ObjectOrder::Forward, checked).vectors;
+        let mut nodes = DEPENDENCIES
             .iter()
             .map(|(node, _)| *node)
-            .collect::<BTreeSet<_>>()
-    );
-
-    for changed in baseline.keys() {
-        let mutated = graph(Some(changed), ObjectOrder::Forward).vectors;
-        let actual = baseline
-            .iter()
-            .filter_map(|(node, vector)| (mutated[node] != *vector).then_some(node.clone()))
             .collect::<BTreeSet<_>>();
+        if checked {
+            nodes.insert("applicability");
+        }
         assert_eq!(
-            actual,
-            transitive_dependents(changed),
-            "unexpected invalidation after changing {changed}"
+            baseline.keys().map(String::as_str).collect::<BTreeSet<_>>(),
+            nodes
         );
+
+        for changed in baseline.keys() {
+            let mutated = graph(Some(changed), ObjectOrder::Forward, checked).vectors;
+            let actual = baseline
+                .iter()
+                .filter_map(|(node, vector)| (mutated[node] != *vector).then_some(node.clone()))
+                .collect::<BTreeSet<_>>();
+            assert_eq!(
+                actual,
+                transitive_dependents(changed, checked),
+                "unexpected invalidation after changing {changed} (checked: {checked})"
+            );
+        }
     }
 }

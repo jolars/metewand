@@ -159,7 +159,7 @@ Existing external contract and schema files remain supported.
 - [x] Add the optional `check_applicability` exchange before measured
   preparation. Record `unchecked`, `applicable`, and `not_applicable`
   outcomes with stable reason codes and the exact checked inputs.
-- [ ] Bind applicability evidence to dependent execution identities, protect the
+- [x] Bind applicability evidence to dependent execution identities, protect the
   shared dataset during the check, and create no measured slots for an
   excluded candidate.
 - [ ] Keep excluded candidates visible in plans, status, explanation, and
