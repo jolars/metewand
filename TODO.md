@@ -140,9 +140,10 @@ a new compatibility review is a prerequisite.
   Use this comparison to assess a Benchopt-style migration: reuse dataset,
   solver, and evaluation logic, adding small adapters and declarations without
   repeating scientific settings or implementing artifact envelopes.
-- [ ] Preserve Python virtual-environment context when resolving interpreter
+- [x] Preserve Python virtual-environment context when resolving interpreter
   symlinks. The [Benchopt SLOPE comparison](examples/benchopt-slope) verified
-  that ordinary venvs lose their package path; `venv --copies` works.
+  the original failure; the local runner now retains the selected interpreter
+  path, with a regression test for imports from a symlink-based venv.
 - [ ] Make callback exception details inspectable after failed attempts.
   Diagnostics currently direct authors to worker logs that are not retained.
 

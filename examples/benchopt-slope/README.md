@@ -22,11 +22,10 @@ development Python has no scientific dependencies. Put the scientific
 environment's `bin` directory first on `PATH`: the local Python runner resolves
 `python3` from that path. An ambient `PYTHONPATH` is not inherited by workers.
 
-For a virtual environment, create it with `python3 -m venv --copies .venv`,
-install the dependencies there, and prepend `.venv/bin` to `PATH`. The current
-runner resolves interpreter symlinks, so a conventional symlink-based venv
-loses its package path. Both the failure and the `--copies` workaround were
-verified with `check --workers`; the tested Nix Python wrapper also works.
+For a virtual environment, create it with `python3 -m venv .venv`, install
+its dependencies, and prepend `.venv/bin` to `PATH`. The local runner preserves
+the selected interpreter path, so ordinary symlink-based virtual environments
+retain their package path.
 
 From the Metewand repository root, with a local `benchmark_slope` checkout:
 

@@ -1734,6 +1734,9 @@ contains the exact executable, argument prefix, worker entrypoint or program
 arguments, allowlisted environment, and working directory. Built-in Python, R,
 and Julia runners select the corresponding interpreter supplied or admitted by
 the environment; the command runner selects an explicitly declared program.
+Local launches retain the selected interpreter path when it is a symlink to an
+external executable, preserving Python virtual-environment discovery. Executable
+validation and content hashing still follow the symlink target.
 Resolution fails if the environment cannot satisfy the runner. Environment
 fingerprints and launch fingerprints are distinct: two workers may share one
 resolved environment while using different interpreters or programs, and a

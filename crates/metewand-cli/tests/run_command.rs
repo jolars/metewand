@@ -1405,6 +1405,87 @@ fn interpreted_entrypoints_and_repository_shebangs_use_declared_sources() {
 }
 
 #[test]
+fn symlinked_venv_packages_are_available_to_all_local_python_launches() {
+    use std::os::unix::fs::PermissionsExt;
+
+    for runner in ["python", "command", "shebang"] {
+        let root = repository();
+        let venv = root.path().join(".venv");
+        let output = Command::new("python3")
+            .args(["-m", "venv", "--without-pip", "--symlinks"])
+            .arg(&venv)
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+        let output = Command::new(venv.join("bin/python3"))
+            .args([
+                "-c",
+                "import sysconfig; print(sysconfig.get_path('purelib'))",
+            ])
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+        let packages = String::from_utf8(output.stdout).unwrap();
+        fs::write(
+            Path::new(packages.trim()).join("venv_probe.py"),
+            "VALUE = 42\n",
+        )
+        .unwrap();
+        let worker = root.path().join("worker.py");
+        let source = fs::read_to_string(&worker).unwrap();
+        let prefix = if runner == "shebang" {
+            "#!/usr/bin/env python3\n"
+        } else {
+            ""
+        };
+        fs::write(
+            &worker,
+            format!("{prefix}import venv_probe\nassert venv_probe.VALUE == 42\n{source}"),
+        )
+        .unwrap();
+        if runner == "python" {
+            replace(
+                root.path(),
+                "metewand.yaml",
+                "runner: \"command\"\nprogram: \"python3\"",
+                "runner: \"python\"\nentrypoint: \"worker.py\"",
+            );
+        } else if runner == "shebang" {
+            replace(
+                root.path(),
+                "metewand.yaml",
+                "program: \"python3\"",
+                "program: \"./worker.py\"",
+            );
+            fs::set_permissions(&worker, fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        if runner != "command" {
+            replace(
+                root.path(),
+                "metewand.yaml",
+                "\"{sources}/worker.py\", ",
+                "",
+            );
+        }
+        let path = std::env::join_paths(std::iter::once(venv.join("bin")).chain(
+            std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()),
+        ))
+        .unwrap();
+        let output = Command::new(env!("CARGO_BIN_EXE_metewand"))
+            .current_dir(root.path())
+            .env("PATH", path)
+            .args(["run", "--output-dir", "run", "--output", "jsonl"])
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{runner}: {output:?}");
+        assert_eq!(
+            envelopes(&output).last().unwrap()["data"]["summary"]["accepted_attempts"],
+            1
+        );
+    }
+}
+
+#[test]
 fn source_arguments_and_repository_programs_cannot_escape_their_roots() {
     let root = repository();
     replace(

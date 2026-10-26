@@ -891,7 +891,7 @@ pub(super) fn resolve_worker(
     let original_executable = find_program(&repository.root, &program)?;
     let mut arguments = arguments;
     let mut executable = original_executable.clone();
-    if let Ok(relative) = original_executable.strip_prefix(&repository.root) {
+    if let Ok(relative) = fs::canonicalize(&original_executable)?.strip_prefix(&repository.root) {
         let sources = sources.as_ref().ok_or_else(|| {
             unsupported("repository command programs must be included in `sources`")
         })?;
@@ -921,7 +921,7 @@ pub(super) fn resolve_worker(
                 }
             };
             executable = find_program(&repository.root, interpreter)?;
-            if executable.starts_with(&repository.root) {
+            if fs::canonicalize(&executable)?.starts_with(&repository.root) {
                 return Err(unsupported(
                     "a shebang interpreter must come from the local environment",
                 ));
@@ -1129,7 +1129,8 @@ fn find_program(root: &Path, program: &str) -> Result<PathBuf, RunError> {
         )
         .into());
     };
-    let path = fs::canonicalize(path)?;
+    let selected_path = std::path::absolute(path)?;
+    let path = fs::canonicalize(&selected_path)?;
     if !Path::new(program).is_absolute()
         && Path::new(program).components().count() > 1
         && !path.starts_with(root)
@@ -1146,7 +1147,13 @@ fn find_program(root: &Path, program: &str) -> Result<PathBuf, RunError> {
         )
         .into());
     }
-    Ok(path)
+    // Python discovers a virtual environment beside the selected interpreter,
+    // so following its final symlink would silently change the software context.
+    if path.starts_with(root) {
+        Ok(path)
+    } else {
+        Ok(selected_path)
+    }
 }
 
 pub(super) fn canonical(value: Value) -> Result<CanonicalValue, RunError> {
@@ -1205,6 +1212,52 @@ fn unsupported(message: impl Into<String>) -> RunError {
 mod tests {
     use super::scientific_timeout;
     use std::time::Duration;
+
+    #[test]
+    fn local_interpreter_preserves_symlinked_virtual_environment() {
+        let root = tempfile::tempdir().unwrap();
+        let venv = root.path().join(".venv");
+        let output = std::process::Command::new("python3")
+            .args(["-m", "venv", "--without-pip", "--symlinks"])
+            .arg(&venv)
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{:?}", output);
+        let selected = venv.join("bin/python3");
+        assert!(
+            std::fs::symlink_metadata(&selected)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        let output = std::process::Command::new(&selected)
+            .args([
+                "-c",
+                "import sysconfig; print(sysconfig.get_path('purelib'))",
+            ])
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        let packages = String::from_utf8(output.stdout).unwrap();
+        std::fs::write(
+            std::path::Path::new(packages.trim()).join("metewand_venv_probe.py"),
+            "VALUE = 42\n",
+        )
+        .unwrap();
+        let resolved = super::find_program(root.path(), selected.to_str().unwrap()).unwrap();
+        assert_eq!(resolved, selected);
+        let output = std::process::Command::new(resolved)
+            .args([
+                "-I",
+                "-c",
+                "import metewand_venv_probe; print(metewand_venv_probe.VALUE)",
+            ])
+            .current_dir(root.path())
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{:?}", output);
+        assert_eq!(output.stdout, b"42\n");
+    }
 
     #[test]
     fn scientific_limits_have_no_implicit_budget_and_parse_checked_units() {
