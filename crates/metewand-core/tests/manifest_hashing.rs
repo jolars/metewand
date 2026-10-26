@@ -45,6 +45,8 @@ experiments:
 execution-policies:
   default:
     version: 1
+    timing-scope: "prepare_and_execute"
+    primary-time: "timed_wall_time"
 observation-policies:
   final:
     version: 1

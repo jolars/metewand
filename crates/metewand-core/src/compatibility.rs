@@ -120,6 +120,18 @@ fn validate_compatibility(
                 experiment: experiment.name.clone(),
                 execution_policy: experiment.execution_policy.clone(),
             })?;
+        for (field, present) in [
+            ("timing-scope", execution_policy.timing_scope.is_some()),
+            ("primary-time", execution_policy.primary_time.is_some()),
+        ] {
+            if !present {
+                return Err(ManifestCompatibilityError::MissingTimingChoice {
+                    experiment: experiment.name.clone(),
+                    execution_policy: experiment.execution_policy.clone(),
+                    field,
+                });
+            }
+        }
         let timing_scope = execution_policy.resolved_timing_scope();
         if !contract.allowed_timing_scopes.contains(&timing_scope) {
             return Err(ManifestCompatibilityError::UnsupportedTimingScope {
@@ -331,6 +343,19 @@ pub enum ManifestCompatibilityError {
         experiment: Name,
         /// Missing execution-policy name.
         execution_policy: Name,
+    },
+
+    /// A selected policy omits a scientific measurement choice.
+    #[error(
+        "execution policy `{execution_policy}` selected by experiment `{experiment}` must declare `{field}` explicitly"
+    )]
+    MissingTimingChoice {
+        /// Experiment selecting the policy.
+        experiment: Name,
+        /// Selected execution-policy name.
+        execution_policy: Name,
+        /// Missing authoring field.
+        field: &'static str,
     },
 
     /// An execution policy requests warm-ups without worker reuse.

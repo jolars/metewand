@@ -175,6 +175,16 @@ fn execute_only_scientific_timeout_leaves_untimed_phases_their_operational_limit
 #[test]
 fn run_streams_events_and_publishes_a_self_describing_attempt() {
     let root = repository();
+    let manifest_path = root.path().join("metewand.yaml");
+    let manifest = fs::read_to_string(&manifest_path)
+        .unwrap()
+        .replace("      environment: \"local\"\n", "")
+        .replace("    environment: \"local\"\n", "")
+        .replace("environments:\n  local:\n    kind: \"local\"\n", "")
+        .replace("    version: 1\n", "")
+        .replace("    implementation-repetitions: 1\n", "")
+        .replace("    measurement-repetitions: 1\n", "");
+    fs::write(manifest_path, manifest).unwrap();
     let source = fs::read(root.path().join("worker.py")).unwrap();
     let output = metewand(
         root.path(),
@@ -1958,6 +1968,8 @@ execution-policies:
     version: 1
     worker-reuse: true
     warmup-runs: 2
+    timing-scope: "prepare_and_execute"
+    primary-time: "timed_wall_time"
 "#,
     );
     fs::write(path, manifest).unwrap();

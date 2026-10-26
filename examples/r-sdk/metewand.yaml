@@ -46,6 +46,7 @@ execution-policies:
   local:
     version: 1
     timing-scope: "prepare_and_execute"
+    primary-time: "timed_wall_time"
     worker-reuse: true
 observation-policies:
   final:

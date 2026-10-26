@@ -15,6 +15,6 @@
       "const": "one_shot"
     }
   },
-  "required": ["version", "kind"],
+  "required": ["kind"],
   "additionalProperties": false
 }

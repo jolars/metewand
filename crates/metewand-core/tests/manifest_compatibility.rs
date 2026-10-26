@@ -47,6 +47,7 @@ execution-policies:
     worker-reuse: false
     warmup-runs: 0
     timing-scope: "prepare_and_execute"
+    primary-time: "timed_wall_time"
 observation-policies:
   final:
     version: 1
@@ -397,11 +398,10 @@ fn rejects_timing_scopes_not_admitted_by_the_contract() {
 }
 
 #[test]
-fn applies_safe_defaults_when_validating_timing_and_warmups() {
+fn defaults_mechanical_controls_with_explicit_timing() {
     let source = COMPLETE_MANIFEST
         .replace("    worker-reuse: false\n", "")
-        .replace("    warmup-runs: 0\n", "")
-        .replace("    timing-scope: \"prepare_and_execute\"\n", "");
+        .replace("    warmup-runs: 0\n", "");
     let manifest = parse(&source);
     let contracts = contracts_for(
         &manifest,

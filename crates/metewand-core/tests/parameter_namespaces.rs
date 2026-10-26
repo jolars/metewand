@@ -66,7 +66,7 @@ experiments:
 }
 
 #[test]
-fn requires_a_schema_for_definition_owned_parameter_defaults() {
+fn supplies_a_closed_schema_for_definition_owned_parameter_defaults() {
     let dataset = parse(
         r#"
 version: 1
@@ -80,13 +80,7 @@ datasets:
     environment: "local"
 "#,
     );
-    assert!(matches!(
-        validate_parameter_namespaces(&dataset),
-        Err(ParameterNamespaceError::DefaultsWithoutSchema {
-            namespace: ParameterNamespace::Dataset,
-            definition,
-        }) if definition.as_str() == "generated"
-    ));
+    validate_parameter_namespaces(&dataset).unwrap();
 
     let implementation = parse(
         r#"
@@ -102,13 +96,7 @@ implementations:
     capabilities: ["one_shot"]
 "#,
     );
-    assert!(matches!(
-        validate_parameter_namespaces(&implementation),
-        Err(ParameterNamespaceError::DefaultsWithoutSchema {
-            namespace: ParameterNamespace::Implementation,
-            definition,
-        }) if definition.as_str() == "example"
-    ));
+    validate_parameter_namespaces(&implementation).unwrap();
 }
 
 #[test]
@@ -238,7 +226,7 @@ experiments:
 }
 
 #[test]
-fn rejects_axes_owned_by_definitions_without_parameter_schemas() {
+fn rejects_fixed_dataset_axes_and_defers_empty_domains_to_validation() {
     let fixed_dataset = parse(
         r#"
 version: 1
@@ -296,14 +284,7 @@ experiments:
         fold: { value: 1 }
 "#,
     );
-    assert!(matches!(
-        validate_parameter_namespaces(&parameterless_generated_dataset),
-        Err(ParameterNamespaceError::DefinitionHasNoParameterSchema {
-            namespace: ParameterNamespace::Dataset,
-            definition,
-            ..
-        }) if definition.as_str() == "generated"
-    ));
+    validate_parameter_namespaces(&parameterless_generated_dataset).unwrap();
 
     let implementation = parse(
         r#"
@@ -332,14 +313,5 @@ experiments:
             tolerance: { value: 1e-8 }
 "#,
     );
-    assert!(matches!(
-        validate_parameter_namespaces(&implementation),
-        Err(ParameterNamespaceError::DefinitionHasNoParameterSchema {
-            location,
-            namespace: ParameterNamespace::Implementation,
-            definition,
-        }) if location.experiment.as_str() == "main"
-            && location.case.as_ref().is_some_and(|case| case.as_str() == "strict")
-            && definition.as_str() == "example"
-    ));
+    validate_parameter_namespaces(&implementation).unwrap();
 }

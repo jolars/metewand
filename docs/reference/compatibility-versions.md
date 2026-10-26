@@ -71,6 +71,18 @@ hash; existing declarations retain their canonical bytes. Plans report each
 candidate's resolved parameter mappings. This changes no wire messages,
 execution semantics, or persisted record formats.
 
+Omitted parameter declarations now normalize to a closed empty-object schema.
+Previously schema-less generated datasets and implementations therefore acquire
+schema identities and new definition identities when replanned. Existing
+persisted records retain their original meanings and remain readable; this does
+not change canonical identity transcripts or the run-store format. Equivalent
+omitted and explicit defaults share the normalized authoring identity path.
+Local-environment inference, nested policy versions, and repetition defaults
+resolve before hashing. Selected policies must now explicitly name their timing
+scope and primary clock. Existing authoring files that omitted those choices
+must add them. These pre-MVP authoring changes retain compatibility version 1;
+wire messages, persisted records, and execution semantics are unchanged.
+
 Optional family semantics schemas, applicability
 selection, profiles, scientific budgets, and instrumentation settings remain
 planned implementation work.

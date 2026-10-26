@@ -88,7 +88,7 @@
           "enum": ["pipes", "stdio"]
         }
       },
-      "required": ["runner", "entrypoint", "sources", "environment"]
+      "required": ["runner", "entrypoint", "sources"]
     },
     "command_launch": {
       "type": "object",
@@ -112,7 +112,7 @@
           "enum": ["pipes", "stdio"]
         }
       },
-      "required": ["runner", "program", "environment"]
+      "required": ["runner", "program"]
     },
     "worker": {
       "oneOf": [
@@ -386,8 +386,6 @@
         "implementations",
         "execution-policy",
         "observation-policy",
-        "implementation-repetitions",
-        "measurement-repetitions",
         "seed"
       ],
       "additionalProperties": false
@@ -424,7 +422,6 @@
           "enum": ["best_effort", "required"]
         }
       },
-      "required": ["version"],
       "additionalProperties": false
     }
   }

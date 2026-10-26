@@ -266,9 +266,9 @@ impl<'de> Deserialize<'de> for ProblemContract {
         let compact_parameters = raw.parameters.is_some();
         let parameters = ParameterBoundary::lower(raw.parameters, raw.parameter_schema, None)
             .map_err(de::Error::custom)?;
-        let parameter_schema = parameters.schema.ok_or_else(|| {
-            de::Error::custom("a problem contract requires `parameters` or `parameter-schema`")
-        })?;
+        let parameter_schema = parameters
+            .schema
+            .expect("parameter lowering always supplies a schema");
         let result_schema = lower_output(raw.result, raw.result_schema, "result", "result-schema")
             .map_err(de::Error::custom)?;
         let metric_schema =

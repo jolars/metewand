@@ -372,6 +372,23 @@ problem, and implementation parameters for each candidate. The
 [parameter reference](docs/reference/parameter-namespaces.md#compact-implementation-parameters)
 defines the supported fields.
 
+Omitting both `parameters` and `parameter-schema` produces the same closed
+empty-object schema as `parameters: {}` for generated datasets, problem
+contracts, and implementations. Unexpected parameters still fail validation.
+An omitted worker environment selects the sole declared local environment. If
+no environments are declared, Metewand inserts `local: {kind: local}` when a
+worker needs it. Multiple local environments or exclusively managed environments
+require explicit worker selections; Metewand never infers a managed backend.
+
+Nested execution and observation policies inherit version 1 when omitted, and
+both experiment repetition counts default to 1. Existing mechanical policy
+defaults resolve before hashing and planning. Every selected execution policy
+must declare `timing-scope` and `primary-time`; experiment policy selections and
+the observation `kind` remain explicit. Preprocessing, validity, and completion
+rules stay in the authored scientific contract. Plans expose effective parameter
+mappings, environments, repetitions, and execution controls, and execution
+retains the same resolved records.
+
 #### Planned compact authoring
 
 The following combined syntax uses the planned flat problem form. Compact
@@ -461,12 +478,6 @@ The compact declarations follow these rules:
   hashing configurations and show effective selections and settings in plans.
   Diagnostics identify the author's declaration or supplied value and its YAML
   location, rather than exposing a generated schema location.
-
-An omitted parameter declaration will mean a closed empty object, so unused
-namespaces need no boilerplate and unexpected parameters still fail. Local
-environments and one-shot policies may use unambiguous documented defaults.
-Keep profile selection, preprocessing, validity, completion, and timing choices
-explicit, and record every effective default.
 
 Family semantics remain explicit and hashed, including preprocessing, validity,
 and completion rules. Make a separate `semantics-schema` optional; authors may

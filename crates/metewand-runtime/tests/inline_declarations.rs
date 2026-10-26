@@ -42,7 +42,7 @@ fn manifest() -> Value {
             "problem-contracts": ["sum"], "capabilities": ["one_shot"]
         }},
         "environments": {"local": {"kind": "local"}},
-        "execution-policies": {"local": {"version": 1}},
+        "execution-policies": {"local": {"version": 1, "timing-scope": "prepare_and_execute", "primary-time": "timed_wall_time"}},
         "observation-policies": {"final": {"version": 1, "kind": "one_shot"}},
         "experiments": [{
             "name": "main", "problem": "sum", "datasets": ["numbers"], "implementations": ["sum"],

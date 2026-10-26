@@ -945,7 +945,7 @@ impl PlanRequirements {
     fn render_human(&self, output: &mut String) {
         writeln!(
             output,
-            "\nDeclared execution requirements:\n  artifacts: {} contracts, {} schemas, {} source bundles\n  executor: local process (unresolved)",
+            "\nEffective execution requirements:\n  artifacts: {} contracts, {} schemas, {} source bundles\n  executor: local process (unresolved)",
             self.artifacts.problem_contracts,
             self.artifacts.schemas,
             self.artifacts.source_bundles,

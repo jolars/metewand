@@ -107,7 +107,7 @@ a new compatibility review is a prerequisite.
   compact and explicit declarations on the same identity path. Report errors at
   the author's YAML field or supplied value rather than a generated schema
   location.
-- [ ] Default an omitted parameter schema to a closed empty object. Allow
+- [x] Default an omitted parameter schema to a closed empty object. Allow
   unambiguous local-environment and one-shot-policy defaults, recording all
   resolved values and exposing effective settings through planning. Keep profile
   selection, preprocessing, validity, completion, and timing choices explicit.

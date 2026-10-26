@@ -57,6 +57,60 @@ Optional typed fields may be omitted, but an explicit null, including an empty
 YAML value, is rejected. For example, omitting `enforcement` uses its default;
 `enforcement: null` and `enforcement:` are invalid.
 
+## Authoring defaults
+
+Generated datasets, problem contracts, and implementations may omit both
+`parameters` and `parameter-schema`. Metewand supplies the same closed
+empty-object schema as `parameters: {}`. Defaults and overrides still undergo
+schema validation; an unexpected parameter is an error.
+
+A worker may omit `environment` when exactly one declared environment has
+`kind: local`. If the manifest declares no environments, Metewand creates the
+ordinary `local: {kind: local}` definition when needed. A manifest with several
+local environments or only managed environments must select an environment
+explicitly. Explicit selections always take precedence, and managed backends
+are never inferred from a worker language or project files.
+
+Nested execution and observation policies default their `version` to `1`.
+The manifest and problem contract still require their own version. Both
+`implementation-repetitions` and `measurement-repetitions` default to `1`;
+`seed` remains explicit. One-shot execution also resolves these mechanical
+policy defaults:
+
+| Field | Effective default |
+| --- | --- |
+| `network` | `false` |
+| `worker-reuse` | `false` |
+| `warmup-runs` | `0` |
+| `run-order` | `sequential` |
+| `max-concurrency` | `1` |
+| `enforcement` | `best_effort` |
+| `cpus`, `threads`, `memory`, `timeout` | No requested constraint |
+
+Every experiment still selects its execution and observation policies, and the
+observation policy declares `kind: one_shot`. Checking, planning, and running
+require every selected execution policy to declare both `timing-scope` and
+`primary-time`. Unselected policies may remain incomplete while an author
+builds a benchmark. For example:
+
+```yaml
+execution-policies:
+  serial:
+    timing-scope: prepare_and_execute
+    primary-time: timed_wall_time
+observation-policies:
+  final:
+    kind: one_shot
+```
+
+Metewand resolves defaults before constructing identities. Equivalent omitted
+and explicit defaults share identities. `metewand plan --output json` exposes
+effective environments and worker selections in `requirements`, all control
+requests in `requirements.controls`, and resolved parameter mappings and slots
+in `experiments`. The human plan renders these same records. Runs retain the
+resolved settings in policy records, specifications, and provenance. Defaults
+never infer preprocessing, validity, completion, or scientific tolerances.
+
 ## YAML syntax
 
 Manifests and problem contracts use a single YAML mapping document. Explicit
@@ -74,6 +128,8 @@ environments:
 execution-policies:
   serial: &serial
     version: 1
+    timing-scope: prepare_and_execute
+    primary-time: timed_wall_time
     max-concurrency: 1
   parallel:
     <<: *serial

@@ -77,7 +77,7 @@
     "reference-cases"
   ],
   "allOf": [
-    { "oneOf": [{ "required": ["parameters"] }, { "required": ["parameter-schema"] }] },
+    { "not": { "required": ["parameters", "parameter-schema"] } },
     { "oneOf": [{ "required": ["result"] }, { "required": ["result-schema"] }] },
     { "oneOf": [{ "required": ["metrics"] }, { "required": ["metric-schema"] }] },
     {

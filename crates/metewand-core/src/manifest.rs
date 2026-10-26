@@ -60,35 +60,117 @@ pub fn parse_manifest(source_path: &Path, source: &str) -> Result<Manifest, Mani
 }
 
 /// A parsed version-1 benchmark manifest.
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[derive(Debug)]
 pub struct Manifest {
     /// Manifest compatibility version.
-    #[serde(deserialize_with = "deserialize_version_one")]
     pub version: u32,
     /// Benchmark name.
     pub name: Name,
     /// Dataset definitions keyed by manifest-local name.
-    #[serde(default)]
     pub datasets: BTreeMap<Name, DatasetDefinition>,
     /// Problem definitions keyed by manifest-local name.
-    #[serde(default)]
     pub problems: BTreeMap<Name, ProblemDefinition>,
     /// Implementation definitions keyed by manifest-local name.
-    #[serde(default)]
     pub implementations: BTreeMap<Name, ImplementationDefinition>,
     /// Environment definitions keyed by manifest-local name.
-    #[serde(default)]
     pub environments: BTreeMap<Name, EnvironmentDefinition>,
     /// Experiments in their declared order.
-    #[serde(default)]
     pub experiments: Vec<ExperimentDefinition>,
     /// Execution policies keyed by manifest-local name.
-    #[serde(default)]
     pub execution_policies: BTreeMap<Name, ExecutionPolicyDefinition>,
     /// Observation policies keyed by manifest-local name.
-    #[serde(default)]
     pub observation_policies: BTreeMap<Name, ObservationPolicyDefinition>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+struct RawManifest {
+    #[serde(deserialize_with = "deserialize_version_one")]
+    version: u32,
+    name: Name,
+    #[serde(default)]
+    datasets: BTreeMap<Name, DatasetDefinition>,
+    #[serde(default)]
+    problems: BTreeMap<Name, ProblemDefinition>,
+    #[serde(default)]
+    implementations: BTreeMap<Name, ImplementationDefinition>,
+    #[serde(default)]
+    environments: BTreeMap<Name, EnvironmentDefinition>,
+    #[serde(default)]
+    experiments: Vec<ExperimentDefinition>,
+    #[serde(default)]
+    execution_policies: BTreeMap<Name, ExecutionPolicyDefinition>,
+    #[serde(default)]
+    observation_policies: BTreeMap<Name, ObservationPolicyDefinition>,
+}
+
+impl<'de> Deserialize<'de> for Manifest {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let raw = RawManifest::deserialize(deserializer)?;
+        let mut manifest = Self {
+            version: raw.version,
+            name: raw.name,
+            datasets: raw.datasets,
+            problems: raw.problems,
+            implementations: raw.implementations,
+            environments: raw.environments,
+            experiments: raw.experiments,
+            execution_policies: raw.execution_policies,
+            observation_policies: raw.observation_policies,
+        };
+        manifest
+            .resolve_local_environments()
+            .map_err(de::Error::custom)?;
+        Ok(manifest)
+    }
+}
+
+impl Manifest {
+    fn resolve_local_environments(&mut self) -> Result<(), String> {
+        let mut workers = self
+            .datasets
+            .values_mut()
+            .filter_map(|dataset| match dataset {
+                DatasetDefinition::Generated(dataset) => Some(&mut dataset.worker),
+                DatasetDefinition::Fixed(_) => None,
+            })
+            .chain(
+                self.problems
+                    .values_mut()
+                    .map(|problem| &mut problem.evaluator),
+            )
+            .chain(
+                self.implementations
+                    .values_mut()
+                    .map(|implementation| &mut implementation.worker),
+            );
+        for worker in &mut workers {
+            let environment = match worker {
+                WorkerDefinition::Interpreted(worker) => &mut worker.environment,
+                WorkerDefinition::Command(worker) => &mut worker.environment,
+            };
+            // The empty name is private to decoding and cannot be authored.
+            if !environment.as_str().is_empty() {
+                continue;
+            }
+            if self.environments.is_empty() {
+                self.environments
+                    .insert(Name("local".to_owned()), EnvironmentDefinition::Local {});
+            }
+            let local = self
+                .environments
+                .iter()
+                .filter_map(|(name, definition)| {
+                    matches!(definition, EnvironmentDefinition::Local {}).then_some(name)
+                })
+                .collect::<Vec<_>>();
+            if local.len() != 1 {
+                return Err("an omitted worker `environment` requires exactly one local environment; select `environment` explicitly".to_owned());
+            }
+            *environment = local[0].clone();
+        }
+        Ok(())
+    }
 }
 
 /// A dataset source or materializer definition.
@@ -246,10 +328,16 @@ pub struct ExperimentDefinition {
     /// Selected observation-policy name.
     pub observation_policy: Name,
     /// Number of independently seeded implementation replications.
-    #[serde(deserialize_with = "deserialize_safe_positive_integer")]
+    #[serde(
+        default = "one_repetition",
+        deserialize_with = "deserialize_safe_positive_integer"
+    )]
     pub implementation_repetitions: u64,
     /// Number of measurements for each logical run.
-    #[serde(deserialize_with = "deserialize_safe_positive_integer")]
+    #[serde(
+        default = "one_repetition",
+        deserialize_with = "deserialize_safe_positive_integer"
+    )]
     pub measurement_repetitions: u64,
     /// Root experiment seed.
     #[serde(deserialize_with = "deserialize_safe_nonnegative_integer")]
@@ -305,7 +393,7 @@ pub enum ParameterAxis {
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct ExecutionPolicyDefinition {
     /// Execution-policy compatibility version.
-    #[serde(deserialize_with = "deserialize_version_one")]
+    #[serde(default = "version_one", deserialize_with = "deserialize_version_one")]
     pub version: u32,
     /// Requested CPU count.
     #[serde(
@@ -482,7 +570,7 @@ pub enum Enforcement {
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct ObservationPolicyDefinition {
     /// Observation-policy compatibility version.
-    #[serde(deserialize_with = "deserialize_version_one")]
+    #[serde(default = "version_one", deserialize_with = "deserialize_version_one")]
     pub version: u32,
     /// Version-1 observation kind.
     #[serde(deserialize_with = "deserialize_one_shot_kind")]
@@ -1069,7 +1157,7 @@ fn build_worker(
     environment: Option<Name>,
     protocol_transport: Option<ProtocolTransport>,
 ) -> Result<WorkerDefinition, String> {
-    let environment = environment.ok_or_else(|| "worker is missing `environment`".to_owned())?;
+    let environment = environment.unwrap_or_else(|| Name(String::new()));
     match runner {
         Runner::Python | Runner::R | Runner::Julia => {
             if program.is_some() {
@@ -1390,4 +1478,12 @@ fn source_position(source: &str, offset: usize) -> (usize, usize) {
         .next()
         .map_or(1, |line| line.chars().count() + 1);
     (line, column)
+}
+
+fn version_one() -> u32 {
+    1
+}
+
+fn one_repetition() -> u64 {
+    1
 }

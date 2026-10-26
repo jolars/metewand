@@ -47,7 +47,7 @@ fn document() -> Value {
             "execution-policy": "local", "observation-policy": "final",
             "implementation-repetitions": 1, "measurement-repetitions": 1, "seed": 7
         }],
-        "execution-policies": {"local": {"version": 1, "timing-scope": "prepare_and_execute"}},
+        "execution-policies": {"local": {"version": 1, "timing-scope": "prepare_and_execute", "primary-time": "timed_wall_time"}},
         "observation-policies": {"final": {"version": 1, "kind": "one_shot"}}
     })
 }
@@ -522,4 +522,191 @@ fn public_schemas_accept_compact_boundaries_and_reject_competing_or_output_selec
             "{invalid}"
         );
     }
+}
+
+#[test]
+fn omitted_parameter_boundaries_are_closed_and_match_empty_declarations() {
+    let mut implicit = document();
+    implicit["datasets"]["generated"]
+        .as_object_mut()
+        .unwrap()
+        .remove("parameters");
+    implicit["problems"]["sum"]["contract"]
+        .as_object_mut()
+        .unwrap()
+        .remove("parameters");
+    implicit["implementations"]["solver"]
+        .as_object_mut()
+        .unwrap()
+        .remove("parameters");
+    let public_schemas = public_schema_catalog().unwrap();
+    public_schemas
+        .validate(PublicSchema::Manifest.repository_path(), &implicit)
+        .unwrap();
+    public_schemas
+        .validate(
+            PublicSchema::ProblemContract.repository_path(),
+            &implicit["problems"]["sum"]["contract"],
+        )
+        .unwrap();
+    let contract = parse_problem_contract_document(
+        Path::new("problem.yaml"),
+        &implicit["problems"]["sum"]["contract"].to_string(),
+    )
+    .unwrap();
+    assert_eq!(
+        contract
+            .parameter_schema
+            .inline_document()
+            .unwrap()
+            .as_json(),
+        &json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object", "properties": {}, "required": [], "additionalProperties": false
+        })
+    );
+    let mut explicit = implicit.clone();
+    explicit["datasets"]["generated"]["parameters"] = json!({});
+    explicit["problems"]["sum"]["contract"]["parameters"] = json!({});
+    explicit["implementations"]["solver"]["parameters"] = json!({});
+    assert_eq!(
+        canonical_manifest_bytes(&parse(&implicit)).unwrap(),
+        canonical_manifest_bytes(&parse(&explicit)).unwrap()
+    );
+    assert_eq!(expand(&implicit), expand(&explicit));
+    for (namespace, axes) in [
+        (
+            "dataset-parameters",
+            json!({"generated": {"extra": {"value": 1}}}),
+        ),
+        ("problem-parameters", json!({"extra": {"value": 1}})),
+        (
+            "implementation-parameters",
+            json!({"solver": {"extra": {"value": 1}}}),
+        ),
+    ] {
+        let mut invalid = implicit.clone();
+        invalid["experiments"][0][namespace] = axes;
+        let manifest = parse(&invalid);
+        let (contracts, schemas) = contracts_and_schemas(&manifest);
+        assert!(
+            expand_manifest_configurations(&manifest, &contracts, &schemas).is_err(),
+            "{namespace}"
+        );
+    }
+    for pointer in [
+        "/datasets/generated",
+        "/problems/sum",
+        "/implementations/solver",
+    ] {
+        let mut invalid = implicit.clone();
+        invalid.pointer_mut(pointer).unwrap()["parameter-defaults"] = json!({"extra": 1});
+        let manifest = parse(&invalid);
+        let (contracts, schemas) = contracts_and_schemas(&manifest);
+        assert!(
+            expand_manifest_configurations(&manifest, &contracts, &schemas).is_err(),
+            "{pointer}"
+        );
+    }
+}
+
+#[test]
+fn local_environment_and_one_shot_defaults_normalize_before_hashing() {
+    let mut explicit = document();
+    explicit["execution-policies"]["local"]["primary-time"] = json!("timed_wall_time");
+    let mut implicit = explicit.clone();
+    implicit.as_object_mut().unwrap().remove("environments");
+    implicit["datasets"]["generated"]
+        .as_object_mut()
+        .unwrap()
+        .remove("environment");
+    implicit["problems"]["sum"]["evaluator"]
+        .as_object_mut()
+        .unwrap()
+        .remove("environment");
+    implicit["implementations"]["solver"]
+        .as_object_mut()
+        .unwrap()
+        .remove("environment");
+    implicit["execution-policies"]["local"]
+        .as_object_mut()
+        .unwrap()
+        .remove("version");
+    implicit["observation-policies"]["final"]
+        .as_object_mut()
+        .unwrap()
+        .remove("version");
+    implicit["experiments"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("implementation-repetitions");
+    implicit["experiments"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("measurement-repetitions");
+    public_schema_catalog()
+        .unwrap()
+        .validate(PublicSchema::Manifest.repository_path(), &implicit)
+        .unwrap();
+    assert_eq!(
+        canonical_manifest_bytes(&parse(&implicit)).unwrap(),
+        canonical_manifest_bytes(&parse(&explicit)).unwrap()
+    );
+    assert_eq!(expand(&implicit), expand(&explicit));
+    for environments in [
+        json!({"managed": {"kind": "uv", "project": ".", "lockfile": "uv.lock"}}),
+        json!({"first": {"kind": "local"}, "second": {"kind": "local"}}),
+    ] {
+        let mut invalid = implicit.clone();
+        invalid["environments"] = environments;
+        assert!(parse_manifest(Path::new("metewand.yaml"), &invalid.to_string()).is_err());
+    }
+    implicit["environments"] = json!({"host": {"kind": "local"}});
+    let manifest = parse(&implicit);
+    let metewand_core::manifest::WorkerDefinition::Command(worker) =
+        &manifest.implementations["solver"].worker
+    else {
+        panic!("expected command worker");
+    };
+    assert_eq!(worker.environment.as_str(), "host");
+    implicit["environments"]["managed"] =
+        json!({"kind": "uv", "project": ".", "lockfile": "uv.lock"});
+    implicit["implementations"]["solver"]["environment"] = json!("managed");
+    let manifest = parse(&implicit);
+    let metewand_core::manifest::WorkerDefinition::Command(worker) =
+        &manifest.implementations["solver"].worker
+    else {
+        panic!("expected command worker");
+    };
+    assert_eq!(worker.environment.as_str(), "managed");
+}
+
+#[test]
+fn selected_timing_and_profile_choices_remain_explicit() {
+    let mut valid = document();
+    valid["execution-policies"]["local"]["primary-time"] = json!("timed_wall_time");
+    for field in ["timing-scope", "primary-time"] {
+        let mut invalid = valid.clone();
+        invalid["execution-policies"]["local"]
+            .as_object_mut()
+            .unwrap()
+            .remove(field);
+        let manifest = parse(&invalid);
+        let (contracts, schemas) = contracts_and_schemas(&manifest);
+        let error = expand_manifest_configurations(&manifest, &contracts, &schemas).unwrap_err();
+        assert!(error.to_string().contains(field), "{error}");
+    }
+    for field in ["observation-policy", "execution-policy"] {
+        let mut invalid = valid.clone();
+        invalid["experiments"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove(field);
+        assert!(parse_manifest(Path::new("metewand.yaml"), &invalid.to_string()).is_err());
+    }
+    valid["observation-policies"]["final"]
+        .as_object_mut()
+        .unwrap()
+        .remove("kind");
+    assert!(parse_manifest(Path::new("metewand.yaml"), &valid.to_string()).is_err());
 }

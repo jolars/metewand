@@ -91,7 +91,12 @@ impl ParameterBoundary {
             })
         } else {
             Ok(Self {
-                schema,
+                schema: Some(schema.unwrap_or_else(|| {
+                    FieldDeclarations::<true>(BTreeMap::new())
+                        .compile()
+                        .expect("empty declarations are valid")
+                        .schema
+                })),
                 defaults,
                 grids: ParameterAxes::new(),
             })

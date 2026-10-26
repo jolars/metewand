@@ -68,6 +68,11 @@ validate_manifest_compatibility(manifest, contracts)?;
 # }
 ```
 
+Selected execution policies must explicitly declare `timing-scope` and
+`primary-time`. Missing choices return `MissingTimingChoice`, naming the
+experiment, policy, and field. Mechanical controls may use the
+[documented defaults](manifest-parsing.md#authoring-defaults).
+
 The pass returns the first error in deterministic problem, implementation,
 execution-policy, and experiment order. It does not read contract files, load
 schemas, expand parameter grids, construct unit-dataset records, or launch

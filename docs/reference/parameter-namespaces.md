@@ -175,18 +175,22 @@ remain planned. The [parameter-matrix example](https://github.com/jolars/metewan
 demonstrates compact dataset and problem fields, declaration grids, literal
 defaults, and case overrides through worker execution.
 
+Omitting both `parameters` and `parameter-schema` is equivalent to
+`parameters: {}` for generated datasets, problem contracts, and implementations.
+The resulting schema rejects every parameter key. Literal defaults do not
+implicitly declare fields; nonempty defaults also need an explicit domain.
+
 ## Structural validation
 
 `validate_parameter_namespaces` checks the parts of ownership that require no
 filesystem access, contract loading, or matrix expansion:
 
-- a dataset or implementation that declares `parameter-defaults` also declares
-  `parameter-schema`;
 - every name-qualified parameter mapping belongs to a definition selected by its
   enclosing experiment;
 - the selected definition exists; and
-- the definition declares a parameter schema. Fixed datasets never do and
-  therefore cannot receive dataset parameters.
+- the definition accepts parameters. Generated datasets and implementations
+  receive a closed empty-object schema when their declaration is omitted. Fixed
+  datasets cannot receive dataset parameters.
 
 The checks apply equally to experiment-level axes and named-case overlays. They
 run in deterministic definition, experiment, case, and namespace order and

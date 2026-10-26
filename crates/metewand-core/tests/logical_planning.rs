@@ -67,6 +67,8 @@ execution-policies:
     version: 1
     worker-reuse: true
     warmup-runs: 2
+    timing-scope: "prepare_and_execute"
+    primary-time: "timed_wall_time"
 observation-policies:
   final:
     version: 1
@@ -87,7 +89,7 @@ fn id<T>(byte: u8) -> RecordId<T> {
 }
 
 fn schemas() -> SchemaCatalog {
-    let documents = ["parameters", "dataset", "result", "metrics", "semantics"]
+    let mut documents = ["parameters", "dataset", "result", "metrics", "semantics"]
         .into_iter()
         .map(|name| {
             let source = match name {
@@ -114,6 +116,15 @@ fn schemas() -> SchemaCatalog {
             )
         })
         .collect::<Vec<_>>();
+    let empty: metewand_core::schema::SchemaDeclaration =
+        serde_json::from_value(serde_json::json!({
+            "type": "object", "properties": {}, "required": [], "additionalProperties": false
+        }))
+        .unwrap();
+    documents.push((
+        empty.as_path().to_path_buf(),
+        empty.inline_document().unwrap().as_json().clone(),
+    ));
     SchemaCatalog::try_new(documents).unwrap()
 }
 

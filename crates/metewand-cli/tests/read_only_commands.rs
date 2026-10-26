@@ -98,6 +98,8 @@ experiments:
 execution-policies:
   default:
     version: 1
+    timing-scope: "prepare_and_execute"
+    primary-time: "timed_wall_time"
 observation-policies:
   final:
     version: 1
@@ -293,7 +295,7 @@ fn check_loads_relative_schema_references_without_network_access() {
     let output = metewand(repository.path(), ["check"]);
 
     assert!(output.status.success(), "{}", stderr(&output));
-    assert!(stdout(&output).contains("repository schemas: 5"));
+    assert!(stdout(&output).contains("repository schemas: 6"));
 }
 
 #[test]
@@ -579,4 +581,42 @@ fn complete_plan_json_matches_the_version_one_snapshot() {
             include_str!("../../../fixtures/planning/v1/plan.json")
         );
     }
+}
+
+#[test]
+fn plan_exposes_resolved_local_environment_and_one_shot_defaults() {
+    let repository = repository();
+    let explicit = metewand(repository.path(), ["plan", "--output", "json"]);
+    assert!(explicit.status.success(), "{}", stderr(&explicit));
+    let implicit = MANIFEST
+        .replace("      environment: \"local\"\n", "")
+        .replace("    environment: \"local\"\n", "")
+        .replace("environments:\n  local:\n    kind: \"local\"\n", "")
+        .replace("    version: 1\n", "")
+        .replace("    implementation-repetitions: 1\n", "");
+    write(repository.path(), "metewand.yaml", &implicit);
+    let before = files(repository.path());
+    let output = metewand(repository.path(), ["plan", "--output", "json"]);
+    assert!(output.status.success(), "{}", stderr(&output));
+    assert_eq!(stdout(&output), stdout(&explicit));
+    let plan = machine_output(&output);
+    assert_eq!(
+        plan["data"]["requirements"]["controls"][0],
+        serde_json::json!({
+            "experiment": "main", "cpus": null, "threads": null, "memory": null,
+            "network": false, "worker_reuse": false, "warmup_runs": 0, "timeout": null,
+            "timing_scope": "prepare_and_execute", "primary_time": "timed_wall_time",
+            "run_order": "sequential", "enforcement": "best_effort"
+        })
+    );
+    assert_eq!(
+        plan["data"]["requirements"]["environments"][0]["name"],
+        "local"
+    );
+    assert_eq!(plan["data"]["experiments"][0]["max_concurrency"], 1);
+    assert_eq!(
+        plan["data"]["experiments"][0]["candidates"][0]["parameters"]["implementation"],
+        serde_json::json!({})
+    );
+    assert_eq!(files(repository.path()), before);
 }

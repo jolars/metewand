@@ -20,3 +20,10 @@ The output contains one observation directory and one enclosing attempt
 directory, each with a hash-complete `manifest.json`. See the
 [run command documentation](../../docs/reference/run-cli.md) for supported policies,
 source-reference arguments, failure behavior, and output schemas.
+
+The implementation omits its parameter schema, so it accepts only `{}`.
+Worker environments may also be omitted: with no environment declarations,
+Metewand supplies a local environment. Nested policy versions and both repetition
+counts default to `1`. The manifest keeps those fields visible here for easy
+experimentation. Timing scope, primary clock, and the one-shot profile remain
+explicit. Inspect all effective settings with `metewand plan --output json`.

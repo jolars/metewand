@@ -78,6 +78,8 @@ experiments:
 execution-policies:
   default:
     version: 1
+    timing-scope: "prepare_and_execute"
+    primary-time: "timed_wall_time"
 observation-policies:
   final:
     version: 1
@@ -130,6 +132,14 @@ fn schema_catalog_with_parameter_schemas(
     documents.push((
         "schemas/implementation-parameters.json".into(),
         implementation_parameters,
+    ));
+    let empty: metewand_core::schema::SchemaDeclaration = serde_json::from_value(json!({
+        "type": "object", "properties": {}, "required": [], "additionalProperties": false
+    }))
+    .unwrap();
+    documents.push((
+        empty.as_path().to_path_buf(),
+        empty.inline_document().unwrap().as_json().clone(),
     ));
     SchemaCatalog::try_new(documents).unwrap()
 }
