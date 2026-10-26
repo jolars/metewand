@@ -131,7 +131,7 @@ a new compatibility review is a prerequisite.
   clearly left to the author. Test invalid declarations, override precedence,
   normalized defaults, and equivalent declaration identities without duplicating
   the example into a fixture matrix.
-- [ ] Verify the authoring workflow with two existing methods, an independent
+- [x] Verify the authoring workflow with two existing methods, an independent
   evaluator, and reference data. Configure three measurement repetitions per
   method and include a case that misses its completion target. Run and inspect
   the comparison using one manifest and small adapters, without hand-written
@@ -140,6 +140,11 @@ a new compatibility review is a prerequisite.
   Use this comparison to assess a Benchopt-style migration: reuse dataset,
   solver, and evaluation logic, adding small adapters and declarations without
   repeating scientific settings or implementing artifact envelopes.
+- [ ] Preserve Python virtual-environment context when resolving interpreter
+  symlinks. The [Benchopt SLOPE comparison](examples/benchopt-slope) verified
+  that ordinary venvs lose their package path; `venv --copies` works.
+- [ ] Make callback exception details inspectable after failed attempts.
+  Diagnostics currently direct authors to worker logs that are not retained.
 
 The existing authoring design is in [Authoring and
 scaffolding](DESIGN.md#authoring-and-scaffolding). These roadmap items remain

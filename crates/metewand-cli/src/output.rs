@@ -1618,9 +1618,22 @@ fn render_run_report(report: &RunReport) -> String {
             }
         )
         .expect("writing to a string cannot fail");
+        writeln!(output, "    logical slot: {}", attempt.logical_slot_id)
+            .expect("writing to a string cannot fail");
         if let Some(observation) = &attempt.observation_id {
             writeln!(output, "    observation: {observation}")
                 .expect("writing to a string cannot fail");
+        }
+        if let Some(metrics) = &attempt.metrics {
+            writeln!(output, "    metrics: {metrics}").expect("writing to a string cannot fail");
+        }
+        if let Some(diagnostic) = &attempt.diagnostic {
+            writeln!(
+                output,
+                "    failure [{}]: {}",
+                diagnostic.code, diagnostic.message
+            )
+            .expect("writing to a string cannot fail");
         }
     }
     output

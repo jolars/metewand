@@ -1,0 +1,109 @@
+version: 1
+name: benchopt-slope
+datasets:
+  simulated:
+    runner: python
+    entrypoint: dataset.py
+    sources: [dataset.py, upstream/simulated.py, origins.json, "metewand/*.py"]
+    output-schema: &dataset-schema
+      type: object
+      properties:
+        schema_version: { const: 1 }
+        complete: { const: true }
+        files:
+          type: array
+          minItems: 1
+          maxItems: 1
+          items:
+            type: object
+            properties: { path: { const: data.json } }
+            required: [path]
+      required: [schema_version, complete, files]
+    parameters:
+      n_samples: { type: integer, minimum: 1, default: 100 }
+      n_features: { type: integer, minimum: 1, default: 20 }
+      n_signals: { type: integer, minimum: 1, default: 5 }
+      X_density: { type: number, enum: [1.0], default: 1.0 }
+      rho: { type: number, minimum: 0, exclusiveMaximum: 1, default: 0.8 }
+      random_state: { type: integer, minimum: 0, maximum: 4294967295, default: 27 }
+problems:
+  slope:
+    family: slope
+    parameters:
+      reg: { type: number, exclusiveMinimum: 0, default: 0.1 }
+      q: { type: number, exclusiveMinimum: 0, exclusiveMaximum: 1, default: 0.1 }
+      fit_intercept: { type: boolean, enum: [false], default: false }
+    dataset-schemas: [*dataset-schema]
+    result:
+      beta: { type: array, items: number, minItems: 2 }
+    metrics:
+      value: { type: number, optional: true }
+      duality_gap: { type: number, optional: true }
+      rel_duality_gap: { type: number, optional: true }
+    allowed-timing-scopes: [prepare_and_execute]
+    supported-budgets: [none]
+    semantics:
+      preprocessing:
+        shared_materialization: upstream_simulated_dense_without_scaling
+        random_state: explicit_dataset_parameter
+        implementation_conversion: preserve_values_and_order
+        allowed_outside_timed_scope: []
+      validity:
+        beta: finite_vector_with_intercept_then_design_coefficients
+        absent_intercept: zero
+        relative_gap_floor: -1.0e-10
+      one_shot_completion: { rel_duality_gap: 1.0e-7 }
+      reporting: { decimal_places: 12 }
+    reference-cases:
+      - dataset: reference/data.json
+        result: reference/result.json
+        expected-metrics: reference/metrics.json
+    evaluator:
+      runner: python
+      entrypoint: evaluator.py
+      sources: [evaluator.py, upstream/objective.py, origins.json, "metewand/*.py"]
+implementations:
+  pgd:
+    runner: python
+    entrypoint: solver.py
+    args: [pgd]
+    sources: [solver.py, upstream/objective.py, upstream/python_pgd.py, origins.json, "metewand/*.py"]
+    problem-contracts: [slope]
+    capabilities: [one_shot]
+    parameters:
+      iterations: &iterations { type: integer, minimum: 1, default: 1000 }
+      prox: { type: string, enum: [prox_isotonic], default: prox_isotonic }
+      acceleration: { type: string, enum: [none, fista], default: none }
+  admm:
+    runner: python
+    entrypoint: solver.py
+    args: [admm]
+    sources: [solver.py, upstream/objective.py, upstream/admm.py, origins.json, "metewand/*.py"]
+    problem-contracts: [slope]
+    capabilities: [one_shot]
+    parameters:
+      iterations: *iterations
+      rho: { type: number, exclusiveMinimum: 0, default: 10 }
+      adaptive_rho: { type: boolean, default: false }
+experiments:
+  - name: comparison
+    problem: slope
+    datasets: [simulated]
+    implementations: [pgd, admm]
+    execution-policy: local
+    observation-policy: final
+    measurement-repetitions: 3
+    seed: 7
+    cases:
+      - name: converged
+      - name: iteration-limit
+        implementation-parameters:
+          pgd: { iterations: 1 }
+          admm: { iterations: 1 }
+execution-policies:
+  local:
+    timing-scope: prepare_and_execute
+    primary-time: timed_wall_time
+observation-policies:
+  final:
+    kind: one_shot

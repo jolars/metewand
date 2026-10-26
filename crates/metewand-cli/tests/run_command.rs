@@ -874,6 +874,42 @@ fn scientific_completion_failure_keeps_its_valid_observation() {
 }
 
 #[test]
+fn human_run_output_reports_metrics_and_scientific_failure_reasons() {
+    for reached in [true, false] {
+        let root = repository();
+        if !reached {
+            replace(
+                root.path(),
+                "worker.py",
+                "\"reached\" if error == 0",
+                "\"not_reached\" if error == 0",
+            );
+        }
+        let output = metewand(root.path(), &["run", "--output-dir", "run"]);
+        assert_eq!(output.status.code(), Some(if reached { 0 } else { 5 }));
+        let human = String::from_utf8(output.stdout).unwrap();
+        assert!(
+            human.contains("logical slot: mw1-logical-attempt-slot-"),
+            "{human}"
+        );
+        assert!(human.contains("metrics: {\"absolute_error\":0}"), "{human}");
+        assert!(human.contains("observation: mw1-observation-"), "{human}");
+        if reached {
+            assert!(!human.contains("failure ["), "{human}");
+        } else {
+            assert!(
+                human.contains("failure [completion_target_not_reached]"),
+                "{human}"
+            );
+            assert!(
+                human.contains("The valid result did not reach the problem's completion target."),
+                "{human}"
+            );
+        }
+    }
+}
+
+#[test]
 fn technical_failures_keep_distinct_codes_and_do_not_publish_observations() {
     let cases = [
         (

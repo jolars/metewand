@@ -167,6 +167,13 @@ shows a complete benchmark with one manifest, small adapters, and reference
 fixtures. Use ecosystem tools to initialize environments and install the SDKs;
 scaffolding never changes native lockfiles or launches workers.
 
+The [Benchopt SLOPE comparison](https://github.com/jolars/metewand/tree/main/examples/benchopt-slope)
+reuses an existing dataset generator, two solvers, and an independent evaluator
+through small SDK adapters. Its validation script checks three repetitions per
+configuration, completion misses, effective settings, metrics, and timings
+through the public CLI. Human `run` output shows metrics and failure reasons;
+use `plan` for settings and `explain` or `export` for recorded timing evidence.
+
 ### Dry runs, path reports, and conflicts
 
 `--dry-run` performs the same request, manifest, and path checks without

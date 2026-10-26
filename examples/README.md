@@ -14,6 +14,7 @@ they do not provide container isolation or a locked publication environment.
 | Native Rust | [Rust helpers](rust-sdk) | Rust 1.98.0, compiled worker | Two answers of 8 |
 | Dataset-free | [Integer sum](dataset-free) | Python 3, standard library only | Answers 6 and 55 |
 | Scientific workflows | [Motivating workflow smoke cases](workflow-smoke) | Python 3, standard library only | Three independently evaluated regression fits |
+| Benchopt migration | [SLOPE comparison](benchopt-slope) | `benchmark_slope` checkout and its Python dependencies | Three repetitions of PGD and ADMM, including completion misses |
 | Parameter matrix | [Grids and coupled cases](parameter-matrix) | Python 3, standard library only | Ten answers across five configurations and two representations |
 
 Each linked README provides complete setup and run commands. Python-only and
