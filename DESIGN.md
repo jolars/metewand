@@ -1119,7 +1119,8 @@ selected implementation binds a delivery mode under the same policy:
   result snapshots, and returns them for independent evaluation after execution.
   It supports direct recording and a local measurement-and-stopping callback.
 
-All three profile modes are required by the local MVP. Their examples below
+Fresh-sequence and buffered profiles are required by the local MVP; streaming
+profiles follow it. Their examples below
 specify intended interfaces, not capabilities of the current CLI or SDKs.
 Implement each mode with its actual producer, consumer, and focused behavioral
 tests. Apply the [pre-MVP compatibility policy](docs/reference/compatibility-versions.md)
@@ -2288,8 +2289,8 @@ Existing foundation regressions continue to run.
 
 ### Gate 3: comparative local MVP
 
-All three profile delivery modes are required. The scope around them is kept
-small enough to use the system in the two adopter projects:
+Fresh-sequence and buffered profiles are required; streaming profiles follow
+the MVP. The scope supports practical use in the two adopter projects:
 
 1. Run small Basin and clustlasso-cd comparisons through the existing one-shot
    runner. Simplify authoring with flat inline problem definitions, compact
@@ -2306,9 +2307,7 @@ small enough to use the system in the two adopter projects:
    claims to their instrumentation.
 4. Add fresh sequences of implementation-specific controls from clean
    algorithmic state, with fixed-count or evaluator-owned target completion.
-5. Add streaming checkpoints with durable observations, evaluator-controlled
-   continuation, active-time accounting, and partial-curve recovery.
-6. Qualify small real comparisons through checking, planning, selected execution,
+5. Qualify small real comparisons through checking, planning, selected execution,
    interruption, resume, inspection, and usable exports. Add the SDK
    callbacks and scientific budgets those comparisons actually need.
 
@@ -2325,9 +2324,9 @@ timing and snapshot rules in
 [Instrumented profiles and local observers](#instrumented-profiles-and-local-observers).
 
 Local use can begin with the one-shot integrations and grow with each mode.
-The MVP is complete when the two adopter workflows are practical and all three
+The MVP is complete when the two adopter workflows are practical and both MVP profile
 modes satisfy their behavioral tests. It provides development-environment and
-observed-control guarantees. It does not depend on the Julia SDK, complete
+observed-control guarantees. It does not depend on streaming profiles, the Julia SDK, complete
 ports of the earlier intercept and SLOPE studies, portable result archives, or
 environment provisioning.
 
@@ -2352,16 +2351,13 @@ Keep the existing foundation tests and add focused evidence for new behavior:
   distinguishes exclusions from execution failures;
 - fresh sequences reset algorithmic state, preserve process-reuse and warm-up
   rules, and stop from common evaluator metrics;
-- streaming checkpoints enforce ordering and bounds, include serialization in
-  active time, exclude evaluator pauses, and retain published observations
-  after a later failure;
 - buffered profiles preserve snapshots, bound collection, include measurement
   and callback costs, distinguish provisional from independent metrics, and
   never accept observations from an unreturned buffer or splice retries;
 - timing probes verify the selected scope, failure evidence, and scientific
   deadlines; instrumented curves remain distinct from executor-observed curves;
 - interruption and recovery do not manufacture success or duplicate selected
-  observations, including profile publication and decision boundaries;
+  observations, including profile publication boundaries;
 - status and exports retain valid observations, exclusions, censored attempts,
   retries, and failures with their original timing and guarantee classes;
 - small Basin and clustlasso-cd runs exercise the public commands and feed a

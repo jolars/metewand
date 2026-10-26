@@ -19,9 +19,9 @@ Preserve these properties throughout the implementation:
   authorized.
 
 Prioritize useful local benchmarks in Basin and clustlasso-cd. Follow the active
-roadmap, adapting the next small step to what those integrations need. All three
-profile modes belong in the MVP; the Julia SDK, portable result archives, and
-environment provisioning follow it. Complete each behavior with focused tests
+roadmap, adapting the next small step to what those integrations need. Fresh-sequence and buffered instrumented
+profiles belong in the MVP; streaming profiles, the Julia SDK, portable result
+archives, and environment provisioning follow it. Complete each behavior with focused tests
 and enough documentation to use it. A feature does not need every SDK callback
 or a separate reference page before an adopter can use it.
 
