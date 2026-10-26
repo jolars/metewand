@@ -774,7 +774,7 @@ pub enum WorkerSessionError {
         source: OperationResponseDecodeError,
     },
     /// The worker returned a structured operation failure.
-    #[error("worker reported a {phase} failure: {failure:?}")]
+    #[error("worker reported a {phase} failure: {} (code: {:?}, details: {:?})", failure.message(), failure.code(), failure.details())]
     WorkerFailure {
         /// Failed worker phase.
         phase: WorkerPhase,

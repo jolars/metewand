@@ -199,7 +199,11 @@ Use `stop(worker_error(code, message, details = NULL))` for a structured callbac
 failure. Valid codes are `invalid_request`, `unsupported_operation`,
 `operation_failed`, and `internal_error`. Messages must be nonempty strings, and
 details must be a canonical JSON object. Other callback and output serialization
-errors produce a generic `operation_failed` response and log the error to stderr.
+errors produce an `operation_failed` response containing the condition message
+and log it to stderr. The response retains at most 8,192 condition characters
+plus a truncation marker. Failed attempt diagnostics persist the message; find
+the `diagnostic_id` with `status --output-dir RUN --output json`, then inspect
+it with `explain ID --output-dir RUN`.
 Oversized failure payloads become a bounded `internal_error`; an ID leaving no
 room for a bounded failure terminates serving.
 

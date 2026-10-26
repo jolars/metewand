@@ -139,7 +139,14 @@ for (callback in list(function(...) stop("unexpected failure"), function(...) "m
   responses <- exchange(callback, "dataset_materializer", list(
     hello("dataset_materializer"), materialize_request, request("shutdown")))
   stopifnot(responses[[2]]$error$code == "operation_failed", responses[[3]]$ok)
+  stopifnot(!grepl("see the worker log", responses[[2]]$error$message))
+  stopifnot(grepl("unexpected failure|returned before writing", responses[[2]]$error$message))
 }
+responses <- exchange(function(...) stop(simpleError(paste0(strrep("é", 1024 * 1024), "tail"))),
+  "dataset_materializer", list(hello("dataset_materializer"), materialize_request, request("shutdown")))
+stopifnot(responses[[2]]$error$code == "operation_failed",
+  grepl("[condition truncated]", responses[[2]]$error$message, fixed = TRUE),
+  nchar(responses[[2]]$error$message, type = "bytes") < 65536L, responses[[3]]$ok)
 evaluate_request <- request("evaluate", dataset_dir = directory, problem_contract_id = "c",
   problem_parameters = json_object(), result_dir = directory,
   metrics_path = file.path(directory, "metrics.json"))

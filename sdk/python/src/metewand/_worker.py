@@ -405,14 +405,16 @@ def _serve(worker, role, reader, writer, semantics=False):
         except WorkerError as error:
             frame = _encode_failure(request_id, error)
         except Exception:  # noqa: BLE001 - Callbacks may raise arbitrary exceptions.
-            # Tracebacks belong in the separately drained stderr log. A bounded
-            # generic wire message also accommodates exceptions with invalid text.
+            # Failed attempts persist wire diagnostics even when stderr is unavailable.
+            text = traceback.format_exc().encode("utf-8", "backslashreplace").decode("utf-8")
+            if len(text) > 8192:
+                text = text[:4096] + "\n[traceback truncated]\n" + text[-4096:]
             traceback.print_exc()
             frame = _encode_failure(
                 request_id,
                 WorkerError(
                     "operation_failed",
-                    "Worker callback or output serialization failed; see the worker log.",
+                    "Worker callback or output serialization failed:\n" + text,
                 ),
             )
         writer.write(frame)

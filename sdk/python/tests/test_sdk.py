@@ -509,9 +509,33 @@ class WorkerTests(unittest.TestCase):
                 self.assertEqual(log.getvalue(), "")
             else:
                 self.assertIn("RuntimeError: broken", log.getvalue())
+                self.assertIn("RuntimeError: broken", responses[1]["error"]["message"])
+                self.assertIn("Traceback", responses[1]["error"]["message"])
             self.assertTrue(responses[2]["ok"])
         with self.assertRaises(ValueError):
             WorkerError("invented", "bad")
+
+    def test_unexpected_exception_text_is_safe_and_bounded(self):
+        for message in ["bad \ud800 text", "x" * MAX_LINE_BYTES + " final detail"]:
+            def fail(*args):
+                raise RuntimeError(message)
+
+            with redirect_stderr(io.StringIO()):
+                responses = exchange(
+                    fail, "dataset_materializer",
+                    [hello("dataset_materializer"),
+                     request("materialize", source_dir="s", dataset_parameters={},
+                             dataset_seed=0, output_dir="o"), request("shutdown")],
+                )
+            error = responses[1]["error"]
+            self.assertEqual(error["code"], "operation_failed")
+            self.assertLess(len(canonical_bytes(error)), 65536)
+            if len(message) > MAX_LINE_BYTES:
+                self.assertIn("[traceback truncated]", error["message"])
+                self.assertIn("final detail", error["message"])
+            else:
+                self.assertIn("bad \\ud800 text", error["message"])
+            self.assertTrue(responses[2]["ok"])
 
     def test_invalid_requests_do_not_reach_callbacks(self):
         for bad in [

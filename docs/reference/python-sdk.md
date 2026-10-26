@@ -191,7 +191,12 @@ Callbacks may raise `WorkerError(code, message, details=None)` using
 `internal_error`. Messages must be nonempty, and optional details must be a
 canonical JSON object. The SDK preserves these values in the failure response.
 Other callback or output serialization exceptions produce `operation_failed` and
-write a traceback to the worker's stderr log. Failure payloads exceeding the
+include a traceback in the failure message as well as the worker's stderr log.
+The response retains the first and last 4,096 characters, with a truncation
+marker when necessary; invalid Unicode is escaped. Failed attempt diagnostics
+persist this message. Use `status --output-dir RUN --output json` to find the
+`diagnostic_id`, then `explain ID --output-dir RUN` to inspect it after execution.
+Failure payloads exceeding the
 line limit become a bounded `internal_error`; an ID that itself prevents a
 bounded response terminates serving. Metewand combines the failure code with the
 active execution phase.

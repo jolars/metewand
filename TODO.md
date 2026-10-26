@@ -144,8 +144,9 @@ a new compatibility review is a prerequisite.
   symlinks. The [Benchopt SLOPE comparison](examples/benchopt-slope) verified
   the original failure; the local runner now retains the selected interpreter
   path, with a regression test for imports from a symlink-based venv.
-- [ ] Make callback exception details inspectable after failed attempts.
-  Diagnostics currently direct authors to worker logs that are not retained.
+- [x] Make callback exception details inspectable after failed attempts.
+  SDKs include bounded exception text in persisted failure messages, available
+  through `status` and `explain` without retained worker logs.
 
 The existing authoring design is in [Authoring and
 scaffolding](DESIGN.md#authoring-and-scaffolding). These roadmap items remain

@@ -6,6 +6,90 @@ use serde_json::Value;
 use tempfile::TempDir;
 
 #[test]
+fn callback_tracebacks_survive_failed_attempts_and_remain_explainable() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    for (trigger, code) in [
+        ("self.values = read_json", "implementation_failure"),
+        ("self.answer = sum", "implementation_failure"),
+        ("values = read_json", "evaluator_failure"),
+    ] {
+        let benchmark = TempDir::new().unwrap();
+        copy_tree(&root.join("examples/python-sdk"), benchmark.path());
+        copy_tree(
+            &root.join("sdk/python/src/metewand"),
+            &benchmark.path().join("metewand"),
+        );
+        let worker = benchmark.path().join("worker.py");
+        let source = fs::read_to_string(&worker).unwrap();
+        let source = source
+            .lines()
+            .map(|line| {
+                if line.trim_start().starts_with(trigger) {
+                    let indent = &line[..line.len() - line.trim_start().len()];
+                    format!("{indent}raise RuntimeError('scientific callback broke')")
+                } else {
+                    line.to_owned()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        fs::write(&worker, source).unwrap();
+        let invoke = |args: &[&str]| {
+            Command::new(env!("CARGO_BIN_EXE_metewand"))
+                .current_dir(benchmark.path())
+                .args(args)
+                .output()
+                .unwrap()
+        };
+        let output = invoke(&[
+            "run",
+            "--output-dir",
+            "run",
+            "--max-attempts",
+            "1",
+            "--output",
+            "json",
+        ]);
+        assert!(!output.status.success(), "{output:?}");
+        let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+        let attempt = &report["data"]["attempts"][0];
+        assert_eq!(attempt["diagnostic"]["code"], code, "{report}");
+        let attempt_path = benchmark
+            .path()
+            .join("run")
+            .join(attempt["attempt_directory"].as_str().unwrap())
+            .join("attempt.json");
+        let persisted: Value = serde_json::from_slice(&fs::read(attempt_path).unwrap()).unwrap();
+        let message = persisted["outcome"]["diagnostic"]["message"]
+            .as_str()
+            .unwrap();
+        assert!(message.contains("Traceback"), "{message}");
+        assert!(
+            message.contains("RuntimeError: scientific callback broke"),
+            "{message}"
+        );
+        assert!(message.contains("worker.py"), "{message}");
+        fs::remove_file(worker).unwrap();
+        let status = invoke(&["status", "--output-dir", "run", "--output", "json"]);
+        assert!(status.status.success(), "{status:?}");
+        let status: Value = serde_json::from_slice(&status.stdout).unwrap();
+        let id = status["data"]["attempts"][0]["diagnostic_id"]
+            .as_str()
+            .unwrap();
+        for format in ["json", "human"] {
+            let explanation = invoke(&["explain", id, "--output-dir", "run", "--output", format]);
+            assert!(explanation.status.success(), "{explanation:?}");
+            let text = String::from_utf8(explanation.stdout).unwrap();
+            assert!(
+                text.contains("RuntimeError: scientific callback broke"),
+                "{text}"
+            );
+            assert!(!text.contains("see the worker log"), "{text}");
+        }
+    }
+}
+
+#[test]
 fn declared_completion_tolerance_controls_independent_evaluation() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let benchmark = TempDir::new().unwrap();

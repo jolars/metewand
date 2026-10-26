@@ -183,8 +183,13 @@ fn lifecycle_failures_invalidate_preparation_and_preserve_errors() {
                 .unwrap()
                 .into());
             }
-            if self.0 == "panic" && stage == "execute" {
-                panic!("solver panicked");
+            if stage == "execute" {
+                match self.0 {
+                    "panic" => panic!("solver panicked"),
+                    "panic_long" => std::panic::panic_any("é".repeat(1024 * 1024)),
+                    "panic_payload" => std::panic::panic_any(42_u32),
+                    _ => {}
+                }
             }
             Ok(())
         }
@@ -217,6 +222,8 @@ fn lifecycle_failures_invalidate_preparation_and_preserve_errors() {
         "writer",
         "reset",
         "panic",
+        "panic_long",
+        "panic_payload",
     ] {
         let directory = TempDir::new().unwrap();
         let execute = json!({"id":"2","method":"execute","result_dir":directory.path()});
@@ -235,7 +242,21 @@ fn lifecycle_failures_invalidate_preparation_and_preserve_errors() {
             replies[failure_index]["error"]["code"], "operation_failed",
             "{stage}"
         );
-        if stage != "panic" {
+        if stage.starts_with("panic") {
+            let message = replies[failure_index]["error"]["message"].as_str().unwrap();
+            assert!(message.len() < 65536);
+            let expected = match stage {
+                "panic_long" => "[panic truncated]",
+                "panic_payload" => "Non-string panic payload.",
+                _ => "solver panicked",
+            };
+            assert!(
+                replies[failure_index]["error"]["message"]
+                    .as_str()
+                    .unwrap()
+                    .contains(expected)
+            );
+        } else {
             assert_eq!(
                 replies[failure_index]["error"]["details"],
                 json!({"stage":stage})

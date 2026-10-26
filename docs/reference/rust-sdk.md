@@ -145,8 +145,12 @@ version. Implementations advertise only `one_shot`.
 Return `WorkerError::operation_failed(message)` for ordinary failures, or
 convert an existing `WorkerFailure` into `WorkerError` to preserve its stable
 code and optional object details. I/O, JSON, and canonicalization errors support
-`?`. Unwinding callback panics become `operation_failed` and the panic hook
-writes details to stderr. Oversized failures become bounded `internal_error`
+`?`. Unwinding callback panics become `operation_failed` with up to 8,192
+characters of their string payload and an explicit truncation marker. Non-string
+payloads receive a fallback message. The panic hook also writes to stderr.
+Failed attempt diagnostics persist the message; find the `diagnostic_id` with
+`status --output-dir RUN --output json`, then inspect it with
+`explain ID --output-dir RUN`. Oversized failures become bounded `internal_error`
 responses. Malformed frames, missing IDs, early EOF, invalid inherited
 descriptors, and pipe failures terminate serving with `ServeError`.
 

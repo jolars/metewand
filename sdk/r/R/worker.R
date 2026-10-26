@@ -182,9 +182,12 @@ evaluation <- function(metrics, verdict) {
       frame
     }, metewand_worker_error = function(e) .encode_failure(request$id, e),
     error = function(e) {
-      cat("Worker callback or output serialization failed: ", conditionMessage(e), "\n", sep = "", file = stderr())
-      .encode_failure(request$id, worker_error("operation_failed",
-        "Worker callback or output serialization failed; see the worker log."))
+      # The wire diagnostic survives failed attempts even when stderr is unavailable.
+      text <- iconv(conditionMessage(e), to = "UTF-8", sub = "byte")
+      if (nchar(text) > 8192L) text <- paste0(substr(text, 1L, 8192L), " [condition truncated]")
+      message <- paste0("Worker callback or output serialization failed: ", text)
+      cat(message, "\n", sep = "", file = stderr())
+      .encode_failure(request$id, worker_error("operation_failed", message))
     })
     if (typeof(writer) == "externalptr") .native(C_mw_write, writer, frame, error = .protocol_error)
     else { writeBin(frame, writer); flush(writer) }

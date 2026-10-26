@@ -416,11 +416,20 @@ fn serve_on<const N: usize>(
                 "Expected an operation after negotiation.",
             ))
         } else {
-            catch_unwind(AssertUnwindSafe(|| dispatch(request))).unwrap_or_else(|_| {
-                // The default panic hook writes details to the separately drained stderr log.
-                Err(WorkerError::operation_failed(
-                    "Worker callback panicked; see the worker log.",
-                ))
+            catch_unwind(AssertUnwindSafe(|| dispatch(request))).unwrap_or_else(|payload| {
+                let text = payload
+                    .downcast_ref::<String>()
+                    .map(String::as_str)
+                    .or_else(|| payload.downcast_ref::<&str>().copied())
+                    .unwrap_or("Non-string panic payload.");
+                // Wire diagnostics survive failures even when stderr is unavailable.
+                let mut bounded: String = text.chars().take(8192).collect();
+                if bounded.len() < text.len() {
+                    bounded.push_str(" [panic truncated]");
+                }
+                Err(WorkerError::operation_failed(format!(
+                    "Worker callback panicked: {bounded}"
+                )))
             })
         };
         let success = result.is_ok();

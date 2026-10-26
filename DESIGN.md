@@ -862,7 +862,12 @@ diagnostic codes are stable and documented. Structured diagnostics include
 source spans, affected stable identities, causal chains, and concrete
 remediation where it can be stated safely. Human-readable output is rendered
 from the same typed records rather than maintained as a separate source of
-truth.
+truth. SDK callback failures include bounded exception text in their existing
+version-1 failure messages, so failed attempt diagnostics remain inspectable
+through `status` and `explain` after private worker directories are removed.
+Python includes traceback context, R includes the condition message, and native
+Rust workers include string panic payloads when unwinding is enabled. Truncated
+messages carry an explicit marker.
 
 Commands are noninteractive by default and never silently rewrite manifests,
 native lockfiles, or source files. An operation that requires an additional
