@@ -1,0 +1,19 @@
+version: 1
+name: controlled
+family: qualification
+dataset-schemas: []
+result:
+  answer: integer
+  payload: string
+metrics:
+  payload_bytes: { type: integer, minimum: 0 }
+allowed-timing-scopes: [execute_only, prepare_and_execute, cold_end_to_end]
+supported-budgets: [none]
+semantics:
+  preprocessing:
+    allowed_outside_timed_scope: [Reading scalar work and output-size controls.]
+  validity: { answer: 42, payload: Repeated ASCII x. }
+  one_shot_completion: { answer: 42 }
+reference-cases:
+  - result: reference/result.json
+    expected-metrics: reference/metrics.json

@@ -1,0 +1,66 @@
+version: 1
+name: basin-qualification
+problems:
+  rosenbrock:
+    contract: problem.yaml
+    evaluator:
+      runner: python
+      entrypoint: evaluator.py
+      args: [basin]
+      sources: [evaluator.py, "metewand/*.py"]
+implementations:
+  basin: &basin
+    runner: command
+    program: ./worker
+    args: [basin]
+    sources: [worker]
+    problem-contracts: [rosenbrock]
+    capabilities: [one_shot, buffered_profile]
+  gomez:
+    <<: *basin
+    args: [gomez]
+    capabilities: [one_shot]
+experiments:
+  - name: final
+    problem: rosenbrock
+    implementations: [basin, gomez]
+    observation-policy: final
+    measurement-repetitions: 2
+    execution-policy: local
+    seed: 1
+  - name: instrumented
+    problem: rosenbrock
+    implementations: [basin]
+    observation-policy: accuracy
+    execution-policy: local
+    measurement-repetitions: 2
+    seed: 2
+execution-policies:
+  local:
+    primary-time: timed_wall_time
+    timing-scope: prepare_and_execute
+    timeout: 5 s
+    worker-reuse: true
+    warmup-runs: 1
+observation-policies:
+  final:
+    kind: one_shot
+  accuracy:
+    kind: profile
+    metric: objective
+    direction: at_most
+    threshold: 1e-10
+    record-thresholds: [1, 0.01, 0.000001, 1e-10]
+    max-observations: 4
+    max-trace-points: 10001
+    max-buffer-bytes: 4194304
+    terminal-reserve-bytes: 16384
+    max-active-time: 5 s
+    implementations:
+      basin:
+        delivery: buffered_profile
+        measurement-basis: instrumented
+        instrumented-scope: native_solver
+        instrumentation-schema: { type: object, additionalProperties: false }
+        instrumentation: {}
+        check-schedule: { every: 1 }

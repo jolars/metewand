@@ -30,7 +30,7 @@ versions, the pre-MVP stability policy, and verification guidance for extensions
 [Source resolution](source-resolution.md) and the [artifact
 store](artifact-store.md) connect declared inputs to verified content. The
 runtime records [timing envelopes](fixed-dataset-run.md),
-[measurements](execution-measurements.md), [buffered profiles](buffered-profiles.md), [fresh sequences](fresh-sequence-profiles.md), and [execution
+[measurements](execution-measurements.md), [build evidence](build-evidence.md), [buffered profiles](buffered-profiles.md), [fresh sequences](fresh-sequence-profiles.md), and [execution
 controls](execution-controls.md). [Durable publication](durable-publication.md)
 and the [run store](run-store-schema.md) preserve completed results and support
 explicit recovery.

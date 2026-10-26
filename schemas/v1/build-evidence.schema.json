@@ -1,0 +1,184 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "metewand://schemas/v1/build-evidence.schema.json",
+  "title": "Executable build evidence",
+  "description": "Local build-wrapper observations bound to exact executable bytes; this is not an authenticated attestation.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "capture": {
+      "const": "build_wrapper"
+    },
+    "executable_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "build": {
+      "type": "object",
+      "properties": {
+        "started_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "finished_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "command": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "working_directory": {
+          "type": "string"
+        },
+        "sources": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {
+            "$ref": "#/$defs/source"
+          }
+        },
+        "compiler": {
+          "type": "object",
+          "properties": {
+            "program": {
+              "type": "string"
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "version": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "program",
+            "sha256",
+            "version"
+          ],
+          "additionalProperties": false
+        },
+        "profile": {
+          "type": "string",
+          "minLength": 1
+        },
+        "features": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "settings_origin": {
+          "const": "wrapper_arguments"
+        },
+        "flags": {
+          "type": "object",
+          "additionalProperties": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "lockfiles": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        }
+      },
+      "required": [
+        "started_at",
+        "finished_at",
+        "command",
+        "working_directory",
+        "sources",
+        "compiler",
+        "profile",
+        "features",
+        "settings_origin",
+        "flags",
+        "lockfiles"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "schema_version",
+    "capture",
+    "executable_sha256",
+    "build"
+  ],
+  "additionalProperties": false,
+  "x-metewand-compatibility-version": 1,
+  "$defs": {
+    "source": {
+      "type": "object",
+      "properties": {
+        "root": {
+          "type": "string"
+        },
+        "commit": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "dirty": {
+          "type": "boolean"
+        },
+        "tree_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "tree_hash": {
+          "const": "sha256_of_sorted_file_hashes_v1"
+        },
+        "submodules": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "expected_commit": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+              },
+              "source": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/source"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "expected_commit",
+              "source"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "root",
+        "commit",
+        "dirty",
+        "tree_sha256",
+        "tree_hash"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

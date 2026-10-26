@@ -60,6 +60,7 @@ const reference = [
     items: [
       ['fixed-dataset-run', 'Timing envelopes'],
       ['execution-measurements', 'Execution measurements'],
+      ['build-evidence', 'Build evidence'],
       ['buffered-profiles', 'Buffered profiles'],
       ['fresh-sequence-profiles', 'Fresh-sequence profiles'],
       ['execution-controls', 'Execution controls'],

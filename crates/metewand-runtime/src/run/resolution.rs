@@ -491,9 +491,15 @@ pub(super) fn resolve(
             &datasets[&key],
         )?);
     }
+    let runner = crate::build_evidence::executable_evidence(&env::current_exe()?)?;
+    let host = crate::build_evidence::host_observation();
     let mut slots = BTreeSet::new();
-    for candidate in &candidates {
-        for measurement in &candidate.measurements {
+    for candidate in &mut candidates {
+        for measurement in &mut candidate.measurements {
+            let mut context = measurement.provenance.as_json().clone();
+            context["runner"] = runner.clone();
+            context["host_observation"] = host.clone();
+            measurement.provenance = canonical(context)?;
             if !slots.insert(measurement.attempt_slot.id) {
                 return Err(unsupported(
                     "the plan selects a resolved attempt slot more than once; use distinct experiment seeds for independent executions",
@@ -1282,7 +1288,15 @@ pub(super) fn resolve_worker(
         environment_variables: variables,
         working_directory: WorkerWorkingDirectory::PrivateRunDirectory,
     };
-    let provenance = json!({"environment": record_document(&environment_record.record)?, "launch": record_document(&normalized_launch.record)?, "worker": record_document(&record)?, "undeclared_file_access": "unsupported"});
+    let executable_evidence = crate::build_evidence::executable_evidence(if source_executable {
+        &original_executable
+    } else {
+        &executable
+    })?;
+    if executable_evidence["executable_sha256"] != executable_digest {
+        return Err(RunError::ChangedInput);
+    }
+    let provenance = json!({"environment": record_document(&environment_record.record)?, "launch": record_document(&normalized_launch.record)?, "worker": record_document(&record)?, "executable": executable_evidence, "undeclared_file_access": "unsupported"});
     Ok(ResolvedWorker {
         launch,
         identity,

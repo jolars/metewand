@@ -1,4 +1,6 @@
 #![cfg(unix)]
+#[path = "support/export_fidelity.rs"]
+mod export_fidelity;
 
 use serde_json::{Value, json};
 use std::{
@@ -194,6 +196,7 @@ fn fresh_points_stop_on_independent_metrics_and_export_skipped_slots() {
         .lines()
         .map(|line| serde_json::from_str::<Value>(line).unwrap())
         .collect::<Vec<_>>();
+    export_fidelity::verify(stage.path(), &rows);
     for row in &rows {
         metewand_core::public_schemas::public_schema_catalog()
             .unwrap()

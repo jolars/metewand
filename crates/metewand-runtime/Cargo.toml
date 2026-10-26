@@ -42,3 +42,7 @@ path = "../../examples/rust-sdk/main.rs"
 [[example]]
 name = "buffered-worker"
 path = "../../examples/buffered-profile/main.rs"
+
+[[example]]
+name = "overhead-worker"
+path = "../../examples/overhead/main.rs"

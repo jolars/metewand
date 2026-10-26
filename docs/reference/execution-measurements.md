@@ -96,3 +96,9 @@ and contradictory state/value combinations. Canonical byte tests cover the
 three measurement forms. Phase-delay fixtures, CPU and memory workloads,
 timeouts, crashes, shared materialization, and persistent-cache tests verify
 runtime recording and publication.
+
+The [controlled release example](https://github.com/jolars/metewand/tree/main/examples/overhead)
+measures orchestration and canonical result serialization separately, retains
+every repetition, and reports all three primary timing scopes. Its worker clock
+readings supplement executor wall time. [Build receipts](build-evidence.md)
+identify the worker and runner builds separately from observations of the host.

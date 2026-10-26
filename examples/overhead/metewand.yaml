@@ -1,0 +1,69 @@
+version: 1
+name: overhead
+problems:
+  controlled:
+    contract: problem.yaml
+    evaluator:
+      runner: command
+      program: ./worker
+      args: [problem_evaluator]
+      sources: [worker]
+implementations:
+  controlled:
+    runner: command
+    program: ./worker
+    args: [implementation]
+    sources: [worker]
+    problem-contracts: [controlled]
+    capabilities: [one_shot]
+    parameters:
+      work_ns: { type: integer, minimum: 0, maximum: 1000000000, default: 0 }
+      payload_bytes: { type: integer, minimum: 0, maximum: 1000000, default: 0 }
+experiments:
+  - name: execute
+    problem: controlled
+    implementations: [controlled]
+    observation-policy: final
+    execution-policy: execute
+    measurement-repetitions: 11
+    seed: 1
+    implementation-parameters: &settings
+      controlled:
+        work_ns: { grid: [0, 1000000, 10000000] }
+        payload_bytes: { grid: [0, 1000000] }
+  - name: prepare
+    problem: controlled
+    implementations: [controlled]
+    observation-policy: final
+    execution-policy: prepare
+    measurement-repetitions: 11
+    seed: 2
+    implementation-parameters: *settings
+  - name: cold
+    problem: controlled
+    implementations: [controlled]
+    observation-policy: final
+    execution-policy: cold
+    measurement-repetitions: 11
+    seed: 3
+    implementation-parameters: *settings
+execution-policies:
+  execute:
+    primary-time: timed_wall_time
+    timing-scope: execute_only
+    worker-reuse: true
+    warmup-runs: 1
+    timeout: 5 s
+  prepare:
+    primary-time: timed_wall_time
+    timing-scope: prepare_and_execute
+    worker-reuse: true
+    warmup-runs: 1
+    timeout: 5 s
+  cold:
+    primary-time: timed_wall_time
+    timing-scope: cold_end_to_end
+    timeout: 5 s
+observation-policies:
+  final:
+    kind: one_shot

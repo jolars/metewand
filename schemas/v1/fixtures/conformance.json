@@ -1880,6 +1880,49 @@
         "thresholds": [],
         "provisional_metrics": {}
       }
+    },
+    {
+      "name": "build receipt binds inputs to executable bytes",
+      "schema": "build-evidence",
+      "instance": {
+        "schema_version": 1,
+        "capture": "build_wrapper",
+        "executable_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+        "build": {
+          "started_at": "2026-10-26T12:00:00Z",
+          "finished_at": "2026-10-26T12:00:01Z",
+          "command": [
+            "cargo",
+            "build",
+            "--release",
+            "--locked"
+          ],
+          "working_directory": "/build",
+          "sources": {
+            "worker": {
+              "root": "/build",
+              "commit": null,
+              "dirty": true,
+              "tree_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+              "tree_hash": "sha256_of_sorted_file_hashes_v1"
+            }
+          },
+          "compiler": {
+            "program": "/tools/rustc",
+            "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+            "version": "rustc 1.98.0"
+          },
+          "profile": "release",
+          "features": [],
+          "settings_origin": "wrapper_arguments",
+          "flags": {
+            "RUSTFLAGS": null
+          },
+          "lockfiles": {
+            "Cargo.lock": "3333333333333333333333333333333333333333333333333333333333333333"
+          }
+        }
+      }
     }
   ],
   "invalid": [
@@ -4501,6 +4544,130 @@
         "thresholds": [],
         "provisional_metrics": {},
         "unknown": true
+      }
+    },
+    {
+      "name": "reject missing compiler",
+      "schema": "build-evidence",
+      "instance": {
+        "schema_version": 1,
+        "capture": "build_wrapper",
+        "executable_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+        "build": {
+          "started_at": "2026-10-26T12:00:00Z",
+          "finished_at": "2026-10-26T12:00:01Z",
+          "command": [
+            "cargo",
+            "build",
+            "--release",
+            "--locked"
+          ],
+          "working_directory": "/build",
+          "sources": {
+            "worker": {
+              "root": "/build",
+              "commit": null,
+              "dirty": true,
+              "tree_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+              "tree_hash": "sha256_of_sorted_file_hashes_v1"
+            }
+          },
+          "profile": "release",
+          "features": [],
+          "settings_origin": "wrapper_arguments",
+          "flags": {
+            "RUSTFLAGS": null
+          },
+          "lockfiles": {
+            "Cargo.lock": "3333333333333333333333333333333333333333333333333333333333333333"
+          }
+        }
+      }
+    },
+    {
+      "name": "reject non-digest executable",
+      "schema": "build-evidence",
+      "instance": {
+        "schema_version": 1,
+        "capture": "build_wrapper",
+        "executable_sha256": "unknown",
+        "build": {
+          "started_at": "2026-10-26T12:00:00Z",
+          "finished_at": "2026-10-26T12:00:01Z",
+          "command": [
+            "cargo",
+            "build",
+            "--release",
+            "--locked"
+          ],
+          "working_directory": "/build",
+          "sources": {
+            "worker": {
+              "root": "/build",
+              "commit": null,
+              "dirty": true,
+              "tree_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+              "tree_hash": "sha256_of_sorted_file_hashes_v1"
+            }
+          },
+          "compiler": {
+            "program": "/tools/rustc",
+            "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+            "version": "rustc 1.98.0"
+          },
+          "profile": "release",
+          "features": [],
+          "settings_origin": "wrapper_arguments",
+          "flags": {
+            "RUSTFLAGS": null
+          },
+          "lockfiles": {
+            "Cargo.lock": "3333333333333333333333333333333333333333333333333333333333333333"
+          }
+        }
+      }
+    },
+    {
+      "name": "reject unknown capture version",
+      "schema": "build-evidence",
+      "instance": {
+        "schema_version": 2,
+        "capture": "build_wrapper",
+        "executable_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+        "build": {
+          "started_at": "2026-10-26T12:00:00Z",
+          "finished_at": "2026-10-26T12:00:01Z",
+          "command": [
+            "cargo",
+            "build",
+            "--release",
+            "--locked"
+          ],
+          "working_directory": "/build",
+          "sources": {
+            "worker": {
+              "root": "/build",
+              "commit": null,
+              "dirty": true,
+              "tree_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+              "tree_hash": "sha256_of_sorted_file_hashes_v1"
+            }
+          },
+          "compiler": {
+            "program": "/tools/rustc",
+            "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+            "version": "rustc 1.98.0"
+          },
+          "profile": "release",
+          "features": [],
+          "settings_origin": "wrapper_arguments",
+          "flags": {
+            "RUSTFLAGS": null
+          },
+          "lockfiles": {
+            "Cargo.lock": "3333333333333333333333333333333333333333333333333333333333333333"
+          }
+        }
       }
     }
   ]

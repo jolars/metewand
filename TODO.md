@@ -229,22 +229,32 @@ Each delivery mode must be usable through the CLI and its needed adapters.
 Extend SDK callbacks where an adopter needs them; completing every callback in
 every language is not a release prerequisite.
 
-- [ ] Run `check`, `plan`, selected execution, interruption, resume, inspection,
+- [x] Run `check`, `plan`, selected execution, interruption, resume, inspection,
   and JSONL and CSV export on small Basin and clustlasso-cd comparisons.
-- [ ] Keep both MVP profile modes covered by small end-to-end cases. Retain
+- [x] Keep both MVP profile modes covered by small end-to-end cases. Retain
   focused tests for scientific validity, timing, stopping, failure evidence,
   and recovery, plus the existing foundation regressions.
-- [ ] Measure orchestration and result-serialization overhead in release builds
+- [x] Measure orchestration and result-serialization overhead in release builds
   using a small controlled worker. Report primary wall timing and worker
   diagnostics with their scopes so users can judge whether overhead obscures
   their workload.
-- [ ] Preserve logical versus resolved identities, independent evaluator
+- [x] Preserve logical versus resolved identities, independent evaluator
   metrics, and timing and guarantee classes through durable records and
   exports. Add only problem-defined scientific budgets needed by these
   pilots.
-- [ ] Bind available build evidence to worker and runner executable hashes.
+- [x] Bind available build evidence to worker and runner executable hashes.
   Capture source state, compiler, profile, features, flags, and lockfile hashes
   during builds, and distinguish that evidence from post-run host observations.
+
+The [adopter qualification](examples/adopters) runs Basin and Gomez, native
+clustlasso PG and hybrid trajectories, and the separate Python/R package track.
+All three comparisons retain a completed prefix and an interrupted attempt
+through recovery, explicit retry, inspection, and both exports. Profile tests
+compare durable evidence with JSONL and CSV, alongside the foundation suite.
+The [release overhead example](examples/overhead) retains all 198 repetitions,
+scoped diagnostics, and executable-bound [build evidence](docs/reference/build-evidence.md).
+These pilots need no additional scientific budget types.
+
 - [ ] Provide a useful default comparison summary and a table for analysis with
   methods, effective settings, repetition indices, evaluator metrics, durations,
   timing scopes, and failure reasons. Keep individual repetitions and failed

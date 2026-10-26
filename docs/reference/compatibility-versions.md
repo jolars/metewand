@@ -147,6 +147,12 @@ supported; these vectors do not freeze future development interfaces.
 
 ## Verification
 
+[Build receipts](build-evidence.md) introduce the version-1 `build-evidence`
+schema. Matching executable hashes bind their original build observations to
+attempt and observation provenance. This adds optional evidence without changing
+canonical identity bytes, execution semantics, wire messages, persisted layouts,
+or historical interpretations. Missing historical build evidence stays missing.
+
 Keep exact golden vectors for [canonical values](canonical-json.md),
 [identities](identities.md), and [seed derivation](seeds.md). Use focused protocol,
 schema, timing, and recovery tests for affected behavior. Extend the SDK

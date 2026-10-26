@@ -1,0 +1,66 @@
+version: 1
+name: clustlasso-native-qualification
+problems:
+  clustered_lasso:
+    contract: problem.yaml
+    evaluator:
+      runner: python
+      entrypoint: evaluator.py
+      args: [clustlasso]
+      sources: [evaluator.py, "metewand/*.py"]
+implementations:
+  pg: &pg
+    runner: command
+    program: ./worker
+    args: [pg]
+    sources: [worker]
+    problem-contracts: [clustered_lasso]
+    capabilities: [one_shot, buffered_profile]
+  hybrid:
+    <<: *pg
+    args: [hybrid]
+experiments:
+  - name: final
+    problem: clustered_lasso
+    implementations: [pg, hybrid]
+    observation-policy: final
+    measurement-repetitions: 2
+    execution-policy: local
+    seed: 3
+  - name: instrumented
+    problem: clustered_lasso
+    implementations: [pg, hybrid]
+    observation-policy: accuracy
+    execution-policy: local
+    measurement-repetitions: 2
+    seed: 4
+execution-policies:
+  local:
+    primary-time: timed_wall_time
+    timing-scope: prepare_and_execute
+    timeout: 5 s
+    worker-reuse: true
+    warmup-runs: 1
+observation-policies:
+  final:
+    kind: one_shot
+  accuracy:
+    kind: profile
+    metric: epsilon_g
+    direction: at_most
+    threshold: 1e-8
+    record-thresholds: [0.1, 0.001, 0.000001, 1e-8]
+    max-observations: 4
+    max-trace-points: 10001
+    max-buffer-bytes: 4194304
+    terminal-reserve-bytes: 16384
+    max-active-time: 5 s
+    implementations:
+      pg: &profile
+        delivery: buffered_profile
+        measurement-basis: instrumented
+        instrumented-scope: native_solver
+        instrumentation-schema: { type: object, additionalProperties: false }
+        instrumentation: {}
+        check-schedule: { every: 1 }
+      hybrid: *profile

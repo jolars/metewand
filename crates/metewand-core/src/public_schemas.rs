@@ -23,6 +23,8 @@ static CATALOG: Mutex<Option<SchemaCatalog>> = Mutex::new(None);
 /// A public version-1 schema entry point.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum PublicSchema {
+    /// Build-time inputs bound to an executable hash.
+    BuildEvidence,
     ProfileObservationPolicy,
     BufferedManifest,
     BufferedTracePoint,
@@ -81,7 +83,8 @@ pub enum PublicSchema {
 }
 
 /// Every public schema entry point in stable presentation order.
-pub const PUBLIC_SCHEMAS: [PublicSchema; 29] = [
+pub const PUBLIC_SCHEMAS: [PublicSchema; 30] = [
+    PublicSchema::BuildEvidence,
     PublicSchema::ProfileObservationPolicy,
     PublicSchema::BufferedManifest,
     PublicSchema::BufferedTracePoint,
@@ -118,6 +121,7 @@ impl PublicSchema {
     #[must_use]
     pub const fn slug(self) -> &'static str {
         match self {
+            Self::BuildEvidence => "build-evidence",
             Self::ProfileObservationPolicy => "profile-observation-policy",
             Self::BufferedManifest => "buffered-manifest",
             Self::BufferedTracePoint => "buffered-trace-point",
@@ -162,6 +166,7 @@ impl PublicSchema {
     #[must_use]
     pub fn repository_path(self) -> &'static Path {
         Path::new(match self {
+            Self::BuildEvidence => "schemas/v1/build-evidence.schema.json",
             Self::ProfileObservationPolicy => "schemas/v1/profile-observation-policy.schema.json",
             Self::BufferedManifest => "schemas/v1/buffered-manifest.schema.json",
             Self::BufferedTracePoint => "schemas/v1/buffered-trace-point.schema.json",
@@ -202,6 +207,7 @@ impl PublicSchema {
     #[must_use]
     pub const fn id(self) -> &'static str {
         match self {
+            Self::BuildEvidence => "metewand://schemas/v1/build-evidence.schema.json",
             Self::ProfileObservationPolicy => {
                 "metewand://schemas/v1/profile-observation-policy.schema.json"
             }
@@ -252,6 +258,7 @@ impl PublicSchema {
     #[must_use]
     pub const fn source(self) -> &'static str {
         match self {
+            Self::BuildEvidence => include_str!("../../../schemas/v1/build-evidence.schema.json"),
             Self::ProfileObservationPolicy => {
                 include_str!("../../../schemas/v1/profile-observation-policy.schema.json")
             }

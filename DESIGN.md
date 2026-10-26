@@ -1707,6 +1707,17 @@ governor, frequency/turbo state, NUMA placement, accelerator identity, and
 background-load indicators. Missing provenance is represented explicitly rather
 than silently omitted.
 
+Available local build evidence is captured around the build command and bound
+to the resulting worker or runner executable's SHA-256 hash. Version-1 build
+receipts retain source commits and dirty-tree hashes, compiler identity,
+profile, requested features, flags, and native lockfile hashes. Runtime readers
+attach only matching receipts and keep missing or invalid evidence explicitly
+unavailable. Host observations carry their execution phase separately; they do
+not establish which compiler or sources produced an existing binary. These
+receipts supplement provenance without changing scientific identities or
+upgrading development and observed-control guarantees. See
+[Build evidence](docs/reference/build-evidence.md).
+
 Timing fields are distinct:
 
 ```text

@@ -20,6 +20,7 @@ internal helper types do not need public schemas.
 
 | Schema | Contract |
 | --- | --- |
+| `build-evidence` | Build-time source, compiler, settings, and lockfile observations bound to an executable hash. |
 | `machine-output` | Outer envelope for command events, results, and structured diagnostics, including `init` and `scaffold` results. |
 | `run-output` | Sequenced execution events, finalized attempt summaries, and terminal run reports. |
 | `inspection-output` | Read-only slot coverage, complete attempt history, selected observations, diagnostics, and stable identity explanations. |

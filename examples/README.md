@@ -11,6 +11,8 @@ they do not provide container isolation or a locked publication environment.
 | Raw command | [Fixed dataset](fixed-dataset) | Python 3, standard library only | One answer of 8 |
 | Fresh sequences | [Black-box Python and R solvers](fresh-sequence) | Python, R, and staged SDKs | Fixed counts and independently evaluated targets |
 | Buffered profiles | [Local observers and native traces](buffered-profile) | Python 3.11+, staged SDK; optional Rust worker | Fifteen evaluated snapshots from five attempts |
+| Adopter qualification | [Basin and clustlasso-cd](adopters) | Adopter checkouts, Rust, Python, and CMake; prepared Python/R package runtime for the package track | Native comparisons and profiles, recovered interruption, and faithful exports |
+| Release overhead | [Controlled native worker](overhead) | Rust 1.98.0 | 198 repetitions across three timing scopes and two result sizes |
 | Python-only | [Python SDK](python-sdk) | Python 3.11+, staged in-tree SDK | Two answers of 8 |
 | R-only | [R SDK](r-sdk) | R, digest, C++17 compiler, installed in-tree SDK | Two answers of 8 |
 | Native Rust | [Rust helpers](rust-sdk) | Rust 1.98.0, compiled worker | Two answers of 8 |

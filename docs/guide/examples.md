@@ -10,6 +10,8 @@ repository root.
   | [Python SDK](https://github.com/jolars/metewand/tree/main/examples/python-sdk)               | One compact manifest, SDK callbacks, reference fixtures, and process reuse.           |
   | [Fresh sequences](https://github.com/jolars/metewand/tree/main/examples/fresh-sequence) | Python and R black-box solvers, clean controls, independent targets, and resume. |
   | [Buffered profiles](https://github.com/jolars/metewand/tree/main/examples/buffered-profile) | Bounded local traces, selected snapshots, native Rust, and independent evaluation. |
+  | [Adopter qualification](https://github.com/jolars/metewand/tree/main/examples/adopters) | Real Basin and clustlasso comparisons, live interruption, recovery, build receipts, and export fidelity. |
+  | [Release overhead](https://github.com/jolars/metewand/tree/main/examples/overhead) | Controlled native work, result serialization, and scoped release measurements. |
   | [R SDK](https://github.com/jolars/metewand/tree/main/examples/r-sdk)                         | The same three worker roles using the R SDK.                              |
   | [Native Rust](https://github.com/jolars/metewand/tree/main/examples/rust-sdk)               | Native implementation and evaluator callbacks with standard artifacts.    |
   | [Generated dataset](https://github.com/jolars/metewand/tree/main/examples/generated-dataset) | Materialization and implementation preparation with validated artifacts.  |

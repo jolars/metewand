@@ -1,0 +1,24 @@
+version: 1
+name: rosenbrock
+family: optimization
+dataset-schemas: []
+result:
+  x: { type: array, items: { type: number }, minItems: 2, maxItems: 2 }
+  local_objective: number
+metrics:
+  objective: { type: number, minimum: 0 }
+  parameter_error: { type: number, minimum: 0 }
+allowed-timing-scopes: [prepare_and_execute]
+instrumented-scopes:
+  native_solver:
+    clock-origin: Before constructing the native solver and its simplex.
+    included-work: Native initialization, updates, local objective checks, and snapshot copies.
+    excluded-preparation: Worker launch, handshake, final buffer serialization, and independent evaluation.
+supported-budgets: [none]
+semantics:
+  preprocessing: {}
+  validity: { finite_parameters: true, dimension: 2 }
+  one_shot_completion: { objective_at_most: 1e-10 }
+reference-cases:
+  - result: reference/result.json
+    expected-metrics: reference/metrics.json

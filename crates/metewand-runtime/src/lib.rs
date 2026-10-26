@@ -16,6 +16,7 @@ pub mod artifact_store;
 pub mod authoring;
 #[cfg(unix)]
 pub mod buffered;
+pub mod build_evidence;
 #[cfg(unix)]
 pub mod datamonger;
 #[cfg(unix)]

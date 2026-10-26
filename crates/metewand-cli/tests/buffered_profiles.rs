@@ -7,6 +7,9 @@ use std::{
 };
 use tempfile::TempDir;
 
+#[path = "support/export_fidelity.rs"]
+mod export_fidelity;
+
 #[allow(dead_code)]
 #[path = "../../../examples/buffered-profile/main.rs"]
 mod native;
@@ -142,6 +145,7 @@ fn buffered_modes_publish_independent_snapshots_and_diagnostic_traces() {
         .lines()
         .map(|line| serde_json::from_str(line).unwrap())
         .collect();
+    export_fidelity::verify(stage.path(), &rows);
     assert!(rows.iter().any(|r| r["record_type"] == "trace"
         && r["metric_value"].is_null()
         && r["provisional_metric_value"].is_number()));

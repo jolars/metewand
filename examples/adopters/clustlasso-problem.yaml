@@ -1,0 +1,25 @@
+version: 1
+name: clustered_lasso
+family: convex-regression
+dataset-schemas: []
+result:
+  coefficients: { type: array, items: { type: number }, minItems: 3, maxItems: 3 }
+  intercept: number
+metrics:
+  epsilon_g: { type: number, minimum: 0 }
+  relative_objective_error: { type: number, minimum: 0 }
+  coefficient_error: { type: number, minimum: 0 }
+allowed-timing-scopes: [prepare_and_execute]
+instrumented-scopes:
+  native_solver:
+    clock-origin: Before native problem and solver initialization.
+    included-work: Initialization, updates, PG diagnostics, bounded local recording, and snapshot copies.
+    excluded-preparation: Worker startup, handshake, final buffer serialization, and independent evaluation.
+supported-budgets: [none]
+semantics:
+  preprocessing: {}
+  validity: { finite_coefficients: true, intercept: false, unordered_fusion_pairs: true }
+  one_shot_completion: { epsilon_g: 1e-8, relative_objective_error: 1e-8 }
+reference-cases:
+  - result: reference/result.json
+    expected-metrics: reference/metrics.json
