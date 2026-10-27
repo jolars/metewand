@@ -2,7 +2,7 @@
 //!
 //! Store initialization verifies SQLite settings and filesystem capabilities.
 //! Attempt writers fence transactions by lease ownership and revision. See
-//! `docs/reference/run-store-schema.md` for the transaction and validation requirements.
+//! `CONTRIBUTING.md#durability-and-recovery` for the transaction and validation requirements.
 
 #[cfg(unix)]
 mod attempts;

@@ -27,7 +27,8 @@ For lifecycle adapters, subclass `OneShotImplementation` and return scientific d
 from `execute`. Evaluators return `Evaluation(metrics, verdict)`. The SDK writes
 standard envelopes; custom result and metrics writers remain supported.
 
-See [the API guide](../../docs/reference/python-sdk.md) in the repository and the runnable
+See the [authoring guide](../../docs/guide/authoring/index.md),
+[callback interfaces](src/metewand/_worker.py), and the runnable
 [Python SDK example](../../examples/python-sdk). Run the SDK tests from the
 repository root with:
 

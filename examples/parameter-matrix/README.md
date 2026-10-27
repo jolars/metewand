@@ -17,7 +17,7 @@ used by the benchmark.
 
 The experiment overrides the representation default with a grid of both
 representations. `plan` displays the resolved parameters for each candidate.
-See [compact declarations](../../docs/reference/parameter-namespaces.md#compact-implementation-parameters)
+See [compact declarations](../../docs/guide/authoring/parameters.md)
 for the supported fields and selection precedence. Result and metric envelopes
 use the selected contract's schemas without repeating schema paths in worker
 code.
@@ -49,7 +49,7 @@ as `offset: {value: 1}`. Arrays and objects require an explicit `value` or `grid
 wrapper. The grid selects runs without restricting the valid array domain.
 All grids expand deterministically. Overlapping cases are errors rather than implicit statistical
 replications; use repetition fields for that purpose. See
-[configuration expansion](../../docs/reference/configuration-expansion.md).
+[configuration expansion](../../CONTRIBUTING.md#manifests-and-planning).
 
 The worker uses the raw protocol and Python's standard library. No SDK or
 third-party package is needed, and all scientific choices remain visible in

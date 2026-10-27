@@ -27,7 +27,8 @@ Lifecycle implementations return scientific data from `execute`; optional
 `evaluation(metrics, verdict)`. The SDK writes standard envelopes, while custom
 `result` writers and evaluator-written metrics remain supported.
 
-See the [API guide](../../docs/reference/r-sdk.md) and the runnable
+See the [authoring guide](../../docs/guide/authoring/index.md),
+[package help](man/workers.Rd), and the runnable
 [R SDK example](../../examples/r-sdk). The normal Rust workspace tests install
 the SDK into temporary libraries, run its contracts, and exercise all three
 roles through Rust's transport and output validator. For focused checks, run:

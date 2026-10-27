@@ -34,5 +34,6 @@ and result writing. The secondary SDK diagnostic covers only `execute`. The runt
 resets the implementation between slots. The evaluator independently computes
 the expected answer from its dataset and problem parameters.
 
-See the [R SDK guide](../../docs/reference/r-sdk.md) for callback signatures, explicit R
-representations of JSON values, output helpers, and protocol errors.
+See the R package help for [workers](../../sdk/r/man/workers.Rd),
+[canonical JSON](../../sdk/r/man/canonical-json.Rd), and
+[artifacts](../../sdk/r/man/artifacts.Rd).

@@ -23,4 +23,4 @@ reference case also omits a dataset and uses the default `n = 3`.
 The run publishes two accepted observations with answers 6 and 55 and
 `absolute_error = 0`. The raw command worker uses dedicated protocol pipes and
 only the Python standard library. No SDK installation or data acquisition is
-needed. See the [run guide](../../docs/reference/run-cli.md) for local execution guarantees.
+needed. See the [run guide](../../docs/guide/authoring/running.md) for local execution guarantees.

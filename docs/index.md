@@ -16,19 +16,19 @@ hero:
       text: Get started
       link: /guide/getting-started
     - theme: alt
-      text: Explore the reference
-      link: /reference/
+      text: Overview
+      link: /guide/overview
 
 features:
   - title: Use your own language
     details: Run implementations as separate processes. Use the Python or R SDK, or implement the worker protocol in another language.
-    link: /guide/examples
+    link: /guide/authoring/extending
   - title: Define the comparison
     details: Keep datasets, problem definitions, implementations, and execution policies explicit. Evaluate results with an independent worker.
-    link: /reference/problem-contracts
+    link: /guide/authoring/
   - title: Keep the evidence
     details: Record content-addressed identities, execution measurements, and provenance. Inspect durable runs and export results for analysis.
-    link: /reference/exports
+    link: /guide/authoring/running
 ---
 
 ## From a manifest to an inspectable run
@@ -49,12 +49,16 @@ an observation back to the inputs and policies that produced it.
 
 ## Start with a small example
 
-The [getting started guide](guide/getting-started.md) runs a complete benchmark
-from the repository. The [examples](guide/examples.md) cover Python and R
-workers, generated datasets, dataset-free problems, and parameter matrices.
+The [overview](guide/overview.md) introduces the model, and
+[getting started](guide/getting-started.md) runs your first benchmark.
+The six-part [authoring guide](guide/authoring/index.md) builds a least-squares
+comparison, then adds parameters, scientific checks, and repeated measurements.
+The [examples](guide/examples.md) provide complete alternatives in Python, R,
+and native Rust.
 
 Metewand is under active development. The current runtime supports trusted
-local, one-shot benchmarks. See the [execution reference](reference/run-cli.md)
-for supported behavior and the
+local benchmarks, including one-shot runs, fresh sequences, and buffered
+profiles. See [running and analyzing comparisons](guide/authoring/running.md)
+for the current controls and the
 [roadmap](https://github.com/jolars/metewand/blob/main/TODO.md) for planned
 capabilities.

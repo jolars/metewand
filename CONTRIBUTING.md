@@ -1,0 +1,486 @@
+# Contributing
+
+This is the contributor guide for Metewand. [DESIGN.md](DESIGN.md) describes the
+general model, [TODO.md](TODO.md) tracks the active roadmap, and
+[AGENTS.md](AGENTS.md) gives repository instructions. User workflows belong in
+the [guide](docs/guide/overview.md).
+
+Keep this document focused on implementation decisions and how to verify them.
+The Rust types, checked-in schemas, SQL layouts, SDK help, and conformance
+fixtures specify individual interfaces without a parallel catalog of reference
+pages.
+
+## Development environment
+
+Use Rust 1.98.0 and edition 2024. `devenv shell` provides the pinned toolchain,
+rustfmt, Clippy, Nextest, Python, R with `digest`, and Node.js:
+
+```sh
+devenv shell
+test-fast
+test-rust
+```
+
+`test-fast` runs core and protocol tests. `test-rust` runs the complete Rust
+suite. Both accept Nextest filters. The Python SDK requires Python 3.11 or later;
+the R SDK requires R 4.2 or later, POSIX, `digest`, and a C++17 compiler with
+floating-point `std::to_chars` support. The website needs Node.js 22.18 or later.
+
+The crates and SDKs are not yet published to registries. Use local path
+dependencies and install SDKs into the environment selected for the worker.
+
+## Architecture and source map
+
+| Location | Responsibility |
+| --- | --- |
+| [Core](crates/metewand-core/src) | Manifest parsing, contracts, schemas, canonical values, identities, seeds, planning, scheduling, and public records. |
+| [Protocol](crates/metewand-protocol/src) | Wire types, role and capability negotiation, and bounded framing. |
+| [Runtime](crates/metewand-runtime/src) | Source resolution, artifacts, environments, executors, measurements, provenance, publication, and the run store. |
+| [CLI](crates/metewand-cli/src) | Argument parsing, orchestration, diagnostics, and human and machine rendering. |
+| [Schemas](schemas/v1) | Versioned external contracts and adjacent fixtures. |
+| [Shared fixtures](fixtures) | Cross-language canonicalization, identity, seed, and protocol vectors. |
+| [SDKs](sdk) | Python and R workers; native Rust helpers live in the runtime. |
+| [Examples](examples) | Runnable end-to-end comparisons and reproduction commands. |
+| [Website](docs) | User guides and the published general design. |
+
+Core and protocol are independent foundations. Runtime may depend on both; the
+CLI may depend on all three. Keep filesystem and execution concerns out of core
+and protocol, and domain types out of the CLI.
+
+## Manifests and planning
+
+Manifest parsing produces typed declarations with normalized relative paths,
+source spans, and deterministic diagnostics. Lower compact field declarations,
+flat contracts, scalar axes, function launches, and inferred defaults into the
+same effective model used by explicit declarations. Reject competing spellings
+for one boundary. Diagnostic source locations do not enter identities.
+
+Compact `parameters` generate closed object schemas and literal defaults or
+expansion grids. Fields require types; they are required unless optional.
+Result and metric fields never receive defaults. Declaration grids select
+values without restricting the valid domain. Experiment axes replace matching
+declaration grids; cases replace matching experiment axes. Expanded values merge
+recursively with literal defaults before validation.
+
+Resolve schema references through the offline catalog. Never retrieve schemas
+from the network. Inline schemas inherit JSON Schema 2020-12 before hashing.
+Resource identities include resolved dependencies; moving a file-backed schema
+inline can change a path-bearing identity. Equivalent compact and explicit
+normalized declarations share their identity path.
+
+Keep configuration expansion and scheduling assertions in core tests. Logical
+planning is pure: callers supply resolved definition identities through the
+planning catalog. Resolution later binds dataset content, environments, worker
+launches, and applicability evidence. Declared capabilities are not verified
+capabilities.
+
+The built-in empty dataset has a versioned definition and schema. Omitted
+parameters form a closed empty object. Unambiguous function benchmarks default
+to a local environment, one-shot execution, one measurement, and wall time over
+`prepare_and_execute`. Profile selection stays explicit.
+
+Sequential scheduling follows plan order. Randomized scheduling interleaves
+implementation configurations within dataset, problem, implementation-repetition,
+and measurement blocks. Bounded concurrency contributes to execution policy and
+resolved identity. Dispatch and event order remain deterministic, and batches
+do not cross experiment boundaries.
+
+## Canonical values and identities
+
+Metewand hashes and transports one restricted JSON domain. Object keys must be
+unique after escape decoding. Strings contain Unicode scalar values, without
+normalization. Numbers must be finite binary64 values; integral values must lie
+within `[-9007199254740991, 9007199254740991]`. Normalize negative zero to zero
+and safe integral float spellings to integers. Reject invalid UTF-8, byte-order
+marks, lone surrogates, duplicate keys, and nonfinite numbers.
+
+Canonical bytes follow RFC 8785: no insignificant whitespace or trailing newline,
+recursive UTF-16 property ordering, and the specified number and string
+encoding. Parse, validate against the selected schema, then request canonical
+bytes explicitly. An ordinary JSON serializer is not a canonicalization API.
+
+Typed identities use domain-separated canonical records and an
+`mw1-<kind>-<digest>` representation. Treat their dependency graph as part of
+the contract. Logical identities bind requested comparisons; resolved identities
+also bind actual content, launches, and execution evidence. Allocated paths,
+wall-clock timestamps, and output destinations do not define those identities.
+The manifest hash binds the normalized typed manifest, not YAML source bytes.
+
+### Seeds
+
+For role `dataset`, `implementation`, or `scheduling`, derive:
+
+```text
+SHA-256("metewand-seed-v1" || NUL || UTF-8(role) || NUL || canonical_fields)
+```
+
+| Role | Canonical fields |
+| --- | --- |
+| Dataset | `dataset_definition`, `dataset_parameters`, `experiment_seed` |
+| Implementation | `dataset_configuration`, `experiment_seed`, `implementation_repetition`, `problem_configuration` |
+| Scheduling | `benchmark_name`, `experiment_name`, `experiment_seed`, `scheduling_policy_version` |
+
+The exposed seed is the first 53 digest bits, most significant first. Retain the
+full digest as evidence. Omitting implementation identity deliberately pairs
+methods within a comparison block. SDKs deliver the seed; benchmark code seeds
+its own generators.
+
+### Local trees
+
+Local-tree hashing sorts normalized paths by UTF-8 bytes and binds file bytes,
+executable flags, empty directories, and exact symbolic-link target spellings.
+It omits the root name, timestamps, ownership, and other permission bits.
+Hashing a symlink does not authorize following it during execution.
+
+The version-1 SHA-256 transcript is:
+
+```text
+"metewand-local-tree\0" || u32(version) || u64(entry_count) || entries
+directory = bytes(path) || "d"
+file      = bytes(path) || "f" || executable_u8 || u64(size) || file_bytes
+symlink   = bytes(path) || "l" || bytes(target)
+```
+
+Integers are unsigned big-endian; `bytes(x)` is `u64(length) || x`. The root is
+omitted, and the executable byte is zero or one. Preserve exact vectors when
+changing canonical or hashing code. See [identity types](crates/metewand-core/src/identity.rs),
+[seed derivation](crates/metewand-core/src/seed.rs),
+[tree hashing](crates/metewand-runtime/src/local_tree.rs), and [fixtures](fixtures).
+
+## Compatibility versions
+
+Package SemVer is shared across the workspace and managed by Versionary from
+Conventional Commits. It is separate from public compatibility versions:
+
+| Boundary | Current version |
+| --- | --- |
+| Manifest, public schemas, wire protocol, and typed identities | 1 |
+| Seed derivation and scheduling policy | 1 |
+| Execution semantics | 2 |
+| Measurement provenance | 2, with version-1 evidence still readable |
+| Exports and build evidence | 1 |
+| SQLite layout | 1 for one-shot, 2 for buffered profiles, 3 for fresh sequences |
+
+The constants live with their authoritative types in core, protocol, and
+runtime. Public JSON Schemas declare their dialect and compatibility version.
+Version externally consumed boundaries; internal helpers stay private, and
+nested records normally inherit their enclosing format's version.
+
+Before the MVP, authoring syntax and profile APIs may evolve with their current
+consumers. Pin a revision for retained benchmarks. Preserve supported persisted
+records and canonical identity meanings. Never silently reinterpret historical
+results, combine incompatible timing scopes, or reuse an identity for different
+semantics. Use the affected version, deliberate migration, or an unsupported
+version diagnostic when required. Negotiate protocol extensions by capability
+or a mutually supported version.
+
+Consider only boundaries the change affects. Briefly record consequential
+compatibility decisions in the change description and update the relevant
+fixtures. Do not require a separate review document or tests for speculative
+interfaces.
+
+## Worker protocol and SDKs
+
+The POSIX launcher supplies separate binary pipes through
+`METEWAND_PROTOCOL_READ_FD` and `METEWAND_PROTOCOL_WRITE_FD`. Standard output
+and standard error remain log channels. There is no automatic stdin/stdout
+fallback. Workers exchange canonical JSON Lines, with an inclusive 1 MiB limit
+per frame including its final line feed. Responses must match the pending
+string request ID. Malformed frames and unusable sessions terminate serving.
+
+A hello exchange negotiates protocol version, role, capabilities, identity, and
+SDK metadata. Implementations prepare and execute, with optional reset and
+shutdown hooks. Materializers and evaluators serve separate roles. Evaluators
+that negotiate `problem_semantics` receive the resolved scientific rules.
+Applicability, fresh sequences, and buffered execution require their respective
+capabilities; one-shot messages retain their supported shapes.
+
+Worker failures use `invalid_request`, `unsupported_operation`,
+`operation_failed`, or `internal_error`, a nonempty message, and optional object
+details. Preserve the failing phase. Operational timeouts, early EOF, protocol
+violations, and failed resets discard the worker. Scientific deadlines remain
+distinct from phase deadlines.
+
+For callback signatures, consult the [Python package](sdk/python/src/metewand),
+[R help pages](sdk/r/man), and [Rust helpers](crates/metewand-runtime/src/worker_sdk.rs).
+The [SDK examples](examples) exercise each role. Ordinary functions use contexts
+and JSON objects; lifecycle adapters separate preparation, solving, conversion,
+custom writing, reset, and shutdown.
+
+Preparation must establish clean state. Execution consumes preparation even
+when a callback fails. Reuse requires a successful reset rather than an assumed
+clean worker. SDK solve timing excludes conversion and artifact writing;
+executor-observed timing remains authoritative. Close every output file before
+replying. The runtime independently validates schemas, manifests, inventories,
+sizes, hashes, and path containment before publication.
+
+Python and R conformance suites consume the shared fixtures directly. Keep
+their canonical values and protocol behavior aligned with Rust. Add callback
+coverage where an interface is implemented; every SDK need not support every
+profile callback before an adopter can use one.
+
+## Sources and artifacts
+
+Resolve declared sources relative to the manifest, expand globs deterministically,
+and preserve normalized bundle paths. Function references include their selected
+file; imported modules and other inputs require declarations. Relative worker
+programs resolve within the bundle. Bare programs use the selected `PATH`.
+`{sources}/PATH` is an explicit argument reference, not general interpolation.
+
+The local launcher uses an environment allowlist, fixed locale and timezone,
+umask `0077`, and private working, home, temporary, configuration, and cache
+directories. Do not inherit ambient language search paths. Resolved launch
+identities use stable path templates and content hashes; provenance records
+allocated paths. The local environment does not establish a dependency closure
+or isolation from undeclared host files.
+
+Materialization separates source acquisition, derivation identity, and output
+content. Construct a dataset configuration once per run, or reuse its verified
+persistent mapping. Every attempt receives a verified private copy. Verify
+copies and canonical dataset objects around worker operations. Detected mutation
+prevents observation publication and quarantines corrupt cached content.
+
+Persistent caches use content-addressed objects, derivation mappings, leases,
+and durable roots. Collection requires exact explicit targets and must preserve
+all live leases and roots, including failed-run dependencies. Removing a run
+directory does not release its cache roots. Inspection and dry runs do not
+initialize, recover, or repair a cache.
+
+The optional [Datamonger example](examples/datamonger) uses a provider process
+for pinned external dataset resolution. It exercises runtime APIs; the manifest
+does not currently select external providers or optional binary dataset checkers.
+
+## Execution and profiles
+
+Keep the three timing envelopes, validity, completion, and applicability defined
+in [DESIGN.md](DESIGN.md) separate in records and reports. Shared dataset
+construction and independent evaluation stay outside the primary interval.
+Continuous cold and prepare-and-execute timing includes integrity and durable
+coordination between preparation and execution; provenance labels that overhead.
+
+Measurement payloads distinguish `complete`, `partial`, and `unavailable`.
+Nanoseconds and bytes are safe integers. Linux CPU and peak-RSS evidence is
+partial because it covers the implementation process without descendants.
+Peak RSS covers its lifetime through execution, even for execute-only timing.
+Historical unavailable fields remain unavailable.
+
+Fresh sequences reserve cumulative time per repetition, commit stopping
+decisions with accepted points, and retain skipped slot dispositions. Resume
+preserves accepted points and budget evidence. Unknown interrupted time retains
+its reserved charge. Clean-state reruns are not continuation from checkpoints.
+
+Buffered profiles bound trace points, snapshots, total bytes, terminal reserve,
+and active time. Retain local metrics as provisional evidence and independently
+evaluate snapshots. Named instrumented scopes must be authorized by the problem.
+Partial observations do not satisfy a retry, and acceptance selects observations
+from one producing attempt. Never splice trajectories across retries.
+
+## Build evidence
+
+The runtime accepts an adjacent `PROGRAM.metewand-build.json` receipt only when
+its version-1 schema and executable hash validate. Capture evidence during the
+build rather than querying a compiler after a run:
+
+```sh
+python3 tools/build_evidence.py \
+  --executable target/release/metewand \
+  --source metewand=. --compiler rustc --profile release \
+  --lockfile Cargo.lock -- \
+  cargo build --release --locked -p metewand-cli --bin metewand
+```
+
+The wrapper observes sources, compiler, command, settings, relevant flags, and
+lockfiles, rejects changed inputs or failed builds, and writes a matching
+receipt. Repeat `--source`, `--lockfile`, and `--features` as needed. Keep outputs
+ignored or outside the source repository. Stage receipts alongside renamed
+executables with the same suffix. These observations do not authenticate the
+builder or prove a complete dependency closure.
+
+Runtime host observations remain separate from build evidence. Missing or
+invalid receipts remain unavailable, including in historical records. Hashing
+an interpreter does not establish build evidence for imported native libraries.
+
+## Durability and recovery
+
+The authoritative layouts are [v1.sql](crates/metewand-runtime/src/run_store/v1.sql),
+[v2.sql](crates/metewand-runtime/src/run_store/v2.sql), and
+[v3.sql](crates/metewand-runtime/src/run_store/v3.sql). Readers and writers check
+exact supported schemas. Opening an older store never silently migrates it.
+Use a new run directory when a selection needs a newer layout.
+
+Connections require WAL, full synchronization, foreign keys, recursive triggers,
+and strict tables. Initialization probes filesystem locking, synchronization,
+atomic no-replace publication, and SQLite behavior. Unsupported durability
+requirements fail rather than falling back to weaker guarantees. Network
+filesystems are unsupported.
+
+Reserve and transition attempts in short immediate transactions with ownership,
+lease, and expected-revision checks. Never hold a transaction across worker
+execution, hashing, synchronization, or rename. Leases last 30 seconds and
+renew every five seconds. Expired owners require explicit recovery.
+
+Publish complete immutable artifacts before terminal acceptance. Synchronize
+files and directories and use atomic no-replace rename. Register only verified
+artifacts. Finalization claims coordinate competing successful attempts; one
+wins acceptance, and another can retain a superseded valid observation.
+Report success only after the terminal transaction commits.
+
+The run directory contains `run.sqlite3`, coordination locks, and immutable
+artifact directories. Reports supply relative paths; consumers must not invent
+paths from record IDs. `attempt.json`, observation documents, complete inventories,
+and coordination `outcome.json` retain the evidence required for recovery.
+Directories alone never prove acceptance.
+
+Recovery verifies claims and published outcomes, preserves accepted selections,
+and records interrupted work without manufacturing success. Repeating recovery
+is idempotent. Retries allocate distinct indices and attempt IDs. Buffered
+acceptance selects one trajectory atomically; fresh acceptance also settles its
+budget and stopping effect.
+
+Inspection copies a stable database and WAL to private storage and reads a
+committed snapshot. It never opens the original through a mutating initializer,
+recovers leases, checkpoints, or quarantines artifacts. Indexes and exports
+cannot establish acceptance or authorize retention changes.
+
+### Crash conformance
+
+Normal tests include representative publication crashes and focused recovery
+checks. Run the exhaustive campaign when changing durability, publication,
+recovery, or the run-store schema:
+
+```sh
+cargo test -p metewand-runtime --lib --locked \
+  run_store::fault_tests::every_durability_boundary_survives_process_death_and_resume \
+  -- --exact --ignored --nocapture
+```
+
+For cache catalog durability, publication, or collection changes, also run:
+
+```sh
+cargo test -p metewand-runtime --lib --locked \
+  artifact_store::maintenance::tests::collection_recovers_after_each_database_sync_rename_and_cleanup_boundary \
+  -- --exact --ignored --nocapture
+```
+
+The [durability workflow](.github/workflows/durability.yml) runs the exhaustive
+campaigns separately. They interrupt subprocesses at application and SQLite
+boundaries and verify recovery, identity, acceptance, and retry invariants.
+They model abrupt process death, not storage hardware losing power.
+
+## Machine output and exports
+
+Human and machine output use the same typed records. Machine formats use the
+versioned `machine-output` envelope; JSONL run events flush in order, while JSON
+returns a terminal envelope. Worker logs do not enter the command stream. Use
+`metewand schema NAME` to inspect an embedded schema offline.
+
+Export reads committed evidence and verified artifacts. A disposable
+`index.jsonl` never becomes coordination state. Explicit `--rebuild-index`
+replaces only that projection. Table destinations are new directories with
+`results.jsonl` or `results.csv` and a lineage manifest, `export.json`.
+
+Tidy rows preserve attempts, observations, applicability, trace evidence, and
+fresh slot dispositions. Metric names are JSON pointers; entities without
+metrics remain present. CSV uses fixed columns, UTF-8, CRLF endings, and canonical
+JSON for metric and nested values. JSONL uses canonical bytes and a newline.
+Do not aggregate repetitions or discard failures during export.
+
+Compatibility classes bind measurement and execution versions, timing scopes,
+environment class, policies, controls, and accounting evidence. Missing
+classification binds the particular record rather than establishing
+compatibility with unrelated records. Matching classes do not establish
+scientific comparability or equal hardware. The export manifest records lineage
+and the exact table hash; it is not a portable result archive.
+
+## Verification
+
+Prefer a focused failing test before implementation. Assert exact bytes where
+the contract defines them. Keep combinatorial tests in core and small execution,
+record, and provenance cases in the CLI. Run focused checks while developing,
+then verify the changed scope once.
+
+Rust changes require:
+
+```sh
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+cargo nextest run --workspace --all-targets --locked --profile ci
+```
+
+Documentation and website changes require:
+
+```sh
+npm --prefix docs ci
+npm --prefix docs run deploy:check
+```
+
+Documentation-only changes do not require rebuilding or testing Rust. Use
+`devenv test` when both scopes change. Keep `Cargo.lock` current and use
+`--locked`. The complete agent-loop acceptance test remains opt-in:
+
+```sh
+cargo test -p metewand-cli --test agent_loop --locked -- --ignored
+```
+
+Versionary creates release PRs, tags, changelogs, and GitHub Releases. Registry
+publication requires a separate deliberate workflow.
+
+## Website development
+
+The site at <https://metewand.org> uses VitePress. From the repository root:
+
+```sh
+npm --prefix docs ci
+npm --prefix docs run dev
+```
+
+`docs/index.md` is the homepage. `docs/guide/` contains the overview, getting
+started, and multipart authoring guide. `docs/design.md` includes the root
+`DESIGN.md` so the general design has one source. `.vitepress/config.ts`
+defines navigation, search, and metadata. Keep local page links relative with
+`.md` extensions; link to schemas, fixtures, source, and runnable examples on
+GitHub. The build rejects missing page links.
+
+Edit branding originals in `assets/`. Development and build commands copy them
+to the ignored `docs/public/brand/` directory. Favicons and `site.webmanifest`
+live in `docs/public/`. VitePress generates the sitemap; `robots.txt` points
+crawlers to it. Shared metadata supplies social preview images and page URLs.
+
+`npm --prefix docs run deploy:check` builds the site, runs integration tests,
+and validates Cloudflare packaging without credentials or uploads. The output
+is `docs/.vitepress/dist/`; `npm --prefix docs run preview` previews its HTML.
+
+### Deployment
+
+`docs/cloudflare.config.ts` declares the Worker and custom domain.
+`docs/wrangler.config.ts` supplies the assets to the pinned Cloudflare build
+tool. The [Website workflow](.github/workflows/website.yml) checks pull requests
+and deploys relevant pushes to `main`. It reads `CLOUDFLARE_ACCOUNT_ID` and
+`CLOUDFLARE_API_TOKEN` only in its deployment step. The token needs Worker
+deployment and custom-domain permissions for the account hosting the zone.
+
+For an authorized manual deployment, authenticate with `npx cf auth login`
+from `docs/`, or set those variables, then run `npm --prefix docs run deploy`.
+Run the workflow manually on `main` to redeploy a validated build.
+
+### Markdown representations
+
+The build converts each rendered page into Markdown without navigation or
+controls. `docs/worker.mjs` serves it when GET or HEAD explicitly prefers
+`text/markdown` with positive quality at least as high as `text/html`. Other
+requests receive HTML. Both include `Vary: Accept`; Markdown has its own ETag.
+Assets, canonical redirects, and missing-page responses retain their behavior.
+This does not require Cloudflare's paid Markdown for Agents feature.
+
+After building, start `npm --prefix docs run preview:worker`, then request:
+
+```sh
+curl -i -H 'Accept: text/markdown' http://localhost:8787/guide/getting-started
+```
+
+The deployment check runs Markdown integration tests against the local Worker
+runtime. On NixOS, `devenv shell` sets `MINIFLARE_WORKERD_PATH` to a wrapper
+that launches npm's pinned `workerd` through the Nix dynamic loader. Run
+`npm ci` before starting it. Outside devenv, provide a compatible executable
+through that variable if the npm binary cannot start. The test harness checks
+startup, closes even on failure, and bounds test files to 60 seconds.

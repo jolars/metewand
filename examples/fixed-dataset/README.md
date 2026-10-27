@@ -18,7 +18,7 @@ inside the finalized attempt directory.
 
 The output contains one observation directory and one enclosing attempt
 directory, each with a hash-complete `manifest.json`. See the
-[run command documentation](../../docs/reference/run-cli.md) for supported policies,
+[run command documentation](../../docs/guide/authoring/running.md) for supported policies,
 source-reference arguments, failure behavior, and output schemas.
 
 The implementation omits its parameter schema, so it accepts only `{}`.

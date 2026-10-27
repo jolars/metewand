@@ -34,7 +34,7 @@ not separate gates before implementation.
 
 These capabilities and their existing regression tests remain the starting
 point. The complete agent-loop test and exhaustive crash campaign remain opt-in;
-see [Development](README.md#development).
+see [Verification](CONTRIBUTING.md#verification).
 
 ## 3. Gate 3: comparative local MVP
 
@@ -167,9 +167,8 @@ a new compatibility review is a prerequisite.
   manifest, and exports. Add a small simulated least-squares GD/CD example with
   basic and validated manifests using the same scientific functions.
 
-The authoring design is in [Authoring and
-scaffolding](DESIGN.md#authoring-and-scaffolding). Judge ergonomics by the
-complete comparison, including native workers. Existing external declarations,
+The authoring design is in [Authoring](DESIGN.md#authoring). Judge ergonomics by
+the complete comparison, including native workers. Existing external declarations,
 explicit policies, and advanced worker APIs remain supported.
 
 ### 3.2 Configuration-dependent applicability
@@ -271,7 +270,7 @@ All three comparisons retain a completed prefix and an interrupted attempt
 through recovery, explicit retry, inspection, and both exports. Profile tests
 compare durable evidence with JSONL and CSV, alongside the foundation suite.
 The [release overhead example](examples/overhead) retains all 198 repetitions,
-scoped diagnostics, and executable-bound [build evidence](docs/reference/build-evidence.md).
+scoped diagnostics, and executable-bound [build evidence](CONTRIBUTING.md#build-evidence).
 These pilots need no additional scientific budget types.
 
 - [ ] Provide a useful default comparison summary and a table for analysis with
@@ -330,7 +329,7 @@ gate before improving a useful workflow.
 - [ ] Test transitive mismatches and distinguish locked guarantees from
   development environments.
 
-See [Reproducibility model](DESIGN.md#5-reproducibility-model) and [Nix
+See [Reproducibility model](DESIGN.md#reproducibility-model) and [Nix
 environments](DESIGN.md#nix-environments).
 
 ### Gate 5: isolated archival execution
@@ -342,7 +341,7 @@ environments](DESIGN.md#nix-environments).
 - [ ] Complete archival machine provenance and accounting, and qualify a
   mixed-language benchmark under those stronger guarantees.
 
-See [Gate 5](DESIGN.md#gate-5-isolated-archival-execution). Publication-archive
+See [Reproducibility model](DESIGN.md#reproducibility-model). Publication-archive
 claims require these controls; they do not block the local MVP.
 
 ## Later extensions

@@ -5,93 +5,11 @@ const description = 'Reproducible, language-neutral computational benchmarks.'
 const imageUrl = new URL('brand/og.png', siteUrl).href
 const imageAlt = 'Metewand measuring rod logo. Measure. Compare. Reproduce.'
 
-const reference = [
-  {
-    text: 'Commands and workflows',
-    items: [
-      ['authoring-cli', 'Benchmark authoring'],
-      ['read-only-cli', 'Checking and planning'],
-      ['worker-checks', 'Checking workers'],
-      ['run-cli', 'Running benchmarks'],
-      ['inspection-cli', 'Status and explanations'],
-      ['exports', 'Exporting results'],
-      ['machine-output', 'Machine output'],
-      ['datamonger', 'Datamonger sources'],
-    ],
-  },
-  {
-    text: 'Contracts and identities',
-    items: [
-      ['problem-contracts', 'Problem contracts'],
-      ['public-schemas', 'Public schemas'],
-      ['compatibility-versions', 'Compatibility versions'],
-      ['manifest-parsing', 'Manifest parsing'],
-      ['parameter-namespaces', 'Parameter namespaces'],
-      ['manifest-compatibility', 'Manifest compatibility'],
-      ['schema-validation', 'Schema validation'],
-      ['canonical-json', 'Canonical JSON'],
-      ['domain-records', 'Domain records'],
-      ['identities', 'Typed identities'],
-      ['manifest-hashing', 'Manifest hashing'],
-      ['seeds', 'Seed derivation'],
-    ],
-  },
-  {
-    text: 'Planning and scheduling',
-    items: [
-      ['configuration-expansion', 'Configuration expansion'],
-      ['logical-planning', 'Logical planning'],
-      ['scheduling', 'Scheduling'],
-    ],
-  },
-  {
-    text: 'Sources and artifacts',
-    items: [
-      ['source-bundles', 'Source bundles'],
-      ['local-tree-hashing', 'Local tree hashing'],
-      ['source-resolution', 'Source resolution'],
-      ['artifact-store', 'Artifact store'],
-      ['cache-maintenance', 'Cache maintenance'],
-      ['dataset-materialization', 'Dataset materialization'],
-    ],
-  },
-  {
-    text: 'Execution and storage',
-    items: [
-      ['fixed-dataset-run', 'Timing envelopes'],
-      ['execution-measurements', 'Execution measurements'],
-      ['build-evidence', 'Build evidence'],
-      ['buffered-profiles', 'Buffered profiles'],
-      ['fresh-sequence-profiles', 'Fresh-sequence profiles'],
-      ['execution-controls', 'Execution controls'],
-      ['worker-reuse', 'Worker reuse and warm-ups'],
-      ['worker-environments', 'Worker environments'],
-      ['worker-process-transport', 'Worker process transport'],
-      ['worker-output-validation', 'Worker output validation'],
-      ['durable-publication', 'Durable publication'],
-      ['run-store-schema', 'Run store and recovery'],
-    ],
-  },
-  {
-    text: 'Worker protocol and SDKs',
-    items: [
-      ['worker-protocol-framing', 'Protocol framing'],
-      ['worker-protocol', 'Worker sessions'],
-      ['rust-sdk', 'Rust helpers'],
-      ['python-sdk', 'Python SDK'],
-      ['r-sdk', 'R SDK'],
-      ['sdk-conformance', 'SDK conformance'],
-      ['raw-worker-fixtures', 'Raw worker fixtures'],
-    ],
-  },
-]
-
 export default defineConfig({
   lang: 'en-US',
   title: 'Metewand',
   description,
   cleanUrls: true,
-  srcExclude: ['README.md'],
   sitemap: { hostname: siteUrl },
   head: [
     ['link', { rel: 'icon', type: 'image/png', href: '/favicon-96x96.png', sizes: '96x96' }],
@@ -133,36 +51,36 @@ export default defineConfig({
   themeConfig: {
     logo: { src: '/brand/logo-small.png', alt: '' },
     nav: [
-      { text: 'Guide', link: '/guide/getting-started', activeMatch: '/guide/' },
-      { text: 'Reference', link: '/reference/', activeMatch: '/reference/' },
+      { text: 'Guide', link: '/guide/overview', activeMatch: '/guide/' },
+      { text: 'Design', link: '/design' },
     ],
-    sidebar: {
-      '/guide/': [
-        {
-          text: 'Guide',
-          items: [
-            { text: 'Getting started', link: '/guide/getting-started' },
-            { text: 'Examples', link: '/guide/examples' },
-          ],
-        },
-        {
-          text: 'SDKs',
-          items: [
-            { text: 'Rust', link: '/reference/rust-sdk' },
-            { text: 'Python', link: '/reference/python-sdk' },
-            { text: 'R', link: '/reference/r-sdk' },
-          ],
-        },
-      ],
-      '/reference/': [
-        { text: 'Reference', link: '/reference/' },
-        ...reference.map(({ text, items }) => ({
-          text,
-          collapsed: true,
-          items: items.map(([slug, text]) => ({ text, link: `/reference/${slug}` })),
-        })),
-      ],
-    },
+    sidebar: [
+      {
+        text: 'Guide',
+        items: [
+          { text: 'Overview', link: '/guide/overview' },
+          { text: 'Getting started', link: '/guide/getting-started' },
+        ],
+      },
+      {
+        text: 'Authoring a benchmark',
+        items: [
+          { text: '1. Declare the comparison', link: '/guide/authoring/' },
+          { text: '2. Write the functions', link: '/guide/authoring/functions' },
+          { text: '3. Parameters and repetitions', link: '/guide/authoring/parameters' },
+          { text: '4. Scientific validation', link: '/guide/authoring/validation' },
+          { text: '5. Run and analyze', link: '/guide/authoring/running' },
+          { text: '6. Extend the benchmark', link: '/guide/authoring/extending' },
+        ],
+      },
+      {
+        text: 'Further reading',
+        items: [
+          { text: 'Examples', link: '/guide/examples' },
+          { text: 'Design', link: '/design' },
+        ],
+      },
+    ],
     outline: [2, 3],
     search: { provider: 'local' },
     socialLinks: [{ icon: 'github', link: 'https://github.com/jolars/metewand' }],

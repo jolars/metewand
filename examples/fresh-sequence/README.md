@@ -55,6 +55,6 @@ excludes worker startup, warm-ups, and independent evaluation. Each curve point
 uses its own clean execution time; the cumulative profile time limit is recorded
 separately and persists across resume and retries.
 
-See [Fresh-sequence profiles](../../docs/reference/fresh-sequence-profiles.md)
+See [Fresh-sequence profiles](../../docs/guide/authoring/extending.md#move-from-final-answers-to-profiles)
 for schedules, failure behavior, conservative interruption accounting, and
 compatibility.

@@ -31,7 +31,7 @@ Start a benchmark with the same structure using `metewand init`, then
 `metewand scaffold dataset|problem|implementation NAME --language python`
 (with `--problem NAME` for implementations). Fill the scientific TODOs and
 reference fixtures, then add experiments and policies. See the
-[authoring guide](../../docs/reference/authoring-cli.md) for all three languages.
+[authoring guide](../../docs/guide/authoring/index.md) for all three languages.
 
 The explicit source bundle includes `worker.py` and the SDK's Python files, so
 Metewand hashes and stages them together. Python imports the staged package
@@ -50,5 +50,5 @@ supplied problem parameters. `serve_evaluator(..., semantics=True)` passes the
 contract rules to the evaluator, which reads its completion tolerance from
 `one_shot_completion.absolute_error`. The SDK handles protocol messages and error
 responses; the runtime owns scheduling, validation, and publication. See the
-[Python SDK guide](../../docs/reference/python-sdk.md) for callback signatures and output
-helpers.
+[Python callbacks](../../sdk/python/src/metewand/_worker.py) and
+[artifact helpers](../../sdk/python/src/metewand/_artifacts.py) for their interfaces.

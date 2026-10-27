@@ -63,7 +63,7 @@ test("serves clean Markdown for every page with homepage features, code, and tab
       assert.match(body, /```sh\nmetewand check/);
       assert.match(body, /Use your own language/);
     }
-    if (path === "/reference/machine-output") {
+    if (path === "/guide/authoring/validation") {
       assert.match(body, /\|/);
     }
   }
@@ -98,16 +98,16 @@ test("keeps HTML as the default and honors explicit Accept preferences", async (
 });
 
 test("preserves redirects, query strings, assets, and missing-page status", async () => {
-  const redirect = await worker.fetch("/reference/run-cli/", {
+  const redirect = await worker.fetch("/guide/authoring/running/", {
     redirect: "manual",
     headers: { Accept: "text/markdown" },
   });
   assert.equal(redirect.status, 307);
   assert.equal(
     new URL(redirect.headers.get("Location"), "http://localhost").pathname,
-    "/reference/run-cli",
+    "/guide/authoring/running",
   );
-  const query = await worker.fetch("/reference/run-cli?source=agent", {
+  const query = await worker.fetch("/guide/authoring/running?source=agent", {
     headers: { Accept: "text/markdown" },
   });
   assert.match(query.headers.get("Content-Type"), /^text\/markdown/);

@@ -32,5 +32,7 @@ default from zero to one and run into a new output directory. The evaluator
 returns `NotReached` with absolute error one. Its completion target still comes
 from the problem declaration.
 
-See the [Rust helper guide](../../docs/reference/rust-sdk.md) for custom writers,
-errors, lifecycle hooks, and dependency setup for another Cargo project.
+See the [Rust helper interfaces](../../crates/metewand-runtime/src/worker_sdk.rs)
+for custom writers, errors, and lifecycle hooks, and
+[extending a benchmark](../../docs/guide/authoring/extending.md#add-components)
+for dependency setup in another Cargo project.

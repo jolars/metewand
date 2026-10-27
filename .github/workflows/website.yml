@@ -4,12 +4,14 @@ on:
   push:
     branches: [main]
     paths:
+      - DESIGN.md
       - assets/**
       - docs/**
       - .github/workflows/website.yml
   pull_request:
     branches: [main]
     paths:
+      - DESIGN.md
       - assets/**
       - docs/**
       - .github/workflows/website.yml

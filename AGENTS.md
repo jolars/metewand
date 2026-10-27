@@ -1,9 +1,11 @@
 # AGENTS.md
 
 This file is the operational repository guide for AI agents. Read the relevant
-parts of `DESIGN.md` before changing architecture or public behavior;
-`DESIGN.md` is the source of truth for semantics and interfaces, while `TODO.md`
-defines the active MVP work and acceptance criteria.
+parts of `DESIGN.md` and `CONTRIBUTING.md` before changing architecture or public
+behavior. `DESIGN.md` defines the general model; `CONTRIBUTING.md` records
+implementation contracts and verification. Types, schemas, SDK help, and
+fixtures specify individual interfaces. `TODO.md` defines the active MVP work
+and acceptance criteria.
 
 ## Project priorities
 
@@ -53,10 +55,13 @@ concerns out of core and protocol.
   once they exist.
 - Runnable end-to-end demonstrations belong in `examples/`.
 - Language SDKs belong in `sdk/r`, `sdk/python`, and `sdk/julia`.
-- Longer-form documentation belongs in `docs/`; `README.md` remains the concise
-  entry point. The VitePress site lives in `docs/`, with introductory guides in
-  `docs/guide/` and interface and contract documentation in `docs/reference/`.
-  See `docs/README.md` for website development and deployment.
+- User documentation belongs in `docs/`; `README.md` remains the concise
+  entry point. The VitePress site lives in `docs/`, with the overview, getting
+  started, and multipart authoring guide in `docs/guide/`. `DESIGN.md` keeps the
+  general design; `CONTRIBUTING.md` consolidates contributor notes, implementation
+  contracts, verification, and website development. Keep detailed interfaces in
+  their authoritative types, schemas, SDK help, and fixtures rather than adding
+  a reference page for each implementation step.
 
 Do not create placeholder directories. Add each directory with its first real
 schema, fixture, example, SDK, or document.
@@ -69,7 +74,7 @@ the manifest, schemas, identities, execution semantics, and wire protocol.
 Consider only the versions affected by a change, and record a consequential
 compatibility decision in the change description. Do not require a standalone
 review, a decision table for unchanged versions, or fixtures for speculative
-interfaces. See [Compatibility versions](docs/reference/compatibility-versions.md)
+interfaces. See [Compatibility versions](CONTRIBUTING.md#compatibility-versions)
 for the pre-MVP stability policy.
 
 Preserve supported persisted records and canonical identity rules. Update
@@ -109,7 +114,7 @@ full local CI run when both scopes change. The equivalent commands are:
 The exhaustive crash campaign is ignored by default. Run it explicitly when
 changing durability, publication, recovery, or the run-store schema, or when
 requested. Ordinary CLI, planning, and documentation changes do not require it.
-See [Crash conformance](docs/reference/run-store-schema.md#crash-conformance) for the command
+See [Crash conformance](CONTRIBUTING.md#crash-conformance) for the command
 and separate CI coverage. Keep the representative crash tests in the normal
 suite.
 

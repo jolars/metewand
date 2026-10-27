@@ -1,23 +1,17 @@
 # Metewand
 
-Metewand is a reproducible, language-neutral system for computational
-benchmarks. It runs workers as separate processes, evaluates results
-independently, and records deterministic identities, timing, and provenance.
+Metewand runs reproducible computational benchmarks across languages. It executes
+methods as separate processes, evaluates answers independently, and retains
+settings, timings, metrics, failures, and provenance.
 
-The [website](https://metewand.org) provides a
-[getting started guide](docs/guide/getting-started.md) and
-[reference documentation](docs/reference/index.md).
-
-The local runner, durable recovery, JSONL and CSV exports, native Rust helpers,
-and Python and R SDKs are implemented. Simple benchmarks use ordinary functions
-and a compact manifest. Fresh sequences and buffered instrumented profiles are
-available; streaming checkpoints and environment provisioning follow the local MVP.
-[TODO.md](TODO.md) records the active roadmap; [DESIGN.md](DESIGN.md) defines
-semantics and intended interfaces.
+Read the [overview](docs/guide/overview.md), follow
+[getting started](docs/guide/getting-started.md), or work through the multipart
+[authoring guide](docs/guide/authoring/index.md). The documentation is also
+available at <https://metewand.org>.
 
 ## Try a benchmark
 
-Build from source with Rust 1.98.0 and Python 3.11 or later:
+From this checkout, with Rust 1.98.0 and Python 3.11 or later:
 
 ```sh
 cargo install --locked --path crates/metewand-cli
@@ -30,97 +24,31 @@ metewand check --workers
 metewand plan
 metewand run --output-dir run
 metewand status --output-dir run
+metewand export --output-dir run --format csv --destination tables
 ```
 
-Choose a new output directory. Pass the same path with `--resume` to continue
-an interrupted run without repeating accepted slots. See
-[running benchmarks](docs/reference/run-cli.md) for execution policies and
-[exporting results](docs/reference/exports.md) for analysis.
+The starter has two files: `metewand.yaml` and `benchmark.py`. Use
+`metewand init --language r` for R. Choose a new output directory, or explicitly
+resume an existing run with `--resume`. See
+[running and analyzing comparisons](docs/guide/authoring/running.md) for timing,
+retries, and exports.
 
-`metewand init [PATH]` creates a runnable `metewand.yaml` and `benchmark.py`.
-Use `--language r` for R, or `--empty` for a neutral manifest. Add components with
-`metewand scaffold dataset|problem|implementation NAME --language python|r|rust`.
-Scaffolds add compact declarations and small SDK adapters; implementation
-scaffolds also require `--problem NAME`.
-Both commands support `--dry-run` and refuse to overwrite existing files.
-The [least-squares example](examples/least-squares) compares in-house gradient
-descent and coordinate descent, with scientific checks added incrementally.
-The [authoring reference](docs/reference/authoring-cli.md) describes the defaults
-and extension points. The [examples](examples) include raw-command, Rust, Python, R,
-dataset-free, generated-data, and parameter-matrix benchmarks.
+The [least-squares example](examples/least-squares) compares gradient descent
+with coordinate descent and adds scientific validation incrementally. The
+[example collection](examples) also covers native Rust workers, lifecycle SDKs,
+parameter matrices, fresh sequences, and buffered profiles.
 
-## Architecture and interfaces
+## Project status and development
 
-The workspace separates domain and execution layers:
+Metewand is under active development. The current runner executes trusted local
+code and records development-environment evidence. Locked environments,
+isolation, streaming profiles, the Julia SDK, and portable archives are later
+work. The crates and SDKs are not yet published to registries.
 
-- `metewand-core`: manifests, planning, scheduling, and run records.
-- `metewand-protocol`: worker wire types and protocol versioning.
-- `metewand-runtime`: artifacts, environments, executors, and provenance.
-- `metewand-cli`: the `metewand` executable and diagnostics.
-
-Core and protocol are independent foundation crates. Runtime depends on both,
-and the CLI composes all three. Workers can use the
-[native Rust helpers](docs/reference/rust-sdk.md),
-[Python SDK](docs/reference/python-sdk.md),
-[R SDK](docs/reference/r-sdk.md), or implement the
-[worker protocol](docs/reference/worker-protocol.md) directly.
-
-Machine-readable boundaries use [versioned public schemas](docs/reference/public-schemas.md).
-[Canonical JSON](docs/reference/canonical-json.md),
-[typed identities](docs/reference/identities.md), and
-[seed derivation](docs/reference/seeds.md) define deterministic representations.
-The [compatibility policy](docs/reference/compatibility-versions.md) distinguishes
-supported records from interfaces still under development. Current local runs
-record development-environment and observed-control guarantees; locked and
-isolated execution follow the local MVP.
-
-## Development
-
-The development environment pins Rust 1.98.0 and includes rustfmt, Clippy,
-Nextest, Python, R, and Node.js:
-
-```sh
-devenv shell
-test-fast
-test-rust
-```
-
-`test-fast` runs core and protocol tests; `test-rust` runs the complete Rust
-suite. Both accept Nextest filters. Outside devenv, use:
-
-```sh
-cargo nextest run -p metewand-core -p metewand-protocol --locked
-cargo nextest run --workspace --all-targets --locked
-```
-
-Run focused tests while developing and verify the changed scope once.
-Documentation-only changes need the documentation checks; Rust changes need
-formatting, Clippy, and the complete Rust suite. `devenv test` runs all local
-CI checks:
-
-```sh
-cargo fmt --all -- --check
-cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
-cargo nextest run --workspace --all-targets --locked --profile ci
-npm --prefix docs ci
-npm --prefix docs run deploy:check
-```
-
-The VitePress site lives in `docs/`. See
-[website development](docs/README.md) for preview and deployment commands.
-
-Normal Rust tests include SDK, protocol, execution, and representative crash and
-recovery coverage. CLI and runtime tests use bounded concurrency to avoid
-oversubscribing workers and filesystem resources. The complete agent-loop
-acceptance test is opt-in:
-
-```sh
-cargo test -p metewand-cli --test agent_loop --locked -- --ignored
-```
-
-Run the exhaustive crash campaign when changing durability, publication,
-recovery, or the run-store schema. Its command and separate CI coverage are in
-[Crash conformance](docs/reference/run-store-schema.md#crash-conformance).
+[DESIGN.md](DESIGN.md) describes the general model.
+[CONTRIBUTING.md](CONTRIBUTING.md) covers contributor setup, implementation
+contracts, verification, releases, and website development.
+[TODO.md](TODO.md) tracks the active roadmap.
 
 ## License
 

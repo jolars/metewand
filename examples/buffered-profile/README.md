@@ -43,7 +43,7 @@ The native worker performs every local check in Rust and uses Python only for
 the independent evaluator process. These are dependency-free regression
 examples, not performance comparisons of Basin or clustlasso-cd.
 
-See [buffered profiles](../../docs/reference/buffered-profiles.md) for policy,
+See [buffered profiles](../../docs/guide/authoring/extending.md#move-from-final-answers-to-profiles) for policy,
 clock, collection, independent evaluation, and retry rules. An interrupted run
 retains already published snapshots. Use `--resume --retry` to authorize a new
 complete trajectory for an unsatisfied slot.
