@@ -85,7 +85,16 @@ impl Starter {
             let bin = root.path().join("bin");
             fs::create_dir(&bin).unwrap();
             let script = bin.join("Rscript");
-            fs::write(&script, format!("#!/bin/sh\nexport R_LIBS_SITE='{}'${{R_LIBS_SITE:+:}}${{R_LIBS_SITE:-}}\nexec '{}' \"$@\"\n", library.display(), interpreter.display())).unwrap();
+            // Preserve the site libraries that provide dependencies such as digest.
+            fs::write(
+                &script,
+                format!(
+                    "#!/bin/sh\nexport R_LIBS='{}'${{R_LIBS:+:}}${{R_LIBS:-}}\nexec '{}' \"$@\"\n",
+                    library.display(),
+                    interpreter.display()
+                ),
+            )
+            .unwrap();
             fs::set_permissions(script, fs::Permissions::from_mode(0o755)).unwrap();
             bin
         };
