@@ -435,12 +435,11 @@ cargo test -p metewand-cli --test agent_loop --locked -- --ignored
 Versionary creates release PRs, tags, changelogs, and GitHub Releases. Fixed
 monorepo mode keeps the Rust workspace and Python package at one shared version
 in a single release PR. The root uses the Rust strategy, and `packages/python`
-uses the Python strategy to update `pyproject.toml`. A temporary `extra-files`
-rule updates `src/metewand/__init__.py` for Versionary 1.7.0, whose auxiliary
-discovery searches relative to the repository root. Remove the rule once the
-Action uses a release containing the nested Python discovery fix. The worker
-hello reports that same `metewand.__version__`. Package tests check both Python
-versions against the workspace version. Public compatibility versions remain
+uses the Python strategy to update `pyproject.toml` and the discovered
+`src/metewand/__init__.py` version together. CI selects Versionary 1.7.1, which
+supports nested Python package discovery. The worker hello reports that same
+`metewand.__version__`. Package tests check both Python versions against the
+workspace version. Public compatibility versions remain
 independent and unchanged by this release setup.
 
 Versionary creates a root tag `vX.Y.Z` and a Python tag `metewand-vX.Y.Z`, with

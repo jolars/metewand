@@ -11,16 +11,7 @@
     ".": {},
     "packages/python": {
       "release-type": "python",
-      "package-name": "metewand",
-      // Remove once the Action uses Versionary's nested Python discovery fix.
-      "extra-files": [
-        {
-          "type": "regex",
-          "path": "src/metewand/__init__.py",
-          "pattern": "__version__ = \"([^\"]+)\"",
-          "expected-matches": 1
-        }
-      ]
+      "package-name": "metewand"
     }
   }
 }
