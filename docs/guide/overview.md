@@ -30,8 +30,9 @@ the evaluator applies the same checks to both.
 
 Start with two files: `metewand.yaml` and `benchmark.py` or `benchmark.R`.
 The manifest declares parameters, result and metric fields, and the comparison.
-Ordinary functions generate data, run methods, and compute metrics. Metewand's
-SDK handles the worker protocol and writes standard result files.
+Ordinary functions generate data, run methods, and compute metrics. Use the
+Metewand Python or R package as the entry point for your benchmark code. Each
+package handles the worker protocol and writes standard result files.
 
 You can mix worker languages, split the code into modules, use native
 executables, and add more detailed contracts as needed. Each worker runs in its
@@ -71,5 +72,5 @@ The [examples](examples.md) provide runnable alternatives. The
 
 Metewand is under active development. The current runner executes trusted local
 code and records development-environment evidence. Locked environments,
-isolation, streaming profiles, and the Julia SDK are planned. Pin a Metewand
+isolation, streaming profiles, and the Julia package are planned. Pin a Metewand
 revision when retaining benchmark runs.

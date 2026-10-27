@@ -2,7 +2,7 @@
 
 The next milestone is a comparative local MVP that can run useful benchmarks in
 `../basin` and `~/research/clustlasso-cd`. Keep one-shot execution, fresh sequences, and buffered instrumented profiles.
-Defer streaming profiles, the Julia SDK, and portable result archives.
+Defer streaming profiles, the Julia package, and portable result archives.
 
 [DESIGN.md](DESIGN.md) defines semantics. [AGENTS.md](AGENTS.md) defines
 development and verification rules. Build the smallest usable step in the active
@@ -27,7 +27,7 @@ not separate gates before implementation.
 - [x] Implement local execution, timing scopes, worker reuse and warm-ups,
   deterministic scheduling, bounded concurrency, status, explanation, and
   exports.
-- [x] Add Python and R SDKs, cross-language contract tests, authoring commands,
+- [x] Add Python and R packages, cross-language contract tests, authoring commands,
   cache maintenance, and runnable local examples.
 - [x] Add one-shot scientific smoke cases for intercepts, SLOPE, and clustered
   lasso, and pin the currently implemented compatibility boundaries.
@@ -127,7 +127,7 @@ a new compatibility review is a prerequisite.
 - [x] Update scaffolding and one small example so a benchmark needs one
   manifest, small adapters, and scientific reference fixtures. Separate
   contract and schema files remain available for reuse. Let authors select a
-  worker language and generate small SDK adapters with scientific decisions
+  worker language and generate small worker adapters with scientific decisions
   clearly left to the author. Test invalid declarations, override precedence,
   normalized defaults, and equivalent declaration identities without duplicating
   the example into a fixture matrix.
@@ -145,14 +145,14 @@ a new compatibility review is a prerequisite.
   the original failure; the local runner now retains the selected interpreter
   path, with a regression test for imports from a symlink-based venv.
 - [x] Make callback exception details inspectable after failed attempts.
-  SDKs include bounded exception text in persisted failure messages, available
+  Packages include bounded exception text in persisted failure messages, available
   through `status` and `explain` without retained worker logs.
 
 ### 3.1.1 Start small and add rigor
 
 - [x] Make `init` produce a runnable two-file Python benchmark, with an R
   option and an `--empty` escape hatch. Preflight all targets, preserve
-  overwrite protection, and report SDK setup and next commands.
+  overwrite protection, and report package setup and next commands.
 - [x] Add ordinary function workers with matching contexts in Python and R.
   Infer the standard JSON inventory, sole problem binding, one-shot capability,
   local execution, and final-observation defaults before planning. Keep static
@@ -210,7 +210,7 @@ round trip at every observation.
   partial publication, and failure without splicing retries or accepting an
   unreturned buffer.
 
-The [buffered profile example](examples/buffered-profile) covers both SDKs,
+The [buffered profile example](examples/buffered-profile) covers both packages,
 fixed counts, targets, inspection, resume, and exports. Focused tests cover
 metric disagreement, bounds, snapshot mutation, partial publication, unreturned
 buffers, and retry isolation. Adopter repository changes are deferred.
@@ -244,7 +244,7 @@ reservations, conservative interrupted charges, and terminal target decisions.
 ### 3.5 Qualify the local MVP
 
 Each delivery mode must be usable through the CLI and its needed adapters.
-Extend SDK callbacks where an adopter needs them; completing every callback in
+Extend package callbacks where an adopter needs them; completing every callback in
 every language is not a release prerequisite.
 
 - [x] Run `check`, `plan`, selected execution, interruption, resume, inspection,
@@ -292,7 +292,7 @@ original interpretations.
 Choose these by demonstrated adopter need rather than requiring another complete
 gate before improving a useful workflow.
 
-- [ ] Add the Julia SDK and extend shared conformance coverage when a Julia
+- [ ] Add the Julia package and extend shared conformance coverage when a Julia
   benchmark is ready to adopt it.
 - [ ] Add portable result archive creation, offline verification, and import.
   This is separate from the result snapshots required by profile modes.

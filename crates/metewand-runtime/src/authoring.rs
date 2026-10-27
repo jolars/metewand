@@ -97,12 +97,12 @@ pub fn init_benchmark_with_options(
         scaffold::WorkerLanguage::Python => (
             "py",
             include_str!("authoring/templates/starter.py"),
-            "Install the Metewand Python SDK in the Python environment on PATH.",
+            "Install the Metewand Python package in the Python environment on PATH.",
         ),
         scaffold::WorkerLanguage::R => (
             "R",
             include_str!("authoring/templates/starter.R"),
-            "Install the Metewand R SDK in the R environment on PATH.",
+            "Install the Metewand R package in the R environment on PATH.",
         ),
         scaffold::WorkerLanguage::Rust => {
             return Err(fail(

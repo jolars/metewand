@@ -28,12 +28,12 @@ fn stage(r: bool) -> TempDir {
     let stage = TempDir::new().unwrap();
     copy(&root().join("examples/fresh-sequence"), stage.path());
     copy(
-        &root().join("sdk/python/src/metewand"),
+        &root().join("packages/python/src/metewand"),
         &stage.path().join("metewand"),
     );
     if r {
         let package = TempDir::new().unwrap();
-        copy(&root().join("sdk/r"), &package.path().join("r"));
+        copy(&root().join("packages/r"), &package.path().join("r"));
         let library = stage.path().join("library");
         fs::create_dir(&library).unwrap();
         let output = Command::new("R")

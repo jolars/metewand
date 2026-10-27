@@ -1,5 +1,5 @@
 version: 1
-name: "python-sdk"
+name: rust-worker
 datasets:
   numbers:
     output-schema: &dataset-schema
@@ -13,19 +13,10 @@ datasets:
           maxItems: 1
           items:
             type: object
-            properties: { path: { const: "data.json" } }
+            properties: { path: { const: data.json } }
             required: [path]
       required: [schema_version, complete, files]
-    runner: python
-    entrypoint: worker.py
-    args: [dataset_materializer]
-    sources: ["worker.py", "metewand/*.py"]
-    parameters:
-      values:
-        type: array
-        items: { type: integer }
-        minItems: 1
-        default: [1, 2, 3]
+    sources: [data.json]
 problems:
   sum:
     family: arithmetic
@@ -40,7 +31,7 @@ problems:
     supported-budgets: [none]
     semantics:
       preprocessing:
-        shared_materialization: canonical_integer_json
+        shared_materialization: fixed_integer_json
         implementation_conversion: preserve_integer_values_and_order
         allowed_outside_timed_scope: []
       validity: { finite_integer: true }
@@ -50,32 +41,36 @@ problems:
         result: reference/result.json
         expected-metrics: reference/metrics.json
     evaluator:
-      runner: python
-      entrypoint: worker.py
+      runner: command
+      program: ./worker
       args: [problem_evaluator]
-      sources: ["worker.py", "metewand/*.py"]
+      sources: [worker]
 implementations:
   reference:
-    runner: python
-    entrypoint: worker.py
+    runner: command
+    program: ./worker
     args: [implementation]
-    sources: ["worker.py", "metewand/*.py"]
-    problem-contracts: ["sum"]
-    capabilities: ["one_shot"]
+    sources: [worker]
+    problem-contracts: [sum]
+    capabilities: [one_shot]
+    parameters:
+      bias: { type: integer, default: 0 }
 experiments:
-  - name: "main"
-    problem: "sum"
-    datasets: ["numbers"]
-    implementations: ["reference"]
-    execution-policy: "local"
-    observation-policy: "final"
+  - name: main
+    problem: sum
+    datasets: [numbers]
+    implementations: [reference]
     measurement-repetitions: 2
+    execution-policy: local
+    observation-policy: final
     seed: 7
 execution-policies:
   local:
-    timing-scope: "prepare_and_execute"
-    primary-time: "timed_wall_time"
+    version: 1
+    timing-scope: prepare_and_execute
+    primary-time: timed_wall_time
     worker-reuse: true
 observation-policies:
   final:
-    kind: "one_shot"
+    version: 1
+    kind: one_shot

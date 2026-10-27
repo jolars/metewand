@@ -759,11 +759,11 @@ pub struct CommandWorker {
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum Runner {
-    /// Python SDK runner.
+    /// Python package runner.
     Python,
-    /// R SDK runner.
+    /// R package runner.
     R,
-    /// Julia SDK runner.
+    /// Julia package runner.
     Julia,
     /// Raw command runner.
     Command,
@@ -772,11 +772,11 @@ pub enum Runner {
 /// An interpreted-language launch convention.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum InterpretedRunner {
-    /// Python SDK runner.
+    /// Python package runner.
     Python,
-    /// R SDK runner.
+    /// R package runner.
     R,
-    /// Julia SDK runner.
+    /// Julia package runner.
     Julia,
 }
 

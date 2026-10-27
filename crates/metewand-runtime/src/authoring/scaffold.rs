@@ -49,13 +49,13 @@ impl ScaffoldComponent {
     }
 }
 
-/// SDK language used by a generated adapter.
+/// Worker language used by a generated adapter.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum WorkerLanguage {
-    /// Python callbacks using the Python SDK.
+    /// Python callbacks using the Python package.
     #[default]
     Python,
-    /// R callbacks using the R SDK.
+    /// R callbacks using the R package.
     R,
     /// Native callbacks using the Rust worker helpers.
     Rust,
@@ -83,7 +83,7 @@ pub struct ScaffoldRequest {
     pub name: String,
     /// Existing environment, or the manifest's unambiguous local default.
     pub environment: Option<String>,
-    /// SDK language for the generated adapter.
+    /// Worker language for the generated adapter.
     pub language: WorkerLanguage,
     /// Existing problem selected for an implementation, and only for it.
     pub problem: Option<String>,

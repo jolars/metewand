@@ -30,7 +30,7 @@ const CONTRACT_ID: &str =
 #[test]
 fn reference_contracts_admit_correct_workers_and_reject_three_classes_of_bad_results() {
     let package = TempDir::new().unwrap();
-    copy_tree(&root().join("sdk/r"), &package.path().join("r"));
+    copy_tree(&root().join("packages/r"), &package.path().join("r"));
     let library = package.path().join("library");
     fs::create_dir(&library).unwrap();
     let output = Command::new("R")
@@ -272,7 +272,7 @@ fn connect(
         let mut command = Command::new("python3");
         command
             .arg(root().join("fixtures/problem-contract/v1/suites/worker.py"))
-            .env("PYTHONPATH", root().join("sdk/python/src"))
+            .env("PYTHONPATH", root().join("packages/python/src"))
             .env("PYTHONDONTWRITEBYTECODE", "1");
         command
     } else {

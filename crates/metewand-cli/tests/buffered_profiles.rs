@@ -37,7 +37,7 @@ fn stage() -> TempDir {
     let stage = TempDir::new().unwrap();
     copy(&root.join("examples/buffered-profile"), stage.path());
     copy(
-        &root.join("sdk/python/src/metewand"),
+        &root.join("packages/python/src/metewand"),
         &stage.path().join("metewand"),
     );
     stage

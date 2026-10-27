@@ -3,7 +3,7 @@
 This example compares gradient descent with cyclic coordinate descent on one
 seeded, simulated 100-by-3 dataset. It minimizes
 `sum((X beta - y)^2) / (2 n)`, without an intercept. The only dependency beyond
-Python's standard library is the Metewand SDK installed in the selected Python
+Python's standard library is the Metewand package installed in the selected Python
 environment.
 
 From this directory, with `metewand` on `PATH`:

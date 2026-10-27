@@ -25,7 +25,7 @@ const WORKER_ID: &str =
 #[test]
 fn r_sdk_contracts_and_roles_complete_a_validated_chain() {
     let package = TempDir::new().unwrap();
-    copy_tree(&root().join("sdk/r"), &package.path().join("r"));
+    copy_tree(&root().join("packages/r"), &package.path().join("r"));
     let library = package.path().join("library");
     fs::create_dir(&library).unwrap();
     let output = Command::new("R")
@@ -39,7 +39,7 @@ fn r_sdk_contracts_and_roles_complete_a_validated_chain() {
     assert_public_descriptor_ownership(&library);
     let output = Command::new("Rscript")
         .arg("--vanilla")
-        .arg(root().join("sdk/r/tests/sdk.R"))
+        .arg(root().join("packages/r/tests/sdk.R"))
         .env("METEWAND_REPOSITORY", root())
         .env("R_LIBS_USER", &library)
         .output()
@@ -52,9 +52,10 @@ fn r_sdk_contracts_and_roles_complete_a_validated_chain() {
     let metrics = TempDir::new().unwrap();
     let catalog = SchemaCatalog::try_new(["dataset", "result", "metrics"].map(|name| {
         let path = PathBuf::from(format!("schemas/{name}.json"));
-        let value: Value =
-            serde_json::from_slice(&fs::read(root().join("examples/r-sdk").join(&path)).unwrap())
-                .unwrap();
+        let value: Value = serde_json::from_slice(
+            &fs::read(root().join("examples/r-package").join(&path)).unwrap(),
+        )
+        .unwrap();
         (path, value)
     }))
     .unwrap();
@@ -167,7 +168,7 @@ fn connect(role_name: &str, role: WorkerRole, library: &Path) -> WorkerSession {
     let mut command = Command::new("Rscript");
     command
         .arg("--vanilla")
-        .arg(root().join("examples/r-sdk/worker.R"))
+        .arg(root().join("examples/r-package/worker.R"))
         .arg(role_name)
         .env("R_LIBS_USER", library);
     let process = PosixWorkerProcess::spawn(command, WorkerLogLimits::new(4096, 4096)).unwrap();

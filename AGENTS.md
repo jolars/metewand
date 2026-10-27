@@ -3,7 +3,7 @@
 This file is the operational repository guide for AI agents. Read the relevant
 parts of `DESIGN.md` and `CONTRIBUTING.md` before changing architecture or public
 behavior. `DESIGN.md` defines the general model; `CONTRIBUTING.md` records
-implementation contracts and verification. Types, schemas, SDK help, and
+implementation contracts and verification. Types, schemas, package help, and
 fixtures specify individual interfaces. `TODO.md` defines the active MVP work
 and acceptance criteria.
 
@@ -22,9 +22,9 @@ Preserve these properties throughout the implementation:
 
 Prioritize useful local benchmarks in Basin and clustlasso-cd. Follow the active
 roadmap, adapting the next small step to what those integrations need. Fresh-sequence and buffered instrumented
-profiles belong in the MVP; streaming profiles, the Julia SDK, portable result
+profiles belong in the MVP; streaming profiles, the Julia package, portable result
 archives, and environment provisioning follow it. Complete each behavior with focused tests
-and enough documentation to use it. A feature does not need every SDK callback
+and enough documentation to use it. A feature does not need every package callback
 or a separate reference page before an adopter can use it.
 
 ## Architecture and dependency direction
@@ -54,17 +54,17 @@ concerns out of core and protocol.
   directory; shared protocol vectors may live in a repository-level fixture tree
   once they exist.
 - Runnable end-to-end demonstrations belong in `examples/`.
-- Language SDKs belong in `sdk/r`, `sdk/python`, and `sdk/julia`.
+- Language packages belong in `packages/r`, `packages/python`, and `packages/julia`.
 - User documentation belongs in `docs/`; `README.md` remains the concise
   entry point. The VitePress site lives in `docs/`, with the overview, getting
   started, and multipart authoring guide in `docs/guide/`. `DESIGN.md` keeps the
   general design; `CONTRIBUTING.md` consolidates contributor notes, implementation
   contracts, verification, and website development. Keep detailed interfaces in
-  their authoritative types, schemas, SDK help, and fixtures rather than adding
+  their authoritative types, schemas, package help, and fixtures rather than adding
   a reference page for each implementation step.
 
 Do not create placeholder directories. Add each directory with its first real
-schema, fixture, example, SDK, or document.
+schema, fixture, example, package, or document.
 
 ## Compatibility and releases
 

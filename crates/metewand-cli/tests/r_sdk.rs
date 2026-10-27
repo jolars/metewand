@@ -10,8 +10,8 @@ fn r_sdk_example_publishes_two_accepted_observations() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let benchmark = TempDir::new().unwrap();
     let package = TempDir::new().unwrap();
-    copy_tree(&root.join("examples/r-sdk"), benchmark.path());
-    copy_tree(&root.join("sdk/r"), &package.path().join("r"));
+    copy_tree(&root.join("examples/r-package"), benchmark.path());
+    copy_tree(&root.join("packages/r"), &package.path().join("r"));
     let library = benchmark.path().join("library");
     fs::create_dir(&library).unwrap();
     let output = Command::new("R")

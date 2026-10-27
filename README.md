@@ -4,6 +4,9 @@ Metewand runs reproducible computational benchmarks across languages. It execute
 methods as separate processes, evaluates answers independently, and retains
 settings, timings, metrics, failures, and provenance.
 
+Start with the Metewand Python or R package: write ordinary functions and declare
+your comparison in YAML. The `metewand` CLI checks and runs the benchmark.
+
 Read the [overview](docs/guide/overview.md), follow
 [getting started](docs/guide/getting-started.md), or work through the multipart
 [authoring guide](docs/guide/authoring/index.md). The documentation is also
@@ -17,7 +20,7 @@ From this checkout, with Rust 1.98.0 and Python 3.11 or later:
 cargo install --locked --path crates/metewand-cli
 python3 -m venv .venv
 . .venv/bin/activate
-python3 -m pip install ./sdk/python
+python3 -m pip install ./packages/python
 metewand init /tmp/my-benchmark
 cd /tmp/my-benchmark
 metewand check --workers
@@ -35,15 +38,15 @@ retries, and exports.
 
 The [least-squares example](examples/least-squares) compares gradient descent
 with coordinate descent and adds scientific validation incrementally. The
-[example collection](examples) also covers native Rust workers, lifecycle SDKs,
+[example collection](examples) also covers native Rust workers, lifecycle callbacks,
 parameter matrices, fresh sequences, and buffered profiles.
 
 ## Project status and development
 
 Metewand is under active development. The current runner executes trusted local
 code and records development-environment evidence. Locked environments,
-isolation, streaming profiles, the Julia SDK, and portable archives are later
-work. The crates and SDKs are not yet published to registries.
+isolation, streaming profiles, the Julia package, and portable archives are later
+work. The crates and packages are not yet published to registries.
 
 [DESIGN.md](DESIGN.md) describes the general model.
 [CONTRIBUTING.md](CONTRIBUTING.md) covers contributor setup, implementation

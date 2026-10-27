@@ -13,16 +13,16 @@ counts and tolerances are implementation controls, not equivalent work units.
 
 ## Stage and run
 
-Use `devenv shell`, which provides Python, R, and the R SDK's `digest` dependency.
+Use `devenv shell`, which provides Python, R, and the R package's `digest` dependency.
 From the repository root:
 
 ```sh
 cargo build --locked -p metewand-cli
 example_dir=$(mktemp -d)
 cp -R examples/fresh-sequence/. "$example_dir/"
-cp -R sdk/python/src/metewand "$example_dir/metewand"
+cp -R packages/python/src/metewand "$example_dir/metewand"
 mkdir "$example_dir/library"
-R CMD INSTALL --preclean --clean --library="$example_dir/library" sdk/r
+R CMD INSTALL --preclean --clean --library="$example_dir/library" packages/r
 metewand_bin="$PWD/target/debug/metewand"
 cd "$example_dir"
 "$metewand_bin" check --workers
@@ -47,7 +47,7 @@ observe earlier `skipped_target_reached` slots. Valid below-target results remai
 selected and exported.
 
 Python opts in with `fresh_sequence=True`, and R uses `fresh_sequence=TRUE`.
-Both SDKs forward the selected control through their existing execute callback.
+Both packages forward the selected control through their existing execute callback.
 The scientific implementation has no observer or per-iteration protocol calls.
 
 Primary timing covers preparation, solving, and result serialization. It

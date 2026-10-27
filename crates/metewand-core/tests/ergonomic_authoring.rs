@@ -74,7 +74,7 @@ fn basic_functions_need_no_policies_artifact_schemas_or_scientific_rules() {
         panic!("generated dataset");
     };
     let WorkerDefinition::Command(worker) = &dataset.worker else {
-        panic!("lowered SDK launch");
+        panic!("lowered package launch");
     };
     assert_eq!(worker.program, "python3");
     assert!(worker.args.contains(&"{sources}/benchmark.py".to_owned()));

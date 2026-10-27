@@ -52,7 +52,7 @@ def main():
         shutil.copy2(HERE / f"{adopter}.yaml", root / "metewand.yaml")
         shutil.copy2(HERE / f"{adopter}-problem.yaml", root / "problem.yaml")
         shutil.copy2(HERE / "evaluator.py", root / "evaluator.py")
-        shutil.copytree(REPOSITORY / "sdk/python/src/metewand", root / "metewand", ignore=shutil.ignore_patterns("__pycache__"))
+        shutil.copytree(REPOSITORY / "packages/python/src/metewand", root / "metewand", ignore=shutil.ignore_patterns("__pycache__"))
         (root / "reference").mkdir()
         if adopter == "basin":
             result, metrics = {"x": [1, 1], "local_objective": 0}, {"objective": 0, "parameter_error": 0}

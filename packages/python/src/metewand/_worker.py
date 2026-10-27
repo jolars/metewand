@@ -108,7 +108,7 @@ class OneShotImplementation(_ImplementationLifecycle):
 
     prepare, execute, reset, and shutdown have the same arguments as Implementation.
     execute returns the value passed to statistics and write_result. Only execute
-    is included in the SDK's diagnostic implementation time.
+    is included in the package's diagnostic implementation time.
     """
 
     @abstractmethod
@@ -514,7 +514,7 @@ def serve_implementation(implementation, *, fresh_sequence=False, read_fd=None, 
     """Serve implementation callbacks on inherited or explicitly supplied pipes.
 
     fresh_sequence opts in to controlled executions through the existing execute
-    callback. The SDK preserves the selected control for the response echo.
+    callback. The package preserves the selected control for the response echo.
     """
     if not isinstance(implementation, (Implementation, OneShotImplementation, BufferedImplementation)):
         raise TypeError("Expected an Implementation or OneShotImplementation instance.")

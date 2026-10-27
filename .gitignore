@@ -16,12 +16,12 @@ devenv.local.yaml
 __pycache__/
 *.py[cod]
 *.egg-info/
-/sdk/python/build/
-/sdk/python/dist/
+/packages/python/build/
+/packages/python/dist/
 
 # R
-/sdk/r/src/*.o
-/sdk/r/src/*.so
+/packages/r/src/*.o
+/packages/r/src/*.so
 
 # Website
 /docs/node_modules/

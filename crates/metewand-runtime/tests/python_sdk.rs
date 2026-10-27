@@ -27,8 +27,8 @@ const WORKER_ID: &str =
 fn python_sdk_unit_and_canonical_contracts() {
     let output = Command::new("python3")
         .args(["-m", "unittest", "discover", "-s"])
-        .arg(root().join("sdk/python/tests"))
-        .env("PYTHONPATH", root().join("sdk/python/src"))
+        .arg(root().join("packages/python/tests"))
+        .env("PYTHONPATH", root().join("packages/python/src"))
         .env("PYTHONDONTWRITEBYTECODE", "1")
         .output()
         .unwrap();
@@ -43,11 +43,11 @@ fn python_sdk_roles_complete_a_validated_chain_over_dedicated_pipes() {
     let metrics = TempDir::new().unwrap();
     let manifest = parse_manifest(
         Path::new("metewand.yaml"),
-        &fs::read_to_string(root().join("examples/python-sdk/metewand.yaml")).unwrap(),
+        &fs::read_to_string(root().join("examples/python-package/metewand.yaml")).unwrap(),
     )
     .unwrap();
     let ContractDeclaration::Inline(contract) = &manifest.problems["sum"].contract else {
-        panic!("the Python SDK example has an inline contract");
+        panic!("the Python package example has an inline contract");
     };
     let catalog = SchemaCatalog::try_new(contract.schemas().map(|schema| {
         (
@@ -127,9 +127,9 @@ fn python_sdk_roles_complete_a_validated_chain_over_dedicated_pipes() {
 fn connect(role_name: &str, role: WorkerRole) -> WorkerSession {
     let mut command = Command::new("python3");
     command
-        .arg(root().join("examples/python-sdk/worker.py"))
+        .arg(root().join("examples/python-package/worker.py"))
         .arg(role_name)
-        .env("PYTHONPATH", root().join("sdk/python/src"))
+        .env("PYTHONPATH", root().join("packages/python/src"))
         .env("PYTHONDONTWRITEBYTECODE", "1");
     let process = PosixWorkerProcess::spawn(command, WorkerLogLimits::new(4096, 4096)).unwrap();
     let capabilities = if role == WorkerRole::Implementation {

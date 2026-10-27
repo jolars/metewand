@@ -289,7 +289,7 @@ pub struct WorkerDefinitionRecord {
 /// Runner-specific data in a worker definition.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum WorkerLaunch {
-    /// A worker launched by one of the language SDK runners.
+    /// A worker launched by one of the language package runners.
     Interpreted {
         /// Language launch convention.
         runner: InterpretedRunner,

@@ -75,7 +75,7 @@ def cd(data, context):
 ```
 
 Here `context.parameters` contains implementation settings. Each function
-returns the `beta` field declared by the problem. The SDK writes the result
+returns the `beta` field declared by the problem. The package writes the result
 envelope and checks that its values can be represented as canonical JSON.
 
 One GD iteration is a full gradient update. One CD iteration is a full cyclic

@@ -1,4 +1,4 @@
-"""A raw one-shot implementation and independent evaluator, without an SDK."""
+"""A raw one-shot implementation and independent evaluator, without a package."""
 
 import hashlib
 import json

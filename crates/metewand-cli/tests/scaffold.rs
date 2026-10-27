@@ -149,7 +149,7 @@ fn scaffolds_all_three_components_incrementally_without_scientific_defaults() {
         panic!("expected materializer");
     };
     let WorkerDefinition::Command(worker) = &dataset.worker else {
-        panic!("expected function SDK launch");
+        panic!("expected function package launch");
     };
     assert_eq!(worker.program, "python3");
     assert_eq!(worker.environment.as_str(), "local");
@@ -820,7 +820,7 @@ fn scaffold_environment_defaults_require_an_unambiguous_local_choice() {
         panic!("expected generated dataset");
     };
     let WorkerDefinition::Command(worker) = &dataset.worker else {
-        panic!("expected function SDK launch");
+        panic!("expected function package launch");
     };
     assert_eq!(worker.environment.as_str(), "host");
 }

@@ -37,7 +37,7 @@ path = "../../examples/datamonger/main.rs"
 
 [[example]]
 name = "rust-worker"
-path = "../../examples/rust-sdk/main.rs"
+path = "../../examples/rust-worker/main.rs"
 
 [[example]]
 name = "buffered-worker"

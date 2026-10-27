@@ -40,7 +40,7 @@ fn typed_worker_messages_match_the_public_wire_schema() {
     let response = HelloResponse::new(
         request.id().clone(),
         worker_id,
-        Some(SdkMetadata::new("metewand-rust", "0.1.0").expect("SDK metadata must be valid")),
+        Some(SdkMetadata::new("metewand-rust", "0.1.0").expect("package metadata must be valid")),
         [Capability::OneShot],
     );
 

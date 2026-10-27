@@ -51,6 +51,6 @@ All grids expand deterministically. Overlapping cases are errors rather than imp
 replications; use repetition fields for that purpose. See
 [configuration expansion](../../CONTRIBUTING.md#manifests-and-planning).
 
-The worker uses the raw protocol and Python's standard library. No SDK or
+The worker uses the raw protocol and Python's standard library. No package or
 third-party package is needed, and all scientific choices remain visible in
 this directory's contract, schemas, evaluator, and reference case.

@@ -50,7 +50,7 @@ fn evaluate(request: &EvaluateRequest) -> WorkerResult<Evaluation> {
     let error = (answer - (values.iter().sum::<i64>() + offset)).abs();
     let rules = request
         .problem_semantics()
-        .expect("SDK negotiated scientific rules");
+        .expect("package negotiated scientific rules");
     let target: i64 =
         serde_json::from_value(rules["one_shot_completion"]["absolute_error"].clone())?;
     Ok(Evaluation::new(

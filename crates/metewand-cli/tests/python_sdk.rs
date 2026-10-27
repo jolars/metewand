@@ -14,9 +14,9 @@ fn callback_tracebacks_survive_failed_attempts_and_remain_explainable() {
         ("values = read_json", "evaluator_failure"),
     ] {
         let benchmark = TempDir::new().unwrap();
-        copy_tree(&root.join("examples/python-sdk"), benchmark.path());
+        copy_tree(&root.join("examples/python-package"), benchmark.path());
         copy_tree(
-            &root.join("sdk/python/src/metewand"),
+            &root.join("packages/python/src/metewand"),
             &benchmark.path().join("metewand"),
         );
         let worker = benchmark.path().join("worker.py");
@@ -93,9 +93,9 @@ fn callback_tracebacks_survive_failed_attempts_and_remain_explainable() {
 fn declared_completion_tolerance_controls_independent_evaluation() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let benchmark = TempDir::new().unwrap();
-    copy_tree(&root.join("examples/python-sdk"), benchmark.path());
+    copy_tree(&root.join("examples/python-package"), benchmark.path());
     copy_tree(
-        &root.join("sdk/python/src/metewand"),
+        &root.join("packages/python/src/metewand"),
         &benchmark.path().join("metewand"),
     );
     let worker = benchmark.path().join("worker.py");
@@ -144,9 +144,9 @@ fn declared_completion_tolerance_controls_independent_evaluation() {
 fn python_sdk_example_publishes_two_accepted_observations() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let benchmark = TempDir::new().unwrap();
-    copy_tree(&root.join("examples/python-sdk"), benchmark.path());
+    copy_tree(&root.join("examples/python-package"), benchmark.path());
     copy_tree(
-        &root.join("sdk/python/src/metewand"),
+        &root.join("packages/python/src/metewand"),
         &benchmark.path().join("metewand"),
     );
     assert!(!benchmark.path().join("schemas").exists());
@@ -230,9 +230,9 @@ fn copy_tree(source: &Path, destination: &Path) {
 fn applicability_checks_precede_preparation_and_preserve_exact_inputs() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let benchmark = TempDir::new().unwrap();
-    copy_tree(&root.join("examples/python-sdk"), benchmark.path());
+    copy_tree(&root.join("examples/python-package"), benchmark.path());
     copy_tree(
-        &root.join("sdk/python/src/metewand"),
+        &root.join("packages/python/src/metewand"),
         &benchmark.path().join("metewand"),
     );
     let manifest = benchmark.path().join("metewand.yaml");
@@ -369,9 +369,9 @@ fn applicability_checks_precede_preparation_and_preserve_exact_inputs() {
 fn changed_applicability_evidence_invalidates_execution_and_resume_identities() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let benchmark = TempDir::new().unwrap();
-    copy_tree(&root.join("examples/python-sdk"), benchmark.path());
+    copy_tree(&root.join("examples/python-package"), benchmark.path());
     copy_tree(
-        &root.join("sdk/python/src/metewand"),
+        &root.join("packages/python/src/metewand"),
         &benchmark.path().join("metewand"),
     );
     let manifest = benchmark.path().join("metewand.yaml");
@@ -513,9 +513,9 @@ fn failed_applicability_checks_never_become_measured_attempts() {
         ),
     ] {
         let benchmark = TempDir::new().unwrap();
-        copy_tree(&root.join("examples/python-sdk"), benchmark.path());
+        copy_tree(&root.join("examples/python-package"), benchmark.path());
         copy_tree(
-            &root.join("sdk/python/src/metewand"),
+            &root.join("packages/python/src/metewand"),
             &benchmark.path().join("metewand"),
         );
         let manifest = benchmark.path().join("metewand.yaml");

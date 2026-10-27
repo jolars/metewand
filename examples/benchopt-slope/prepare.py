@@ -1,4 +1,4 @@
-"""Stage adapters, the SDK, and unchanged scientific sources into a new directory."""
+"""Stage adapters, the package, and unchanged scientific sources into a new directory."""
 
 import argparse
 import hashlib
@@ -30,7 +30,7 @@ def prepare(benchmark, destination):
                  "test_science.py", "validate.py"):
         shutil.copyfile(example / name, destination / name)
     shutil.copytree(example / "reference", destination / "reference")
-    shutil.copytree(example.parents[1] / "sdk/python/src/metewand",
+    shutil.copytree(example.parents[1] / "packages/python/src/metewand",
                     destination / "metewand", ignore=shutil.ignore_patterns("__pycache__"))
     (destination / "upstream").mkdir()
     for path, content in contents.items():

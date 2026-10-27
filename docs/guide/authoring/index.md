@@ -5,7 +5,7 @@ descent and coordinate descent. You will generate shared data, evaluate both
 answers independently, vary their settings, add accuracy checks, and export
 the measurements.
 
-The code uses Python's standard library and the Metewand SDK. Complete the
+The code uses Python's standard library and the Metewand package. Complete the
 [installation](../getting-started.md#install) first and keep that Python
 environment active. The finished code is also available in the
 [least-squares example](https://github.com/jolars/metewand/tree/main/examples/least-squares).

@@ -5,7 +5,7 @@ use std::{fs, path::Path, process::Command};
 use serde_json::Value;
 
 #[allow(dead_code)]
-#[path = "../../../examples/rust-sdk/main.rs"]
+#[path = "../../../examples/rust-worker/main.rs"]
 mod worker;
 
 #[test]
@@ -57,12 +57,12 @@ fn durable_records_and_both_exports_keep_build_and_host_evidence_separate() {
         "reference/metrics.json",
     ] {
         fs::copy(
-            repository.join("examples/rust-sdk").join(file),
+            repository.join("examples/rust-worker").join(file),
             root.path().join(file),
         )
         .unwrap();
     }
-    let manifest = fs::read_to_string(repository.join("examples/rust-sdk/metewand.yaml"))
+    let manifest = fs::read_to_string(repository.join("examples/rust-worker/metewand.yaml"))
         .unwrap()
         .replace("program: ./worker", "program: ./build/worker")
         .replace("sources: [worker]", "sources: [build/worker]")

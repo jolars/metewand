@@ -5,12 +5,12 @@ evaluator. Python direct recording and local observers share one artifact
 contract with the native Rust worker. Three thresholds select three snapshots
 from each target trajectory. A second experiment collects a fixed count.
 
-Stage the example and the in-tree SDK from the repository root:
+Stage the example and the in-tree package from the repository root:
 
 ```sh
 benchmark_dir="$(mktemp -d)"
 cp -R examples/buffered-profile/. "$benchmark_dir/"
-cp -R sdk/python/src/metewand "$benchmark_dir/metewand"
+cp -R packages/python/src/metewand "$benchmark_dir/metewand"
 cargo run --locked -p metewand-cli -- check --manifest "$benchmark_dir/metewand.yaml" --workers
 cargo run --locked -p metewand-cli -- plan --manifest "$benchmark_dir/metewand.yaml" --output json
 cargo run --locked -p metewand-cli -- run --manifest "$benchmark_dir/metewand.yaml" --output-dir "$benchmark_dir/run" --output json

@@ -50,7 +50,8 @@ parameter choices, and requests repetitions of the resulting comparisons.
 A small benchmark needs a YAML manifest and ordinary Python or R functions.
 The manifest declares data generation, result and metric shapes, methods, and
 experiments. Functions generate data, solve the problem, and evaluate results.
-The SDK handles transport and standard artifact envelopes.
+The Metewand package for the chosen language handles transport and standard
+artifact envelopes.
 
 Authors can add parameter grids, scientific rules, analytic reference cases,
 repetitions, and named policies as the comparison grows. Separate contracts and

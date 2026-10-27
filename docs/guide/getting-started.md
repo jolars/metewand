@@ -11,11 +11,11 @@ cd metewand
 cargo install --locked --path crates/metewand-cli
 python3 -m venv .venv
 . .venv/bin/activate
-python3 -m pip install ./sdk/python
+python3 -m pip install ./packages/python
 ```
 
 Keep this environment active. Workers use the `python3` on `PATH` and its
-installed dependencies. The CLI and SDK are not yet published to package
+installed dependencies. The CLI and package are not yet published to package
 registries. If you use Nix, `devenv shell` provides the repository's development
 tools.
 
@@ -81,13 +81,13 @@ you need machine-readable output.
 ## Start with R
 
 Use R 4.2 or later, the `digest` package, and a C++17 compiler with floating-point
-`std::to_chars` support. Install `digest` and the SDK into the selected R
+`std::to_chars` support. Install `digest` and the package into the selected R
 environment's site library; workers use a private user library.
 
 From the Metewand checkout:
 
 ```sh
-R CMD INSTALL sdk/r
+R CMD INSTALL packages/r
 metewand init /tmp/my-r-benchmark --language r
 cd /tmp/my-r-benchmark
 metewand check --workers
@@ -95,7 +95,7 @@ metewand run --output-dir run
 ```
 
 The R starter creates `metewand.yaml` and `benchmark.R`, with the same roles and
-defaults as Python. See the [R package](https://github.com/jolars/metewand/tree/main/sdk/r)
+defaults as Python. See the [R package](https://github.com/jolars/metewand/tree/main/packages/r)
 for installation details.
 
 ## Write your own comparison

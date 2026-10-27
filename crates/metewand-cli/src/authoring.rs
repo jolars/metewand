@@ -19,7 +19,7 @@ language is python. An omitted environment uses the manifest's local default.
 Implementation scaffolds require an existing --problem. Default manifest:
 ./metewand.yaml.
 
-Generate small SDK adapters and compact inline declarations. Implement the
+Generate small worker adapters and compact inline declarations. Implement the
 callbacks and declare their data shapes before running. Add scientific rules
 and reference cases as needed. Rust adapters must be built as native workers. Existing files and
 definitions are never replaced. No package managers or workers are invoked.

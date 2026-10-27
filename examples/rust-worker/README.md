@@ -10,7 +10,7 @@ From the repository root:
 ```sh
 cargo build --locked -p metewand-runtime --example rust-worker
 demo_dir=$(mktemp -d)
-cp -R examples/rust-sdk/. "$demo_dir/"
+cp -R examples/rust-worker/. "$demo_dir/"
 cp target/debug/examples/rust-worker "$demo_dir/worker"
 cargo run --locked -p metewand-cli -- check \
   --manifest "$demo_dir/metewand.yaml" --workers
@@ -22,9 +22,9 @@ cargo run --locked -p metewand-cli -- run \
 The source bundle includes the compiled `worker` executable. Metewand stages
 and hashes it, loads the fixed data, checks the reference fixture, and retains
 two accepted observations with `{"answer":8}` and `{"absolute_error":0}`.
-The native helper negotiates scientific rules and records `metewand-rust` SDK
+The native helper negotiates scientific rules and records `metewand-rust` package
 metadata. The `prepare_and_execute` scope includes preparation, solving,
-conversion, and result serialization. SDK `implementation_time_ns` covers only
+conversion, and result serialization. Helper `implementation_time_ns` covers only
 the execute callback. Reset clears the prepared values between slots.
 
 To inspect a scientific completion failure, change the implementation's `bias`

@@ -9,9 +9,9 @@ use tempfile::TempDir;
 fn repository() -> TempDir {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let benchmark = TempDir::new().unwrap();
-    copy_tree(&root.join("examples/python-sdk"), benchmark.path());
+    copy_tree(&root.join("examples/python-package"), benchmark.path());
     copy_tree(
-        &root.join("sdk/python/src/metewand"),
+        &root.join("packages/python/src/metewand"),
         &benchmark.path().join("metewand"),
     );
     benchmark

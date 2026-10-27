@@ -1,10 +1,11 @@
 Package: metewand
-Title: Worker Helpers for Metewand Benchmarks
+Title: Define Metewand Benchmarks with R Functions
 Version: 0.1.0
 Authors@R: person("Johan", "Larsson", email = "johan@jolars.co", role = c("aut", "cre"))
-Description: Small implementation, dataset materializer, and independent evaluator
-    helpers for the version-1 Metewand worker protocol. Provides strict canonical
-    JSON, explicit artifact inventories, and callback dispatch over dedicated pipes.
+Description: Define data generators, computational methods, and independent
+    evaluators as ordinary R functions for Metewand benchmarks. Handles the
+    version-1 worker protocol, canonical JSON, artifact inventories, and lifecycle
+    callbacks over dedicated pipes.
 License: MIT + file LICENSE
 Encoding: UTF-8
 Depends: R (>= 4.2.0)

@@ -3,7 +3,7 @@
 This comparison reuses `benchmark_slope`'s simulated dataset, PGD and ADMM
 implementations, and objective evaluator unchanged. One manifest supplies the
 scientific settings, solver controls, and three measurement repetitions per
-configuration. Small SDK adapters translate arrays and callback iteration
+configuration. Small package adapters translate arrays and callback iteration
 counts; they contain no protocol handling, result envelopes, or metric formulas.
 No separate contract or JSON Schema files are needed.
 
@@ -41,7 +41,7 @@ python3 "$comparison_dir/benchmark/validate.py" \
 ```
 
 `prepare.py` creates a new directory, copies the four scientific source files
-and the in-tree SDK, and records the upstream Git revision, source modification
+and the in-tree package, and records the upstream Git revision, source modification
 status, and SHA-256 hashes in `origins.json`. Every worker declares its needed
 sources, including that origin record. The source checkout remains untouched.
 The example was checked against upstream revision
@@ -131,7 +131,7 @@ one-iteration cases. Use the preserved export for exact per-repetition values.
 initialization, the complete solver call, and result serialization. PGD's
 spectral norm and ADMM's factorization remain inside the solver call. Worker
 startup, imports, dataset generation, and independent evaluation are outside
-the primary interval; evaluator and SDK implementation times are recorded
+the primary interval; evaluator and package implementation times are recorded
 separately. The PGD adapter selects the isotonic prox, avoiding a first-call
 Numba compilation in this particular comparison. No warm-up, process reuse,
 thread limit, or scientific stopping callback is implied.

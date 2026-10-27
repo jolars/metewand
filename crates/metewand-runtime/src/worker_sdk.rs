@@ -123,7 +123,7 @@ pub trait Implementation {
     /// Return a failure when preparation cannot complete.
     fn prepare(&mut self, request: &PrepareRequest) -> WorkerResult<()>;
 
-    /// Runs the solver. Only this callback contributes to SDK implementation time.
+    /// Runs the solver. Only this callback contributes to diagnostic implementation time.
     ///
     /// # Errors
     /// Return a failure when solving cannot complete.
@@ -150,7 +150,7 @@ pub trait Implementation {
         ))
     }
 
-    /// Converts solver output to scientific JSON data outside SDK solve timing.
+    /// Converts solver output to scientific JSON data outside diagnostic solve timing.
     ///
     /// # Errors
     /// Return a failure when conversion cannot complete.
@@ -158,7 +158,7 @@ pub trait Implementation {
         Ok(serde_json::to_value(output)?)
     }
 
-    /// Supplies optional diagnostic statistics outside SDK solve timing.
+    /// Supplies optional diagnostic statistics outside diagnostic solve timing.
     ///
     /// # Errors
     /// Return a failure when statistics cannot be produced.
@@ -351,7 +351,7 @@ fn implementation_on(
                 if request.observation_control().is_some() {
                     return Err(failure(
                         WorkerFailureCode::UnsupportedOperation,
-                        "This SDK worker does not implement fresh_sequence.",
+                        "This worker does not implement fresh_sequence.",
                     ));
                 }
                 if !prepared {
@@ -543,7 +543,7 @@ fn hello(request: Value, role: WorkerRole, capabilities: &[Capability]) -> Worke
         request.worker_id().clone(),
         Some(
             SdkMetadata::new("metewand-rust", env!("CARGO_PKG_VERSION"))
-                .expect("nonempty SDK metadata"),
+                .expect("nonempty package metadata"),
         ),
         capabilities.iter().copied(),
     ))

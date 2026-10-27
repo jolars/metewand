@@ -21,7 +21,7 @@ hero:
 
 features:
   - title: Use your own language
-    details: Run implementations as separate processes. Use the Python or R SDK, or implement the worker protocol in another language.
+    details: Run implementations as separate processes. Use the Python or R package, or implement the worker protocol in another language.
     link: /guide/authoring/extending
   - title: Define the comparison
     details: Keep datasets, problem definitions, implementations, and execution policies explicit. Evaluate results with an independent worker.

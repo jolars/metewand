@@ -22,7 +22,7 @@ It preserves existing manifest comments and refuses to overwrite adapter files.
 Use `--dry-run` to inspect the proposed paths first.
 
 `--manifest PATH` selects a different manifest. `--language r` selects R
-functions; `--language rust` generates native SDK adapters. Rust adapters need
+functions; `--language rust` generates native worker adapters. Rust adapters need
 to be added to a Cargo project and built. Copy each executable beside its
 adapter with the same basename and no extension. The crates currently require
 local path dependencies; scaffolding does not create a Cargo project.
@@ -59,7 +59,7 @@ random seed. Install dependencies in each selected worker environment.
 
 Native Rust helpers run without a Python or R host. Other languages can
 implement the process protocol directly. Start with the
-[Rust example](https://github.com/jolars/metewand/tree/main/examples/rust-sdk)
+[Rust example](https://github.com/jolars/metewand/tree/main/examples/rust-worker)
 or [raw worker example](https://github.com/jolars/metewand/tree/main/examples/fixed-dataset).
 
 ## Separate preparation and solving
@@ -68,13 +68,13 @@ Lifecycle workers let you load data in `prepare`, run a method in `execute`,
 convert its output, and reset state before reuse. They also support custom
 artifact writers and configuration-dependent applicability checks.
 
-The Python SDK provides `OneShotImplementation` and `serve_implementation`.
-The R SDK provides `serve_implementation` with callbacks. Native Rust workers
+The Python package provides `OneShotImplementation` and `serve_implementation`.
+The R package provides `serve_implementation` with callbacks. Native Rust workers
 implement the `Implementation` trait and use the same serving lifecycle.
-The runnable [Python](https://github.com/jolars/metewand/tree/main/examples/python-sdk),
-[R](https://github.com/jolars/metewand/tree/main/examples/r-sdk), and
-[Rust](https://github.com/jolars/metewand/tree/main/examples/rust-sdk) examples
-show complete adapters and declarations. The SDK source and R help pages
+The runnable [Python](https://github.com/jolars/metewand/tree/main/examples/python-package),
+[R](https://github.com/jolars/metewand/tree/main/examples/r-package), and
+[Rust](https://github.com/jolars/metewand/tree/main/examples/rust-worker) examples
+show complete adapters and declarations. The package source and R help pages
 describe their callback interfaces.
 
 ## Include source and data deliberately

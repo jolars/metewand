@@ -6,7 +6,7 @@ use serde_json::Value;
 use tempfile::TempDir;
 
 #[allow(dead_code)]
-#[path = "../../../examples/rust-sdk/main.rs"]
+#[path = "../../../examples/rust-worker/main.rs"]
 mod worker;
 
 #[test]
@@ -34,12 +34,12 @@ fn native_helpers_publish_results_and_scientific_failures_through_cli() {
         "reference/metrics.json",
     ] {
         fs::copy(
-            root.join("examples/rust-sdk").join(file),
+            root.join("examples/rust-worker").join(file),
             benchmark.path().join(file),
         )
         .unwrap();
     }
-    let manifest = fs::read_to_string(root.join("examples/rust-sdk/metewand.yaml"))
+    let manifest = fs::read_to_string(root.join("examples/rust-worker/metewand.yaml"))
         .unwrap()
         .lines()
         .filter(|line| line.trim() != "sources: [worker]")

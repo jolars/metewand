@@ -133,7 +133,7 @@ pub enum Capability {
     ProblemSemantics,
 }
 
-/// Identifies the language SDK used by a worker.
+/// Identifies the language package used by a worker.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct SdkMetadata {
     name: String,
@@ -141,7 +141,7 @@ pub struct SdkMetadata {
 }
 
 impl SdkMetadata {
-    /// Creates SDK metadata from nonempty name and version strings.
+    /// Creates package metadata from nonempty name and version strings.
     ///
     /// # Errors
     ///
@@ -158,13 +158,13 @@ impl SdkMetadata {
         Ok(Self { name, version })
     }
 
-    /// Returns the SDK package name.
+    /// Returns the package name.
     #[must_use]
     pub fn name(&self) -> &str {
         &self.name
     }
 
-    /// Returns the SDK package version.
+    /// Returns the package version.
     #[must_use]
     pub fn version(&self) -> &str {
         &self.version
@@ -416,7 +416,7 @@ impl HelloResponse {
         &self.worker_id
     }
 
-    /// Returns SDK metadata, or `None` for a direct protocol worker.
+    /// Returns package metadata, or `None` for a direct protocol worker.
     #[must_use]
     pub const fn sdk(&self) -> Option<&SdkMetadata> {
         self.sdk.as_ref()
@@ -1555,7 +1555,7 @@ impl NegotiatedSession {
         &self.worker_id
     }
 
-    /// Returns worker SDK metadata when an SDK was used.
+    /// Returns worker package metadata when a package was used.
     #[must_use]
     pub const fn sdk(&self) -> Option<&SdkMetadata> {
         self.sdk.as_ref()
@@ -1740,7 +1740,7 @@ impl RequestTracker {
     }
 }
 
-/// Invalid request, worker, or SDK metadata.
+/// Invalid request, worker, or package metadata.
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum MetadataError {
@@ -1753,11 +1753,11 @@ pub enum MetadataError {
         /// Invalid identity text.
         value: String,
     },
-    /// An SDK name was empty.
-    #[error("worker SDK names must not be empty")]
+    /// A package name was empty.
+    #[error("worker package names must not be empty")]
     EmptySdkName,
-    /// An SDK version was empty.
-    #[error("worker SDK versions must not be empty")]
+    /// A package version was empty.
+    #[error("worker package versions must not be empty")]
     EmptySdkVersion,
     /// A worker failure omitted its human-readable explanation.
     #[error("worker failure messages must not be empty")]

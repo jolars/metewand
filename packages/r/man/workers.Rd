@@ -24,7 +24,7 @@ evaluation(metrics, verdict)
   updated state. Budget and observation control are NULL in one-shot mode.}
   \item{result}{Optional custom function of state and result directory; closes
   all result files and returns the relative manifest path. When omitted, the
-  SDK writes the standard result envelope from execute output or result_data.}
+  package writes the standard result envelope from execute output or result_data.}
   \item{result_data}{Optional function converting execute output to scientific
   JSON data outside diagnostic solve timing. Supply either this or result.}
   \item{fresh_sequence}{When TRUE, report fresh_sequence and pass the selected
@@ -42,7 +42,7 @@ evaluation(metrics, verdict)
   \item{evaluate}{Function of dataset directory, contract identity, problem
   parameters, result directory, and metrics path. Writes and closes metrics,
   then returns invalid, reached, not_reached, or not_required. Alternatively,
-  return evaluation(metrics, verdict) to let the SDK write metrics.}
+  return evaluation(metrics, verdict) to let the package write metrics.}
   \item{metrics}{A canonical JSON object of evaluator-owned metric data.}
   \item{verdict}{One of invalid, reached, not_reached, or not_required.}
   \item{semantics}{When TRUE, negotiate scientific rules and pass the complete
@@ -58,9 +58,9 @@ representations documented under \code{canonical_bytes}. Seeds are nonnegative
 safe integers and never set random generators automatically.
 
 Execution consumes a successful preparation even on failure. Failed prepare or
-reset also invalidates prepared execution. SDK implementation time covers only
+reset also invalidates prepared execution. Package implementation time covers only
 the execute callback; result serialization completes before a response is sent.
-The SDK duplicates descriptors and closes only its copies. Logs remain on stdout
+The package duplicates descriptors and closes only its copies. Logs remain on stdout
 and stderr. Frames use canonical JSON Lines with a 1 MiB limit including the
 newline. Malformed frames and missing IDs raise metewand_protocol_error.
 

@@ -62,7 +62,7 @@ impl Starter {
                 .path()
                 .join("site-packages");
             copy(
-                &repository.join("sdk/python/src/metewand"),
+                &repository.join("packages/python/src/metewand"),
                 &site.join("metewand"),
             );
             venv.join("bin")
@@ -70,7 +70,7 @@ impl Starter {
             let library = root.path().join("library");
             fs::create_dir(&library).unwrap();
             let package = root.path().join("sdk");
-            copy(&repository.join("sdk/r"), &package);
+            copy(&repository.join("packages/r"), &package);
             let result = Command::new("R")
                 .args(["CMD", "INSTALL", "--preclean", "--clean"])
                 .arg(format!("--library={}", library.display()))
@@ -216,7 +216,10 @@ fn missing_function_sdk_has_an_actionable_check_diagnostic() {
     let diagnostic: Value = serde_json::from_slice(&output.stdout).unwrap();
     let text = diagnostic.to_string();
     assert!(text.contains("worker_check_failed"), "{text}");
-    assert!(text.contains("install the matching Metewand SDK"), "{text}");
+    assert!(
+        text.contains("install the matching Metewand package"),
+        "{text}"
+    );
 }
 
 #[test]

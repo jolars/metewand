@@ -10,7 +10,7 @@ cargo run --locked -p metewand-cli -- run \
 ```
 
 Choose a new output directory for every invocation. This example uses the raw
-version-1 worker protocol over dedicated pipes, with no SDK or third-party
+version-1 worker protocol over dedicated pipes, with no package or third-party
 Python dependencies. The implementation returns `{"answer":8}`; the independent
 evaluator returns `{"absolute_error":0}`. Progress events and the final report
 are versioned JSON Lines. Worker standard streams are retained as scoped logs

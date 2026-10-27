@@ -6,7 +6,7 @@ general model, [TODO.md](TODO.md) tracks the active roadmap, and
 the [guide](docs/guide/overview.md).
 
 Keep this document focused on implementation decisions and how to verify them.
-The Rust types, checked-in schemas, SQL layouts, SDK help, and conformance
+The Rust types, checked-in schemas, SQL layouts, package help, and conformance
 fixtures specify individual interfaces without a parallel catalog of reference
 pages.
 
@@ -22,12 +22,12 @@ test-rust
 ```
 
 `test-fast` runs core and protocol tests. `test-rust` runs the complete Rust
-suite. Both accept Nextest filters. The Python SDK requires Python 3.11 or later;
-the R SDK requires R 4.2 or later, POSIX, `digest`, and a C++17 compiler with
+suite. Both accept Nextest filters. The Python package requires Python 3.11 or
+later; the R package requires R 4.2 or later, POSIX, `digest`, and a C++17 compiler with
 floating-point `std::to_chars` support. The website needs Node.js 22.18 or later.
 
-The crates and SDKs are not yet published to registries. Use local path
-dependencies and install SDKs into the environment selected for the worker.
+The crates and packages are not yet published to registries. Use local path
+dependencies and install packages into the environment selected for the worker.
 
 ## Architecture and source map
 
@@ -39,7 +39,7 @@ dependencies and install SDKs into the environment selected for the worker.
 | [CLI](crates/metewand-cli/src) | Argument parsing, orchestration, diagnostics, and human and machine rendering. |
 | [Schemas](schemas/v1) | Versioned external contracts and adjacent fixtures. |
 | [Shared fixtures](fixtures) | Cross-language canonicalization, identity, seed, and protocol vectors. |
-| [SDKs](sdk) | Python and R workers; native Rust helpers live in the runtime. |
+| [Packages](packages) | Python and R workers; native Rust helpers live in the runtime. |
 | [Examples](examples) | Runnable end-to-end comparisons and reproduction commands. |
 | [Website](docs) | User guides and the published general design. |
 
@@ -122,7 +122,7 @@ SHA-256("metewand-seed-v1" || NUL || UTF-8(role) || NUL || canonical_fields)
 
 The exposed seed is the first 53 digest bits, most significant first. Retain the
 full digest as evidence. Omitting implementation identity deliberately pairs
-methods within a comparison block. SDKs deliver the seed; benchmark code seeds
+methods within a comparison block. Packages deliver the seed; benchmark code seeds
 its own generators.
 
 ### Local trees
@@ -179,7 +179,7 @@ compatibility decisions in the change description and update the relevant
 fixtures. Do not require a separate review document or tests for speculative
 interfaces.
 
-## Worker protocol and SDKs
+## Worker protocol and packages
 
 The POSIX launcher supplies separate binary pipes through
 `METEWAND_PROTOCOL_READ_FD` and `METEWAND_PROTOCOL_WRITE_FD`. Standard output
@@ -189,8 +189,9 @@ per frame including its final line feed. Responses must match the pending
 string request ID. Malformed frames and unusable sessions terminate serving.
 
 A hello exchange negotiates protocol version, role, capabilities, identity, and
-SDK metadata. Implementations prepare and execute, with optional reset and
-shutdown hooks. Materializers and evaluators serve separate roles. Evaluators
+package metadata (the existing `sdk` wire field). The Rust `SdkMetadata` type
+and `worker_sdk` module retain their API names for compatibility. Implementations
+prepare and execute, with optional reset and shutdown hooks. Materializers and evaluators serve separate roles. Evaluators
 that negotiate `problem_semantics` receive the resolved scientific rules.
 Applicability, fresh sequences, and buffered execution require their respective
 capabilities; one-shot messages retain their supported shapes.
@@ -201,22 +202,22 @@ details. Preserve the failing phase. Operational timeouts, early EOF, protocol
 violations, and failed resets discard the worker. Scientific deadlines remain
 distinct from phase deadlines.
 
-For callback signatures, consult the [Python package](sdk/python/src/metewand),
-[R help pages](sdk/r/man), and [Rust helpers](crates/metewand-runtime/src/worker_sdk.rs).
-The [SDK examples](examples) exercise each role. Ordinary functions use contexts
+For callback signatures, consult the [Python package](packages/python/src/metewand),
+[R help pages](packages/r/man), and [Rust helpers](crates/metewand-runtime/src/worker_sdk.rs).
+The [package examples](examples) exercise each role. Ordinary functions use contexts
 and JSON objects; lifecycle adapters separate preparation, solving, conversion,
 custom writing, reset, and shutdown.
 
 Preparation must establish clean state. Execution consumes preparation even
 when a callback fails. Reuse requires a successful reset rather than an assumed
-clean worker. SDK solve timing excludes conversion and artifact writing;
+clean worker. Package solve timing excludes conversion and artifact writing;
 executor-observed timing remains authoritative. Close every output file before
 replying. The runtime independently validates schemas, manifests, inventories,
 sizes, hashes, and path containment before publication.
 
 Python and R conformance suites consume the shared fixtures directly. Keep
 their canonical values and protocol behavior aligned with Rust. Add callback
-coverage where an interface is implemented; every SDK need not support every
+coverage where an interface is implemented; every package need not support every
 profile callback before an adopter can use one.
 
 ## Sources and artifacts

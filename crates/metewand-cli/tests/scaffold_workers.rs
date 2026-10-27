@@ -42,7 +42,10 @@ fn native_evaluator_entry() {
 fn generated_adapters_negotiate_and_report_unfinished_science() {
     let repository = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let r_package = TempDir::new().unwrap();
-    copy_tree(&repository.join("sdk/r"), &r_package.path().join("package"));
+    copy_tree(
+        &repository.join("packages/r"),
+        &r_package.path().join("package"),
+    );
     let r_library = r_package.path().join("library");
     fs::create_dir(&r_library).unwrap();
     let output = Command::new("R")
@@ -117,7 +120,7 @@ fn generated_adapters_negotiate_and_report_unfinished_science() {
                             WorkerRole::Implementation => "solve",
                             WorkerRole::ProblemEvaluator => "evaluate",
                         })
-                        .env("PYTHONPATH", repository.join("sdk/python/src"))
+                        .env("PYTHONPATH", repository.join("packages/python/src"))
                         .env("PYTHONDONTWRITEBYTECODE", "1");
                     command
                 }

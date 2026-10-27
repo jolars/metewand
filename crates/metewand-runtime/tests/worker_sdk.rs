@@ -361,7 +361,7 @@ fn native_worker_entry() {
     serve_implementation(&mut Sum::default()).unwrap();
     for name in ["METEWAND_PROTOCOL_READ_FD", "METEWAND_PROTOCOL_WRITE_FD"] {
         let descriptor = std::env::var(name).unwrap().parse::<i32>().unwrap();
-        // The SDK must close only its duplicates of the caller's descriptors.
+        // The package must close only its duplicates of the caller's descriptors.
         assert_ne!(unsafe { libc::fcntl(descriptor, libc::F_GETFD) }, -1);
     }
 }

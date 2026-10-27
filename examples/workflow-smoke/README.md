@@ -83,7 +83,7 @@ The current manifest selects only supported dense one-shot cells. It does not
 encode these decisions as runtime failures, manufacture convergence traces from
 one endpoint, or treat solver controls as scientific budgets. No applicability
 or profile capability is declared. Later roadmap slices extend these fixtures
-with their first schema producers, consumers, SDK helpers, durable records,
+with their first schema producers, consumers, package helpers, durable records,
 inspection, and export support.
 
 The Rust `local_examples` integration test runs the scientific acceptance tests,
