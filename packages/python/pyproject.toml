@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "metewand"
-version = "0.1.0"
+version = "0.2.0"
 description = "Define Metewand benchmarks with Python functions"
 requires-python = ">=3.11"
 license = "MIT OR Apache-2.0"

@@ -1,0 +1,28 @@
+{
+  "manifest-version": 1,
+  "baseline-sha": "f999adbabdb0c45ca4d0e71e2872f74e433fe259",
+  "release-targets": [
+    {
+      "path": ".",
+      "version": "0.2.0",
+      "tag": "v0.2.0"
+    },
+    {
+      "path": "packages/python",
+      "version": "0.2.0",
+      "tag": "metewand-v0.2.0"
+    }
+  ],
+  "pending-release-targets": [
+    {
+      "path": ".",
+      "version": "0.2.0",
+      "tag": "v0.2.0"
+    },
+    {
+      "path": "packages/python",
+      "version": "0.2.0",
+      "tag": "metewand-v0.2.0"
+    }
+  ]
+}
