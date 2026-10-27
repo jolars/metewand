@@ -1,8 +1,9 @@
 # Metewand roadmap
 
 The next milestone is a comparative local MVP that can run useful benchmarks in
-`../basin` and `~/research/clustlasso-cd`. Keep one-shot execution, fresh sequences, and buffered instrumented profiles.
-Defer streaming profiles, the Julia package, and portable result archives.
+`../basin` and `~/research/clustlasso-cd`. Keep one-shot execution, fresh
+sequences, and buffered instrumented profiles. Defer streaming profiles, the
+Julia package, and portable result archives.
 
 [DESIGN.md](DESIGN.md) defines semantics. [AGENTS.md](AGENTS.md) defines
 development and verification rules. Build the smallest usable step in the active
@@ -27,8 +28,8 @@ not separate gates before implementation.
 - [x] Implement local execution, timing scopes, worker reuse and warm-ups,
   deterministic scheduling, bounded concurrency, status, explanation, and
   exports.
-- [x] Add Python and R packages, cross-language contract tests, authoring commands,
-  cache maintenance, and runnable local examples.
+- [x] Add Python and R packages, cross-language contract tests, authoring
+  commands, cache maintenance, and runnable local examples.
 - [x] Add one-shot scientific smoke cases for intercepts, SLOPE, and clustered
   lasso, and pin the currently implemented compatibility boundaries.
 
@@ -63,25 +64,25 @@ a new compatibility review is a prerequisite.
   checked objective or feasibility metrics, settings, repeats, and failures.
   Basin's `../basin/metewand.yaml` compares Basin and argmin Nelder–Mead on
   Rosenbrock, retaining three repeats at each of two iteration caps. Its
-  `crates/competitor-bench/metewand/` directory contains the independent evaluator,
-  reference cases, reproduction commands, and a verified run with six accepted
-  results and six scientific completion failures.
+  `crates/competitor-bench/metewand/` directory contains the independent
+  evaluator, reference cases, reproduction commands, and a verified run with
+  six accepted results and six scientific completion failures.
 - [x] Refresh the existing clustlasso-cd package integration for the current
   YAML CLI. Reuse its fixed inputs, Python and R adapters, and independent
   evaluator, and retain the original package track's scientific criteria.
   Its `experiments/package_smoke.py` now stages YAML manifests and the YAML
   problem contract. The retained `outputs/package-smoke-yaml-v4` run and
   source-verified audit cover 24 oracle fits, four dense fits, 116 Python/R
-  input round trips, five timing probes, and nine expected failures. See
-  the adopter's `docs/package-integration.md` for reproduction commands.
+  input round trips, five timing probes, and nine expected failures. See the
+  adopter's `docs/package-integration.md` for reproduction commands.
 - [x] Allow schemas and problem contracts inline as well as through reusable
   file references. Resolve references offline, validate the same effective
   declarations, and hash their normalized contents.
 - [x] Support compact implementation `parameters` with types, bounds, enums,
-  arrays, optional fields, and validated literal defaults. Lower them into the
-  existing schema and default records, expose effective parameters in plans,
-  and exercise compact/explicit identity equivalence and defaulted execution in
-  the parameter-matrix example.
+  arrays, optional fields, and validated literal defaults. Lower them into
+  the existing schema and default records, expose effective parameters in
+  plans, and exercise compact/explicit identity equivalence and defaulted
+  execution in the parameter-matrix example.
 - [x] Extend compact declarations to dataset and problem `parameters`, `result`,
   and `metrics`, and add declaration-level default grids. These declarations
   generate normalized JSON Schemas. Declare each field once, with its type,
@@ -89,87 +90,93 @@ a new compatibility review is a prerequisite.
   `implementations.<name>.parameters` separate from worker settings such as
   `runner` and `entrypoint`. Types and bounds define the full valid domain;
   grids select runs without narrowing that domain. Treat block and flow YAML
-  mappings identically, require fields and close objects by default, and retain
-  explicit schemas for complex or reusable contracts.
+  mappings identically, require fields and close objects by default, and
+  retain explicit schemas for complex or reusable contracts.
 - [x] Let authors define a problem's parameters, `result`, `metrics`, scientific
-  rules, reference cases, and evaluator directly under `problems.<name>` without
-  an inline `contract` wrapper. Normalize these fields into the same internal
-  contract and identities. Preserve referenced contracts and supported explicit
-  inline contracts; reject competing declarations of the same boundary.
+  rules, reference cases, and evaluator directly under `problems.<name>`
+  without an inline `contract` wrapper. Normalize these fields into the same
+  internal contract and identities. Preserve referenced contracts and
+  supported explicit inline contracts; reject competing declarations of the
+  same boundary.
 - [x] Finish compact parameter overrides and diagnostics. Declaration defaults
-  and grids now use the existing resolution and expansion model, with experiment
-  axes overriding declaration grids and named cases overriding experiment axes.
-  Preserve recursive merging of literal defaults. Accept plain scalar literals
-  in experiment and case parameters, retaining explicit `value` and `grid` forms
-  for arrays and objects.
-  Validate all effective values, record resolved settings, and keep equivalent
-  compact and explicit declarations on the same identity path. Report errors at
-  the author's YAML field or supplied value rather than a generated schema
+  and grids now use the existing resolution and expansion model, with
+  experiment axes overriding declaration grids and named cases overriding
+  experiment axes. Preserve recursive merging of literal defaults. Accept
+  plain scalar literals in experiment and case parameters, retaining
+  explicit `value` and `grid` forms for arrays and objects. Validate all
+  effective values, record resolved settings, and keep equivalent compact
+  and explicit declarations on the same identity path. Report errors at the
+  author's YAML field or supplied value rather than a generated schema
   location.
 - [x] Default an omitted parameter schema to a closed empty object. Allow
   unambiguous local-environment and one-shot-policy defaults, recording all
-  resolved values and exposing effective settings through planning. Keep profile
-  selection explicit. Scientific rules and timing controls can refine the
-  basic defaults described below.
+  resolved values and exposing effective settings through planning. Keep
+  profile selection explicit. Scientific rules and timing controls can
+  refine the basic defaults described below.
 - [x] Make a separately authored family `semantics-schema` optional. Keep
   declared preprocessing, validity, and completion rules in the problem
-  declaration, with an independent evaluator and optional reference cases. Pass the
-  resolved scientific rules to the evaluator so authors do not repeat declared
-  tolerances or other constants in evaluator code.
+  declaration, with an independent evaluator and optional reference cases.
+  Pass the resolved scientific rules to the evaluator so authors do not
+  repeat declared tolerances or other constants in evaluator code.
 - [x] Provide small Rust worker helpers for Basin and improve the Python and R
-  helpers where adopters still write protocol boilerplate. Let simple one-shot
-  adapters return result data, and evaluators return metric data and an explicit
-  verdict; helpers handle handshakes, transport, errors, standard envelopes, and
-  artifact writing. Keep preparation, solving, scientific conversion, and metric
-  formulas in adapters. Retain lifecycle hooks and custom artifact writers for
-  more involved cases, preserve timing boundaries, and support native process
-  workers without requiring a Python host.
+  helpers where adopters still write protocol boilerplate. Let simple
+  one-shot adapters return result data, and evaluators return metric data
+  and an explicit verdict; helpers handle handshakes, transport, errors,
+  standard envelopes, and artifact writing. Keep preparation, solving,
+  scientific conversion, and metric formulas in adapters. Retain lifecycle
+  hooks and custom artifact writers for more involved cases, preserve timing
+  boundaries, and support native process workers without requiring a Python
+  host.
 - [x] Update scaffolding and one small example so a benchmark needs one
   manifest, small adapters, and scientific reference fixtures. Separate
   contract and schema files remain available for reuse. Let authors select a
-  worker language and generate small worker adapters with scientific decisions
-  clearly left to the author. Test invalid declarations, override precedence,
-  normalized defaults, and equivalent declaration identities without duplicating
-  the example into a fixture matrix.
+  worker language and generate small worker adapters with scientific
+  decisions clearly left to the author. Test invalid declarations, override
+  precedence, normalized defaults, and equivalent declaration identities
+  without duplicating the example into a fixture matrix.
 - [x] Verify the authoring workflow with two existing methods, an independent
   evaluator, and reference data. Configure three measurement repetitions per
-  method and include a case that misses its completion target. Run and inspect
-  the comparison using one manifest and small adapters, without hand-written
-  protocol handling or separate JSON Schema files. Check that metrics, effective
-  settings, timings, and failure reasons are understandable from the public CLI.
-  Use this comparison to assess a Benchopt-style migration: reuse dataset,
-  solver, and evaluation logic, adding small adapters and declarations without
-  repeating scientific settings or implementing artifact envelopes.
+  method and include a case that misses its completion target. Run and
+  inspect the comparison using one manifest and small adapters, without
+  hand-written protocol handling or separate JSON Schema files. Check that
+  metrics, effective settings, timings, and failure reasons are
+  understandable from the public CLI. Use this comparison to assess a
+  Benchopt-style migration: reuse dataset, solver, and evaluation logic,
+  adding small adapters and declarations without repeating scientific
+  settings or implementing artifact envelopes.
 - [x] Preserve Python virtual-environment context when resolving interpreter
-  symlinks. The [Benchopt SLOPE comparison](examples/benchopt-slope) verified
-  the original failure; the local runner now retains the selected interpreter
-  path, with a regression test for imports from a symlink-based venv.
+  symlinks. The [Benchopt SLOPE comparison](examples/benchopt-slope)
+  verified the original failure; the local runner now retains the selected
+  interpreter path, with a regression test for imports from a symlink-based
+  venv.
 - [x] Make callback exception details inspectable after failed attempts.
-  Packages include bounded exception text in persisted failure messages, available
-  through `status` and `explain` without retained worker logs.
+  Packages include bounded exception text in persisted failure messages,
+  available through `status` and `explain` without retained worker logs.
 
 ### 3.1.1 Start small and add rigor
 
-- [x] Make `init` produce a runnable two-file Python benchmark, with an R
-  option and an `--empty` escape hatch. Preflight all targets, preserve
-  overwrite protection, and report package setup and next commands.
+- [x] Make `init` produce a runnable two-file Python benchmark, with an R option
+  and an `--empty` escape hatch. Preflight all targets, preserve overwrite
+  protection, and report package setup and next commands.
 - [x] Add ordinary function workers with matching contexts in Python and R.
-  Infer the standard JSON inventory, sole problem binding, one-shot capability,
-  local execution, and final-observation defaults before planning. Keep static
-  checks free of imports and preserve lifecycle and custom artifact APIs.
+  Infer the standard JSON inventory, sole problem binding, one-shot
+  capability, local execution, and final-observation defaults before
+  planning. Keep static checks free of imports and preserve lifecycle and
+  custom artifact APIs.
 - [x] Make scientific rules and reference cases optional. Distinguish absent
-  completion criteria from convergence. Require explicit verdicts for declared
-  rules and support inline references with expected verdicts.
+  completion criteria from convergence. Require explicit verdicts for
+  declared rules and support inline references with expected verdicts.
 - [x] Render shared typed comparison rows for runs and stored status, including
-  names, settings, repetitions, metrics, timing scopes, retries, and failures.
-  Retain labels in provenance and report unavailable historical evidence honestly.
+  names, settings, repetitions, metrics, timing scopes, retries, and
+  failures. Retain labels in provenance and report unavailable historical
+  evidence honestly.
 - [x] Verify both starters through execution, resume, inspection without the
-  manifest, and exports. Add a small simulated least-squares GD/CD example with
-  basic and validated manifests using the same scientific functions.
+  manifest, and exports. Add a small simulated least-squares GD/CD example
+  with basic and validated manifests using the same scientific functions.
 
 The authoring design is in [Authoring](DESIGN.md#authoring). Judge ergonomics by
-the complete comparison, including native workers. Existing external declarations,
-explicit policies, and advanced worker APIs remain supported.
+the complete comparison, including native workers. Existing external
+declarations, explicit policies, and advanced worker APIs remain supported.
 
 ### 3.2 Configuration-dependent applicability
 
@@ -192,8 +199,8 @@ round trip at every observation.
 - [x] Introduce the shared profile policy and observation fields with this first
   producer and consumer, and reuse them across the remaining modes.
 - [x] Add bounded `execute_buffered` delivery with direct recording and
-  `observe(progress, measure, snapshot) -> continue | stop(reason)`. Rust and
-  Python helpers support native buffer submission without per-check host
+  `observe(progress, measure, snapshot) -> continue | stop(reason)`. Rust
+  and Python helpers support native buffer submission without per-check host
   callbacks. Adoption in Basin and clustlasso-cd remains below.
 - [x] Validate clock and timing scope, check schedules, count and byte bounds,
   monotonic times, selected immutable snapshots, and a required terminal
@@ -244,8 +251,8 @@ reservations, conservative interrupted charges, and terminal target decisions.
 ### 3.5 Qualify the local MVP
 
 Each delivery mode must be usable through the CLI and its needed adapters.
-Extend package callbacks where an adopter needs them; completing every callback in
-every language is not a release prerequisite.
+Extend package callbacks where an adopter needs them; completing every callback
+in every language is not a release prerequisite.
 
 - [x] Run `check`, `plan`, selected execution, interruption, resume, inspection,
   and JSONL and CSV export on small Basin and clustlasso-cd comparisons.
@@ -261,23 +268,26 @@ every language is not a release prerequisite.
   exports. Add only problem-defined scientific budgets needed by these
   pilots.
 - [x] Bind available build evidence to worker and runner executable hashes.
-  Capture source state, compiler, profile, features, flags, and lockfile hashes
-  during builds, and distinguish that evidence from post-run host observations.
+  Capture source state, compiler, profile, features, flags, and lockfile
+  hashes during builds, and distinguish that evidence from post-run host
+  observations.
 
 The [adopter qualification](examples/adopters) runs Basin and Gomez, native
 clustlasso PG and hybrid trajectories, and the separate Python/R package track.
 All three comparisons retain a completed prefix and an interrupted attempt
 through recovery, explicit retry, inspection, and both exports. Profile tests
-compare durable evidence with JSONL and CSV, alongside the foundation suite.
-The [release overhead example](examples/overhead) retains all 198 repetitions,
-scoped diagnostics, and executable-bound [build evidence](CONTRIBUTING.md#build-evidence).
-These pilots need no additional scientific budget types.
+compare durable evidence with JSONL and CSV, alongside the foundation suite. The
+[release overhead example](examples/overhead) retains all 198 repetitions,
+scoped diagnostics, and executable-bound [build
+evidence](CONTRIBUTING.md#build-evidence). These pilots need no additional
+scientific budget types.
 
 - [ ] Provide a useful default comparison summary and a table for analysis with
-  methods, effective settings, repetition indices, evaluator metrics, durations,
-  timing scopes, and failure reasons. Keep individual repetitions and failed
-  attempts visible. Make routine execution, inspection, and export usable without
-  a benchmark-specific driver or knowledge of internal record formats.
+  methods, effective settings, repetition indices, evaluator metrics,
+  durations, timing scopes, and failure reasons. Keep individual repetitions
+  and failed attempts visible. Make routine execution, inspection, and
+  export usable without a benchmark-specific driver or knowledge of internal
+  record formats.
 - [ ] Document runnable commands and measured scopes beside the examples.
   Confirm that adapters reuse the adopters' scientific code and that authors
   do not need separate schema files for mechanical declarations.
@@ -341,8 +351,9 @@ environments](DESIGN.md#nix-environments).
 - [ ] Complete archival machine provenance and accounting, and qualify a
   mixed-language benchmark under those stronger guarantees.
 
-See [Reproducibility model](DESIGN.md#reproducibility-model). Publication-archive
-claims require these controls; they do not block the local MVP.
+See [Reproducibility model](DESIGN.md#reproducibility-model).
+Publication-archive claims require these controls; they do not block the local
+MVP.
 
 ## Later extensions
 

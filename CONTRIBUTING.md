@@ -23,25 +23,26 @@ test-rust
 
 `test-fast` runs core and protocol tests. `test-rust` runs the complete Rust
 suite. Both accept Nextest filters. The Python package requires Python 3.11 or
-later; the R package requires R 4.2 or later, POSIX, `digest`, and a C++17 compiler with
-floating-point `std::to_chars` support. The website needs Node.js 22.18 or later.
+later; the R package requires R 4.2 or later, POSIX, `digest`, and a C++17
+compiler with floating-point `std::to_chars` support. The website needs Node.js
+22.18 or later.
 
 The crates and packages are not yet published to registries. Use local path
 dependencies and install packages into the environment selected for the worker.
 
 ## Architecture and source map
 
-| Location | Responsibility |
-| --- | --- |
-| [Core](crates/metewand-core/src) | Manifest parsing, contracts, schemas, canonical values, identities, seeds, planning, scheduling, and public records. |
-| [Protocol](crates/metewand-protocol/src) | Wire types, role and capability negotiation, and bounded framing. |
-| [Runtime](crates/metewand-runtime/src) | Source resolution, artifacts, environments, executors, measurements, provenance, publication, and the run store. |
-| [CLI](crates/metewand-cli/src) | Argument parsing, orchestration, diagnostics, and human and machine rendering. |
-| [Schemas](schemas/v1) | Versioned external contracts and adjacent fixtures. |
-| [Shared fixtures](fixtures) | Cross-language canonicalization, identity, seed, and protocol vectors. |
-| [Packages](packages) | Python and R workers; native Rust helpers live in the runtime. |
-| [Examples](examples) | Runnable end-to-end comparisons and reproduction commands. |
-| [Website](docs) | User guides and the published general design. |
+  | Location                                 | Responsibility                                                                                                       |
+  | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+  | [Core](crates/metewand-core/src)         | Manifest parsing, contracts, schemas, canonical values, identities, seeds, planning, scheduling, and public records. |
+  | [Protocol](crates/metewand-protocol/src) | Wire types, role and capability negotiation, and bounded framing.                                                    |
+  | [Runtime](crates/metewand-runtime/src)   | Source resolution, artifacts, environments, executors, measurements, provenance, publication, and the run store.     |
+  | [CLI](crates/metewand-cli/src)           | Argument parsing, orchestration, diagnostics, and human and machine rendering.                                       |
+  | [Schemas](schemas/v1)                    | Versioned external contracts and adjacent fixtures.                                                                  |
+  | [Shared fixtures](fixtures)              | Cross-language canonicalization, identity, seed, and protocol vectors.                                               |
+  | [Packages](packages)                     | Python and R workers; native Rust helpers live in the runtime.                                                       |
+  | [Examples](examples)                     | Runnable end-to-end comparisons and reproduction commands.                                                           |
+  | [Website](docs)                          | User guides and the published general design.                                                                        |
 
 Core and protocol are independent foundations. Runtime may depend on both; the
 CLI may depend on all three. Keep filesystem and execution concerns out of core
@@ -56,9 +57,9 @@ same effective model used by explicit declarations. Reject competing spellings
 for one boundary. Diagnostic source locations do not enter identities.
 
 Compact `parameters` generate closed object schemas and literal defaults or
-expansion grids. Fields require types; they are required unless optional.
-Result and metric fields never receive defaults. Declaration grids select
-values without restricting the valid domain. Experiment axes replace matching
+expansion grids. Fields require types; they are required unless optional. Result
+and metric fields never receive defaults. Declaration grids select values
+without restricting the valid domain. Experiment axes replace matching
 declaration grids; cases replace matching experiment axes. Expanded values merge
 recursively with literal defaults before validation.
 
@@ -80,10 +81,10 @@ to a local environment, one-shot execution, one measurement, and wall time over
 `prepare_and_execute`. Profile selection stays explicit.
 
 Sequential scheduling follows plan order. Randomized scheduling interleaves
-implementation configurations within dataset, problem, implementation-repetition,
-and measurement blocks. Bounded concurrency contributes to execution policy and
-resolved identity. Dispatch and event order remain deterministic, and batches
-do not cross experiment boundaries.
+implementation configurations within dataset, problem,
+implementation-repetition, and measurement blocks. Bounded concurrency
+contributes to execution policy and resolved identity. Dispatch and event order
+remain deterministic, and batches do not cross experiment boundaries.
 
 ## Canonical values and identities
 
@@ -94,8 +95,8 @@ within `[-9007199254740991, 9007199254740991]`. Normalize negative zero to zero
 and safe integral float spellings to integers. Reject invalid UTF-8, byte-order
 marks, lone surrogates, duplicate keys, and nonfinite numbers.
 
-Canonical bytes follow RFC 8785: no insignificant whitespace or trailing newline,
-recursive UTF-16 property ordering, and the specified number and string
+Canonical bytes follow RFC 8785: no insignificant whitespace or trailing
+newline, recursive UTF-16 property ordering, and the specified number and string
 encoding. Parse, validate against the selected schema, then request canonical
 bytes explicitly. An ordinary JSON serializer is not a canonicalization API.
 
@@ -114,16 +115,16 @@ For role `dataset`, `implementation`, or `scheduling`, derive:
 SHA-256("metewand-seed-v1" || NUL || UTF-8(role) || NUL || canonical_fields)
 ```
 
-| Role | Canonical fields |
-| --- | --- |
-| Dataset | `dataset_definition`, `dataset_parameters`, `experiment_seed` |
-| Implementation | `dataset_configuration`, `experiment_seed`, `implementation_repetition`, `problem_configuration` |
-| Scheduling | `benchmark_name`, `experiment_name`, `experiment_seed`, `scheduling_policy_version` |
+  | Role           | Canonical fields                                                                                 |
+  | -------------- | ------------------------------------------------------------------------------------------------ |
+  | Dataset        | `dataset_definition`, `dataset_parameters`, `experiment_seed`                                    |
+  | Implementation | `dataset_configuration`, `experiment_seed`, `implementation_repetition`, `problem_configuration` |
+  | Scheduling     | `benchmark_name`, `experiment_name`, `experiment_seed`, `scheduling_policy_version`              |
 
 The exposed seed is the first 53 digest bits, most significant first. Retain the
 full digest as evidence. Omitting implementation identity deliberately pairs
-methods within a comparison block. Packages deliver the seed; benchmark code seeds
-its own generators.
+methods within a comparison block. Packages deliver the seed; benchmark code
+seeds its own generators.
 
 ### Local trees
 
@@ -143,23 +144,24 @@ symlink   = bytes(path) || "l" || bytes(target)
 
 Integers are unsigned big-endian; `bytes(x)` is `u64(length) || x`. The root is
 omitted, and the executable byte is zero or one. Preserve exact vectors when
-changing canonical or hashing code. See [identity types](crates/metewand-core/src/identity.rs),
-[seed derivation](crates/metewand-core/src/seed.rs),
-[tree hashing](crates/metewand-runtime/src/local_tree.rs), and [fixtures](fixtures).
+changing canonical or hashing code. See [identity
+types](crates/metewand-core/src/identity.rs), [seed
+derivation](crates/metewand-core/src/seed.rs), [tree
+hashing](crates/metewand-runtime/src/local_tree.rs), and [fixtures](fixtures).
 
 ## Compatibility versions
 
 Package SemVer is shared across the workspace and managed by Versionary from
 Conventional Commits. It is separate from public compatibility versions:
 
-| Boundary | Current version |
-| --- | --- |
-| Manifest, public schemas, wire protocol, and typed identities | 1 |
-| Seed derivation and scheduling policy | 1 |
-| Execution semantics | 2 |
-| Measurement provenance | 2, with version-1 evidence still readable |
-| Exports and build evidence | 1 |
-| SQLite layout | 1 for one-shot, 2 for buffered profiles, 3 for fresh sequences |
+  | Boundary                                                      | Current version                                                |
+  | ------------------------------------------------------------- | -------------------------------------------------------------- |
+  | Manifest, public schemas, wire protocol, and typed identities | 1                                                              |
+  | Seed derivation and scheduling policy                         | 1                                                              |
+  | Execution semantics                                           | 2                                                              |
+  | Measurement provenance                                        | 2, with version-1 evidence still readable                      |
+  | Exports and build evidence                                    | 1                                                              |
+  | SQLite layout                                                 | 1 for one-shot, 2 for buffered profiles, 3 for fresh sequences |
 
 The constants live with their authoritative types in core, protocol, and
 runtime. Public JSON Schemas declare their dialect and compatibility version.
@@ -171,8 +173,8 @@ consumers. Pin a revision for retained benchmarks. Preserve supported persisted
 records and canonical identity meanings. Never silently reinterpret historical
 results, combine incompatible timing scopes, or reuse an identity for different
 semantics. Use the affected version, deliberate migration, or an unsupported
-version diagnostic when required. Negotiate protocol extensions by capability
-or a mutually supported version.
+version diagnostic when required. Negotiate protocol extensions by capability or
+a mutually supported version.
 
 Consider only boundaries the change affects. Briefly record consequential
 compatibility decisions in the change description and update the relevant
@@ -185,16 +187,17 @@ The POSIX launcher supplies separate binary pipes through
 `METEWAND_PROTOCOL_READ_FD` and `METEWAND_PROTOCOL_WRITE_FD`. Standard output
 and standard error remain log channels. There is no automatic stdin/stdout
 fallback. Workers exchange canonical JSON Lines, with an inclusive 1 MiB limit
-per frame including its final line feed. Responses must match the pending
-string request ID. Malformed frames and unusable sessions terminate serving.
+per frame including its final line feed. Responses must match the pending string
+request ID. Malformed frames and unusable sessions terminate serving.
 
 A hello exchange negotiates protocol version, role, capabilities, identity, and
 package metadata (the existing `sdk` wire field). The Rust `SdkMetadata` type
-and `worker_sdk` module retain their API names for compatibility. Implementations
-prepare and execute, with optional reset and shutdown hooks. Materializers and evaluators serve separate roles. Evaluators
-that negotiate `problem_semantics` receive the resolved scientific rules.
-Applicability, fresh sequences, and buffered execution require their respective
-capabilities; one-shot messages retain their supported shapes.
+and `worker_sdk` module retain their API names for compatibility.
+Implementations prepare and execute, with optional reset and shutdown hooks.
+Materializers and evaluators serve separate roles. Evaluators that negotiate
+`problem_semantics` receive the resolved scientific rules. Applicability, fresh
+sequences, and buffered execution require their respective capabilities;
+one-shot messages retain their supported shapes.
 
 Worker failures use `invalid_request`, `unsupported_operation`,
 `operation_failed`, or `internal_error`, a nonempty message, and optional object
@@ -202,31 +205,33 @@ details. Preserve the failing phase. Operational timeouts, early EOF, protocol
 violations, and failed resets discard the worker. Scientific deadlines remain
 distinct from phase deadlines.
 
-For callback signatures, consult the [Python package](packages/python/src/metewand),
-[R help pages](packages/r/man), and [Rust helpers](crates/metewand-runtime/src/worker_sdk.rs).
-The [package examples](examples) exercise each role. Ordinary functions use contexts
-and JSON objects; lifecycle adapters separate preparation, solving, conversion,
-custom writing, reset, and shutdown.
+For callback signatures, consult the [Python
+package](packages/python/src/metewand), [R help pages](packages/r/man), and
+[Rust helpers](crates/metewand-runtime/src/worker_sdk.rs). The [package
+examples](examples) exercise each role. Ordinary functions use contexts and JSON
+objects; lifecycle adapters separate preparation, solving, conversion, custom
+writing, reset, and shutdown.
 
-Preparation must establish clean state. Execution consumes preparation even
-when a callback fails. Reuse requires a successful reset rather than an assumed
-clean worker. Package solve timing excludes conversion and artifact writing;
+Preparation must establish clean state. Execution consumes preparation even when
+a callback fails. Reuse requires a successful reset rather than an assumed clean
+worker. Package solve timing excludes conversion and artifact writing;
 executor-observed timing remains authoritative. Close every output file before
 replying. The runtime independently validates schemas, manifests, inventories,
 sizes, hashes, and path containment before publication.
 
-Python and R conformance suites consume the shared fixtures directly. Keep
-their canonical values and protocol behavior aligned with Rust. Add callback
-coverage where an interface is implemented; every package need not support every
-profile callback before an adopter can use one.
+Python and R conformance suites consume the shared fixtures directly. Keep their
+canonical values and protocol behavior aligned with Rust. Add callback coverage
+where an interface is implemented; every package need not support every profile
+callback before an adopter can use one.
 
 ## Sources and artifacts
 
-Resolve declared sources relative to the manifest, expand globs deterministically,
-and preserve normalized bundle paths. Function references include their selected
-file; imported modules and other inputs require declarations. Relative worker
-programs resolve within the bundle. Bare programs use the selected `PATH`.
-`{sources}/PATH` is an explicit argument reference, not general interpolation.
+Resolve declared sources relative to the manifest, expand globs
+deterministically, and preserve normalized bundle paths. Function references
+include their selected file; imported modules and other inputs require
+declarations. Relative worker programs resolve within the bundle. Bare programs
+use the selected `PATH`. `{sources}/PATH` is an explicit argument reference, not
+general interpolation.
 
 The local launcher uses an environment allowlist, fixed locale and timezone,
 umask `0077`, and private working, home, temporary, configuration, and cache
@@ -249,7 +254,8 @@ initialize, recover, or repair a cache.
 
 The optional [Datamonger example](examples/datamonger) uses a provider process
 for pinned external dataset resolution. It exercises runtime APIs; the manifest
-does not currently select external providers or optional binary dataset checkers.
+does not currently select external providers or optional binary dataset
+checkers.
 
 ## Execution and profiles
 
@@ -261,8 +267,8 @@ coordination between preparation and execution; provenance labels that overhead.
 
 Measurement payloads distinguish `complete`, `partial`, and `unavailable`.
 Nanoseconds and bytes are safe integers. Linux CPU and peak-RSS evidence is
-partial because it covers the implementation process without descendants.
-Peak RSS covers its lifetime through execution, even for execute-only timing.
+partial because it covers the implementation process without descendants. Peak
+RSS covers its lifetime through execution, even for execute-only timing.
 Historical unavailable fields remain unavailable.
 
 Fresh sequences reserve cumulative time per repetition, commit stopping
@@ -292,22 +298,23 @@ python3 tools/build_evidence.py \
 
 The wrapper observes sources, compiler, command, settings, relevant flags, and
 lockfiles, rejects changed inputs or failed builds, and writes a matching
-receipt. Repeat `--source`, `--lockfile`, and `--features` as needed. Keep outputs
-ignored or outside the source repository. Stage receipts alongside renamed
-executables with the same suffix. These observations do not authenticate the
-builder or prove a complete dependency closure.
+receipt. Repeat `--source`, `--lockfile`, and `--features` as needed. Keep
+outputs ignored or outside the source repository. Stage receipts alongside
+renamed executables with the same suffix. These observations do not authenticate
+the builder or prove a complete dependency closure.
 
 Runtime host observations remain separate from build evidence. Missing or
-invalid receipts remain unavailable, including in historical records. Hashing
-an interpreter does not establish build evidence for imported native libraries.
+invalid receipts remain unavailable, including in historical records. Hashing an
+interpreter does not establish build evidence for imported native libraries.
 
 ## Durability and recovery
 
-The authoritative layouts are [v1.sql](crates/metewand-runtime/src/run_store/v1.sql),
+The authoritative layouts are
+[v1.sql](crates/metewand-runtime/src/run_store/v1.sql),
 [v2.sql](crates/metewand-runtime/src/run_store/v2.sql), and
-[v3.sql](crates/metewand-runtime/src/run_store/v3.sql). Readers and writers check
-exact supported schemas. Opening an older store never silently migrates it.
-Use a new run directory when a selection needs a newer layout.
+[v3.sql](crates/metewand-runtime/src/run_store/v3.sql). Readers and writers
+check exact supported schemas. Opening an older store never silently migrates
+it. Use a new run directory when a selection needs a newer layout.
 
 Connections require WAL, full synchronization, foreign keys, recursive triggers,
 and strict tables. Initialization probes filesystem locking, synchronization,
@@ -317,20 +324,20 @@ filesystems are unsupported.
 
 Reserve and transition attempts in short immediate transactions with ownership,
 lease, and expected-revision checks. Never hold a transaction across worker
-execution, hashing, synchronization, or rename. Leases last 30 seconds and
-renew every five seconds. Expired owners require explicit recovery.
+execution, hashing, synchronization, or rename. Leases last 30 seconds and renew
+every five seconds. Expired owners require explicit recovery.
 
 Publish complete immutable artifacts before terminal acceptance. Synchronize
 files and directories and use atomic no-replace rename. Register only verified
 artifacts. Finalization claims coordinate competing successful attempts; one
-wins acceptance, and another can retain a superseded valid observation.
-Report success only after the terminal transaction commits.
+wins acceptance, and another can retain a superseded valid observation. Report
+success only after the terminal transaction commits.
 
 The run directory contains `run.sqlite3`, coordination locks, and immutable
 artifact directories. Reports supply relative paths; consumers must not invent
-paths from record IDs. `attempt.json`, observation documents, complete inventories,
-and coordination `outcome.json` retain the evidence required for recovery.
-Directories alone never prove acceptance.
+paths from record IDs. `attempt.json`, observation documents, complete
+inventories, and coordination `outcome.json` retain the evidence required for
+recovery. Directories alone never prove acceptance.
 
 Recovery verifies claims and published outcomes, preserves accepted selections,
 and records interrupted work without manufacturing success. Repeating recovery
@@ -365,8 +372,8 @@ cargo test -p metewand-runtime --lib --locked \
 
 The [durability workflow](.github/workflows/durability.yml) runs the exhaustive
 campaigns separately. They interrupt subprocesses at application and SQLite
-boundaries and verify recovery, identity, acceptance, and retry invariants.
-They model abrupt process death, not storage hardware losing power.
+boundaries and verify recovery, identity, acceptance, and retry invariants. They
+model abrupt process death, not storage hardware losing power.
 
 ## Machine output and exports
 
@@ -382,9 +389,9 @@ replaces only that projection. Table destinations are new directories with
 
 Tidy rows preserve attempts, observations, applicability, trace evidence, and
 fresh slot dispositions. Metric names are JSON pointers; entities without
-metrics remain present. CSV uses fixed columns, UTF-8, CRLF endings, and canonical
-JSON for metric and nested values. JSONL uses canonical bytes and a newline.
-Do not aggregate repetitions or discard failures during export.
+metrics remain present. CSV uses fixed columns, UTF-8, CRLF endings, and
+canonical JSON for metric and nested values. JSONL uses canonical bytes and a
+newline. Do not aggregate repetitions or discard failures during export.
 
 Compatibility classes bind measurement and execution versions, timing scopes,
 environment class, policies, controls, and accounting evidence. Missing
@@ -437,15 +444,15 @@ versions against the workspace version. Public compatibility versions remain
 independent and unchanged by this release setup.
 
 Versionary creates a root tag `vX.Y.Z` and a Python tag `metewand-vX.Y.Z`, with
-separate changelogs and GitHub Releases. The Python tag contains the matching CLI
-source, so package installation instructions use it for both components.
+separate changelogs and GitHub Releases. The Python tag contains the matching
+CLI source, so package installation instructions use it for both components.
 
-The reusable `.github/workflows/python-package.yml` builds the source distribution
-and a wheel from that distribution, checks both with `twine check --strict`, and
-tests each installed artifact on Python 3.11 and 3.14. Tests run outside the
-checkout without `PYTHONPATH`; shared conformance fixtures come from the checkout.
-CI requires these checks before Versionary runs. To reproduce them locally, use
-a disposable virtual environment:
+The reusable `.github/workflows/python-package.yml` builds the source
+distribution and a wheel from that distribution, checks both with
+`twine check --strict`, and tests each installed artifact on Python 3.11 and
+3.14. Tests run outside the checkout without `PYTHONPATH`; shared conformance
+fixtures come from the checkout. CI requires these checks before Versionary
+runs. To reproduce them locally, use a disposable virtual environment:
 
 ```sh
 python3 -m venv /tmp/metewand-package-test
@@ -464,28 +471,31 @@ the wheel and with each supported test interpreter.
 
 Before the first publication, configure the external accounts:
 
-1. Create the GitHub environment `pypi`. Its deployment policy must allow release
-   tags. Add required reviewers if publication should require manual approval.
-2. Add a [pending Trusted Publisher](https://docs.pypi.org/trusted-publishers/creating-a-project-through-oidc/)
+1. Create the GitHub environment `pypi`. Its deployment policy must allow
+   release tags. Add required reviewers if publication should require manual
+   approval.
+2. Add a [pending Trusted
+   Publisher](https://docs.pypi.org/trusted-publishers/creating-a-project-through-oidc/)
    on PyPI with project name `metewand`, owner `jolars`, repository `metewand`,
    workflow `python-publish.yml`, and environment `pypi`.
 3. Ensure Versionary uses `RELEASE_TOKEN` when creating GitHub Releases. Events
    created with the default `GITHUB_TOKEN` do not trigger another workflow.
 
-Publishing a Python GitHub Release triggers `.github/workflows/python-publish.yml`.
-Root releases do not publish to PyPI. The workflow checks out the Python release
-tag, requires the tag to equal `metewand-v` plus the workspace
-version, and runs the distribution checks before uploading those same artifacts
-with Trusted Publishing. No PyPI API token is needed. The workflow can also be
-dispatched manually with an existing Python release tag, for example if the release
-event did not trigger it. PyPI does not permit replacing previously uploaded
-files; a corrected package needs a new version.
+Publishing a Python GitHub Release triggers
+`.github/workflows/python-publish.yml`. Root releases do not publish to PyPI.
+The workflow checks out the Python release tag, requires the tag to equal
+`metewand-v` plus the workspace version, and runs the distribution checks before
+uploading those same artifacts with Trusted Publishing. No PyPI API token is
+needed. The workflow can also be dispatched manually with an existing Python
+release tag, for example if the release event did not trigger it. PyPI does not
+permit replacing previously uploaded files; a corrected package needs a new
+version.
 
-Review the release PR, matching CLI installation instructions, and Python package
-README before publishing the first release. The Python package supplies worker
-helpers; users still install the CLI separately from the matching source tag.
-Rust crates and the R package still require their own deliberate publication
-workflows.
+Review the release PR, matching CLI installation instructions, and Python
+package README before publishing the first release. The Python package supplies
+worker helpers; users still install the CLI separately from the matching source
+tag. Rust crates and the R package still require their own deliberate
+publication workflows.
 
 ## Website development
 
@@ -498,10 +508,10 @@ npm --prefix docs run dev
 
 `docs/index.md` is the homepage. `docs/guide/` contains the overview, getting
 started, and multipart authoring guide. `docs/design.md` includes the root
-`DESIGN.md` so the general design has one source. `.vitepress/config.ts`
-defines navigation, search, and metadata. Keep local page links relative with
-`.md` extensions; link to schemas, fixtures, source, and runnable examples on
-GitHub. The build rejects missing page links.
+`DESIGN.md` so the general design has one source. `.vitepress/config.ts` defines
+navigation, search, and metadata. Keep local page links relative with `.md`
+extensions; link to schemas, fixtures, source, and runnable examples on GitHub.
+The build rejects missing page links.
 
 Edit branding originals in `assets/`. Development and build commands copy them
 to the ignored `docs/public/brand/` directory. Favicons and `site.webmanifest`
@@ -509,8 +519,8 @@ live in `docs/public/`. VitePress generates the sitemap; `robots.txt` points
 crawlers to it. Shared metadata supplies social preview images and page URLs.
 
 `npm --prefix docs run deploy:check` builds the site, runs integration tests,
-and validates Cloudflare packaging without credentials or uploads. The output
-is `docs/.vitepress/dist/`; `npm --prefix docs run preview` previews its HTML.
+and validates Cloudflare packaging without credentials or uploads. The output is
+`docs/.vitepress/dist/`; `npm --prefix docs run preview` previews its HTML.
 
 ### Deployment
 
@@ -521,9 +531,9 @@ and deploys relevant pushes to `main`. It reads `CLOUDFLARE_ACCOUNT_ID` and
 `CLOUDFLARE_API_TOKEN` only in its deployment step. The token needs Worker
 deployment and custom-domain permissions for the account hosting the zone.
 
-For an authorized manual deployment, authenticate with `npx cf auth login`
-from `docs/`, or set those variables, then run `npm --prefix docs run deploy`.
-Run the workflow manually on `main` to redeploy a validated build.
+For an authorized manual deployment, authenticate with `npx cf auth login` from
+`docs/`, or set those variables, then run `npm --prefix docs run deploy`. Run
+the workflow manually on `main` to redeploy a validated build.
 
 ### Markdown representations
 

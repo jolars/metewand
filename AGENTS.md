@@ -1,11 +1,11 @@
 # AGENTS.md
 
 This file is the operational repository guide for AI agents. Read the relevant
-parts of `DESIGN.md` and `CONTRIBUTING.md` before changing architecture or public
-behavior. `DESIGN.md` defines the general model; `CONTRIBUTING.md` records
-implementation contracts and verification. Types, schemas, package help, and
-fixtures specify individual interfaces. `TODO.md` defines the active MVP work
-and acceptance criteria.
+parts of `DESIGN.md` and `CONTRIBUTING.md` before changing architecture or
+public behavior. `DESIGN.md` defines the general model; `CONTRIBUTING.md`
+records implementation contracts and verification. Types, schemas, package help,
+and fixtures specify individual interfaces. `TODO.md` defines the active MVP
+work and acceptance criteria.
 
 ## Project priorities
 
@@ -21,11 +21,12 @@ Preserve these properties throughout the implementation:
   authorized.
 
 Prioritize useful local benchmarks in Basin and clustlasso-cd. Follow the active
-roadmap, adapting the next small step to what those integrations need. Fresh-sequence and buffered instrumented
-profiles belong in the MVP; streaming profiles, the Julia package, portable result
-archives, and environment provisioning follow it. Complete each behavior with focused tests
-and enough documentation to use it. A feature does not need every package callback
-or a separate reference page before an adopter can use it.
+roadmap, adapting the next small step to what those integrations need.
+Fresh-sequence and buffered instrumented profiles belong in the MVP; streaming
+profiles, the Julia package, portable result archives, and environment
+provisioning follow it. Complete each behavior with focused tests and enough
+documentation to use it. A feature does not need every package callback or a
+separate reference page before an adopter can use it.
 
 ## Architecture and dependency direction
 
@@ -54,14 +55,15 @@ concerns out of core and protocol.
   directory; shared protocol vectors may live in a repository-level fixture tree
   once they exist.
 - Runnable end-to-end demonstrations belong in `examples/`.
-- Language packages belong in `packages/r`, `packages/python`, and `packages/julia`.
-- User documentation belongs in `docs/`; `README.md` remains the concise
-  entry point. The VitePress site lives in `docs/`, with the overview, getting
+- Language packages belong in `packages/r`, `packages/python`, and
+  `packages/julia`.
+- User documentation belongs in `docs/`; `README.md` remains the concise entry
+  point. The VitePress site lives in `docs/`, with the overview, getting
   started, and multipart authoring guide in `docs/guide/`. `DESIGN.md` keeps the
-  general design; `CONTRIBUTING.md` consolidates contributor notes, implementation
-  contracts, verification, and website development. Keep detailed interfaces in
-  their authoritative types, schemas, package help, and fixtures rather than adding
-  a reference page for each implementation step.
+  general design; `CONTRIBUTING.md` consolidates contributor notes,
+  implementation contracts, verification, and website development. Keep detailed
+  interfaces in their authoritative types, schemas, package help, and fixtures
+  rather than adding a reference page for each implementation step.
 
 Do not create placeholder directories. Add each directory with its first real
 schema, fixture, example, package, or document.
@@ -114,9 +116,8 @@ full local CI run when both scopes change. The equivalent commands are:
 The exhaustive crash campaign is ignored by default. Run it explicitly when
 changing durability, publication, recovery, or the run-store schema, or when
 requested. Ordinary CLI, planning, and documentation changes do not require it.
-See [Crash conformance](CONTRIBUTING.md#crash-conformance) for the command
-and separate CI coverage. Keep the representative crash tests in the normal
-suite.
+See [Crash conformance](CONTRIBUTING.md#crash-conformance) for the command and
+separate CI coverage. Keep the representative crash tests in the normal suite.
 
 Use Rust 1.98.0 and edition 2024. Keep `Cargo.lock` current and use `--locked`
 in verification. Comments should explain why a choice exists rather than
