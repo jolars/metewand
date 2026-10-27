@@ -4,7 +4,7 @@
   "review-mode": "pr",
   "release-type": "rust",
   "monorepo-mode": "fixed",
-  "allow-stable-major": true,
+  "allow-stable-major": false,
   "include-commit-authors": true,
   "release-reference-comments": "best-effort",
   "packages": {
