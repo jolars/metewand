@@ -109,10 +109,11 @@ a new compatibility review is a prerequisite.
 - [x] Default an omitted parameter schema to a closed empty object. Allow
   unambiguous local-environment and one-shot-policy defaults, recording all
   resolved values and exposing effective settings through planning. Keep profile
-  selection, preprocessing, validity, completion, and timing choices explicit.
+  selection explicit. Scientific rules and timing controls can refine the
+  basic defaults described below.
 - [x] Make a separately authored family `semantics-schema` optional. Keep
-  preprocessing, validity, and completion rules explicit in the problem
-  declaration, with an independent evaluator and reference cases. Pass the
+  declared preprocessing, validity, and completion rules in the problem
+  declaration, with an independent evaluator and optional reference cases. Pass the
   resolved scientific rules to the evaluator so authors do not repeat declared
   tolerances or other constants in evaluator code.
 - [x] Provide small Rust worker helpers for Basin and improve the Python and R
@@ -147,11 +148,29 @@ a new compatibility review is a prerequisite.
   SDKs include bounded exception text in persisted failure messages, available
   through `status` and `explain` without retained worker logs.
 
-The existing authoring design is in [Authoring and
-scaffolding](DESIGN.md#authoring-and-scaffolding). These roadmap items remain
-planned until implemented. Judge ergonomics by the declarations, adapter code,
-and commands needed for the complete comparison, including native workers.
-Existing external contract and schema files remain supported.
+### 3.1.1 Start small and add rigor
+
+- [x] Make `init` produce a runnable two-file Python benchmark, with an R
+  option and an `--empty` escape hatch. Preflight all targets, preserve
+  overwrite protection, and report SDK setup and next commands.
+- [x] Add ordinary function workers with matching contexts in Python and R.
+  Infer the standard JSON inventory, sole problem binding, one-shot capability,
+  local execution, and final-observation defaults before planning. Keep static
+  checks free of imports and preserve lifecycle and custom artifact APIs.
+- [x] Make scientific rules and reference cases optional. Distinguish absent
+  completion criteria from convergence. Require explicit verdicts for declared
+  rules and support inline references with expected verdicts.
+- [x] Render shared typed comparison rows for runs and stored status, including
+  names, settings, repetitions, metrics, timing scopes, retries, and failures.
+  Retain labels in provenance and report unavailable historical evidence honestly.
+- [x] Verify both starters through execution, resume, inspection without the
+  manifest, and exports. Add a small simulated least-squares GD/CD example with
+  basic and validated manifests using the same scientific functions.
+
+The authoring design is in [Authoring and
+scaffolding](DESIGN.md#authoring-and-scaffolding). Judge ergonomics by the
+complete comparison, including native workers. Existing external declarations,
+explicit policies, and advanced worker APIs remain supported.
 
 ### 3.2 Configuration-dependent applicability
 

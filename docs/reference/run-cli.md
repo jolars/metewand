@@ -31,6 +31,30 @@ to implement the raw protocol without an SDK. It sums three fixed integers,
 adds the problem-owned offset, and independently evaluates the answer. The
 expected result is `{"answer":8}` and the metrics are `{"absolute_error":0}`.
 
+## Basic defaults and comparison
+
+An experiment can omit execution and observation policy selections. It then
+uses built-in local execution, one final result, one implementation repetition,
+and one measurement repetition. The primary wall time covers preparation,
+execution, and result serialization. Worker startup and imports, dataset
+generation, independent evaluation, and publication are outside this default
+interval. `plan` exposes the resolved controls before any worker launches.
+Select named policies for other controls; profile observation is always explicit.
+
+Human output includes a comparison table with method names, effective dataset,
+problem, and implementation parameters, repetitions, retries, metrics, completion,
+wall timings, and failure diagnostics. It reports individual measurements rather
+than aggregating repetitions. Without completion rules, successful function
+evaluators report `not_required`, which makes no convergence claim.
+
+The machine report's `comparison` array contains the same typed rows, stable
+candidate and attempt IDs, validity and selection flags, timing scopes, and
+timing availability. Instrumented profile coordinates remain separate from wall
+time. Failed attempts without metrics stay visible with their diagnostics.
+Resuming a run reports its recorded comparison, including accepted slots that
+needed no new attempt. [Stored status](inspection-cli.md) shows the same evidence
+without requiring the manifest.
+
 ## Supported selection
 
 The command executes every selected candidate, implementation repetition, and

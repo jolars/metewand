@@ -12,6 +12,71 @@ does not inherit ambient language search paths. Install dependencies into the
 selected environment's site library, or explicitly bundle an installed SDK as
 the [runnable example](https://github.com/jolars/metewand/tree/main/examples/r-sdk) does.
 
+## Function workers
+
+Declare `function: benchmark.R:solve` in YAML. The source file only defines
+ordinary functions; the manifest launches `metewand::serve_function()`:
+
+```r
+generate <- function(context) {
+  set.seed(context$seed %% .Machine$integer.max)
+  list(values = as.list(sample.int(10L, context$parameters$size, replace = TRUE) - 1L))
+}
+
+solve <- function(data, context) {
+  list(total = sum(unlist(data$values)))
+}
+
+evaluate <- function(data, result, context) {
+  list(absolute_error = abs(result$total - sum(unlist(data$values))))
+}
+```
+
+The context is a list with matching fields across Python and R:
+
+| Field | Dataset generator | Implementation | Evaluator |
+| --- | --- | --- | --- |
+| `parameters` | Dataset parameters | Implementation parameters | Problem parameters |
+| `problem_parameters` | Empty JSON object | Problem parameters | Problem parameters |
+| `seed` | Derived dataset seed | Derived implementation seed | `NULL` |
+| `semantics` | Empty JSON object | Empty JSON object | Resolved scientific rules |
+
+Callbacks choose how to seed R's random generator. The SDK sources the file
+during the worker handshake, outside the default `prepare_and_execute`
+interval. `cold_end_to_end` includes startup and sourcing. Static `check` and
+`plan` never source it. Sibling files sourced during loading resolve relative to
+that file's directory and must be included in the declared `sources`.
+
+Callbacks return canonical JSON objects as named lists. Use `json_object()` for
+an empty object and unnamed lists for JSON arrays. Generated data becomes
+`data.json`; the SDK writes standard result and metric envelopes. Dataset-free
+problems pass an empty JSON object as data. Install the SDK and dependencies
+in the selected R environment's site library; workers do not inherit an ambient
+user library.
+
+Without validity or completion rules, plain metrics imply `not_required`.
+Declared rules require `evaluation(metrics, verdict)`. Read targets from YAML:
+
+```r
+evaluate <- function(data, result, context) {
+  error <- abs(result$total - sum(unlist(data$values)))
+  target <- context$semantics$one_shot_completion$absolute_error
+  metewand::evaluation(list(absolute_error = error),
+                      if (error <= target) "reached" else "not_reached")
+}
+```
+
+The helper rejects completion verdicts without completion rules and
+`not_required` when a completion rule exists. Use `invalid` for unusable results.
+Metric fields can be optional when invalid results cannot produce them. The
+scientific interpretation of rules remains the evaluator's responsibility.
+
+The initial function interface supports one-shot execution and JSON objects.
+Use lifecycle callbacks below for separate preparation, binary artifacts,
+profiles, and other stateful requirements. `serve_function(role, file, name)`
+can also select a function explicitly; by default it reads the three launcher
+arguments. Benchmark files need no serving call.
+
 ## Implementation workers
 
 Pass ordinary functions to `serve_implementation`:

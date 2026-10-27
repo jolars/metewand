@@ -888,12 +888,10 @@ fn human_run_output_reports_metrics_and_scientific_failure_reasons() {
         let output = metewand(root.path(), &["run", "--output-dir", "run"]);
         assert_eq!(output.status.code(), Some(if reached { 0 } else { 5 }));
         let human = String::from_utf8(output.stdout).unwrap();
-        assert!(
-            human.contains("logical slot: mw1-logical-attempt-slot-"),
-            "{human}"
-        );
-        assert!(human.contains("metrics: {\"absolute_error\":0}"), "{human}");
-        assert!(human.contains("observation: mw1-observation-"), "{human}");
+        assert!(human.contains("Method | Rep"), "{human}");
+        assert!(human.contains("reference | 1:1 | 0 |"), "{human}");
+        assert!(human.contains("{\"absolute_error\":0}"), "{human}");
+        assert!(human.contains("timing: prepare_and_execute"), "{human}");
         if reached {
             assert!(!human.contains("failure ["), "{human}");
         } else {
@@ -968,6 +966,15 @@ fn technical_failures_keep_distinct_codes_and_do_not_publish_observations() {
         let attempt = &records.last().unwrap()["data"]["attempts"][0];
         assert_eq!(attempt["diagnostic"]["code"], code);
         assert!(attempt["observation_id"].is_null());
+        let row = &records.last().unwrap()["data"]["comparison"][0];
+        assert_eq!(row["status"], "failed");
+        assert_eq!(row["diagnostic"]["code"], code);
+        assert!(row["metrics"].is_null());
+        assert!(row["completion"].is_null());
+        if code == "scientific_timeout" {
+            assert_eq!(row["timed_wall_time_status"], "partial");
+            assert!(row["timed_wall_time_ns"].as_u64().unwrap() > 0);
+        }
         verify_finalized_directory(
             &root
                 .path()

@@ -134,8 +134,8 @@ datasets:
 ```
 
 Inside a standalone problem contract or an inline `problems.<name>.contract`,
-the corresponding fields can be written as follows. The other contract fields,
-including scientific rules and reference cases, remain required:
+the corresponding fields can be written as follows. Scientific rules and
+reference cases can be added independently:
 
 ```yaml
 parameters:

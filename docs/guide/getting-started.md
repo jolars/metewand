@@ -1,84 +1,108 @@
 # Getting started
 
-Metewand describes computational benchmarks in a versioned manifest. It runs
-implementations and evaluators as separate processes, validates their outputs,
-and records the inputs and execution history behind each result.
+Metewand runs computational benchmarks as separate processes, evaluates results
+independently, and records their inputs, timings, and execution history. Start
+with ordinary functions and a short YAML manifest, then add scientific checks
+and stronger execution controls as the benchmark grows.
 
-The project is under active development. This guide builds the current CLI from
-source and runs a small example on a POSIX system.
+The project is under active development. This guide builds the current CLI and
+SDK from source on a POSIX system.
 
-## Build the CLI
+## Install the CLI and SDK
 
-Install Git, Rust 1.98.0, and Python 3.11 or later, then clone the repository:
+With Git, Rust 1.98.0, and Python 3.11 or later:
 
 ```sh
 git clone https://github.com/jolars/metewand.git
 cd metewand
-cargo build --release --locked -p metewand-cli
+cargo install --locked --path crates/metewand-cli
+python3 -m venv .venv
+. .venv/bin/activate
+python3 -m pip install ./sdk/python
 ```
 
-The executable is `target/release/metewand`. If you use Nix and devenv, run
-`devenv shell` in the repository to load its development environment.
+Keep this environment active when running the benchmark. Metewand uses the
+`python3` on `PATH`, with its installed SDK and dependencies. The SDK is not yet
+published to a package registry. If you use Nix and devenv, `devenv shell` loads
+the repository's development tools.
 
-## Check and plan
-
-The fixed-dataset example sums three integers, adds a problem-owned offset, and
-evaluates the answer independently. Its workers use Python's standard library
-and implement the protocol directly.
-
-Validate the manifest and inspect its execution plan:
+## Create and run a benchmark
 
 ```sh
-target/release/metewand check --manifest examples/fixed-dataset/metewand.yaml
-target/release/metewand plan --manifest examples/fixed-dataset/metewand.yaml
+metewand init /tmp/my-benchmark
+cd /tmp/my-benchmark
+metewand check
+metewand plan
+metewand check --workers
+metewand run --output-dir run
 ```
 
-These commands do not launch workers or create run files. Add `--output json` to
-read their versioned machine output.
+Initialization creates two files: `metewand.yaml` and `benchmark.py`. The example
+generates seeded integers, compares a built-in sum with a loop, and independently
+computes each answer's absolute error. Replace the functions with your own
+generator, methods, and metrics.
 
-## Run the benchmark
+`check` and `plan` validate declarations and inspect the effective settings
+without importing benchmark code or creating run files. `check --workers`
+explicitly launches workers to verify imports and function names and run any
+declared reference cases. The starter has zero reference cases; add them when
+you want scientific conformance checks. Add `--output json` to any command for
+versioned machine output.
 
-Choose a new output directory whose parent already exists:
+The default execution uses a local environment, one final result per method,
+and one measurement repetition. Its primary wall time includes preparation,
+solving, and result serialization. The comparison table shows method names,
+effective parameters, timings, metrics, and outcomes. With no declared accuracy
+target, completion is `not_required`; successful execution does not establish
+convergence.
+
+The output directory must be new, and its parent must exist. Resume the same
+run with `metewand run --output-dir run --resume` without repeating accepted
+slots. Inspect or export its recorded evidence with:
 
 ```sh
-target/release/metewand run \
-  --manifest examples/fixed-dataset/metewand.yaml \
-  --output-dir /tmp/metewand-first-run \
-  --output jsonl
+metewand status --output-dir run
+metewand export --output-dir run --format csv --destination tables
 ```
 
-Metewand launches the implementation and independent evaluator, validates their
-outputs, and publishes a durable run. The example produces the canonical result
-`{"answer":8}` and evaluator metrics `{"absolute_error":0}`.
+## Use R
 
-The output directory must be new. Use another path for a separate run. To resume
-an existing run without repeating accepted slots, pass the same output directory
-with `--resume`.
-
-See [running benchmarks](../reference/run-cli.md) for execution policies and
-guarantees, [status and explanations](../reference/inspection-cli.md) for
-inspection, and [exporting results](../reference/exports.md) for analysis.
-
-## Write your own benchmark
-
-Create a minimal manifest with:
+Install the matching R package and its `digest` dependency in the selected R
+environment's site library, then select the R starter. From the Metewand checkout:
 
 ```sh
-target/release/metewand init benchmark
-cd benchmark
-../target/release/metewand scaffold problem target --language python
-../target/release/metewand scaffold implementation candidate --language python --problem target
+R CMD INSTALL sdk/r
+metewand init /tmp/my-r-benchmark --language r
+cd /tmp/my-r-benchmark
+metewand check --workers
+metewand run --output-dir run
 ```
 
-Initialization creates a version and a name. Scaffolding adds compact inline
-declarations and SDK adapters. Supply scientific rules, data shapes, reference
-fixtures, and experiments in the generated manifest and callbacks. Select
-`--language r` or `--language rust` for another worker language. An omitted
-environment uses the unambiguous local default. The [authoring
-reference](../reference/authoring-cli.md) explains initialization and component
-scaffolding. A [runnable example](examples.md) is a useful starting point for a
-complete benchmark.
+The two files are `metewand.yaml` and `benchmark.R`. The function signatures and
+defaults match the Python starter. See the [R SDK](../reference/r-sdk.md) for
+installation requirements and library paths.
 
-Use the [Python SDK](../reference/python-sdk.md), [R
-SDK](../reference/r-sdk.md), or [Rust helpers](../reference/rust-sdk.md) for
-workers. Any executable can instead implement the [worker protocol](../reference/worker-protocol.md).
+## Grow the benchmark
+
+Keep parameter declarations, data shapes, experiments, and scientific rules in
+YAML. Keep data generation, methods, and independent metric formulas in code.
+Add repetitions, named cases, execution policies, validity rules, reference
+cases, and documentation when they help your comparison. Profiles require an
+explicit observation policy and the corresponding worker capabilities.
+
+The [least-squares example](https://github.com/jolars/metewand/tree/main/examples/least-squares)
+compares in-house gradient descent and coordinate descent on simulated data.
+It includes both a basic manifest and a version that adds an accuracy target
+and inline reference cases to the same functions.
+
+Use `metewand init --empty` for a neutral version-and-name manifest, then
+`metewand scaffold dataset|problem|implementation NAME` to add components.
+The [authoring reference](../reference/authoring-cli.md) covers function
+declarations and scaffolding. The [Python SDK](../reference/python-sdk.md),
+[R SDK](../reference/r-sdk.md), [Rust helpers](../reference/rust-sdk.md), and
+[worker protocol](../reference/worker-protocol.md) support more involved
+lifecycle and artifact requirements.
+
+See [running benchmarks](../reference/run-cli.md) for execution controls,
+[status and explanations](../reference/inspection-cli.md) for stored evidence,
+and [exporting results](../reference/exports.md) for analysis.

@@ -134,7 +134,8 @@
             { "$ref": "#/$defs/command_launch" }
           ],
           "unevaluatedProperties": false
-        }
+        },
+        {"allOf": [{"$ref": "#/$defs/function_launch"}], "unevaluatedProperties": false}
       ]
     },
     "dataset_base": {
@@ -179,14 +180,34 @@
       "oneOf": [
         { "$ref": "#/$defs/fixed_dataset" },
         { "$ref": "#/$defs/interpreted_dataset" },
-        { "$ref": "#/$defs/command_dataset" }
+        { "$ref": "#/$defs/command_dataset" },
+        {"$ref": "#/$defs/function_dataset"}
       ]
     },
     "problem": {
       "oneOf": [
         { "$ref": "#/$defs/wrapped_problem" },
         {
-          "allOf": [{ "$ref": "problem-contract.schema.json#/$defs/body" }],
+          "allOf": [{"$ref": "problem-contract.schema.json#/$defs/flat_body"}, {
+              "if": {
+                "properties": {
+                  "evaluator": {
+                    "required": [
+                      "function"
+                    ]
+                  }
+                },
+                "required": [
+                  "evaluator"
+                ]
+              },
+              "then": {},
+              "else": {
+                "required": [
+                  "dataset-schemas"
+                ]
+              }
+            }],
           "properties": {
             "evaluator": { "$ref": "#/$defs/worker" },
             "parameter-defaults": { "type": "object" }
@@ -262,7 +283,8 @@
     "implementation": {
       "oneOf": [
         { "$ref": "#/$defs/interpreted_implementation" },
-        { "$ref": "#/$defs/command_implementation" }
+        { "$ref": "#/$defs/command_implementation" },
+        {"$ref": "#/$defs/function_implementation"}
       ]
     },
     "environment": {
@@ -413,8 +435,6 @@
         "name",
         "problem",
         "implementations",
-        "execution-policy",
-        "observation-policy",
         "seed"
       ],
       "additionalProperties": false
@@ -452,6 +472,134 @@
         }
       },
       "additionalProperties": false
+    },
+    "function_launch": {
+      "type": "object",
+      "properties": {
+        "function": {
+          "type": "string",
+          "pattern": "^.+\\.(py|R|r):[A-Za-z_.][A-Za-z0-9_.]*$"
+        },
+        "sources": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/repository_path" },
+          "uniqueItems": true
+        },
+        "environment": {
+          "$ref": "common.schema.json#/$defs/name"
+        },
+        "protocol-transport": {
+          "enum": [
+            "pipes",
+            "stdio"
+          ]
+        }
+      },
+      "required": [
+        "function"
+      ]
+    },
+    "function_dataset": {
+      "allOf": [
+        {
+          "type": "object",
+          "properties": {
+            "parameters": {
+              "$ref": "common.schema.json#/$defs/compact_parameters"
+            },
+            "parameter-schema": {
+              "$ref": "common.schema.json#/$defs/schema_declaration"
+            },
+            "parameter-defaults": {
+              "type": "object"
+            },
+            "output-schema": {
+              "$ref": "common.schema.json#/$defs/schema_declaration"
+            },
+            "source": {
+              "$ref": "#/$defs/remote_source"
+            }
+          },
+          "allOf": [
+            {
+              "not": {
+                "required": [
+                  "parameters",
+                  "parameter-schema"
+                ]
+              }
+            },
+            {
+              "not": {
+                "required": [
+                  "parameters",
+                  "parameter-defaults"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "$ref": "#/$defs/function_launch"
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "function_implementation": {
+      "allOf": [
+        {
+          "type": "object",
+          "properties": {
+            "problem-contracts": {
+              "type": "array",
+              "items": {
+                "$ref": "common.schema.json#/$defs/name"
+              },
+              "minItems": 0,
+              "uniqueItems": true
+            },
+            "parameters": {
+              "$ref": "common.schema.json#/$defs/compact_parameters"
+            },
+            "parameter-schema": {
+              "$ref": "common.schema.json#/$defs/schema_declaration"
+            },
+            "parameter-defaults": {
+              "type": "object"
+            },
+            "capabilities": {
+              "enum": [
+                [],
+                [
+                  "one_shot"
+                ]
+              ]
+            }
+          },
+          "allOf": [
+            {
+              "not": {
+                "required": [
+                  "parameters",
+                  "parameter-schema"
+                ]
+              }
+            },
+            {
+              "not": {
+                "required": [
+                  "parameters",
+                  "parameter-defaults"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "$ref": "#/$defs/function_launch"
+        }
+      ],
+      "unevaluatedProperties": false
     }
   }
 }

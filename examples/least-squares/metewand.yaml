@@ -1,0 +1,36 @@
+version: 1
+name: least-squares
+
+datasets:
+  simulated:
+    function: benchmark.py:generate
+    parameters:
+      n_samples: {type: integer, minimum: 1, default: 100}
+      n_features: {type: integer, minimum: 1, default: 3}
+      noise: {type: number, minimum: 0, default: 0.1}
+
+problems:
+  least_squares:
+    result:
+      beta: {type: array, items: number, minItems: 1}
+    metrics:
+      objective: {type: number, minimum: 0, optional: true}
+      gradient_inf: {type: number, minimum: 0, optional: true}
+    evaluator: {function: benchmark.py:evaluate}
+
+implementations:
+  gradient_descent:
+    function: benchmark.py:gd
+    parameters:
+      iterations: {type: integer, minimum: 1, default: 200}
+  coordinate_descent:
+    function: benchmark.py:cd
+    parameters:
+      iterations: {type: integer, minimum: 1, default: 200}
+
+experiments:
+  - name: comparison
+    problem: least_squares
+    datasets: [simulated]
+    implementations: [gradient_descent, coordinate_descent]
+    seed: 7

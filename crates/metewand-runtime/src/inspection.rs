@@ -43,6 +43,138 @@ pub struct Inspection {
 }
 
 impl Inspection {
+    /// Projects comparisons only from committed records and verified artifacts.
+    pub fn comparison_rows(&self) -> Vec<metewand_core::comparison::ComparisonRow> {
+        let empty = Value::Null;
+        let mut rows = Vec::new();
+        for attempt in &self.attempts {
+            let observations = self
+                .observations
+                .iter()
+                .filter(|o| o.attempt_id == attempt.id)
+                .map(Some)
+                .collect::<Vec<_>>();
+            let observations = if observations.is_empty() {
+                vec![None]
+            } else {
+                observations
+            };
+            for observation in observations {
+                let source_id = observation.map_or(attempt.id.as_str(), |o| o.id.as_str());
+                let document = self
+                    .records
+                    .get(source_id)
+                    .map(|r| &r.record["document"])
+                    .unwrap_or(&empty);
+                let provenance = &document["provenance"]["data"];
+                let context = &provenance["context"];
+                let display = &context["comparison"];
+                let label = |key: &str| display[key].as_str().map(str::to_owned);
+                let slot = self
+                    .records
+                    .get(&attempt.slot_id)
+                    .map(|r| &r.record)
+                    .unwrap_or(&empty);
+                let run = slot["resolved_run_id"]
+                    .as_str()
+                    .and_then(|id| self.records.get(id))
+                    .map(|r| &r.record)
+                    .unwrap_or(&empty);
+                let candidate_id = context["logical_candidate_id"]
+                    .as_str()
+                    .or_else(|| run["candidate_id"].as_str())
+                    .unwrap_or(&attempt.slot_id)
+                    .to_owned();
+                let metrics = document["metrics"]["id"]
+                    .as_str()
+                    .and_then(|id| self.records.get(id))
+                    .map(|r| r.record["document"]["data"].clone())
+                    .unwrap_or(Value::Null);
+                let block = &context["scheduling"]["comparison_block"];
+                let timing = |key: &str| {
+                    document["timing"][key]
+                        .as_u64()
+                        .or_else(|| document["timing"][key]["value"].as_u64())
+                        .or_else(|| provenance["measurements"][key]["value"].as_u64())
+                };
+                let diagnostic = attempt
+                    .diagnostic_id
+                    .as_ref()
+                    .and_then(|id| self.records.get(id))
+                    .map(|r| metewand_core::run_output::RunDiagnostic {
+                        code: r.record["code"].as_str().unwrap_or("unknown").to_owned(),
+                        message: r.record["message"]
+                            .as_str()
+                            .unwrap_or("No diagnostic message recorded.")
+                            .to_owned(),
+                    });
+                let parameters = if display["parameters"].is_object() {
+                    display["parameters"].clone()
+                } else {
+                    json!({"dataset": context["dataset_materialization"]["derivation"]["parameters"],
+                        "problem": provenance["execution"]["problem_parameters"],
+                        "implementation": provenance["execution"]["implementation_parameters"]})
+                };
+                rows.push(metewand_core::comparison::ComparisonRow {
+                    candidate_id,
+                    attempt_id: attempt.id.clone(),
+                    observation_id: observation.map(|o| o.id.clone()),
+                    experiment: label("experiment"),
+                    case: label("case"),
+                    dataset: label("dataset"),
+                    problem: label("problem"),
+                    implementation: label("implementation"),
+                    parameters,
+                    implementation_repetition: block["implementation_repetition"].as_u64(),
+                    measurement_index: block["measurement_index"].as_u64(),
+                    retry_index: attempt.retry_index,
+                    status: attempt.state.clone(),
+                    valid: observation.map(|o| o.valid),
+                    completion: observation.map(|o| o.completion.clone()),
+                    selected: observation.map(|o| o.selected),
+                    metrics,
+                    timed_wall_time_ns: timing("timed_wall_time_ns"),
+                    timed_wall_time_status: if document["timing"]["timed_wall_time_ns"].is_u64() {
+                        "complete".to_owned()
+                    } else {
+                        document["timing"]["timed_wall_time_ns"]["status"]
+                            .as_str()
+                            .or_else(|| {
+                                provenance["measurements"]["timed_wall_time_ns"]["status"].as_str()
+                            })
+                            .unwrap_or("unavailable")
+                            .to_owned()
+                    },
+                    timing_scope: context["timing_scope"].as_str().map(str::to_owned),
+                    instrumented_time_ns: document["profile"]["instrumented_time_ns"].as_u64(),
+                    instrumented_scope: document["profile"]["instrumented_scope"]
+                        .as_str()
+                        .map(str::to_owned),
+                    diagnostic,
+                });
+            }
+        }
+        rows.sort_by(|a, b| {
+            (
+                &a.candidate_id,
+                a.implementation_repetition,
+                a.measurement_index,
+                a.retry_index,
+                &a.attempt_id,
+                &a.observation_id,
+            )
+                .cmp(&(
+                    &b.candidate_id,
+                    b.implementation_repetition,
+                    b.measurement_index,
+                    b.retry_index,
+                    &b.attempt_id,
+                    &b.observation_id,
+                ))
+        });
+        rows
+    }
+
     pub(crate) fn into_records(self) -> BTreeMap<String, InspectionRecord> {
         self.records
     }
@@ -555,6 +687,7 @@ impl Inspection {
             .filter(|observation| observation.selected)
             .count();
         StatusReport {
+            comparison: self.comparison_rows(),
             fresh_sequences: self.fresh_sequences,
             command: "status",
             benchmark: self.benchmark,

@@ -1,0 +1,29 @@
+version: 1
+name: benchmark
+
+# Defaults: local execution, one final result, and wall time including preparation.
+datasets:
+  numbers:
+    function: benchmark.EXT:generate
+    parameters:
+      size: {type: integer, minimum: 1, default: 20}
+
+problems:
+  sum:
+    result: {total: integer}
+    metrics:
+      absolute_error: {type: integer, minimum: 0}
+    evaluator: {function: benchmark.EXT:evaluate}
+
+implementations:
+  builtin:
+    function: benchmark.EXT:builtin_sum
+  loop:
+    function: benchmark.EXT:loop_sum
+
+experiments:
+  - name: comparison
+    problem: sum
+    datasets: [numbers]
+    implementations: [builtin, loop]
+    seed: 7

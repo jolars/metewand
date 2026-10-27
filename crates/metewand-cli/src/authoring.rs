@@ -1,13 +1,13 @@
 use std::{ffi::OsString, path::PathBuf};
 
 use metewand_runtime::authoring::{
-    init_benchmark,
+    init_benchmark_with_options,
     scaffold::{ScaffoldComponent, ScaffoldRequest, WorkerLanguage, scaffold_component},
 };
 
 use crate::output::{CommandError, CommandResult};
 
-const INIT_HELP: &str = "Usage: metewand [--output FORMAT] init [PATH] [--dry-run]\n\nCreate only PATH/metewand.yaml (default PATH: .), containing a version and a neutral benchmark name. Report every created path, including missing directories. Refuse an existing manifest, including symlinks. Use --dry-run to validate and report proposed paths without writing. Use -- before a path beginning with a hyphen.\n";
+const INIT_HELP: &str = "Usage: metewand [--output FORMAT] init [PATH] [--language python|r] [--empty] [--dry-run]\n\nCreate a runnable two-file benchmark (Python by default). Use --language r for R, or --empty for a neutral manifest to extend with scaffold. Existing files are never replaced. Dependencies are not installed. Use --dry-run to inspect proposed paths.\n";
 
 const SCAFFOLD_HELP: &str = "\
 Usage: metewand [--output FORMAT] scaffold <dataset|problem|implementation> NAME
@@ -19,9 +19,9 @@ language is python. An omitted environment uses the manifest's local default.
 Implementation scaffolds require an existing --problem. Default manifest:
 ./metewand.yaml.
 
-Generate small SDK adapters and compact inline declarations. Supply scientific
-rules, data shapes, translations, and reference cases before checking or running
-the component. Rust adapters must be built as native workers. Existing files and
+Generate small SDK adapters and compact inline declarations. Implement the
+callbacks and declare their data shapes before running. Add scientific rules
+and reference cases as needed. Rust adapters must be built as native workers. Existing files and
 definitions are never replaced. No package managers or workers are invoked.
 Use --dry-run to validate and report proposed changes without writing.
 ";
@@ -137,12 +137,51 @@ pub fn init_command(arguments: &[OsString]) -> Result<CommandResult, CommandErro
         return Ok(CommandResult::help(INIT_HELP));
     }
     let mut directory = None;
+    let mut language = None;
+    let mut empty = false;
     let mut dry_run = false;
     let mut positional_only = false;
-    for argument in arguments {
+    let mut arguments = arguments.iter();
+    while let Some(argument) = arguments.next() {
         if !positional_only {
             if argument == "--" {
                 positional_only = true;
+                continue;
+            }
+            if argument == "--language" {
+                let value = arguments
+                    .next()
+                    .and_then(|value| value.to_str())
+                    .ok_or_else(|| {
+                        CommandError::usage(
+                            "missing_init_language",
+                            "--language requires python or r",
+                        )
+                    })?;
+                let selected = WorkerLanguage::parse(value)
+                    .filter(|value| !matches!(value, WorkerLanguage::Rust))
+                    .ok_or_else(|| {
+                        CommandError::usage(
+                            "invalid_init_language",
+                            "--language requires python or r",
+                        )
+                    })?;
+                if language.replace(selected).is_some() {
+                    return Err(CommandError::usage(
+                        "duplicate_init_flag",
+                        "--language may be supplied at most once",
+                    ));
+                }
+                continue;
+            }
+            if argument == "--empty" {
+                if empty {
+                    return Err(CommandError::usage(
+                        "duplicate_init_flag",
+                        "--empty may be supplied at most once",
+                    ));
+                }
+                empty = true;
                 continue;
             }
             if argument == "--dry-run" {
@@ -175,7 +214,18 @@ pub fn init_command(arguments: &[OsString]) -> Result<CommandResult, CommandErro
             ));
         }
     }
-    init_benchmark(&directory.unwrap_or_else(|| PathBuf::from(".")), dry_run)
-        .map(CommandResult::Init)
-        .map_err(|error| CommandError::init(&error))
+    if empty && language.is_some() {
+        return Err(CommandError::usage(
+            "invalid_init_flags",
+            "--empty does not select a worker language",
+        ));
+    }
+    init_benchmark_with_options(
+        &directory.unwrap_or_else(|| PathBuf::from(".")),
+        language.unwrap_or_default(),
+        empty,
+        dry_run,
+    )
+    .map(CommandResult::Init)
+    .map_err(|error| CommandError::init(&error))
 }

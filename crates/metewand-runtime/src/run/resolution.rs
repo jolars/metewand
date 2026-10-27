@@ -696,6 +696,25 @@ fn resolve_candidate(
         .expect("checked plan problem definition")
         .0;
     let contract = &repository.problem_contracts[problem_name];
+    let implementation_name = catalog
+        .implementation_definitions
+        .iter()
+        .find(|(_, id)| **id == candidate.implementation_configuration.record.definition)
+        .expect("checked implementation definition")
+        .0;
+    let dataset_name = catalog
+        .dataset_definitions
+        .iter()
+        .find(|(_, id)| **id == candidate.dataset_configuration.record.definition)
+        .map(|(name, _)| name.to_string())
+        .unwrap_or_else(|| "unit".to_owned());
+    let comparison = json!({"experiment": experiment.name.as_str(), "dataset": dataset_name,
+        "problem": problem_name.as_str(), "implementation": implementation_name.as_str(),
+        "case": match &candidate.source { metewand_core::planning::ConfigurationSource::Case(name) => Some(name.as_str()), _ => None },
+        "parameters": {"dataset": candidate.dataset_configuration.record.parameters.as_json(),
+            "problem": candidate.problem_configuration.record.parameters.as_json(),
+            "implementation": candidate.implementation_configuration.record.parameters.as_json()}});
+
     let definition = repository.manifest.observation_policies
         [&experiment.observation_policy.record.name]
         .profile
@@ -813,6 +832,7 @@ fn resolve_candidate(
                 specification: resolved.id,
             })?;
             let provenance = canonical(json!({
+                "comparison": comparison,
                 "applicability": applicability.record,
                 "controls": metewand_core::controls::local_control_report(&policy),
                 "execution_policy": record_document(&policy)?,

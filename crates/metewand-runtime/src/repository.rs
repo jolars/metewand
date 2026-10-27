@@ -773,11 +773,13 @@ fn contract_identity_value(
         .reference_cases
         .iter()
         .map(|case| -> Result<Value, RepositoryCheckError> {
-            Ok(json!({
-                "dataset": case.dataset.as_ref().map(|path| reference_resource(root, path)).transpose()?,
-                "expected_metrics": reference_resource(root, &case.expected_metrics)?,
-                "result": reference_resource(root, &case.result)?,
-            }))
+            let mut value = json!({
+                "dataset": case.dataset.as_ref().map(|input| reference_input_resource(root, input)).transpose()?,
+                "expected_metrics": reference_input_resource(root, &case.expected_metrics)?,
+                "result": reference_input_resource(root, &case.result)?,
+            });
+            if let Some(verdict) = case.expected_verdict { value["expected_verdict"] = json!(verdict.as_str()); }
+            Ok(value)
         })
         .collect::<Result<Vec<_>, _>>()?;
     let mut value = json!({
@@ -799,6 +801,20 @@ fn contract_identity_value(
             serde_json::to_value(&contract.instrumented_scopes).expect("validated scopes");
     }
     CanonicalValue::try_from(value).map_err(RepositoryCheckError::Canonical)
+}
+
+fn reference_input_resource(
+    root: &Path,
+    input: &metewand_core::problem_contract::ReferenceInput,
+) -> Result<Value, RepositoryCheckError> {
+    match input {
+        metewand_core::problem_contract::ReferenceInput::Path(path) => {
+            reference_resource(root, path)
+        }
+        metewand_core::problem_contract::ReferenceInput::Inline(value) => {
+            Ok(json!({"inline": value.as_json()}))
+        }
+    }
 }
 
 fn reference_resource(root: &Path, path: &RepositoryPath) -> Result<Value, RepositoryCheckError> {

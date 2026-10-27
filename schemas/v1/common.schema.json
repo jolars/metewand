@@ -408,6 +408,178 @@
         }
       ],
       "additionalProperties": false
+    },
+    "comparison_row": {
+      "type": "object",
+      "properties": {
+        "candidate_id": {
+          "type": "string"
+        },
+        "attempt_id": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "observation_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "experiment": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "case": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "dataset": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "problem": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "implementation": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "completion": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "timing_scope": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "instrumented_scope": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "implementation_repetition": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "measurement_index": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "timed_wall_time_ns": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "instrumented_time_ns": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "retry_index": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "valid": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "selected": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "parameters": {
+          "type": "object"
+        },
+        "metrics": {},
+        "diagnostic": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "code",
+                "message"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "timed_wall_time_status": {
+          "enum": [
+            "complete",
+            "partial",
+            "unavailable"
+          ]
+        }
+      },
+      "required": [
+        "candidate_id",
+        "attempt_id",
+        "status",
+        "observation_id",
+        "experiment",
+        "case",
+        "dataset",
+        "problem",
+        "implementation",
+        "completion",
+        "timing_scope",
+        "instrumented_scope",
+        "implementation_repetition",
+        "measurement_index",
+        "timed_wall_time_ns",
+        "instrumented_time_ns",
+        "retry_index",
+        "valid",
+        "selected",
+        "parameters",
+        "metrics",
+        "diagnostic",
+        "timed_wall_time_status"
+      ],
+      "additionalProperties": false
     }
   }
 }

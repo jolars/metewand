@@ -84,16 +84,17 @@ policy defaults:
 | `network` | `false` |
 | `worker-reuse` | `false` |
 | `warmup-runs` | `0` |
+| `timing-scope` | `prepare_and_execute` |
+| `primary-time` | `timed_wall_time` |
 | `run-order` | `sequential` |
 | `max-concurrency` | `1` |
 | `enforcement` | `best_effort` |
 | `cpus`, `threads`, `memory`, `timeout` | No requested constraint |
 
-Every experiment still selects its execution and observation policies, and the
-observation policy declares `kind: one_shot`. Checking, planning, and running
-require every selected execution policy to declare both `timing-scope` and
-`primary-time`. Unselected policies may remain incomplete while an author
-builds a benchmark. For example:
+Omitted experiment policies select built-in local execution and one final
+observation. They do not select from custom named policies. Explicit policies
+can override the defaults, and profiles require explicit selection. A named
+one-shot policy declares `kind: one_shot`. For example:
 
 ```yaml
 execution-policies:
@@ -111,7 +112,10 @@ effective environments and worker selections in `requirements`, all control
 requests in `requirements.controls`, and resolved parameter mappings and slots
 in `experiments`. The human plan renders these same records. Runs retain the
 resolved settings in policy records, specifications, and provenance. Defaults
-never infer preprocessing, validity, completion, or scientific tolerances.
+never infer scientific tolerances or convergence. Missing scientific rule groups
+normalize to empty objects, and reference cases are optional. See
+[function declarations](authoring-cli.md#function-declarations) for source,
+artifact-schema, capability, and sole-problem defaults.
 
 ## YAML syntax
 

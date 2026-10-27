@@ -49,7 +49,7 @@ fn schema_catalog() -> SchemaCatalog {
 }
 
 #[test]
-fn family_schema_is_optional_but_scientific_rules_remain_explicit() {
+fn scientific_rule_groups_are_optional_but_explicit_values_must_be_objects() {
     let mut source: Value = serde_saphyr::from_str(COMPLETE_CONTRACT).unwrap();
     source.as_object_mut().unwrap().remove("semantics-schema");
     source["semantics"]["preprocessing"] = json!({"allowed_outside_timed_scope": []});
@@ -65,6 +65,7 @@ fn family_schema_is_optional_but_scientific_rules_remain_explicit() {
         for replacement in [None, Some(Value::Null), Some(json!([]))] {
             let mut invalid = source.clone();
             let rules = invalid["semantics"].as_object_mut().unwrap();
+            let omitted = replacement.is_none();
             match replacement {
                 None => {
                     rules.remove(group);
@@ -73,8 +74,18 @@ fn family_schema_is_optional_but_scientific_rules_remain_explicit() {
                     rules.insert(group.to_owned(), value);
                 }
             }
-            let error = parse_problem_contract(path, &invalid.to_string(), &catalog).unwrap_err();
-            assert!(error.to_string().contains(group), "{error}");
+            if omitted {
+                let contract =
+                    parse_problem_contract(path, &invalid.to_string(), &catalog).unwrap();
+                assert_eq!(
+                    contract.semantics.as_canonical().as_json()[group],
+                    json!({})
+                );
+            } else {
+                let error =
+                    parse_problem_contract(path, &invalid.to_string(), &catalog).unwrap_err();
+                assert!(error.to_string().contains(group), "{error}");
+            }
         }
     }
     source["semantics-schema"] = Value::Null;
@@ -168,13 +179,10 @@ fn rejects_unknown_fields_with_a_source_span() {
 }
 
 #[test]
-fn requires_distinct_validity_and_one_shot_completion_rules() {
-    for (heading, expected) in [
-        ("  validity:\n    nonfinite: \"reject\"\n", "validity"),
-        (
-            "  one_shot_completion:\n    maximum_error: 1e-8\n",
-            "one_shot_completion",
-        ),
+fn declared_family_schemas_can_require_scientific_rules() {
+    for heading in [
+        "  validity:\n    nonfinite: \"reject\"\n",
+        "  one_shot_completion:\n    maximum_error: 1e-8\n",
     ] {
         let source = COMPLETE_CONTRACT.replace(heading, "");
         let error = parse_problem_contract(
@@ -184,13 +192,15 @@ fn requires_distinct_validity_and_one_shot_completion_rules() {
         )
         .unwrap_err();
 
-        assert!(error.to_string().contains(expected), "{error}");
-        assert!(error.source_span().is_some());
+        assert!(matches!(
+            error,
+            ProblemContractError::InvalidSemantics { .. }
+        ));
     }
 }
 
 #[test]
-fn rejects_empty_operational_rule_objects() {
+fn declared_family_schemas_can_reject_empty_rule_objects() {
     for assignment in [
         "  validity:\n    nonfinite: \"reject\"",
         "  one_shot_completion:\n    maximum_error: 1e-8",
@@ -204,7 +214,10 @@ fn rejects_empty_operational_rule_objects() {
         )
         .unwrap_err();
 
-        assert!(error.to_string().contains("cannot be empty"), "{error}");
+        assert!(
+            matches!(error, ProblemContractError::InvalidSemantics { .. }),
+            "{error}"
+        );
     }
 }
 

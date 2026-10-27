@@ -3,9 +3,7 @@
 use std::{fs, io, path::Path};
 
 use metewand_core::{
-    canonical::CanonicalValue,
-    manifest::{DatasetDefinition, RepositoryPath},
-    schema::SchemaValidationError,
+    canonical::CanonicalValue, manifest::DatasetDefinition, schema::SchemaValidationError,
 };
 use metewand_protocol::{
     Capability, EvaluationVerdict, ExecuteResponse, MaterializeResponse, RequestId, WorkerRole,
@@ -279,11 +277,23 @@ pub fn check_repository_workers(
                     Path::new("metrics.json"),
                     contract.metric_schema.as_path(),
                 )?;
-                if response.verdict() != EvaluationVerdict::Reached
-                    || metrics.data() != expected.data()
-                {
+                let expected_verdict: EvaluationVerdict = serde_json::from_value(json!(
+                    case.resolved_verdict(&contract.semantics).as_str()
+                ))
+                .expect("reference verdict");
+                if metrics.data() != expected.data() {
                     return Err(WorkerCheckError::Conformance(format!(
-                        "problem `{name}` reference case {case_index}: reference metrics disagree or verdict is not reached"
+                        "problem `{name}` reference case {case_index}: reference metrics disagree"
+                    )));
+                }
+                if response.verdict() != expected_verdict {
+                    return Err(WorkerCheckError::Conformance(format!(
+                        "problem `{name}` reference case {case_index}: verdict {} differs from expected {}",
+                        serde_json::to_value(response.verdict())
+                            .expect("verdict")
+                            .as_str()
+                            .expect("verdict string"),
+                        case.resolved_verdict(&contract.semantics).as_str(),
                     )));
                 }
                 report.reference_cases.push(ReferenceCaseCheck {
@@ -345,11 +355,31 @@ fn text(path: &Path) -> Result<&str, WorkerCheckError> {
 
 fn stage_reference(
     repository: &CheckedRepository,
-    source: &RepositoryPath,
+    input: &metewand_core::problem_contract::ReferenceInput,
     destination: &Path,
     envelope: Option<(&str, &Path, bool)>,
     private: &Path,
 ) -> Result<(), WorkerCheckError> {
+    let source = match input {
+        metewand_core::problem_contract::ReferenceInput::Path(path) => path,
+        metewand_core::problem_contract::ReferenceInput::Inline(data) => {
+            let (filename, value) = if let Some((filename, schema, result)) = envelope {
+                let mut value =
+                    json!({"schema_version": 1, "schema": schema, "data": data.as_json()});
+                if result {
+                    value["files"] = json!([]);
+                }
+                (filename, value)
+            } else {
+                ("data.json", data.as_json().clone())
+            };
+            fs::write(
+                destination.join(filename),
+                serde_json::to_vec(&value).expect("inline reference"),
+            )?;
+            return Ok(());
+        }
+    };
     let sources = std::slice::from_ref(source);
     let expected = identify_source_bundle(&repository.root, sources).map_err(RunError::from)?;
     let snapshot = resolve_source(

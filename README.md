@@ -8,28 +8,28 @@ The [website](https://metewand.org) provides a
 [getting started guide](docs/guide/getting-started.md) and
 [reference documentation](docs/reference/index.md).
 
-The local one-shot runner, durable recovery, JSONL and CSV exports, native Rust
-helpers, and Python and R SDKs are implemented. The next milestone makes local
-comparisons practical for Basin and clustlasso-cd, with simpler authoring and all three profile modes:
-fresh sequences, streaming checkpoints, and buffered instrumented traces.
-Those profile modes remain planned work; compact authoring supports inline
-contracts, schemas, and parameter declarations.
+The local runner, durable recovery, JSONL and CSV exports, native Rust helpers,
+and Python and R SDKs are implemented. Simple benchmarks use ordinary functions
+and a compact manifest. Fresh sequences and buffered instrumented profiles are
+available; streaming checkpoints and environment provisioning follow the local MVP.
 [TODO.md](TODO.md) records the active roadmap; [DESIGN.md](DESIGN.md) defines
 semantics and intended interfaces.
 
 ## Try a benchmark
 
-Build from source with Rust 1.98.0. The fixed-dataset example also needs Python
-3.11 or later:
+Build from source with Rust 1.98.0 and Python 3.11 or later:
 
 ```sh
-cargo build --release --locked -p metewand-cli
-target/release/metewand check --manifest examples/fixed-dataset/metewand.yaml
-target/release/metewand plan --manifest examples/fixed-dataset/metewand.yaml
-target/release/metewand run \
-  --manifest examples/fixed-dataset/metewand.yaml \
-  --output-dir /tmp/metewand-first-run \
-  --output jsonl
+cargo install --locked --path crates/metewand-cli
+python3 -m venv .venv
+. .venv/bin/activate
+python3 -m pip install ./sdk/python
+metewand init /tmp/my-benchmark
+cd /tmp/my-benchmark
+metewand check --workers
+metewand plan
+metewand run --output-dir run
+metewand status --output-dir run
 ```
 
 Choose a new output directory. Pass the same path with `--resume` to continue
@@ -37,13 +37,16 @@ an interrupted run without repeating accepted slots. See
 [running benchmarks](docs/reference/run-cli.md) for execution policies and
 [exporting results](docs/reference/exports.md) for analysis.
 
-Start your own benchmark with `metewand init [PATH]`, then add components with
+`metewand init [PATH]` creates a runnable `metewand.yaml` and `benchmark.py`.
+Use `--language r` for R, or `--empty` for a neutral manifest. Add components with
 `metewand scaffold dataset|problem|implementation NAME --language python|r|rust`.
 Scaffolds add compact declarations and small SDK adapters; implementation
 scaffolds also require `--problem NAME`.
 Both commands support `--dry-run` and refuse to overwrite existing files.
-The [authoring reference](docs/reference/authoring-cli.md) describes the current
-requirements. The [examples](examples) include raw-command, Rust, Python, R,
+The [least-squares example](examples/least-squares) compares in-house gradient
+descent and coordinate descent, with scientific checks added incrementally.
+The [authoring reference](docs/reference/authoring-cli.md) describes the defaults
+and extension points. The [examples](examples) include raw-command, Rust, Python, R,
 dataset-free, generated-data, and parameter-matrix benchmarks.
 
 ## Architecture and interfaces

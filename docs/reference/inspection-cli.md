@@ -78,6 +78,24 @@ observations by ID, and diagnostics by ID. Human output renders these same
 typed records. A successful inspection exits with code `0` even when it reports
 failed benchmark attempts.
 
+## Comparison view
+
+For an executed run, human status includes the same comparison table as `run`.
+Machine output adds a `comparison` array with one row per observation or per
+attempt without an observation. Rows retain method and case names, effective
+parameters, implementation and measurement repetitions, retry index, metrics,
+validity, completion, selection, primary wall time, and any failure diagnostic.
+Times carry their scope and `complete`, `partial`, or `unavailable` status.
+Instrumented profile coordinates are separate fields.
+
+Labels come from committed execution context, so removing or editing the
+manifest does not rename historical methods. Older runs without stored labels
+report nulls in machine output and identities or unavailable values in human
+output. Inspection never substitutes current host measurements for missing
+evidence. The table shows individual measurements without averaging away
+failures or retries. Before execution, pending slots remain in the status
+records and have no comparison measurement.
+
 ## Explanation records
 
 An explanation contains one `subject` with `id`, `kind`, `label`, `record`,

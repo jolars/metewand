@@ -45,13 +45,12 @@ version in `crates/metewand-protocol/src/lib.rs`.
 `SEED_DERIVATION_VERSION` and `SCHEDULING_POLICY_VERSION` remain `1`;
 change them only when the corresponding transcripts or policies change.
 The [measurement provenance schema](execution-measurements.md) continues to
-read existing version-1 and version-2 evidence. This policy update changes no
-constants, schemas, or accepted inputs.
+read existing version-1 and version-2 evidence.
 
 ## Current input boundary
 
 The manifest admits `one_shot` and buffered `profile` observation policies.
-Problem contracts require `supported-budgets: ["none"]`.
+Problem contracts support `supported-budgets: ["none"]`, also the default.
 Inline contracts and schemas are supported. Result and metric envelopes may
 omit `schema` to use the selected contract's schema. These additions retain the
 unreleased version-1 authoring and public-schema boundaries: existing canonical
@@ -78,10 +77,11 @@ persisted records retain their original meanings and remain readable; this does
 not change canonical identity transcripts or the run-store format. Equivalent
 omitted and explicit defaults share the normalized authoring identity path.
 Local-environment inference, nested policy versions, and repetition defaults
-resolve before hashing. Selected policies must now explicitly name their timing
-scope and primary clock. Existing authoring files that omitted those choices
-must add them. These pre-MVP authoring changes retain compatibility version 1;
-wire messages, persisted records, and execution semantics are unchanged.
+resolve before hashing. Omitted experiment policies select built-in local
+execution and one final observation. Timing defaults to `prepare_and_execute`
+with primary wall time. Named policies and profile selection remain explicit.
+These pre-MVP authoring additions retain compatibility version 1; wire messages,
+persisted records, and execution semantics are unchanged.
 
 Flat problem declarations also retain authoring and public-schema version 1.
 They inherit the contract version and mapping name, then use the same typed
@@ -97,11 +97,26 @@ plans, and component identities. YAML source locations are diagnostic metadata
 and do not enter identities or persisted records.
 
 Family `semantics-schema` declarations are optional within authoring version 1.
-Preprocessing, validity, and completion mappings remain explicit, and contracts
-still require an independent evaluator and reference cases. Existing declarations
-with schemas and explicit preprocessing retain their canonical representation.
-Older authoring files without preprocessing must add its mapping. Contracts without a schema
-record a null schema identity while hashing all scientific rules.
+Scientific rules and reference cases are optional; absent rule groups normalize
+to empty objects. Declared family schemas may require stronger rules. Contracts
+still own an independent evaluator. Existing explicit declarations keep their
+canonical representation. Contracts without a semantics schema record a null
+schema identity while hashing all scientific rules.
+
+Function declarations extend pre-MVP authoring version 1 and lower to existing
+command workers. They infer the standard JSON inventory, sole problem binding,
+and one-shot capability where unambiguous. Flat families default to their names.
+Defaults resolve before hashing and planning. Functions use existing protocol
+exchanges, including the negotiated scientific-rules capability. Inline reference
+objects and optional expected verdicts also extend version 1; file-backed
+references without an explicit verdict retain their identity bytes.
+
+Run and status comparison rows and initialization next steps are additive
+version-1 machine fields. Display labels are stored in execution context,
+without changing the run-store format or scientific identity transcripts.
+Historical records remain readable and report unavailable labels or timings
+instead of inferring them from the host. No compatibility constant is
+incremented for these pre-MVP authoring and reporting additions.
 
 Wire protocol 1 adds the evaluator capability `problem_semantics`. Only
 evaluators that report it receive the optional object of the same name in

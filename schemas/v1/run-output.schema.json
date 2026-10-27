@@ -187,7 +187,8 @@
           "items": {
             "$ref": "profile-observation-policy.schema.json#/$defs/progress"
           }
-        }
+        },
+        "comparison": {"type": "array", "items": {"$ref": "common.schema.json#/$defs/comparison_row"}}
       },
       "required": ["command", "benchmark", "manifest_hash", "output_directory", "attempts", "events", "summary"],
       "additionalProperties": false

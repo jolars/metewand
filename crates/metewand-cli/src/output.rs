@@ -172,6 +172,12 @@ impl CommandResult {
                     writeln!(output, "{verb} {kind}: {}", entry.path.display())
                         .expect("string write");
                 }
+                if !report.next_steps.is_empty() {
+                    output.push_str("\nNext steps:\n");
+                    for step in &report.next_steps {
+                        writeln!(output, "  {step}").expect("string write");
+                    }
+                }
                 output
             }
             Self::Help(result) => result.usage.to_owned(),
@@ -302,6 +308,7 @@ fn render_status(report: &StatusReport) -> String {
     }
     writeln!(output, "Slots: {} total, {} satisfied, {} pending, {} active, {} require retry, {} require recovery.", summary.attempt_slots, summary.satisfied_slots, summary.pending_slots, summary.active_slots, summary.retry_required_slots, summary.recovery_required_slots).expect("string write");
     writeln!(output, "Attempts: {} accepted, {} failed, {} superseded, {} censored, {} active.\nSelected observations: {}", summary.accepted_attempts, summary.failed_attempts, summary.superseded_attempts, summary.censored_attempts, summary.active_attempts, summary.selected_observations).expect("string write");
+    output.push_str(&render_comparison(&report.comparison));
     for profile in &report.fresh_sequences {
         writeln!(
             output,
@@ -494,6 +501,12 @@ impl CheckResult {
                 )
                 .expect("string writes succeed");
             }
+            writeln!(
+                output,
+                "  reference cases checked: {}",
+                report.reference_cases.len()
+            )
+            .expect("string write");
             for case in &report.reference_cases {
                 writeln!(
                     output,
@@ -1404,7 +1417,7 @@ impl CommandError {
                 Diagnostic::new(code, error.to_string())
                     .with_detail("path", error.path.to_string_lossy().as_ref())
                     .with_detail("created_paths", serde_json::to_value(&error.created_paths).expect("UTF-8 paths serialize"))
-                    .with_remediation("Inspect any created paths and choose a writable destination without an existing metewand.yaml; existing files are never overwritten."),
+                    .with_remediation("Inspect any created paths and choose a writable destination without existing starter files; existing files are never overwritten."),
             ),
         }
     }
@@ -1451,7 +1464,7 @@ impl CommandError {
         Self {
             exit_code: EXIT_INVALID_REPOSITORY,
             diagnostic: Box::new(Diagnostic::new("worker_check_failed", error.to_string())
-                .with_remediation("Inspect worker declarations and problem reference artifacts, then rerun `metewand check --workers`.")),
+                .with_remediation("For function workers, install the matching Metewand SDK in the environment on PATH. Inspect worker declarations and reference cases, then rerun `metewand check --workers`.")),
         }
     }
 
@@ -1664,6 +1677,93 @@ pub fn render_event(event: &RunEvent, format: OutputFormat) -> Result<String, se
     }
 }
 
+fn render_comparison(rows: &[metewand_core::comparison::ComparisonRow]) -> String {
+    if rows.is_empty() {
+        return String::new();
+    }
+    let mut output = String::from("\nComparison (individual measurements)\n");
+    output.push_str(
+        "Method | Rep (impl:measurement) | Retry | Status | Completion | Wall (ms) | Parameters | Metrics\n",
+    );
+    let mut previous = None;
+    for row in rows {
+        let settings = (
+            &row.experiment,
+            &row.dataset,
+            &row.problem,
+            &row.case,
+            &row.timing_scope,
+            &row.parameters["dataset"],
+            &row.parameters["problem"],
+        );
+        if previous != Some(settings) {
+            writeln!(
+                output,
+                "  experiment: {}; dataset: {}; problem: {}; case: {}; timing: {}",
+                row.experiment.as_deref().unwrap_or("unavailable"),
+                row.dataset.as_deref().unwrap_or("unavailable"),
+                row.problem.as_deref().unwrap_or("unavailable"),
+                row.case.as_deref().unwrap_or(if row.experiment.is_some() {
+                    "default"
+                } else {
+                    "unavailable"
+                }),
+                row.timing_scope.as_deref().unwrap_or("unavailable")
+            )
+            .expect("string write");
+            writeln!(
+                output,
+                "  dataset parameters: {}; problem parameters: {}",
+                row.parameters["dataset"], row.parameters["problem"]
+            )
+            .expect("string write");
+            previous = Some(settings);
+        }
+        let method = row.implementation.as_deref().unwrap_or(&row.candidate_id);
+        let repetition = match (row.implementation_repetition, row.measurement_index) {
+            (Some(i), Some(m)) => format!("{}:{}", i + 1, m + 1),
+            _ => "?".to_owned(),
+        };
+        let duration = row
+            .timed_wall_time_ns
+            .map(|n| format!("{:.3}", n as f64 / 1_000_000.0))
+            .unwrap_or_else(|| "unavailable".to_owned());
+        let duration = if row.timed_wall_time_status == "partial" {
+            format!("{duration} (partial)")
+        } else {
+            duration
+        };
+        writeln!(
+            output,
+            "{method} | {repetition} | {} | {} | {} | {duration} | {} | {}",
+            row.retry_index,
+            row.status,
+            row.completion.as_deref().unwrap_or("unavailable"),
+            row.parameters["implementation"],
+            row.metrics
+        )
+        .expect("string write");
+        if let Some(time) = row.instrumented_time_ns {
+            writeln!(
+                output,
+                "  instrumented: {time} ns; scope: {}",
+                row.instrumented_scope.as_deref().unwrap_or("unavailable")
+            )
+            .expect("string write");
+        }
+        if let Some(diagnostic) = &row.diagnostic {
+            writeln!(
+                output,
+                "  failure [{}]: {}",
+                diagnostic.code, diagnostic.message
+            )
+            .expect("string write");
+        }
+    }
+    output.push('\n');
+    output
+}
+
 fn render_run_report(report: &RunReport) -> String {
     let mut output = format!(
         "Benchmark `{}`: {} accepted, {} failed, {} superseded.\n  output directory: {}\n",
@@ -1673,6 +1773,7 @@ fn render_run_report(report: &RunReport) -> String {
         report.summary.superseded_attempts,
         report.output_directory
     );
+    output.push_str(&render_comparison(&report.comparison));
     for profile in &report.fresh_sequences {
         writeln!(
             output,
@@ -1687,6 +1788,9 @@ fn render_run_report(report: &RunReport) -> String {
         .expect("string write");
     }
     for attempt in &report.attempts {
+        if !report.comparison.is_empty() && attempt.observations.is_empty() {
+            continue;
+        }
         for observation in &attempt.observations {
             match &observation.profile {
                 metewand_core::records::ProfileObservationRecord::Buffered(profile) => writeln!(

@@ -7,6 +7,75 @@ runtime. Install it into the worker's selected environment, or include its
 example](https://github.com/jolars/metewand/tree/main/examples/python-sdk) does. An ambient `PYTHONPATH` is not inherited
 by the trusted local launcher.
 
+## Function workers
+
+For a simple JSON benchmark, declare `function: benchmark.py:solve` in YAML.
+The manifest launches the SDK; the source file only defines ordinary functions:
+
+```python
+import random
+
+
+def generate(context):
+    rng = random.Random(context.seed)
+    return {"values": [rng.randrange(10) for _ in range(context.parameters["size"])]}
+
+
+def solve(data, context):
+    return {"total": sum(data["values"])}
+
+
+def evaluate(data, result, context):
+    return {"absolute_error": abs(result["total"] - sum(data["values"]))}
+```
+
+Use `generate` for a dataset and `evaluate` for the problem's evaluator.
+`FunctionContext` provides:
+
+| Field | Dataset generator | Implementation | Evaluator |
+| --- | --- | --- | --- |
+| `parameters` | Dataset parameters | Implementation parameters | Problem parameters |
+| `problem_parameters` | `{}` | Problem parameters | Problem parameters |
+| `seed` | Derived dataset seed | Derived implementation seed | `None` |
+| `semantics` | `{}` | `{}` | Resolved scientific rules |
+
+Generators and solvers choose how to seed their own random generators. The SDK
+imports the source during the worker handshake, outside the default
+`prepare_and_execute` interval. `cold_end_to_end` timing includes startup and
+imports. Static `check` and `plan` never import source. Sibling modules are
+importable from the source directory; include them in `sources`.
+
+Each callback returns a canonical JSON object. Dataset objects become
+`data.json`; results and metrics receive standard envelopes. A dataset-free
+problem passes `{}` as data. The SDK must be installed in the selected Python
+environment on `PATH`; dependencies stay in that environment.
+
+Without validity or completion rules, plain metrics produce
+`Evaluation(metrics, "not_required")`. To enforce declared rules, return an
+explicit verdict:
+
+```python
+from metewand import Evaluation
+
+
+def evaluate(data, result, context):
+    error = abs(result["total"] - sum(data["values"]))
+    target = context.semantics["one_shot_completion"]["absolute_error"]
+    return Evaluation({"absolute_error": error},
+                      "reached" if error <= target else "not_reached")
+```
+
+A nonempty validity or completion group requires `Evaluation`. The helper
+rejects completion verdicts without completion rules and `not_required` when a
+completion rule exists. Use `invalid` for semantically unusable results and
+make metric fields optional if such results cannot produce them. The evaluator
+owns the scientific interpretation of rules.
+
+Function implementations support one-shot execution. For distinct untimed
+preparation, custom binary artifacts, applicability, profiles, or lifecycle
+state, use the APIs below. `serve_function(role, file, name)` is the SDK launcher
+used by manifest lowering; benchmark source files need no serving call.
+
 ## Implementation workers
 
 Subclass `OneShotImplementation` and pass an instance to `serve_implementation`:

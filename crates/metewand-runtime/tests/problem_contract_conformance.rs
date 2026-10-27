@@ -80,7 +80,14 @@ fn reference_contracts_admit_correct_workers_and_reject_three_classes_of_bad_res
             .into();
 
         for (case, reference) in cases.iter().zip(&contract.reference_cases) {
-            let dataset = base.join(reference.dataset.as_ref().unwrap().as_path());
+            let dataset = base.join(
+                reference
+                    .dataset
+                    .as_ref()
+                    .unwrap()
+                    .reference_path()
+                    .expect("file-backed fixture"),
+            );
             let response = MaterializeResponse::new(id(), "dataset-manifest.json");
             validator
                 .validate_materialized_dataset(
@@ -95,12 +102,22 @@ fn reference_contracts_admit_correct_workers_and_reject_three_classes_of_bad_res
                     &case["problem_parameters"],
                 )
                 .unwrap();
-            let result = base.join(reference.result.as_path());
+            let result = base.join(
+                reference
+                    .result
+                    .reference_path()
+                    .expect("file-backed fixture"),
+            );
             let response = ExecuteResponse::new(id(), None, "result.json", serde_json::Map::new());
             validator
                 .validate_execution_result(&result, &response, contract.result_schema.as_path())
                 .unwrap();
-            let metrics = base.join(reference.expected_metrics.as_path());
+            let metrics = base.join(
+                reference
+                    .expected_metrics
+                    .reference_path()
+                    .expect("file-backed fixture"),
+            );
             let validated = validator
                 .validate_metrics(
                     metrics.parent().unwrap(),
@@ -133,7 +150,14 @@ fn reference_contracts_admit_correct_workers_and_reject_three_classes_of_bad_res
                     connect(language, WorkerRole::Implementation, family, mode, &library);
                 for (case, reference) in cases.iter().zip(&contract.reference_cases) {
                     let context = format!("{family}/{}/{language}/{mode}", case["name"]);
-                    let dataset = base.join(reference.dataset.as_ref().unwrap().as_path());
+                    let dataset = base.join(
+                        reference
+                            .dataset
+                            .as_ref()
+                            .unwrap()
+                            .reference_path()
+                            .expect("file-backed fixture"),
+                    );
                     let result = TempDir::new().unwrap();
                     implementation
                         .prepare(
@@ -162,8 +186,16 @@ fn reference_contracts_admit_correct_workers_and_reject_three_classes_of_bad_res
                     }
                     let validated = validated.unwrap();
                     if mode == "correct" {
-                        let expected =
-                            read(&base.join(reference.result.as_path()).join("result.json"));
+                        let expected = read(
+                            &base
+                                .join(
+                                    reference
+                                        .result
+                                        .reference_path()
+                                        .expect("file-backed fixture"),
+                                )
+                                .join("result.json"),
+                        );
                         assert_eq!(validated.data().as_json(), &expected["data"], "{context}");
                     }
                     for (evaluator_language, evaluator) in &mut evaluators {

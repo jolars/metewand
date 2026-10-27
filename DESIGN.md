@@ -295,7 +295,7 @@ reference-cases:
 Primary commands:
 
 ```text
-metewand init [path]            create a minimal benchmark manifest
+metewand init [path]            create a runnable two-file benchmark
 metewand scaffold <component>   create boilerplate for one requested component
 metewand check                 validate manifest, contracts, and schemas
 metewand check --workers       launch workers and verify capabilities
@@ -317,19 +317,19 @@ metewand snapshot import       import a verified snapshot into the run store
 
 ### Authoring and scaffolding
 
-`metewand init` creates a minimal, domain-neutral benchmark containing a
-versioned manifest and no scientific definitions. It does not create datasets,
-problem semantics, evaluators, fixtures, implementations, or software
-environments.
+`metewand init` creates a runnable two-file benchmark: a versioned manifest
+and ordinary Python functions. `--language r` selects matching R functions.
+The small sum example illustrates seeded data generation, two methods, and
+independent metrics. It introduces no accuracy target or convergence claim.
+`--empty` retains a neutral version-and-name manifest for incremental authoring.
+Initialization preflights every target, refuses overwrites, reports setup and
+next commands, and never installs dependencies or launches workers.
 
-Current component scaffolding is explicit and incremental.
-`metewand scaffold dataset`, `metewand scaffold problem`, and
-`metewand scaffold implementation` create only the structural files required
-for the requested component and update the manifest accordingly. Generated
-code may implement protocol and schema
-boilerplate, but it must not choose problem semantics, validity criteria,
-completion criteria, parameter meanings, reference results, or library-specific
-translations. Those choices remain visible work for the benchmark author.
+Component scaffolding remains incremental. `metewand scaffold dataset`,
+`metewand scaffold problem`, and `metewand scaffold implementation` add compact
+declarations and small SDK stubs. Authors supply their numerical code, data
+shapes, and experiments. Scientific rules, reference cases, and documentation
+can be added as the benchmark matures.
 
 Scaffolding preserves YAML comments and formatting in block and flow mappings.
 It refuses an anchored document root, an anchored or aliased target namespace,
@@ -339,13 +339,13 @@ manually. Anchors on unrelated definitions and unrelated root merges remain
 supported. The proposed manifest is reparsed to verify that only the requested
 definition changes. Scaffolding validates the structural manifest and worker
 declarations while allowing unfinished flat scientific definitions between
-component additions. Full repository validation still requires those
-definitions and author-supplied reference fixtures.
+component additions. Repository checks validate the declared shapes and rules.
+Worker checks verify functions and any authored reference cases; zero cases
+explicitly means no scientific reference checks were performed.
 
 Metewand does not replace native environment initialization commands such as
-`uv init` or `renv::init()`. Complete runnable benchmarks, including examples
-such as a Python lasso comparison, are distributed under `examples/` rather than
-exposed as privileged built-in templates.
+`uv init` or `renv::init()`. Domain-specific runnable benchmarks, including
+a basic and validated least-squares comparison, live under `examples/`.
 
 The local MVP simplifies authoring around the Basin and clustlasso-cd
 integrations. Scaffolds emit compact declarations in the manifest and small
@@ -386,11 +386,12 @@ require explicit worker selections; Metewand never infers a managed backend.
 
 Nested execution and observation policies inherit version 1 when omitted, and
 both experiment repetition counts default to 1. Existing mechanical policy
-defaults resolve before hashing and planning. Every selected execution policy
-must declare `timing-scope` and `primary-time`; experiment policy selections and
-the observation `kind` remain explicit. Preprocessing, validity, and completion
-rules stay in the authored scientific contract. Plans expose effective parameter
-mappings, environments, repetitions, and execution controls, and execution
+defaults resolve before hashing and planning. Omitted experiment policies select
+built-in local execution and one final observation, independently of any named
+policies. Timing defaults to `prepare_and_execute` with primary wall time.
+Profiles always require explicit selection. Preprocessing, validity, and
+completion rules may be added to the scientific contract. Plans expose effective
+parameter mappings, environments, repetitions, and execution controls, and execution
 retains the same resolved records.
 
 #### Compact authoring
@@ -404,8 +405,8 @@ contracts remain supported; standalone and wrapped contracts still require
 
 The following fragments show compact implementation parameters, declaration
 grids, and a flat problem. Complete benchmarks also declare their
-sources, environments, accepted datasets, scientific rules, reference cases,
-and experiments.
+experiments. Sources, environments, accepted datasets, scientific rules, and
+reference cases can be made explicit when needed.
 
 ```yaml
 implementations:
@@ -488,27 +489,55 @@ The compact declarations follow these rules:
   Diagnostics identify the author's declaration or supplied value and its YAML
   location, rather than exposing a generated schema location.
 
-Family semantics remain explicit and hashed, including preprocessing, validity,
-and completion rules. Make a separate `semantics-schema` optional; authors may
-supply one when machine validation of those rules is useful. Pass the resolved
-scientific rules to the independent evaluator alongside the contract identity
-and problem parameters. A tolerance declared in the problem should be consumed
-by evaluator code rather than repeated as a hard-coded constant. Reference cases
-continue to check scientific behavior. Metric declarations describe data shape;
-they do not infer scientific formulas, validity, or completion thresholds.
+Family semantics are hashed when declared. Omitted `semantics` and missing
+`preprocessing`, `validity`, and `one_shot_completion` groups normalize to empty
+objects. An optional `semantics-schema` may require stronger family rules.
+Pass the resolved scientific rules to the independent evaluator alongside the
+contract identity and problem parameters. A tolerance declared in YAML should
+be consumed by evaluator code rather than repeated as a constant. Metric
+shapes never imply formulas, validity criteria, or completion thresholds.
 
-Scaffolds emit the compact form and one SDK adapter per component. Keep the actual
-scientific rules and adapter translations visible; defaults supply mechanical
-settings. Authors choose a worker language with `--language python|r|rust`;
-adapter callbacks fail with TODO diagnostics until the scientific decisions are
-supplied. An omitted worker environment uses the same unambiguous local default
-as other declarations. Native adapters are built in the author's Cargo project,
-without scaffolding invoking a package manager or generating a native lockfile.
-The complete comparison should need one manifest, small adapters, and scientific reference
-fixtures, without hand-written protocol transport or artifact envelopes. New
-public schemas should reuse authoritative boundary types where practical.
-Rewriting the existing schema catalog is not a prerequisite for these
-integrations.
+The Python and R function interface selects `file.py:function` or
+`file.R:function` in YAML. It lowers to an ordinary process worker through the
+matching SDK, with no import during static validation or planning. The selected
+source is included automatically; other dependencies remain declared sources.
+`generate(context)` returns dataset data, `solve(data, context)` returns result
+data, and `evaluate(data, result, context)` returns metrics. The context contains
+role parameters, problem parameters where available, seeds for generation and
+solving, and scientific rules for evaluation. This first interface uses
+canonical JSON objects and the standard `data.json` inventory and envelopes.
+With no validity or completion rules, a plain metric object implies
+`not_required`. Declared rules require an explicit scientific verdict. Without
+completion rules, a helper must not report `reached` or `not_reached`.
+
+Function datasets and flat problems with function evaluators default to the
+standard JSON inventory schema. Flat problem families default to their names.
+Function implementations imply `one_shot` and bind to the sole problem when
+unambiguous; multiple problems require explicit `problem-contracts`. Other
+workers retain their explicit schema and capability declarations. Separate
+lifecycle callbacks and custom artifact writers remain available for profiles,
+binary data, distinct preparation, and other advanced needs. Native Rust
+workers remain independent of a Python host.
+
+Inline reference objects supplement existing file fixtures. Dataset objects
+become `data.json`; result and metric objects receive standard envelopes.
+`expected-verdict` can assert invalidity, incompletion, completion, or
+`not_required`; omission expects completion only when a completion rule exists.
+Existing file-backed reference identities retain their canonical representation.
+
+Human `run` and stored `status` output render a comparison from shared typed
+records: method and case names, effective parameters, repetitions, retries,
+metrics, completion, wall time, and failure diagnostics. Timings retain their
+scope and availability; instrumented profile coordinates remain separate from
+wall time. Names are persisted with execution context, so inspection does not
+require the source manifest or infer missing historical evidence from the host.
+
+Scaffolds emit one SDK adapter per component. Python and R adapters use the
+function interface; Rust adapters use native lifecycle helpers. Callbacks fail
+with TODO diagnostics until implemented. Native adapters are built in the
+author's Cargo project without scaffolding invoking a package manager. Public
+schemas describe externally consumed boundaries; rewriting the existing catalog
+is not a prerequisite for an adopter workflow.
 
 #### Parameter expansion
 
@@ -653,17 +682,18 @@ schemas, metric schema, and supported timing scopes and budgets. The problem
 definition owns an independent evaluator worker, including its source bundle and
 environment; it is not a separately selectable benchmark component. The `family`
 value is an open, stable tag rather than a closed Metewand enumeration. A
-family-specific `semantics` object binds the remaining rules. It requires explicit
-`preprocessing`, `validity`, and `one_shot_completion` mappings. An optional
+family-specific `semantics` object binds any declared rules. Its `preprocessing`,
+`validity`, and `one_shot_completion` mappings default to empty objects. An optional
 `semantics-schema` adds family-specific validation. Metewand hashes the complete
 object but does not need to understand its scientific fields. For example, an optimization contract binds its
 objective, constraints, scaling, preprocessing, result-validity rules, and
 one-shot completion tolerances; other problem families bind their own
 domain-specific semantics. A contract may link explanatory prose, but every rule
 that affects execution, observation validity, or completion is
-represented in its validated structure. Each problem ships small reference
-instances and expected metrics that `metewand check --workers` evaluates as
-conformance tests.
+represented in its validated structure. Authors can add small reference
+instances, expected metrics, and expected verdicts that `metewand check --workers`
+evaluates as conformance tests. Reference cases are optional, and checks report
+how many were actually performed.
 
 Schema identifiers and contents are versioned and hashed. Before materialization
 or execution, the planner requires each dataset definition's output schema to
@@ -680,8 +710,8 @@ expands into separate problem instances, each of which binds exactly one dataset
 instance. Problems that need several logical data components represent them in
 one structured dataset instance with a contract-owned schema.
 
-Every implementation definition declares the problem contracts it implements.
-Manifest names are resolved to exact contract identities during planning, and
+Every implementation definition resolves the problem contracts it implements.
+Function implementations may infer the sole problem. Manifest names are resolved to exact contract identities during planning, and
 that resolved set is part of the implementation-definition identity. The planner
 rejects any implementation/problem pairing outside the set; `prepare` receives
 the selected contract identity, and contract conformance fixtures test that
@@ -2196,8 +2226,8 @@ need them. The Julia SDK follows the local MVP; raw executables, including
 Rust workers, can use the protocol directly.
 
 One-shot convenience callbacks let an implementation return
-scientific result data and an evaluator return metric data with an explicit
-validity and completion verdict. Rust helpers live in
+scientific result data and an evaluator return metric data. With declared
+validity or completion rules, the evaluator supplies an explicit verdict. Rust helpers live in
 `metewand_runtime::worker_sdk`; Python provides `OneShotImplementation` and
 `Evaluation`; R accepts execute output with optional `result_data` conversion
 and provides `evaluation`. Existing lifecycle callbacks and custom writers

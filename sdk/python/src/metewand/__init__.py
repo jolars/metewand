@@ -25,7 +25,11 @@ from ._worker import (
 
 __version__ = SDK_VERSION
 
+from ._functions import FunctionContext, serve_function
+
 __all__ = [
+    "FunctionContext",
+    "serve_function",
     "BufferedImplementation",
     "BufferedTrace",
     "Decision",

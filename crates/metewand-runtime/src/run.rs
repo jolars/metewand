@@ -403,7 +403,23 @@ pub fn run_repository_with_options(
             superseded_attempts,
         },
     )?;
+    let mut inspection = crate::inspection::Inspection::default();
+    inspection
+        .add_store(&output_directory)
+        .map_err(io::Error::other)?;
+    let selected = plan
+        .experiments
+        .iter()
+        .flat_map(|e| &e.candidates)
+        .map(|c| c.candidate.id.to_string())
+        .collect::<std::collections::BTreeSet<_>>();
+    let comparison = inspection
+        .comparison_rows()
+        .into_iter()
+        .filter(|row| selected.contains(&row.candidate_id))
+        .collect();
     Ok(RunReport {
+        comparison,
         fresh_sequences,
         command: "run",
         benchmark: repository.manifest.name.to_string(),

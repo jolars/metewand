@@ -17,7 +17,13 @@ acquisition, seeds, scheduling, worker lifecycle, artifact validation, and
 durable publication. The SDK does not set random generators or infer scientific
 semantics.
 
-For simple adapters, subclass `OneShotImplementation` and return scientific data
+For a simple benchmark, use `metewand init` and ordinary functions selected in
+YAML with `function: benchmark.py:solve`. The SDK supplies the context, JSON data,
+and artifact envelopes. Evaluators can return plain metrics when no scientific
+rules are declared; completion is then `not_required`. See the
+[least-squares example](../../examples/least-squares) for incremental validation.
+
+For lifecycle adapters, subclass `OneShotImplementation` and return scientific data
 from `execute`. Evaluators return `Evaluation(metrics, verdict)`. The SDK writes
 standard envelopes; custom result and metrics writers remain supported.
 

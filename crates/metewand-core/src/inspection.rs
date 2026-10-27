@@ -223,6 +223,8 @@ pub struct StatusSummary {
 #[derive(Debug, Serialize)]
 pub struct StatusReport {
     #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub comparison: Vec<crate::comparison::ComparisonRow>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub fresh_sequences: Vec<crate::profile::FreshSequenceProgress>,
     pub command: &'static str,
     pub benchmark: Option<String>,

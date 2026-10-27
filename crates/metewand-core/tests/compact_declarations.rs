@@ -137,8 +137,6 @@ fn flat_problems_reject_competing_and_invalid_declarations() {
         ("result-schema", json!("result.json")),
         ("metric-schema", json!("metrics.json")),
         ("parameters", Value::Null),
-        ("semantics", json!({"validity": {"finite": true}})),
-        ("reference-cases", json!([])),
         ("unexpected", json!(true)),
         ("version", json!(2)),
         ("name", Value::Null),
@@ -147,14 +145,7 @@ fn flat_problems_reject_competing_and_invalid_declarations() {
         document["problems"]["sum"][field] = value;
         invalid.push(document);
     }
-    for field in [
-        "family",
-        "result",
-        "metrics",
-        "semantics",
-        "reference-cases",
-        "evaluator",
-    ] {
+    for field in ["result", "metrics", "evaluator"] {
         let mut document = flat.clone();
         document["problems"]["sum"]
             .as_object_mut()
@@ -1165,7 +1156,7 @@ fn local_environment_and_one_shot_defaults_normalize_before_hashing() {
 }
 
 #[test]
-fn selected_timing_and_profile_choices_remain_explicit() {
+fn selected_policies_have_defaults_but_profile_kinds_remain_explicit() {
     let mut valid = document();
     valid["execution-policies"]["local"]["primary-time"] = json!("timed_wall_time");
     for field in ["timing-scope", "primary-time"] {
@@ -1176,8 +1167,7 @@ fn selected_timing_and_profile_choices_remain_explicit() {
             .remove(field);
         let manifest = parse(&invalid);
         let (contracts, schemas) = contracts_and_schemas(&manifest);
-        let error = expand_manifest_configurations(&manifest, &contracts, &schemas).unwrap_err();
-        assert!(error.to_string().contains(field), "{error}");
+        expand_manifest_configurations(&manifest, &contracts, &schemas).unwrap();
     }
     for field in ["observation-policy", "execution-policy"] {
         let mut invalid = valid.clone();
@@ -1185,7 +1175,9 @@ fn selected_timing_and_profile_choices_remain_explicit() {
             .as_object_mut()
             .unwrap()
             .remove(field);
-        assert!(parse_manifest(Path::new("metewand.yaml"), &invalid.to_string()).is_err());
+        let manifest = parse_manifest(Path::new("metewand.yaml"), &invalid.to_string()).unwrap();
+        let (contracts, schemas) = contracts_and_schemas(&manifest);
+        expand_manifest_configurations(&manifest, &contracts, &schemas).unwrap();
     }
     valid["observation-policies"]["final"]
         .as_object_mut()

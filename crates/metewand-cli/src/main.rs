@@ -18,7 +18,7 @@ const HELP: &str = "\
 Metewand reproducible benchmark runner
 
 Usage:
-  metewand [--output FORMAT] init [PATH] [--dry-run]
+  metewand [--output FORMAT] init [PATH] [--language python|r] [--empty] [--dry-run]
   metewand [--output FORMAT] scaffold <component> NAME [OPTIONS]
   metewand [--output FORMAT] schema [SCHEMA]
   metewand [--output FORMAT] check [--manifest PATH] [--workers]
@@ -30,7 +30,7 @@ Usage:
   metewand [--output FORMAT] cache <operation> --cache-dir PATH [OPTIONS]
 
 Commands:
-  init    Create a minimal versioned manifest without overwriting files.
+  init    Create a runnable benchmark without overwriting files.
   scaffold Add one dataset, problem, or implementation without scientific defaults.
   schema  List public schemas, or print one exact versioned document.
   check   Validate a benchmark repository; optionally verify workers.

@@ -80,11 +80,11 @@ The complete version-one execution-policy defaults are applied before hashing:
 
 Therefore, omitting one of these fields produces the same hash as spelling its
 default explicitly. CPU, thread, memory, and timeout values have no implicit
-request; their omitted representation is `null`. Selected policies must now
-explicitly declare `timing-scope` and `primary-time` during compatibility
-validation; those legacy normalization values still permit hashing incomplete,
-unselected policies. Omitted parameter boundaries, worker environments, nested
-policy versions, and repetition counts normalize using the
+request; their omitted representation is `null`. Omitted experiment selections
+resolve to built-in execution and final-observation policies before hashing.
+Function declarations lower to existing command workers, including their
+automatically bundled source file. Omitted parameter boundaries, worker
+environments, nested policy versions, and repetition counts normalize using the
 [authoring defaults](manifest-parsing.md#authoring-defaults).
 
 Every worker environment, implementation problem declaration, experiment

@@ -139,11 +139,51 @@ impl<'de> Deserialize<'de> for Manifest {
         manifest
             .resolve_local_environments()
             .map_err(de::Error::custom)?;
+        manifest
+            .resolve_authoring_defaults()
+            .map_err(de::Error::custom)?;
         Ok(manifest)
     }
 }
 
 impl Manifest {
+    fn resolve_authoring_defaults(&mut self) -> Result<(), String> {
+        for experiment in &mut self.experiments {
+            if experiment.execution_policy.as_str().is_empty() {
+                let name = Name("@local".to_owned());
+                self.execution_policies
+                    .entry(name.clone())
+                    .or_insert_with(|| {
+                        serde_json::from_value(serde_json::json!({}))
+                            .expect("built-in execution policy")
+                    });
+                experiment.execution_policy = name;
+            }
+            if experiment.observation_policy.as_str().is_empty() {
+                let name = Name("@final".to_owned());
+                self.observation_policies.entry(name.clone()).or_insert(
+                    ObservationPolicyDefinition {
+                        version: 1,
+                        kind: ObservationKind::OneShot,
+                        profile: None,
+                    },
+                );
+                experiment.observation_policy = name;
+            }
+        }
+        for implementation in self.implementations.values_mut() {
+            if implementation.problem_contracts.is_empty() {
+                if self.problems.len() != 1 {
+                    return Err("a function implementation requires `problem-contracts` when there is not exactly one problem".to_owned());
+                }
+                implementation
+                    .problem_contracts
+                    .push(self.problems.keys().next().expect("one problem").clone());
+            }
+        }
+        Ok(())
+    }
+
     fn resolve_local_environments(&mut self) -> Result<(), String> {
         let mut workers = self
             .datasets
@@ -342,8 +382,10 @@ pub struct ExperimentDefinition {
     #[serde(deserialize_with = "deserialize_nonempty_unique_names")]
     pub implementations: Vec<Name>,
     /// Selected execution-policy name.
+    #[serde(default = "omitted_name")]
     pub execution_policy: Name,
     /// Selected observation-policy name.
+    #[serde(default = "omitted_name")]
     pub observation_policy: Name,
     /// Number of independently seeded implementation replications.
     #[serde(
@@ -665,6 +707,12 @@ pub enum WorkerDefinition {
 }
 
 impl WorkerDefinition {
+    pub(crate) fn is_function(&self) -> bool {
+        matches!(self, Self::Command(worker) if
+            worker.args.starts_with(&["-m".to_owned(), "metewand".to_owned()]) ||
+            worker.args.get(2).is_some_and(|arg| arg == "metewand::serve_function()"))
+    }
+
     /// Returns the worker's launch convention.
     #[must_use]
     pub fn runner(&self) -> Runner {
@@ -994,7 +1042,10 @@ struct RawDatasetDefinition {
     parameter_schema: Option<SchemaDeclaration>,
     #[serde(default, deserialize_with = "deserialize_parameter_defaults")]
     parameter_defaults: Option<CanonicalValue>,
-    output_schema: SchemaDeclaration,
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
+    output_schema: Option<SchemaDeclaration>,
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
+    function: Option<String>,
     #[serde(default, deserialize_with = "deserialize_optional_non_null")]
     source: Option<RemoteSource>,
     #[serde(default, deserialize_with = "deserialize_optional_non_null")]
@@ -1019,8 +1070,9 @@ impl<'de> Deserialize<'de> for DatasetDefinition {
         D: Deserializer<'de>,
     {
         let raw = RawDatasetDefinition::deserialize(deserializer)?;
-        match raw.runner {
-            None => {
+        let function = raw.function;
+        match (raw.runner, function) {
+            (None, None) => {
                 if raw.parameter_schema.is_some()
                     || raw.parameters.is_some()
                     || raw.parameter_defaults.is_some()
@@ -1038,32 +1090,38 @@ impl<'de> Deserialize<'de> for DatasetDefinition {
                 let sources = required_source_bundle(raw.sources, "fixed dataset")
                     .map_err(de::Error::custom)?;
                 Ok(Self::Fixed(FixedDatasetDefinition {
-                    output_schema: raw.output_schema,
+                    output_schema: raw
+                        .output_schema
+                        .ok_or_else(|| de::Error::missing_field("output-schema"))?,
                     sources,
                 }))
             }
-            Some(runner) => {
+            (runner, function) => {
                 let parameters = ParameterBoundary::lower(
                     raw.parameters,
                     raw.parameter_schema,
                     raw.parameter_defaults,
                 )
                 .map_err(de::Error::custom)?;
-                let worker = build_worker(
-                    runner,
-                    raw.entrypoint,
-                    raw.program,
-                    raw.args.unwrap_or_default(),
-                    raw.sources,
-                    raw.environment,
-                    raw.protocol_transport,
-                )
-                .map_err(de::Error::custom)?;
+                let is_function = function.is_some();
+                let worker = if let Some(function) = function {
+                    if runner.is_some() || raw.entrypoint.is_some() || raw.program.is_some() || raw.args.is_some() {
+                        return Err(de::Error::custom("`function` cannot be combined with runner, entrypoint, program, or args"));
+                    }
+                    build_function_worker(&function, "dataset_materializer", raw.sources, raw.environment, raw.protocol_transport)
+                } else {
+                    build_worker(runner.expect("generated runner"), raw.entrypoint, raw.program,
+                        raw.args.unwrap_or_default(), raw.sources, raw.environment, raw.protocol_transport)
+                }.map_err(de::Error::custom)?;
                 Ok(Self::Generated(Box::new(GeneratedDatasetDefinition {
                     parameter_schema: parameters.schema,
                     parameter_defaults: parameters.defaults,
                     parameter_grids: parameters.grids,
-                    output_schema: raw.output_schema,
+                    output_schema: match raw.output_schema {
+                        Some(schema) => schema,
+                        None if is_function => json_dataset_schema(),
+                        None => return Err(de::Error::missing_field("output-schema")),
+                    },
                     source: raw.source,
                     worker,
                 })))
@@ -1178,13 +1236,25 @@ impl<'de> Visitor<'de> for ProblemDefinitionSeed<'_> {
                 contract
             }
             None => {
-                // Flat declarations inherit only envelope metadata; scientific
-                // choices still pass through the complete contract parser.
+                // Defaults normalize before hashing, just like explicit declarations.
                 fields.entry("version").or_insert(JsonValue::from(1));
                 if let Some(name) = self.name {
                     fields
                         .entry("name")
                         .or_insert_with(|| JsonValue::from(name.as_str()));
+                }
+                if let Some(name) = self.name {
+                    fields
+                        .entry("family")
+                        .or_insert_with(|| JsonValue::from(name.as_str()));
+                }
+                if evaluator
+                    .as_ref()
+                    .is_some_and(WorkerDefinition::is_function)
+                {
+                    fields.entry("dataset-schemas").or_insert_with(|| {
+                        serde_json::json!([json_dataset_schema().declaration_value()])
+                    });
                 }
                 let contract = ProblemContract::deserialize(JsonValue::Object(fields))
                     .map_err(de::Error::custom)?;
@@ -1209,7 +1279,10 @@ impl<'de> Visitor<'de> for ProblemDefinitionSeed<'_> {
 #[derive(Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 struct RawImplementationDefinition {
-    runner: Runner,
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
+    runner: Option<Runner>,
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
+    function: Option<String>,
     #[serde(default, deserialize_with = "deserialize_optional_non_null")]
     entrypoint: Option<RepositoryPath>,
     #[serde(default, deserialize_with = "deserialize_optional_non_null")]
@@ -1222,6 +1295,7 @@ struct RawImplementationDefinition {
     environment: Option<Name>,
     #[serde(default, deserialize_with = "deserialize_optional_non_null")]
     protocol_transport: Option<ProtocolTransport>,
+    #[serde(default)]
     problem_contracts: Vec<Name>,
     #[serde(default, deserialize_with = "deserialize_optional_non_null")]
     parameters: Option<ParameterDeclarations>,
@@ -1229,6 +1303,7 @@ struct RawImplementationDefinition {
     parameter_schema: Option<SchemaDeclaration>,
     #[serde(default, deserialize_with = "deserialize_parameter_defaults")]
     parameter_defaults: Option<CanonicalValue>,
+    #[serde(default)]
     capabilities: Vec<ImplementationCapability>,
 }
 
@@ -1237,12 +1312,25 @@ impl<'de> Deserialize<'de> for ImplementationDefinition {
     where
         D: Deserializer<'de>,
     {
-        let raw = RawImplementationDefinition::deserialize(deserializer)?;
+        let mut raw = RawImplementationDefinition::deserialize(deserializer)?;
         let parameters =
             ParameterBoundary::lower(raw.parameters, raw.parameter_schema, raw.parameter_defaults)
                 .map_err(de::Error::custom)?;
-        ensure_nonempty_unique(&raw.problem_contracts, "`problem-contracts`")
-            .map_err(de::Error::custom)?;
+        if raw.function.is_some() {
+            crate::problem_contract::ensure_unique(&raw.problem_contracts, "`problem-contracts`")
+                .map_err(de::Error::custom)?;
+            if raw.capabilities.is_empty() {
+                raw.capabilities.push(ImplementationCapability::OneShot);
+            }
+            if raw.capabilities != [ImplementationCapability::OneShot] {
+                return Err(de::Error::custom(
+                    "function implementations support only `one_shot`; use lifecycle workers for profiles or applicability",
+                ));
+            }
+        } else {
+            ensure_nonempty_unique(&raw.problem_contracts, "`problem-contracts`")
+                .map_err(de::Error::custom)?;
+        }
         if !(raw
             .capabilities
             .contains(&ImplementationCapability::OneShot)
@@ -1263,15 +1351,35 @@ impl<'de> Deserialize<'de> for ImplementationDefinition {
                 "requires an execution capability, with optional `applicability`, without duplicates",
             ));
         }
-        let worker = build_worker(
-            raw.runner,
-            raw.entrypoint,
-            raw.program,
-            raw.args.unwrap_or_default(),
-            raw.sources,
-            raw.environment,
-            raw.protocol_transport,
-        )
+        let worker = if let Some(function) = raw.function {
+            if raw.runner.is_some()
+                || raw.entrypoint.is_some()
+                || raw.program.is_some()
+                || raw.args.is_some()
+            {
+                return Err(de::Error::custom(
+                    "`function` cannot be combined with runner, entrypoint, program, or args",
+                ));
+            }
+            build_function_worker(
+                &function,
+                "implementation",
+                raw.sources,
+                raw.environment,
+                raw.protocol_transport,
+            )
+        } else {
+            build_worker(
+                raw.runner
+                    .ok_or_else(|| de::Error::missing_field("runner"))?,
+                raw.entrypoint,
+                raw.program,
+                raw.args.unwrap_or_default(),
+                raw.sources,
+                raw.environment,
+                raw.protocol_transport,
+            )
+        }
         .map_err(de::Error::custom)?;
         Ok(Self {
             worker,
@@ -1287,7 +1395,10 @@ impl<'de> Deserialize<'de> for ImplementationDefinition {
 #[derive(Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 struct RawWorkerDefinition {
-    runner: Runner,
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
+    runner: Option<Runner>,
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
+    function: Option<String>,
     #[serde(default, deserialize_with = "deserialize_optional_non_null")]
     entrypoint: Option<RepositoryPath>,
     #[serde(default, deserialize_with = "deserialize_optional_non_null")]
@@ -1308,17 +1419,103 @@ impl<'de> Deserialize<'de> for WorkerDefinition {
         D: Deserializer<'de>,
     {
         let raw = RawWorkerDefinition::deserialize(deserializer)?;
-        build_worker(
-            raw.runner,
-            raw.entrypoint,
-            raw.program,
-            raw.args.unwrap_or_default(),
-            raw.sources,
-            raw.environment,
-            raw.protocol_transport,
-        )
+        if let Some(function) = raw.function {
+            if raw.runner.is_some()
+                || raw.entrypoint.is_some()
+                || raw.program.is_some()
+                || raw.args.is_some()
+            {
+                return Err(de::Error::custom(
+                    "`function` cannot be combined with runner, entrypoint, program, or args",
+                ));
+            }
+            build_function_worker(
+                &function,
+                "problem_evaluator",
+                raw.sources,
+                raw.environment,
+                raw.protocol_transport,
+            )
+        } else {
+            build_worker(
+                raw.runner
+                    .ok_or_else(|| de::Error::missing_field("runner"))?,
+                raw.entrypoint,
+                raw.program,
+                raw.args.unwrap_or_default(),
+                raw.sources,
+                raw.environment,
+                raw.protocol_transport,
+            )
+        }
         .map_err(de::Error::custom)
     }
+}
+
+fn omitted_name() -> Name {
+    Name(String::new())
+}
+
+/// The JSON convenience interface owns its artifact envelope, not the author.
+pub(crate) fn json_dataset_schema() -> SchemaDeclaration {
+    serde_json::from_value(serde_json::json!({
+        "type": "object", "properties": {
+            "schema_version": {"const": 1}, "complete": {"const": true},
+            "files": {"type": "array", "minItems": 1, "maxItems": 1,
+                "items": {"type": "object", "properties": {"path": {"const": "data.json"}}, "required": ["path"]}}
+        }, "required": ["schema_version", "complete", "files"]
+    })).expect("standard JSON dataset schema")
+}
+
+fn build_function_worker(
+    function: &str,
+    role: &str,
+    sources: Option<Vec<RepositoryPath>>,
+    environment: Option<Name>,
+    protocol_transport: Option<ProtocolTransport>,
+) -> Result<WorkerDefinition, String> {
+    let (file, name) = function
+        .rsplit_once(':')
+        .ok_or("`function` requires FILE:NAME")?;
+    if name.is_empty()
+        || !name.chars().enumerate().all(|(i, c)| {
+            c.is_ascii_alphabetic() || c == '_' || c == '.' || (i > 0 && c.is_ascii_digit())
+        })
+    {
+        return Err("`function` requires a simple function name, not an expression".to_owned());
+    }
+    let path: RepositoryPath = serde_json::from_value(serde_json::json!(file))
+        .map_err(|e| format!("invalid function source: {e}"))?;
+    let (program, mut args) = match path.as_path().extension().and_then(|s| s.to_str()) {
+        Some("py") => ("python3", vec!["-m".to_owned(), "metewand".to_owned()]),
+        Some("R" | "r") => (
+            "Rscript",
+            vec![
+                "--vanilla".to_owned(),
+                "-e".to_owned(),
+                "metewand::serve_function()".to_owned(),
+            ],
+        ),
+        _ => return Err("function sources require a .py or .R extension".to_owned()),
+    };
+    args.extend([
+        role.to_owned(),
+        format!("{{sources}}/{file}"),
+        name.to_owned(),
+    ]);
+    let mut sources = sources.unwrap_or_default();
+    if !sources.contains(&path) {
+        sources.insert(0, path);
+    }
+    build_worker(
+        Runner::Command,
+        None,
+        Some(program.to_owned()),
+        args,
+        Some(sources),
+        environment,
+        protocol_transport,
+    )
 }
 
 fn build_worker(

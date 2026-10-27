@@ -574,14 +574,15 @@ fn templates(request: &ScaffoldRequest) -> (Mapping, TemplateFiles) {
     let worker = format!("{directory}/{basename}.{extension}");
     let mut launch = match request.language {
         WorkerLanguage::Python | WorkerLanguage::R => format!(
-            "runner: {}\nentrypoint: {}\nsources: [{}]\n",
-            if request.language == WorkerLanguage::Python {
-                "python"
-            } else {
-                "r"
-            },
-            quote(&worker),
-            quote(&worker),
+            "function: {}\n",
+            quote(&format!(
+                "{worker}:{}",
+                match request.component {
+                    ScaffoldComponent::Dataset => "generate",
+                    ScaffoldComponent::Problem => "evaluate",
+                    ScaffoldComponent::Implementation => "solve",
+                }
+            ))
         ),
         WorkerLanguage::Rust => format!(
             "runner: command\nprogram: {}\nsources: [{}, {}]\n",
@@ -594,28 +595,45 @@ fn templates(request: &ScaffoldRequest) -> (Mapping, TemplateFiles) {
         launch.push_str(&format!("environment: {}\n", quote(environment)));
     }
     let parameters = "parameters: {} # TODO: Declare typed scientific parameters and selections.\n";
-    let definition = match request.component {
-        ScaffoldComponent::Dataset => format!(
-            "{parameters}# TODO: Define the dataset artifact shape, then remove the rejecting not clause.\noutput-schema: {{not: {{}}}}\n{launch}"
-        ),
-        ScaffoldComponent::Problem => {
-            let launch = launch
-                .lines()
-                .map(|line| format!("  {line}\n"))
-                .collect::<String>();
-            format!(
-                "{parameters}# TODO: Choose a family.\n# TODO: Declare accepted dataset schemas, or [] for a dataset-free problem.\n# TODO: Declare result fields and metric shapes; formulas belong in the evaluator.\nresult: {{}}\nmetrics: {{}}\n# TODO: Choose allowed timing scopes.\nsupported-budgets: [none]\nsemantics:\n  # TODO: Define shared preprocessing, implementation conversion, and untimed work.\n  preprocessing: {{}}\n  # TODO: Define scientific validity rules.\n  validity: {{}}\n  # TODO: Define the completion target, consumed by the independent evaluator.\n  one_shot_completion: {{}}\n# TODO: Supply scientific fixtures; add dataset only if this problem accepts datasets.\n# reference-cases:\n#   - result: ...\n#     expected-metrics: ...\nevaluator:\n{launch}"
-            )
-        }
-        ScaffoldComponent::Implementation => format!(
-            "{parameters}problem-contracts: [{}]\ncapabilities: [one_shot]\n{launch}",
-            quote(
-                request
-                    .problem
-                    .as_deref()
-                    .expect("implementation problem was validated")
+    let definition = if request.language != WorkerLanguage::Rust {
+        match request.component {
+            ScaffoldComponent::Dataset => format!("{parameters}{launch}"),
+            ScaffoldComponent::Problem => format!(
+                "{parameters}# Declare the fields returned by solve and evaluate.\nresult: {{}}\nmetrics: {{}}\nevaluator:\n{}",
+                launch
+                    .lines()
+                    .map(|line| format!("  {line}\n"))
+                    .collect::<String>()
             ),
-        ),
+            ScaffoldComponent::Implementation => format!(
+                "{parameters}problem-contracts: [{}]\n{launch}",
+                quote(request.problem.as_deref().expect("validated problem"))
+            ),
+        }
+    } else {
+        match request.component {
+            ScaffoldComponent::Dataset => format!(
+                "{parameters}# TODO: Define the dataset artifact shape, then remove the rejecting not clause.\noutput-schema: {{not: {{}}}}\n{launch}"
+            ),
+            ScaffoldComponent::Problem => {
+                let launch = launch
+                    .lines()
+                    .map(|line| format!("  {line}\n"))
+                    .collect::<String>();
+                format!(
+                    "{parameters}# TODO: Choose a family.\n# TODO: Declare accepted dataset schemas, or [] for a dataset-free problem.\n# TODO: Declare result fields and metric shapes; formulas belong in the evaluator.\nresult: {{}}\nmetrics: {{}}\n# TODO: Choose allowed timing scopes.\nsupported-budgets: [none]\nsemantics:\n  # TODO: Define shared preprocessing, implementation conversion, and untimed work.\n  preprocessing: {{}}\n  # TODO: Define scientific validity rules.\n  validity: {{}}\n  # TODO: Define the completion target, consumed by the independent evaluator.\n  one_shot_completion: {{}}\n# TODO: Supply scientific fixtures; add dataset only if this problem accepts datasets.\n# reference-cases:\n#   - result: ...\n#     expected-metrics: ...\nevaluator:\n{launch}"
+                )
+            }
+            ScaffoldComponent::Implementation => format!(
+                "{parameters}problem-contracts: [{}]\ncapabilities: [one_shot]\n{launch}",
+                quote(
+                    request
+                        .problem
+                        .as_deref()
+                        .expect("implementation problem was validated")
+                ),
+            ),
+        }
     };
     let mapping = Document::from_str(&definition)
         .expect("scaffold templates contain valid YAML")

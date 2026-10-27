@@ -61,6 +61,7 @@ fn generated_adapters_negotiate_and_report_unfinished_science() {
         )
         .unwrap();
         fs::write(benchmark.path().join("result.json"), br#"{"data":{}}"#).unwrap();
+        fs::write(benchmark.path().join("data.json"), b"{}").unwrap();
         for (component, basename, role, entry) in [
             (
                 "dataset",
@@ -101,14 +102,45 @@ fn generated_adapters_negotiate_and_report_unfinished_science() {
                 "python" => {
                     let mut command = Command::new("python3");
                     command
+                        .args([
+                            "-m",
+                            "metewand",
+                            match role {
+                                WorkerRole::DatasetMaterializer => "dataset_materializer",
+                                WorkerRole::Implementation => "implementation",
+                                WorkerRole::ProblemEvaluator => "problem_evaluator",
+                            },
+                        ])
                         .arg(&source)
+                        .arg(match role {
+                            WorkerRole::DatasetMaterializer => "generate",
+                            WorkerRole::Implementation => "solve",
+                            WorkerRole::ProblemEvaluator => "evaluate",
+                        })
                         .env("PYTHONPATH", repository.join("sdk/python/src"))
                         .env("PYTHONDONTWRITEBYTECODE", "1");
                     command
                 }
                 "r" => {
                     let mut command = Command::new("Rscript");
-                    command.arg(&source).env("R_LIBS_USER", &r_library);
+                    command
+                        .args([
+                            "--vanilla",
+                            "-e",
+                            "metewand::serve_function()",
+                            match role {
+                                WorkerRole::DatasetMaterializer => "dataset_materializer",
+                                WorkerRole::Implementation => "implementation",
+                                WorkerRole::ProblemEvaluator => "problem_evaluator",
+                            },
+                        ])
+                        .arg(&source)
+                        .arg(match role {
+                            WorkerRole::DatasetMaterializer => "generate",
+                            WorkerRole::Implementation => "solve",
+                            WorkerRole::ProblemEvaluator => "evaluate",
+                        })
+                        .env("R_LIBS_USER", &r_library);
                     command
                 }
                 "rust" => {
@@ -157,9 +189,15 @@ fn generated_adapters_negotiate_and_report_unfinished_science() {
                 WorkerRole::DatasetMaterializer => session
                     .materialize(directory, json!({}), 7, directory)
                     .unwrap_err(),
-                WorkerRole::Implementation => session
+                WorkerRole::Implementation if language == "rust" => session
                     .prepare(directory, "contract", json!({}), json!({}), 7)
                     .unwrap_err(),
+                WorkerRole::Implementation => {
+                    session
+                        .prepare(directory, "contract", json!({}), json!({}), 7)
+                        .unwrap();
+                    session.execute(directory).unwrap_err()
+                }
                 WorkerRole::ProblemEvaluator => session
                     .evaluate(
                         directory,

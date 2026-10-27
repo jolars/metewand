@@ -1,0 +1,59 @@
+version: 1
+name: least-squares
+
+datasets:
+  simulated:
+    function: benchmark.py:generate
+    parameters:
+      n_samples: {type: integer, minimum: 1, default: 100}
+      n_features: {type: integer, minimum: 1, default: 3}
+      noise: {type: number, minimum: 0, default: 0.1}
+
+problems:
+  least_squares:
+    result:
+      beta: {type: array, items: number, minItems: 1}
+    metrics:
+      objective: {type: number, minimum: 0, optional: true}
+      gradient_inf: {type: number, minimum: 0, optional: true}
+    semantics:
+      objective: "sum((X beta - y)^2) / (2 n)"
+      preprocessing: {centering: false, scaling: false, intercept: false}
+      validity: {beta: finite_vector_matching_feature_count}
+      one_shot_completion: {gradient_inf: 1.0e-8}
+    reference-cases:
+      - dataset: {x: [[1, 0], [0, 1]], y: [1, 2]}
+        result: {beta: [1, 2]}
+        expected-metrics: {objective: 0, gradient_inf: 0}
+      - dataset: {x: [[1, 0], [0, 1]], y: [1, 2]}
+        result: {beta: [0, 0]}
+        expected-metrics: {objective: 1.25, gradient_inf: 1}
+        expected-verdict: not_reached
+      - dataset: {x: [[1, 0], [0, 1]], y: [1, 2]}
+        result: {beta: [0]}
+        expected-metrics: {}
+        expected-verdict: invalid
+    evaluator: {function: benchmark.py:evaluate}
+
+implementations:
+  gradient_descent:
+    function: benchmark.py:gd
+    parameters:
+      iterations: {type: integer, minimum: 1, default: 200}
+  coordinate_descent:
+    function: benchmark.py:cd
+    parameters:
+      iterations: {type: integer, minimum: 1, default: 200}
+
+experiments:
+  - name: comparison
+    problem: least_squares
+    datasets: [simulated]
+    implementations: [gradient_descent, coordinate_descent]
+    seed: 7
+    cases:
+      - name: converged
+      - name: iteration-limit
+        implementation-parameters:
+          gradient_descent: {iterations: 1}
+          coordinate_descent: {iterations: 1}

@@ -1,10 +1,4 @@
-library(metewand)
-
-materialize <- function(source_dir, dataset_parameters, seed, output_dir) {
-  # TODO: Construct the scientific dataset and write its files into output_dir.
-  # Use write_json, file_entry, and write_dataset_manifest from metewand;
-  # return the relative manifest path after closing every file.
-  stop(worker_error("operation_failed", "TODO: Implement dataset construction and conversion."))
+generate <- function(context) {
+  # Return a JSON-compatible named list using context$parameters and context$seed.
+  stop("TODO: Implement dataset generation.")
 }
-
-serve_dataset_materializer(materialize)

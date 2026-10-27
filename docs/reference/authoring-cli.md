@@ -1,57 +1,124 @@
 # Benchmark authoring
 
-Scaffolds create compact declarations in one manifest and small SDK adapters.
-[Separate contracts](problem-contracts.md) and [schemas](schema-validation.md#inline-declarations)
-remain supported for reuse. Implementations and generated datasets use
-[compact parameter declarations](parameter-namespaces.md#compact-implementation-parameters)
-with literal defaults or default grids. Problem contracts accept the same
-`parameters` form and compact `result` and `metrics` declarations. Each boundary
-can independently use a compact declaration or an explicit schema. Problem
-fields may also live directly under `problems.<name>`, without a `contract` wrapper.
-Implementation parameters keep their own mapping alongside worker settings.
-Experiment axes override declaration grids, and named cases override experiment
-axes. Experiment and case parameters accept plain scalar literals; arrays and
-objects use `value`, and sweeps use `grid`. Parameter diagnostics point to the
-authored declaration or effective supplied value in YAML. Local-environment and
-one-shot policy defaults resolve before planning. A separate family
-`semantics-schema` is optional; scientific rules and reference cases remain explicit.
+Start with `metewand init`, ordinary Python or R functions, and a short manifest.
+Keep scientific declarations in YAML and numerical code in source files. Add
+validation, documentation, and execution controls as the comparison grows.
+[Separate contracts](problem-contracts.md), reusable schemas, raw process
+workers, and lifecycle SDK APIs remain available.
 
 ## Initialization
 
-`metewand init [PATH]` creates `PATH/metewand.yaml`. The destination defaults to
-the current directory. Missing directories are created, and existing directories
-and unrelated files are preserved. The command is noninteractive.
+`metewand init [PATH] [--language python|r]` creates `metewand.yaml` and
+`benchmark.py` or `benchmark.R`. Python is the default. The destination defaults
+to the current directory. Missing directories are created, and existing
+unrelated files are preserved. The command is noninteractive.
 
 ```sh
 metewand init benchmark --dry-run
 metewand init benchmark
-metewand check --manifest benchmark/metewand.yaml
-metewand plan --manifest benchmark/metewand.yaml
+cd benchmark
+metewand check
+metewand plan
+metewand check --workers
+metewand run --output-dir run
 ```
 
-The manifest contains exactly:
+Install the matching SDK in the interpreter environment on `PATH` first; see
+[getting started](../guide/getting-started.md). Initialization reports this setup
+step and the next commands. It never installs dependencies or launches workers.
+The starter generates seeded integers, compares two sum methods, and evaluates
+their error independently. Its neutral name is `benchmark`, independent of the
+destination directory. Edit the functions and declarations to define your own
+comparison.
+
+Use `metewand init --empty` for only the following manifest, which passes
+`check` and produces an empty `plan`:
 
 ```yaml
 version: 1
 name: benchmark
 ```
 
-The neutral name does not depend on the destination directory. Edit it to name
-your benchmark. This manifest passes `check` and produces an empty `plan`.
-It contains no scientific definitions. Initialization creates no datasets,
-problems, evaluators, fixtures, implementations, environments, policies, worker
-code, or native lockfiles. It never launches workers or package managers.
+`--empty` cannot be combined with `--language`. Component scaffolding can extend
+this manifest incrementally, including with native Rust workers.
 
-`--dry-run` checks the destination and lists the paths it would create without
-writing anything. Both modes fail if the manifest path already exists, including
-a directory, a symbolic link, or a dangling symbolic link. Manifest creation is
-exclusive: a file that appears after preflight is also protected. A dry run does
-not reserve paths or promise that permissions and filesystem state will remain
-unchanged before a later invocation.
+`--dry-run` checks every destination and lists the paths it would create without
+writing. Both modes reject any existing target, including a directory, symbolic
+link, or dangling symbolic link. All target paths are checked before any file
+is created. Exclusive creation also protects files that appear after preflight.
+A dry run does not reserve paths or guarantee future filesystem permissions.
 
 Paths may be relative or absolute and must be nonempty UTF-8. Use `--` before a
 destination beginning with a hyphen, for example `metewand init -- --benchmark`.
 `PATH` always names a directory, not a custom manifest filename.
+
+## Function declarations
+
+A dataset, implementation, or evaluator can select an ordinary function:
+
+```yaml
+datasets:
+  observations:
+    function: benchmark.py:generate
+    parameters:
+      size: {type: integer, minimum: 1, default: 100}
+problems:
+  fit:
+    result: {estimate: number}
+    metrics: {error: number}
+    evaluator: {function: benchmark.py:evaluate}
+implementations:
+  candidate:
+    function: benchmark.py:solve
+experiments:
+  - name: comparison
+    problem: fit
+    datasets: [observations]
+    implementations: [candidate]
+    seed: 7
+```
+
+This fragment belongs beneath `version: 1` and `name: ...`. Use `.R` source files
+for R. The selected source file is automatically included in the worker bundle;
+add imported modules, data files, and native lockfiles through `sources`.
+`function` cannot be combined with `runner`, `entrypoint`, `program`, or `args`.
+It accepts a repository-relative file and a simple function name, not an
+expression. `check` and `plan` do not import the source. `check --workers` and
+`run` authorize imports inside worker processes.
+
+Functions have matching signatures in [Python](python-sdk.md#function-workers)
+and [R](r-sdk.md#function-workers): `generate(context)`, `solve(data, context)`,
+and `evaluate(data, result, context)`. The initial convenience interface uses
+canonical JSON objects. Helpers own dataset inventories and result and metric
+envelopes. Lifecycle workers and custom artifact writers support arrays in
+binary files, separate preparation, profiles, and other advanced requirements.
+
+### Resolved defaults
+
+- Omitted parameters form a closed empty object. Compact declarations provide
+  types, literal defaults, and default grids.
+- Omitted environments select the sole declared local environment, or an
+  implicit local environment when none are declared. Ambiguous selections fail.
+- Function datasets use a standard `data.json` inventory schema. A flat problem
+  with a function evaluator accepts it by default. Use `dataset-schemas: []`
+  explicitly for a dataset-free problem.
+- A flat problem's family defaults to its name. Allowed timing scopes default
+  to `[prepare_and_execute]`, and supported budgets default to `[none]`.
+- A function implementation defaults to `one_shot` and binds to the sole
+  problem. With multiple problems, declare `problem-contracts` explicitly.
+- Omitted experiment policies select built-in local execution and one final
+  observation. Repetition counts default to one. The primary time is wall time
+  over preparation, execution, and result serialization. Named policies remain
+  available for explicit controls; profile selection is always explicit.
+- Scientific rules and reference cases are optional. A plain metric object
+  receives completion `not_required`. Declared validity or completion rules
+  require an explicit evaluator verdict. Metrics never imply convergence.
+
+Plans expose effective settings before execution. The
+[least-squares example](https://github.com/jolars/metewand/tree/main/examples/least-squares)
+shows a basic GD/CD comparison and adds scientific rules and inline references
+to the same functions. See [problem contracts](problem-contracts.md) for
+stronger checks and [running benchmarks](run-cli.md) for execution controls.
 
 ## Reported paths and failures
 
@@ -66,6 +133,7 @@ result. Its `data` object contains:
 | `dry_run` | Whether changes were only proposed. |
 | `manifest` | The destination manifest path. |
 | `paths` | Ordered created or proposed paths, each with `path` and `kind` (`directory` or `file`). |
+| `next_steps` | Setup and command suggestions for a runnable starter; omitted for `--empty`. |
 
 Paths address the supplied destination, and relative paths are relative to the
 command's working directory. Preexisting directories do not appear in the
@@ -75,7 +143,7 @@ Invalid arguments exit with `2`. Path conflicts (`init_path_exists`) and other
 filesystem failures (`init_io_failed`) exit with `74`. A diagnostic identifies
 the failing path in `details.path` and reports changes already made in
 `details.created_paths`; human diagnostics show those paths too. Initialization
-does not roll back created directories or a partially written manifest after an
+does not roll back created directories or partially written files after an
 I/O failure. Inspect the reported paths before retrying.
 
 ## Component scaffolding
@@ -124,55 +192,32 @@ the manifest. The extension is `.py`, `.R`, or `.rs` for Python, R, or Rust:
 | Problem | `problems/NAME/` | `evaluator` |
 | Implementation | `implementations/NAME/` | `worker` |
 
-Parameters start as `parameters: {}`, a closed empty object. Add typed scientific
-parameters, defaults, and grids as needed. The generated dataset has an inline
-`output-schema: {not: {}}`; define the artifact shape and remove the rejecting
-clause. Problem fields live directly under `problems.NAME`, with compact `result`
-and `metrics` mappings. No separate contract, schema, or reference files are
-created. You can replace any boundary with a reusable external declaration later.
+Parameters start as `parameters: {}`, a closed empty object. Add typed
+parameters, defaults, and grids as needed. Python and R scaffolds use function
+references with `generate`, `solve`, or `evaluate` stubs. Their callbacks raise
+clear TODO errors until implemented. Problem scaffolds start with empty compact
+`result` and `metrics` mappings; declare the fields your callbacks return. No
+separate contract, schema, or reference files are required.
 
-The problem deliberately leaves its family, accepted dataset schemas, timing
-scopes, preprocessing, validity, completion target, and reference cases for the
-author. Choose `dataset-schemas: []` explicitly for a dataset-free problem.
-Supply independently justified reference results and metrics. Scaffolding
-checks YAML structure and worker declarations while allowing unfinished flat
-scientific definitions between component additions. `check`, `plan`, and `run`
-require complete declarations and reference fixtures. See
-[problem contracts](problem-contracts.md) for the full contract.
+Choose `dataset-schemas: []` for a dataset-free problem. Add scientific rules
+and independently justified reference results when useful. `check` and `plan`
+validate declarations without importing source, while `check --workers` verifies
+callables and executes any declared references. Zero references means no
+scientific reference checks were performed.
 
-Python and R adapters use the [Python](python-sdk.md) and [R](r-sdk.md) runners.
-Install the matching SDK into the selected environment. The [Rust](rust-sdk.md)
-adapters use native helpers through the command runner. Add them as binaries to
-your Cargo project with local path dependencies on `metewand-runtime` and
-`metewand-protocol`, plus `serde_json`. Build and copy each executable beside its
-`.rs` adapter with the same basename and no extension. The generated manifest
-includes both the source and executable in its source bundle. Add other solver
-sources and native lockfiles to `sources` as needed. Scaffolding creates no
-Cargo project and runs no build or package manager.
+Install the matching [Python](python-sdk.md) or [R](r-sdk.md) SDK into the
+selected environment. The [Rust](rust-sdk.md) adapters use native helpers through
+the command runner. Add them as binaries to your Cargo project with local path
+dependencies on `metewand-runtime` and `metewand-protocol`, plus `serde_json`.
+Build and copy each executable beside its `.rs` adapter with the same basename
+and no extension. The generated manifest includes its source and executable.
+Rust datasets retain an explicit artifact schema placeholder for the author to
+replace. Scaffolding creates no Cargo project and invokes no package manager.
 
-Adapters already serve handshakes, dispatch callbacks, and report structured
-errors through the SDK. Their scientific callbacks raise TODO failures until
-you implement them. Implementations own preparation, solving, and conversion
-into scientific result data; the SDK writes the standard result envelope.
-Evaluators independently compute metrics and choose an explicit verdict,
-consuming declared rules through `problem_semantics`. Dataset callbacks write
-scientific files and use SDK inventory helpers. Add lifecycle hooks or custom
-artifact writers when needed, preserving the chosen timing boundary.
-
-Finish the benchmark by declaring an experiment and choosing its execution and
-observation policies. Keep `timing-scope`, `primary-time`, scientific rules, and
-profile selection explicit. The
-[Python SDK example](https://github.com/jolars/metewand/tree/main/examples/python-sdk)
-shows a complete benchmark with one manifest, small adapters, and reference
-fixtures. Use ecosystem tools to initialize environments and install the SDKs;
-scaffolding never changes native lockfiles or launches workers.
-
-The [Benchopt SLOPE comparison](https://github.com/jolars/metewand/tree/main/examples/benchopt-slope)
-reuses an existing dataset generator, two solvers, and an independent evaluator
-through small SDK adapters. Its validation script checks three repetitions per
-configuration, completion misses, effective settings, metrics, and timings
-through the public CLI. Human `run` output shows metrics and failure reasons;
-use `plan` for settings and `explain` or `export` for recorded timing evidence.
+Finish by adding an experiment. Policies may be omitted for the basic local
+comparison or selected explicitly for other execution and observation controls.
+Lifecycle callbacks and custom writers remain available for more involved data
+and timing boundaries.
 
 ### Dry runs, path reports, and conflicts
 
@@ -218,12 +263,11 @@ does not reserve paths or guarantee that a later write will have permission.
 
 ## Compatibility
 
-The generated manifest uses `MANIFEST_VERSION = 1`, and machine results use
-`PUBLIC_SCHEMA_VERSION = 1`. The `init` and `scaffold` results add command shapes
-to the existing machine envelope without changing other command records,
-manifest semantics, identities, execution semantics, or the worker protocol.
-Compact scaffolds use existing authoring syntax and SDKs, so this change needs
-no compatibility version bump. Existing external declarations remain supported.
-The compatibility constants remain unchanged. The published `machine-output`
-schema defines both results, and conformance fixtures cover creation, dry runs,
-and malformed records.
+Function declarations and the new defaults extend the pre-MVP version-1
+authoring boundary. They lower into existing worker launches and typed policies.
+Existing explicit declarations retain their canonical representations and
+persisted records remain readable. Inline references have distinct identities
+from file-backed fixtures. The comparison view and initialization suggestions
+are additive version-1 machine fields. These changes do not alter identity
+transcripts, the run-store format, wire protocol, or execution-semantics version.
+See [compatibility versions](compatibility-versions.md).

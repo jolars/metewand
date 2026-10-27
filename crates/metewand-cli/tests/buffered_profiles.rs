@@ -81,6 +81,8 @@ fn buffered_modes_publish_independent_snapshots_and_diagnostic_traces() {
     let report = run_data(&run);
     assert!(run.status.success(), "{report}");
     assert_eq!(report["summary"]["accepted_attempts"], 5, "{report}");
+    let comparison = report["comparison"].as_array().unwrap();
+    assert_eq!(comparison.len(), 15);
     for attempt in report["attempts"].as_array().unwrap() {
         assert_eq!(
             attempt["observations"].as_array().unwrap().len(),
@@ -97,6 +99,20 @@ fn buffered_modes_publish_independent_snapshots_and_diagnostic_traces() {
                     .join("observation.json"),
             );
             assert_eq!(persisted["profile"]["measurement_basis"], "instrumented");
+            let row = comparison
+                .iter()
+                .find(|row| row["observation_id"] == observation["observation_id"])
+                .unwrap();
+            assert_eq!(row["metrics"], observation["metrics"]);
+            assert_eq!(
+                row["instrumented_time_ns"],
+                persisted["profile"]["instrumented_time_ns"]
+            );
+            assert_eq!(
+                row["instrumented_scope"],
+                persisted["profile"]["instrumented_scope"]
+            );
+            assert_eq!(row["timed_wall_time_status"], "complete");
             let time = persisted["profile"]["instrumented_time_ns"]
                 .as_u64()
                 .unwrap();

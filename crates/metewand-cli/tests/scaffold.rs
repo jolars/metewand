@@ -6,7 +6,7 @@ use std::{
 };
 
 use metewand_core::{
-    manifest::{DatasetDefinition, InterpretedRunner, WorkerDefinition, parse_manifest},
+    manifest::{DatasetDefinition, WorkerDefinition, parse_manifest},
     public_schemas::{PublicSchema, public_schema_catalog},
 };
 use serde_json::{Value, json};
@@ -133,10 +133,10 @@ fn scaffolds_all_three_components_incrementally_without_scientific_defaults() {
     assert!(!source.contains("contract:"));
     assert!(!source.contains("parameter-schema:"));
     assert!(!source.contains("semantics-schema:"));
-    assert!(source.contains("one_shot_completion: {}"));
+    assert!(!source.contains("one_shot_completion:"));
     assert!(source.contains("# TODO:"));
-    // Scientific placeholders remain invalid until the author supplies rules.
-    assert!(parse_manifest(Path::new("metewand.yaml"), &source).is_err());
+    // Declarations can be checked before the author implements each callback.
+    parse_manifest(Path::new("metewand.yaml"), &source).unwrap();
     let manifest = parse_manifest(Path::new("metewand.yaml"), &complete_problems(&source)).unwrap();
     assert_eq!(manifest.datasets.len(), 1);
     assert_eq!(manifest.problems.len(), 1);
@@ -148,10 +148,10 @@ fn scaffolds_all_three_components_incrementally_without_scientific_defaults() {
     let DatasetDefinition::Generated(dataset) = &manifest.datasets["sample.data"] else {
         panic!("expected materializer");
     };
-    let WorkerDefinition::Interpreted(worker) = &dataset.worker else {
-        panic!("expected SDK worker");
+    let WorkerDefinition::Command(worker) = &dataset.worker else {
+        panic!("expected function SDK launch");
     };
-    assert_eq!(worker.runner, InterpretedRunner::Python);
+    assert_eq!(worker.program, "python3");
     assert_eq!(worker.environment.as_str(), "local");
     assert_eq!(
         manifest.implementations["sample.impl"].problem_contracts[0].as_str(),
@@ -819,8 +819,8 @@ fn scaffold_environment_defaults_require_an_unambiguous_local_choice() {
     let DatasetDefinition::Generated(dataset) = &manifest.datasets["sample"] else {
         panic!("expected generated dataset");
     };
-    let WorkerDefinition::Interpreted(worker) = &dataset.worker else {
-        panic!("expected SDK worker");
+    let WorkerDefinition::Command(worker) = &dataset.worker else {
+        panic!("expected function SDK launch");
     };
     assert_eq!(worker.environment.as_str(), "host");
 }

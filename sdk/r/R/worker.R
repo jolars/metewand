@@ -91,7 +91,7 @@ evaluation <- function(metrics, verdict) {
   structure(list(metrics = metrics, verdict = verdict), class = "metewand_evaluation")
 }
 
-.serve <- function(worker, role, reader, writer, semantics = FALSE, fresh_sequence = FALSE) {
+.serve <- function(worker, role, reader, writer, semantics = FALSE, fresh_sequence = FALSE, initialize = NULL) {
   ready <- FALSE
   prepared <- FALSE
   state <- NULL
@@ -115,6 +115,7 @@ evaluation <- function(metrics, verdict) {
         .fail("invalid_request", "The first request must negotiate this worker's role.")
       }
       if (!1 %in% unlist(request$protocols)) .fail("unsupported_operation", "No offered protocol version is supported.")
+      if (is.function(initialize)) initialize()
       ready <<- TRUE
       return(list(protocol = 1, worker_id = request$worker_id,
                   sdk = list(name = "metewand-r", version = "0.1.0"),
@@ -205,7 +206,7 @@ evaluation <- function(metrics, verdict) {
   }
 }
 
-.serve_fds <- function(worker, role, read_fd, write_fd, semantics = FALSE, fresh_sequence = FALSE) {
+.serve_fds <- function(worker, role, read_fd, write_fd, semantics = FALSE, fresh_sequence = FALSE, initialize = NULL) {
   if (is.null(read_fd)) read_fd <- suppressWarnings(as.double(Sys.getenv("METEWAND_PROTOCOL_READ_FD")))
   if (is.null(write_fd)) write_fd <- suppressWarnings(as.double(Sys.getenv("METEWAND_PROTOCOL_WRITE_FD")))
   if (!.is_integer(read_fd, .Machine$integer.max) || !.is_integer(write_fd, .Machine$integer.max)) {
@@ -213,7 +214,7 @@ evaluation <- function(metrics, verdict) {
   }
   pipes <- .native(C_mw_open, read_fd, write_fd, error = stop)
   on.exit(.Call(C_mw_close, pipes))
-  .serve(worker, role, pipes, pipes, semantics = semantics, fresh_sequence = fresh_sequence)
+  .serve(worker, role, pipes, pipes, semantics = semantics, fresh_sequence = fresh_sequence, initialize = initialize)
 }
 
 serve_implementation <- function(prepare, execute, result = NULL, reset = NULL, shutdown = NULL,

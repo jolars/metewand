@@ -116,7 +116,7 @@ fn rejects_all_version_one_negative_cases() {
             .unwrap_or_else(|| panic!("unknown schema slug `{}`", case.schema));
         let error = catalog
             .validate(schema.repository_path().as_ref(), &case.instance)
-            .unwrap_err();
+            .expect_err(&format!("negative case {} was accepted", case.name));
         assert!(
             matches!(error, SchemaValidationError::InvalidInstance { .. }),
             "invalid case `{}` produced the wrong error: {error}",

@@ -1,10 +1,25 @@
 library(metewand)
 
+context <- metewand:::.function_context(list(), semantics = list(validity = list(), one_shot_completion = list()))
+plain <- metewand:::.evaluate_function(function(data, result, context) list(error = 0), list(), list(), context)
+stopifnot(plain$verdict == "not_required", plain$metrics$error == 0)
+
 fails <- function(expr, class = "error") {
   error <- tryCatch({ force(expr); NULL }, error = identity)
   stopifnot(inherits(error, class))
   invisible(error)
 }
+for (group in c("validity", "one_shot_completion")) {
+  rules <- list(validity = list(), one_shot_completion = list())
+  rules[[group]] <- list(error = 0)
+  context <- metewand:::.function_context(list(), semantics = rules)
+  fails(metewand:::.evaluate_function(function(...) list(error = 0), list(), list(), context))
+  verdict <- if (group == "one_shot_completion") "reached" else "not_required"
+  result <- metewand:::.evaluate_function(function(...) evaluation(list(error = 0), verdict), list(), list(), context)
+  stopifnot(result$verdict == verdict)
+}
+context <- metewand:::.function_context(list())
+fails(metewand:::.evaluate_function(function(...) evaluation(list(), "reached"), list(), list(), context))
 text <- function(value) rawToChar(canonical_bytes(value))
 root <- Sys.getenv("METEWAND_REPOSITORY", "../../..")
 vectors <- read_json(file.path(root, "fixtures/canonical-json/v1.json"))

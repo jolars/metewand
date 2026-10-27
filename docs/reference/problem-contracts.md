@@ -63,8 +63,7 @@ Contract version, scientific semantics, reference cases, and validation rules
 are identical in both forms. File paths in the envelope remain relative to the
 repository root. Relative `$ref` values inside an inline schema use the owning
 document's directory. `semantics-schema` is optional. When supplied, it adds
-offline family-specific validation without changing the required scientific
-rule groups.
+offline family-specific validation and may require stronger scientific rules.
 
 ```rust
 use std::path::{Path, PathBuf};
@@ -93,27 +92,34 @@ fn load_contract(
 
 ## Validation boundary
 
-The common envelope requires parameter, accepted-dataset, result, and metric
-schemas; a nonempty, duplicate-free set of timing scopes; the Gate 1
-`none` budget; and at least one reference case. Every referenced schema must be
-present in the supplied catalog, including schemas generated from compact
-declarations. Dataset-backed reference cases require a
-dataset path, while dataset-free cases must omit it.
+The common envelope requires accepted-dataset, result, and metric schemas.
+Omitted parameters form a closed empty-object schema. Timing scopes default to
+`[prepare_and_execute]`, supported budgets to `[none]`, and reference cases to
+`[]`. Explicit timing scopes must be nonempty and duplicate-free. A flat problem
+inherits its family from its mapping name. With a function evaluator, it also
+defaults to the standard `data.json` inventory. Raw evaluators still require
+accepted dataset schemas. Choose `dataset-schemas: []` explicitly for a
+dataset-free problem.
 
-The `semantics` mapping is otherwise family-owned, but it requires three explicit
-rule groups:
+Every referenced schema must be in the offline catalog, including generated
+schemas. Dataset-backed reference cases require a dataset input, while
+dataset-free cases must omit it.
 
-- `preprocessing` defines shared construction, implementation conversion, and
-  any work allowed outside the timed scope. An empty object declares no rules.
-- `validity` defines whether a schema-valid result is semantically usable; and
-- `one_shot_completion` defines whether a valid final result completes a
-  one-shot attempt.
+Scientific rules are optional. Omitted `semantics` and missing groups normalize
+to empty objects:
 
-Validity and completion mappings must be nonempty. When `semantics-schema` is
-supplied, Metewand validates all family-specific fields against it. Otherwise,
-Metewand validates the common structure and hashes the complete canonical rules.
-This separation lets later profile observations remain valid without implying
-that a one-shot completion threshold has been reached.
+- `preprocessing` describes shared construction, conversion, and preparation
+  allowed outside the timed scope.
+- `validity` describes whether a schema-valid result is scientifically usable.
+- `one_shot_completion` describes whether a valid final result meets the
+  benchmark's completion target.
+
+A declared group must be an object. A `semantics-schema` can impose stronger
+family requirements. Without it, Metewand validates the common structure and
+hashes all declared rules. Empty completion rules supply no convergence
+criterion. Function evaluators returning plain metrics report `not_required`;
+declared validity or completion rules require an explicit verdict. Metric
+declarations never infer scientific formulas or thresholds.
 
 The family semantics also define preprocessing and any preparation allowed
 outside the timed scope. These rules distinguish shared scientific dataset
@@ -147,6 +153,34 @@ parsed document after the complete offline catalog has been compiled.
 `parse_problem_contract` remains the convenient combined operation. A document
 returned by the parsing-only phase is not valid for planning until the second
 phase succeeds.
+
+## Reference cases
+
+Reference cases are optional scientific checks run by `check --workers`.
+The report states how many were checked; zero cases verifies no reference
+solutions. Inputs can use existing repository paths or inline scientific
+objects:
+
+```yaml
+reference-cases:
+  - dataset: {values: [1, 2]}
+    result: {total: 3}
+    expected-metrics: {absolute_error: 0}
+    expected-verdict: not_required
+```
+
+Inline datasets become `data.json`, and inline result and metric objects receive
+standard envelopes. A string such as `result: reference/result.json` selects a
+file instead. File inputs retain their existing formats: a dataset file or
+artifact directory and result and metric envelopes. See the
+[least-squares example](https://github.com/jolars/metewand/tree/main/examples/least-squares)
+for analytic cases covering exact, incomplete, and invalid solutions.
+
+`expected-verdict` accepts `invalid`, `reached`, `not_reached`, or `not_required`.
+When omitted, it expects `reached` if completion rules exist, otherwise
+`not_required`. Checks compare both the exact canonical metrics and the verdict.
+Reference inputs and explicitly selected verdicts contribute to the contract's
+identity. Adding checks therefore produces a new contract identity.
 
 ## Executable reference suites
 

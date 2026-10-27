@@ -145,6 +145,9 @@ pub struct RunSummary {
 /// Final command output rendered by both human and machine interfaces.
 #[derive(Debug, Serialize)]
 pub struct RunReport {
+    /// Individual measurements and failed attempts from the committed history.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub comparison: Vec<crate::comparison::ComparisonRow>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub fresh_sequences: Vec<crate::profile::FreshSequenceProgress>,
     /// Command that produced the report.

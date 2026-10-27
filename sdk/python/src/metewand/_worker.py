@@ -454,7 +454,7 @@ def _encode_failure(request_id, error):
             ) from failure
 
 
-def _serve(worker, role, reader, writer, semantics=False, fresh_sequence=False):
+def _serve(worker, role, reader, writer, semantics=False, fresh_sequence=False, initialize=None):
     dispatcher = _Dispatcher(worker, role, semantics=semantics, fresh_sequence=fresh_sequence)
     while True:
         request = _read_frame(reader)
@@ -471,6 +471,8 @@ def _serve(worker, role, reader, writer, semantics=False, fresh_sequence=False):
         success = False
         try:
             payload = dispatcher.dispatch(request)
+            if request["method"] == "hello" and initialize is not None:
+                initialize()
             response = {"id": request_id, "ok": True, **payload}
             frame = _encode_response(response)
             success = True
@@ -495,7 +497,7 @@ def _serve(worker, role, reader, writer, semantics=False, fresh_sequence=False):
             return
 
 
-def _serve_fds(worker, role, read_fd, write_fd, semantics=False, fresh_sequence=False):
+def _serve_fds(worker, role, read_fd, write_fd, semantics=False, fresh_sequence=False, initialize=None):
     if read_fd is None:
         read_fd = int(os.environ["METEWAND_PROTOCOL_READ_FD"])
     if write_fd is None:
@@ -505,7 +507,7 @@ def _serve_fds(worker, role, read_fd, write_fd, semantics=False, fresh_sequence=
     with ExitStack() as stack:
         reader = stack.enter_context(os.fdopen(os.dup(read_fd), "rb"))
         writer = stack.enter_context(os.fdopen(os.dup(write_fd), "wb"))
-        _serve(worker, role, reader, writer, semantics=semantics, fresh_sequence=fresh_sequence)
+        _serve(worker, role, reader, writer, semantics=semantics, fresh_sequence=fresh_sequence, initialize=initialize)
 
 
 def serve_implementation(implementation, *, fresh_sequence=False, read_fd=None, write_fd=None):

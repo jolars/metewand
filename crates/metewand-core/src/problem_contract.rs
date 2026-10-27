@@ -247,10 +247,7 @@ impl ProblemContract {
             "allowed_timing_scopes": self.allowed_timing_scopes.iter().map(ToString::to_string).collect::<Vec<_>>(),
             "supported_budgets": self.supported_budgets.iter().map(ToString::to_string).collect::<Vec<_>>(),
             "semantics": self.semantics.as_canonical().as_json(),
-            "reference_cases": self.reference_cases.iter().map(|case| json!({
-                "dataset": case.dataset.as_ref().map(RepositoryPath::as_path),
-                "result": case.result.as_path(), "expected_metrics": case.expected_metrics.as_path(),
-            })).collect::<Vec<_>>(),
+            "reference_cases": self.reference_cases.iter().map(ReferenceCase::declaration_value).collect::<Vec<_>>(),
         });
         if !self.instrumented_scopes.is_empty() {
             value["instrumented_scopes"] =
@@ -284,9 +281,13 @@ struct RawProblemContract {
     semantics_schema: Option<SchemaDeclaration>,
     #[serde(default)]
     instrumented_scopes: std::collections::BTreeMap<String, crate::profile::InstrumentedScope>,
+    #[serde(default = "default_timing_scopes")]
     allowed_timing_scopes: Vec<TimingScope>,
+    #[serde(default = "default_budgets")]
     supported_budgets: Vec<ScientificBudget>,
+    #[serde(default)]
     semantics: ProblemSemantics,
+    #[serde(default)]
     reference_cases: Vec<ReferenceCase>,
 }
 
@@ -314,9 +315,6 @@ impl<'de> Deserialize<'de> for ProblemContract {
             return Err(de::Error::custom(
                 "version 1 requires `supported-budgets: [\"none\"]`",
             ));
-        }
-        if raw.reference_cases.is_empty() {
-            return Err(de::Error::custom("`reference-cases` cannot be empty"));
         }
 
         let requires_dataset = !raw.dataset_schemas.is_empty();
@@ -408,24 +406,43 @@ impl<'de> Deserialize<'de> for ProblemSemantics {
         D: Deserializer<'de>,
     {
         let value = deserialize_manifest_value(deserializer)?;
-        let object = value
-            .as_json()
-            .as_object()
+        let mut normalized = value.as_json().clone();
+        let object = normalized
+            .as_object_mut()
             .ok_or_else(|| de::Error::custom("`semantics` must be an object"))?;
 
         for rule in ["preprocessing", "validity", "one_shot_completion"] {
-            let rules = object.get(rule).and_then(Value::as_object).ok_or_else(|| {
-                de::Error::custom(format_args!("`semantics.{rule}` must be a present object"))
-            })?;
-            if rule != "preprocessing" && rules.is_empty() {
-                return Err(de::Error::custom(format_args!(
-                    "`semantics.{rule}` cannot be empty"
-                )));
-            }
+            object
+                .entry(rule)
+                .or_insert_with(|| json!({}))
+                .as_object()
+                .ok_or_else(|| {
+                    de::Error::custom(format_args!("`semantics.{rule}` must be a present object"))
+                })?;
         }
 
-        Ok(Self { value })
+        Ok(Self {
+            value: CanonicalValue::try_from(normalized).map_err(de::Error::custom)?,
+        })
     }
+}
+
+impl Default for ProblemSemantics {
+    fn default() -> Self {
+        Self {
+            value: CanonicalValue::try_from(
+                json!({"preprocessing": {}, "validity": {}, "one_shot_completion": {}}),
+            )
+            .expect("default scientific rules"),
+        }
+    }
+}
+
+fn default_timing_scopes() -> Vec<TimingScope> {
+    vec![TimingScope::PrepareAndExecute]
+}
+fn default_budgets() -> Vec<ScientificBudget> {
+    vec![ScientificBudget::None]
 }
 
 /// A problem/evaluator conformance case.
@@ -434,11 +451,97 @@ impl<'de> Deserialize<'de> for ProblemSemantics {
 pub struct ReferenceCase {
     /// Dataset artifact used by the case, when the problem accepts datasets.
     #[serde(default, deserialize_with = "deserialize_optional_non_null")]
-    pub dataset: Option<RepositoryPath>,
+    pub dataset: Option<ReferenceInput>,
     /// Canonical result artifact evaluated by the case.
-    pub result: RepositoryPath,
+    pub result: ReferenceInput,
     /// Expected evaluator metrics for the result.
-    pub expected_metrics: RepositoryPath,
+    pub expected_metrics: ReferenceInput,
+    /// Omitted expectations follow whether the problem declares a completion target.
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
+    pub expected_verdict: Option<ExpectedVerdict>,
+}
+
+impl ReferenceCase {
+    fn declaration_value(&self) -> Value {
+        let mut value = json!({"dataset": self.dataset.as_ref().map(ReferenceInput::declaration_value),
+            "result": self.result.declaration_value(), "expected_metrics": self.expected_metrics.declaration_value()});
+        if let Some(verdict) = self.expected_verdict {
+            value["expected_verdict"] = json!(verdict.as_str());
+        }
+        value
+    }
+
+    pub fn resolved_verdict(&self, semantics: &ProblemSemantics) -> ExpectedVerdict {
+        self.expected_verdict.unwrap_or_else(|| {
+            if semantics
+                .one_shot_completion()
+                .as_object()
+                .is_some_and(|v| !v.is_empty())
+            {
+                ExpectedVerdict::Reached
+            } else {
+                ExpectedVerdict::NotRequired
+            }
+        })
+    }
+}
+
+/// Inline scientific data or a reusable reference artifact.
+#[derive(Clone, Debug)]
+pub enum ReferenceInput {
+    Path(RepositoryPath),
+    Inline(CanonicalValue),
+}
+
+impl ReferenceInput {
+    pub fn reference_path(&self) -> Option<&Path> {
+        match self {
+            Self::Path(path) => Some(path.as_path()),
+            Self::Inline(_) => None,
+        }
+    }
+    pub fn declaration_value(&self) -> Value {
+        match self {
+            Self::Path(path) => json!(path.as_path()),
+            Self::Inline(value) => value.as_json().clone(),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for ReferenceInput {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = deserialize_manifest_value(deserializer)?;
+        match value.as_json() {
+            Value::String(_) => RepositoryPath::deserialize(value.as_json().clone())
+                .map(Self::Path)
+                .map_err(de::Error::custom),
+            Value::Object(_) => Ok(Self::Inline(value)),
+            _ => Err(de::Error::custom(
+                "expected a reference path or an inline scientific object",
+            )),
+        }
+    }
+}
+
+/// Scientific outcome expected from a reference evaluation.
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExpectedVerdict {
+    Invalid,
+    Reached,
+    NotReached,
+    NotRequired,
+}
+
+impl ExpectedVerdict {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Invalid => "invalid",
+            Self::Reached => "reached",
+            Self::NotReached => "not_reached",
+            Self::NotRequired => "not_required",
+        }
+    }
 }
 
 /// A scientific budget supported by a problem contract.
@@ -597,7 +700,7 @@ fn require_schema(
     }
 }
 
-fn ensure_unique<T>(values: &[T], description: &str) -> Result<(), String>
+pub(crate) fn ensure_unique<T>(values: &[T], description: &str) -> Result<(), String>
 where
     T: PartialEq,
 {

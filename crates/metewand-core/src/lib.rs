@@ -3,6 +3,7 @@
 pub mod applicability;
 pub mod cache;
 pub mod canonical;
+pub mod comparison;
 pub mod compatibility;
 pub mod controls;
 pub mod export;

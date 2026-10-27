@@ -8,7 +8,7 @@
   "required": ["version", "name"],
   "unevaluatedProperties": false,
   "$defs": {
-    "body": {
+    "flat_body": {
       "type": "object",
       "properties": {
         "version": {
@@ -55,20 +55,16 @@
           "properties": {
             "preprocessing": { "type": "object" },
             "validity": {
-              "type": "object",
-              "minProperties": 1
+              "type": "object"
             },
             "one_shot_completion": {
-              "type": "object",
-              "minProperties": 1
+              "type": "object"
             }
-          },
-          "required": ["preprocessing", "validity", "one_shot_completion"]
+          }
         },
         "reference-cases": {
           "type": "array",
-          "items": { "$ref": "#/$defs/reference_case" },
-          "minItems": 1
+          "items": { "$ref": "#/$defs/reference_case" }
         },
         "instrumented-scopes": {
           "type": "object",
@@ -77,14 +73,6 @@
           }
         }
       },
-      "required": [
-        "family",
-        "dataset-schemas",
-        "allowed-timing-scopes",
-        "supported-budgets",
-        "semantics",
-        "reference-cases"
-      ],
       "allOf": [
         { "not": { "required": ["parameters", "parameter-schema"] } },
         { "oneOf": [{ "required": ["result"] }, { "required": ["result-schema"] }] },
@@ -116,14 +104,19 @@
     "reference_case": {
       "type": "object",
       "properties": {
-        "dataset": { "$ref": "common.schema.json#/$defs/repository_path" },
-        "result": { "$ref": "common.schema.json#/$defs/repository_path" },
+        "dataset": { "oneOf": [{"$ref": "common.schema.json#/$defs/repository_path"}, {"type": "object"}] },
+        "result": { "oneOf": [{"$ref": "common.schema.json#/$defs/repository_path"}, {"type": "object"}] },
         "expected-metrics": {
-          "$ref": "common.schema.json#/$defs/repository_path"
-        }
+          "oneOf": [{"$ref": "common.schema.json#/$defs/repository_path"}, {"type": "object"}]
+        },
+        "expected-verdict": {"enum": ["invalid", "reached", "not_reached", "not_required"]}
       },
       "required": ["result", "expected-metrics"],
       "additionalProperties": false
+    },
+    "body": {
+      "allOf": [{ "$ref": "#/$defs/flat_body" }],
+      "required": ["family", "dataset-schemas"]
     }
   }
 }

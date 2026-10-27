@@ -16,7 +16,13 @@ reports structured failures. Metewand owns environments, source acquisition,
 seeds, scheduling, validation, and publication. Benchmark code owns scientific
 semantics and its random generators.
 
-Simple implementations return scientific data from `execute`; optional
+For a simple benchmark, use `metewand init --language r` and functions selected
+with `function: benchmark.R:solve`. Contexts, JSON data, and standard envelopes
+are handled by the SDK. Plain metrics imply `not_required` when no scientific
+rules are declared. Add explicit `evaluation(metrics, verdict)` when adding
+validity or completion rules.
+
+Lifecycle implementations return scientific data from `execute`; optional
 `result_data` converts solver state after diagnostic timing. Evaluators return
 `evaluation(metrics, verdict)`. The SDK writes standard envelopes, while custom
 `result` writers and evaluator-written metrics remain supported.
