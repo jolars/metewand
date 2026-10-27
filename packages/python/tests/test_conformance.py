@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from metewand import (
+    __version__,
     Implementation,
     WorkerError,
     canonical_bytes,
@@ -133,10 +134,20 @@ class ConformanceTests(unittest.TestCase):
                     step["request"].replace("@ROOT@", directory).encode()
                     for step in session["exchanges"]
                 ]
-                expected = b"".join(
-                    step["response"].replace("@SDK@", "metewand-python").encode()
-                    for step in session["exchanges"]
-                )
+                expected = []
+                for step in session["exchanges"]:
+                    frame = step["response"].replace("@SDK@", "metewand-python").encode()
+                    response = parse_json(frame)
+                    if response.get("sdk"):
+                        # Package releases do not change the protocol fixture version.
+                        sdk = response["sdk"]
+                        frame = frame.replace(
+                            canonical_bytes(sdk),
+                            canonical_bytes({**sdk, "version": __version__}),
+                            1,
+                        )
+                    expected.append(frame)
+                expected = b"".join(expected)
 
                 class InspectingWriter(io.BytesIO):
                     def write(self, frame):

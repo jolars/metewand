@@ -423,8 +423,69 @@ Documentation-only changes do not require rebuilding or testing Rust. Use
 cargo test -p metewand-cli --test agent_loop --locked -- --ignored
 ```
 
-Versionary creates release PRs, tags, changelogs, and GitHub Releases. Registry
-publication requires a separate deliberate workflow.
+## Python releases
+
+Versionary creates release PRs, tags, changelogs, and GitHub Releases. Fixed
+monorepo mode keeps the Rust workspace and Python package at one shared version
+in a single release PR. The root uses the Rust strategy, and `packages/python`
+uses the Python strategy to update `pyproject.toml`. A temporary `extra-files`
+rule updates `src/metewand/__init__.py` for Versionary 1.7.0, whose auxiliary
+discovery searches relative to the repository root. Remove the rule once the
+Action uses a release containing the nested Python discovery fix. The worker
+hello reports that same `metewand.__version__`. Package tests check both Python
+versions against the workspace version. Public compatibility versions remain
+independent and unchanged by this release setup.
+
+Versionary creates a root tag `vX.Y.Z` and a Python tag `metewand-vX.Y.Z`, with
+separate changelogs and GitHub Releases. The Python tag contains the matching CLI
+source, so package installation instructions use it for both components.
+
+The reusable `.github/workflows/python-package.yml` builds the source distribution
+and a wheel from that distribution, checks both with `twine check --strict`, and
+tests each installed artifact on Python 3.11 and 3.14. Tests run outside the
+checkout without `PYTHONPATH`; shared conformance fixtures come from the checkout.
+CI requires these checks before Versionary runs. To reproduce them locally, use
+a disposable virtual environment:
+
+```sh
+python3 -m venv /tmp/metewand-package-test
+. /tmp/metewand-package-test/bin/activate
+python -m pip install build twine
+python -m build --outdir /tmp/metewand-dist packages/python
+python -m twine check --strict /tmp/metewand-dist/*
+python -m pip install /tmp/metewand-dist/*.whl
+metewand_checkout=$PWD
+cd /tmp
+python -m unittest discover -s "$metewand_checkout/packages/python/tests" -v
+```
+
+Repeat in a fresh environment with the `.tar.gz` source distribution instead of
+the wheel and with each supported test interpreter.
+
+Before the first publication, configure the external accounts:
+
+1. Create the GitHub environment `pypi`. Its deployment policy must allow release
+   tags. Add required reviewers if publication should require manual approval.
+2. Add a [pending Trusted Publisher](https://docs.pypi.org/trusted-publishers/creating-a-project-through-oidc/)
+   on PyPI with project name `metewand`, owner `jolars`, repository `metewand`,
+   workflow `python-publish.yml`, and environment `pypi`.
+3. Ensure Versionary uses `RELEASE_TOKEN` when creating GitHub Releases. Events
+   created with the default `GITHUB_TOKEN` do not trigger another workflow.
+
+Publishing a Python GitHub Release triggers `.github/workflows/python-publish.yml`.
+Root releases do not publish to PyPI. The workflow checks out the Python release
+tag, requires the tag to equal `metewand-v` plus the workspace
+version, and runs the distribution checks before uploading those same artifacts
+with Trusted Publishing. No PyPI API token is needed. The workflow can also be
+dispatched manually with an existing Python release tag, for example if the release
+event did not trigger it. PyPI does not permit replacing previously uploaded
+files; a corrected package needs a new version.
+
+Review the release PR, matching CLI installation instructions, and Python package
+README before publishing the first release. The Python package supplies worker
+helpers; users still install the CLI separately from the matching source tag.
+Rust crates and the R package still require their own deliberate publication
+workflows.
 
 ## Website development
 

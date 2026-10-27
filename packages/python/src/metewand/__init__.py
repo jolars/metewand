@@ -1,5 +1,7 @@
 """Small, process-based Python worker helpers for Metewand."""
 
+__version__ = "0.1.0"
+
 from ._artifacts import (
     file_entry,
     read_json,
@@ -22,8 +24,6 @@ from ._worker import (
     serve_evaluator,
     serve_implementation,
 )
-
-__version__ = SDK_VERSION
 
 from ._functions import FunctionContext, serve_function
 

@@ -156,7 +156,7 @@ fn connect(role_name: &str, role: WorkerRole) -> WorkerSession {
     .unwrap();
     let sdk = session.negotiated().sdk().unwrap();
     assert_eq!(sdk.name(), "metewand-python");
-    assert_eq!(sdk.version(), "0.1.0");
+    assert_eq!(sdk.version(), env!("CARGO_PKG_VERSION"));
     session
 }
 

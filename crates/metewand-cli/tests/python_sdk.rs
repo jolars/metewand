@@ -205,7 +205,7 @@ fn python_sdk_example_publishes_two_accepted_observations() {
         let execution = &record["provenance"]["data"]["execution"];
         for role in ["implementation", "evaluator"] {
             assert_eq!(execution[role]["sdk"]["name"], "metewand-python");
-            assert_eq!(execution[role]["sdk"]["version"], "0.1.0");
+            assert_eq!(execution[role]["sdk"]["version"], env!("CARGO_PKG_VERSION"));
         }
     }
 }

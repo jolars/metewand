@@ -1,0 +1,95 @@
+name: Python package
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: Commit or tag to build and test
+        type: string
+        default: ''
+      release-tag:
+        description: Release tag that must match the workspace version
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      revision: ${{ steps.revision.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+      - id: revision
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+      - run: python -m pip install build twine
+      - name: Check release tag
+        env:
+          RELEASE_TAG: ${{ inputs.release-tag }}
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          import tomllib
+
+          version = tomllib.loads(Path("Cargo.toml").read_text())["workspace"]["package"]["version"]
+          tag = os.environ["RELEASE_TAG"]
+          if tag and tag != f"metewand-v{version}":
+              raise SystemExit(f"Release tag {tag!r} does not match workspace version {version!r}.")
+          PY
+      - name: Build source distribution and wheel
+        run: python -m build --outdir dist packages/python
+      - run: python -m twine check --strict dist/*
+      - uses: actions/upload-artifact@v7
+        with:
+          name: python-distributions
+          path: dist/*
+          if-no-files-found: error
+
+  test:
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ['3.11', '3.14']
+        distribution: [wheel, sdist]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.build.outputs.revision }}
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: actions/download-artifact@v8
+        with:
+          name: python-distributions
+          path: dist
+      - name: Install distribution
+        env:
+          DISTRIBUTION: ${{ matrix.distribution }}
+        run: |
+          if [ "$DISTRIBUTION" = wheel ]; then
+            python -m pip install dist/*.whl
+          else
+            python -m pip install dist/*.tar.gz
+          fi
+      - name: Check installed version and run package tests
+        working-directory: ${{ runner.temp }}
+        run: |
+          python - <<'PY'
+          from importlib.metadata import version
+          import os
+          from pathlib import Path
+          import metewand
+
+          assert not Path(metewand.__file__).resolve().is_relative_to(Path(os.environ["GITHUB_WORKSPACE"]))
+          assert metewand.__version__ == version("metewand")
+          PY
+          python -m unittest discover -s "$GITHUB_WORKSPACE/packages/python/tests" -v

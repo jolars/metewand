@@ -3,35 +3,82 @@
 Define Metewand benchmarks with ordinary Python functions for data generation,
 methods, and independent evaluation. The package handles worker communication
 and standard result files. It requires Python 3.11 or later and has no runtime
-dependencies.
+dependencies. Running benchmarks also requires a POSIX system and the separate
+Metewand CLI, built with Rust 1.98.0 or later. Installing this Python package does
+not install the CLI.
 
-Install the local package into the Python environment that will run your worker:
+## Install and run
+
+Once the first PyPI release is published, install the package into the Python
+environment that will run your workers:
 
 ```sh
+python3 -m venv .venv
+. .venv/bin/activate
+python3 -m pip install metewand
+```
+
+Install the CLI from the matching release tag, then create and run a benchmark:
+
+```sh
+metewand_version=$(python3 -c 'import metewand; print(metewand.__version__)')
+cargo install --locked --git https://github.com/jolars/metewand \
+  --tag "metewand-v${metewand_version}" metewand-cli
+metewand init my-benchmark
+cd my-benchmark
+metewand check --workers
+metewand run --output-dir run
+metewand status --output-dir run
+```
+
+Keep the Python environment active so workers use its interpreter and installed
+dependencies. The CLI creates `metewand.yaml` and `benchmark.py`, with data
+generation, two methods, and independent evaluation. Choose a new output
+directory for each run, or explicitly resume with `--resume`.
+
+Before the first release, or when developing from a checkout, install both
+components from the same revision instead:
+
+```sh
+git clone https://github.com/jolars/metewand.git
+cd metewand
+cargo install --locked --path crates/metewand-cli
+python3 -m venv .venv
+. .venv/bin/activate
 python3 -m pip install ./packages/python
 ```
 
-The package implements Metewand's version-1 one-shot protocol. It serializes
+This is an experimental package. Use matching CLI and Python package versions,
+and pin the version or source revision for retained benchmarks. Authoring syntax
+and profile APIs may change before the MVP. Package versions are separate from
+the versioned worker protocol and persisted record formats.
+
+## Author benchmarks
+
+The package implements Metewand's version-1 worker protocol, including one-shot
+execution, fresh sequences, and buffered profiles. It serializes
 messages, dispatches callbacks, reports structured errors, and measures the
-implementation callback. Metewand owns environment provisioning, source
-acquisition, seeds, scheduling, worker lifecycle, artifact validation, and
+implementation callback. The CLI owns source acquisition, seeds, scheduling,
+worker lifecycle, artifact validation, and
 durable publication. The package does not set random generators or infer scientific
-semantics.
+semantics. Install scientific dependencies into the worker environment yourself.
 
 For a simple benchmark, use `metewand init` and ordinary functions selected in
 YAML with `function: benchmark.py:solve`. The package supplies the context, JSON data,
 and artifact envelopes. Evaluators can return plain metrics when no scientific
 rules are declared; completion is then `not_required`. See the
-[least-squares example](../../examples/least-squares) for incremental validation.
+[least-squares example](https://github.com/jolars/metewand/tree/main/examples/least-squares)
+for incremental validation.
 
 For lifecycle adapters, subclass `OneShotImplementation` and return scientific data
 from `execute`. Evaluators return `Evaluation(metrics, verdict)`. The package writes
 standard envelopes; custom result and metrics writers remain supported.
 
-See the [authoring guide](../../docs/guide/authoring/index.md),
-[callback interfaces](src/metewand/_worker.py), and the runnable
-[Python package example](../../examples/python-package). Run the package tests from the
-repository root with:
+See the [authoring guide](https://metewand.org/guide/authoring/),
+[callback interfaces](https://github.com/jolars/metewand/blob/main/packages/python/src/metewand/_worker.py),
+and the runnable
+[Python package example](https://github.com/jolars/metewand/tree/main/examples/python-package).
+Run the package tests from a repository checkout with:
 
 ```sh
 PYTHONPATH=packages/python/src python3 -m unittest discover -s packages/python/tests -v
@@ -40,7 +87,7 @@ PYTHONPATH=packages/python/src python3 -m unittest discover -s packages/python/t
 The normal Rust workspace tests also run this suite and exercise all three
 Python roles through the Rust transport and output validator.
 
-### Configuration-dependent support
+## Configuration-dependent support
 
 Declare `capabilities: [one_shot, applicability]` and override
 `check_applicability` to exclude configurations your implementation cannot

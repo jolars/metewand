@@ -11,8 +11,9 @@ from pathlib import Path
 
 from ._artifacts import _object, _output_path, write_metrics, write_result
 from ._canonical import MAX_SAFE_INTEGER, canonical_bytes, parse_json
+from . import __version__
 
-SDK_VERSION = "0.1.0"
+SDK_VERSION = __version__
 WIRE_PROTOCOL_VERSION = 1
 MAX_LINE_BYTES = 1024 * 1024
 _FAILURE_CODES = {

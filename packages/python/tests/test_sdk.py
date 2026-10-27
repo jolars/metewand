@@ -2,12 +2,14 @@ import io
 import json
 import os
 import tempfile
+import tomllib
 import unittest
 from contextlib import redirect_stderr
 from pathlib import Path
 from unittest.mock import patch
 
 from metewand import (
+    __version__,
     CanonicalJsonError,
     Evaluation,
     Implementation,
@@ -191,6 +193,12 @@ class ArtifactTests(unittest.TestCase):
 
 
 class WorkerTests(unittest.TestCase):
+    def test_package_version_matches_workspace(self):
+        workspace = tomllib.loads((ROOT / "Cargo.toml").read_text())
+        self.assertEqual(__version__, workspace["workspace"]["package"]["version"])
+        package = tomllib.loads((ROOT / "packages/python/pyproject.toml").read_text())
+        self.assertEqual(__version__, package["project"]["version"])
+
     def test_applicability_is_optional_and_rejects_invalid_decisions(self):
         class Restricted(Sum):
             def check_applicability(self, *args):
@@ -414,7 +422,7 @@ class WorkerTests(unittest.TestCase):
                     "ok": True,
                     "protocol": 1,
                     "worker_id": WORKER_ID,
-                    "sdk": {"name": "metewand-python", "version": "0.1.0"},
+                    "sdk": {"name": "metewand-python", "version": __version__},
                     "capabilities": ["one_shot"],
                 },
             )
