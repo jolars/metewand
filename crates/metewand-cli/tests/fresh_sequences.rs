@@ -456,7 +456,11 @@ fn concurrent_invocations_leave_owned_repetitions_for_their_owner() {
     let stage = stage(false);
     fixed_only(stage.path());
     edit(stage.path(), "metewand.yaml", |s| {
+        // This barrier tests ownership, so let the operational deadline bound
+        // the competing invocation's startup instead of the example's budgets.
         s.replace("warmup-runs: 1", "warmup-runs: 0")
+            .replace("    timeout: 5 s\n", "")
+            .replace("max-active-time: 10 s", "max-active-time: 1 min")
     });
     let marker = stage.path().join("point-started");
     let release = stage.path().join("release-point");
