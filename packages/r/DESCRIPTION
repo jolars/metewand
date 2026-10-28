@@ -15,6 +15,7 @@ Description: Define data generators, computational methods, and independent
     command-line client supplies worker adapters and manages artifacts.
 License: MIT + file LICENSE
 URL: https://github.com/jolars/metewand, https://metewand.org
+BugReports: https://github.com/jolars/metewand/issues
 Depends:
     R (>= 4.2.0)
 Imports:
