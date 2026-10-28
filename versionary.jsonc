@@ -8,10 +8,13 @@
   "include-commit-authors": true,
   "release-reference-comments": "best-effort",
   "packages": {
-    ".": {},
+    ".": {
+      "release-draft": true
+    },
     "packages/python": {
       "release-type": "python",
-      "package-name": "metewand"
+      "package-name": "metewand",
+      "release-latest": false
     }
   }
 }

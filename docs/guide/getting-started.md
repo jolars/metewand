@@ -1,11 +1,41 @@
 # Getting started
 
-This guide installs Metewand from source and runs a complete benchmark. You
-need Linux, macOS, or native Windows x64, Git, Rust 1.98.0, and Python 3.11 or
-later. Windows uses the MSVC Rust toolchain and the Visual Studio C++ build
-tools, including the Windows SDK. Put Python on `PATH`.
+This guide installs Metewand and runs a complete benchmark. You need Linux,
+macOS, or native Windows x64 and Python 3.11 or later. Put Python on `PATH`.
 
 ## Install
+
+### Prebuilt CLI
+
+Starting with the next release, install the latest prebuilt CLI on Linux or
+macOS with:
+
+```sh
+curl --proto '=https' --tlsv1.2 -LsSf https://metewand.org/install | sh
+```
+
+On Windows, run this in PowerShell:
+
+```powershell
+irm https://metewand.org/install.ps1 | iex
+```
+
+The installers support x64 and ARM64 on Linux and macOS, and x64 on Windows.
+They place `metewand` in Cargo's binary directory, normally `~/.cargo/bin`.
+Restart your shell if `metewand` is not on `PATH`, then run
+`metewand --version` to check the installation. You can also download archives
+and checksums from [GitHub Releases](https://github.com/jolars/metewand/releases).
+
+Install worker packages separately. Use the same version for the Python
+package and CLI. The [Python package](https://github.com/jolars/metewand/tree/main/packages/python)
+README includes a command for installing the CLI from a specific release.
+Install the R package from a checkout of the matching release. For development
+from a checkout, build and install both components below.
+
+### From source
+
+Source builds require Git and Rust 1.98.0. Windows builds use the MSVC Rust
+toolchain and the Visual Studio C++ build tools, including the Windows SDK.
 
 ```sh
 git clone https://github.com/jolars/metewand.git
@@ -108,10 +138,11 @@ Use R 4.2 or later, the `digest` package, and a C++17 compiler with floating-poi
 release, and put `R.exe` and `Rscript.exe` on `PATH`.
 [Rtools43](https://developer.r-project.org/WindowsBuilds/Rtools43/rtools.html)
 and later supply a sufficiently recent compiler. Rtools supplies
-the compiler for the R package; the CLI uses MSVC separately. Install `digest`
-and the package into the selected R environment's site library; workers use a
-private user library. Set up a writable R installation or run the installation
-commands with permission to write that library.
+the compiler for the R package; building the CLI from source uses MSVC
+separately. Install `digest` and the package into the selected R environment's
+site library; workers use a private user library. Set up a writable R
+installation or run the installation commands with permission to write that
+library.
 
 From the Metewand checkout:
 

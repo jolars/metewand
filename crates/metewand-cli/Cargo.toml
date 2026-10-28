@@ -10,6 +10,10 @@ repository.workspace = true
 readme.workspace = true
 publish.workspace = true
 
+[package.metadata.dist]
+# Distribute the CLI even though the workspace is not published to crates.io.
+dist = true
+
 [[bin]]
 name = "metewand"
 path = "src/main.rs"

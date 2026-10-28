@@ -1,0 +1,29 @@
+[workspace]
+members = ["cargo:."]
+
+[dist]
+cargo-dist-version = "0.33.0"
+ci = "github"
+installers = ["shell", "powershell"]
+targets = [
+    "aarch64-apple-darwin",
+    "aarch64-unknown-linux-gnu",
+    "aarch64-unknown-linux-musl",
+    "x86_64-apple-darwin",
+    "x86_64-unknown-linux-gnu",
+    "x86_64-unknown-linux-musl",
+    "x86_64-pc-windows-msvc",
+]
+install-path = "CARGO_HOME"
+hosting = "github"
+# Versionary owns release notes and creates the draft before artifacts are ready.
+create-release = false
+github-attestations = true
+github-attestations-phase = "host"
+github-release = "host"
+install-updater = false
+# Python's metewand-vX.Y.Z tags have their own publication workflow.
+tag-namespace = "v"
+
+[dist.github-action-commits]
+"actions/checkout" = "v7"

@@ -7,6 +7,10 @@ members = [
     "crates/metewand-runtime",
 ]
 
+[profile.dist]
+inherits = "release"
+lto = "thin"
+
 # Keep backtrace line numbers without copying full debug data into every test binary.
 [profile.test]
 debug = "line-tables-only"

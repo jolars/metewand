@@ -18,12 +18,13 @@ python3 -m venv .venv
 python3 -m pip install metewand
 ```
 
-Install the CLI from the matching release tag, then create and run a benchmark:
+Starting with the next binary release, install the CLI matching the package,
+then create and run a benchmark:
 
 ```sh
 metewand_version=$(python3 -c 'import metewand; print(metewand.__version__)')
-cargo install --locked --git https://github.com/jolars/metewand \
-  --tag "metewand-v${metewand_version}" metewand-cli
+curl --proto '=https' --tlsv1.2 -LsSf \
+  "https://github.com/jolars/metewand/releases/download/v${metewand_version}/metewand-cli-installer.sh" | sh
 metewand init my-benchmark
 cd my-benchmark
 metewand check --workers
@@ -36,8 +37,15 @@ dependencies. The CLI creates `metewand.yaml` and `benchmark.py`, with data
 generation, two methods, and independent evaluation. Choose a new output
 directory for each run, or explicitly resume with `--resume`.
 
-Before the first release, or when developing from a checkout, install both
-components from the same revision instead:
+On Windows, install the matching CLI in PowerShell:
+
+```powershell
+$metewand_version = python -c 'import metewand; print(metewand.__version__)'
+irm "https://github.com/jolars/metewand/releases/download/v$metewand_version/metewand-cli-installer.ps1" | iex
+```
+
+Before the first binary release, or when developing from a checkout, install
+both components from the same revision:
 
 ```sh
 git clone https://github.com/jolars/metewand.git

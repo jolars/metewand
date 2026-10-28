@@ -467,6 +467,45 @@ Documentation-only changes do not require rebuilding or testing Rust. Use
 cargo test -p metewand-cli --test agent_loop --locked -- --ignored
 ```
 
+## CLI releases
+
+`dist-workspace.toml` pins cargo-dist 0.33.0 and builds the `metewand` binary
+for x64 and ARM64 Linux with glibc and musl, x64 and ARM64 macOS, and native
+Windows x64 with MSVC. The CLI opts into distribution through
+`package.metadata.dist` while the workspace keeps `publish = false`.
+Archives, SHA-256 checksums, shell and PowerShell installers, and GitHub
+attestations go on the root `vX.Y.Z` release. Artifact names use the Cargo
+package name `metewand-cli`; the installed command is `metewand`.
+
+Versionary creates root releases as drafts with their changelog notes. The
+generated `.github/workflows/v-release.yml` runs on `v`-prefixed version tags,
+uploads artifacts, and publishes the draft only after every build succeeds.
+Python's `metewand-vX.Y.Z` tags use their own workflow and stay out of GitHub's
+latest-release selection so the CLI installers resolve the root release.
+Versionary must use `RELEASE_TOKEN`; tags pushed with the default
+`GITHUB_TOKEN` do not trigger the binary release workflow.
+
+After editing the distribution configuration, use the pinned cargo-dist version
+to regenerate and check the workflow:
+
+```sh
+dist generate --mode=ci
+dist generate --check
+dist plan
+```
+
+Do not edit the generated workflow directly. A local `dist build` builds an
+archive and installers for the host. Full platform builds run on GitHub's
+native runners. Pull requests check the release plan without publishing.
+
+The website serves `docs/public/install` and `docs/public/install.ps1` at
+`https://metewand.org/install` and `https://metewand.org/install.ps1`. These
+wrappers download the complete latest release installer before running it and
+forward arguments. The generated installers use Cargo's binary directory,
+normally `~/.cargo/bin`. Worker runtimes and packages are installed separately.
+Installer tests run in the platform CI matrix, and website integration tests
+check the served bytes and content types.
+
 ## Python releases
 
 Versionary creates release PRs, tags, changelogs, and GitHub Releases. Fixed
@@ -481,7 +520,8 @@ independent and unchanged by this release setup.
 
 Versionary creates a root tag `vX.Y.Z` and a Python tag `metewand-vX.Y.Z`, with
 separate changelogs and GitHub Releases. The Python tag contains the matching
-CLI source, so package installation instructions use it for both components.
+CLI source. Prebuilt CLI artifacts use the root tag; source builds can use
+either tag from that shared release commit.
 
 The reusable `.github/workflows/python-package.yml` builds the source
 distribution and a wheel from that distribution, checks both with
@@ -530,8 +570,8 @@ version.
 
 Review the release PR, matching CLI installation instructions, and Python
 package README before publishing the first release. The Python package supplies
-worker helpers; users still install the CLI separately from the matching source
-tag. Rust crates and the R package still require their own deliberate
+worker helpers; users install the CLI separately from the matching root release
+or source tag. Rust crates and the R package still require their own deliberate
 publication workflows.
 
 ## Website development

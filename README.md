@@ -13,6 +13,26 @@ Read the [overview](docs/guide/overview.md), follow
 [authoring guide](docs/guide/authoring/index.md). The documentation is also
 available at <https://metewand.org>.
 
+## Install
+
+Starting with the next release, install the prebuilt CLI on Linux or macOS with:
+
+```sh
+curl --proto '=https' --tlsv1.2 -LsSf https://metewand.org/install | sh
+```
+
+On Windows, run this in PowerShell:
+
+```powershell
+irm https://metewand.org/install.ps1 | iex
+```
+
+Installers place `metewand` in Cargo's binary directory, normally `~/.cargo/bin`.
+Archives are also available from [GitHub Releases](https://github.com/jolars/metewand/releases).
+Install the Python or R worker package separately. See
+[getting started](docs/guide/getting-started.md) for package installation and
+source builds.
+
 ## Try a benchmark
 
 From this checkout, with Rust 1.98.0 and Python 3.11 or later:
@@ -31,9 +51,9 @@ metewand status --output-dir run
 metewand export --output-dir run --format csv --destination tables
 ```
 
-Windows uses Rust's MSVC toolchain and Visual Studio C++ build tools. See
-[getting started](docs/guide/getting-started.md) for PowerShell installation,
-Rtools, and the local NTFS storage requirement.
+Windows source builds use Rust's MSVC toolchain and Visual Studio C++ build
+tools. See [getting started](docs/guide/getting-started.md) for PowerShell
+installation, Rtools, and the local NTFS storage requirement.
 
 The starter has two files: `metewand.yaml` and `benchmark.py`. Use
 `metewand init --language r` for R. Choose a new output directory, or explicitly

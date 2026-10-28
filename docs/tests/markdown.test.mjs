@@ -148,3 +148,20 @@ test("HEAD and conditional requests use Markdown representation metadata", async
   assert.match(head.headers.get("Content-Type"), /^text\/markdown/);
   assert.equal(await head.text(), "");
 });
+
+test("serves complete installers as plain text for shell and PowerShell clients", async () => {
+  for (const route of ["/install", "/install.ps1"]) {
+    const source = await readFile(`public${route}`, "utf8");
+    for (const accept of ["*/*", "text/html", "text/markdown"]) {
+      const response = await worker.fetch(route, { headers: { Accept: accept } });
+      assert.equal(response.status, 200);
+      assert.equal(response.headers.get("Content-Type"), "text/plain; charset=utf-8");
+      assert.equal(response.headers.get("X-Content-Type-Options"), "nosniff");
+      assert.equal(await response.text(), source);
+    }
+    const head = await worker.fetch(route, { method: "HEAD" });
+    assert.equal(head.status, 200);
+    assert.equal(head.headers.get("Content-Type"), "text/plain; charset=utf-8");
+    assert.equal(await head.text(), "");
+  }
+});
