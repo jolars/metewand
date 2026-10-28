@@ -2,8 +2,8 @@
 
 Define benchmarks with ordinary R functions and small scientific result objects.
 This package contains no native code. It requires R 4.2 or later and `jsonlite`.
-The CLI supplies worker adapters, measures execution, validates outputs, computes
-file hashes, and writes canonical artifacts.
+The CLI supplies worker adapters, measures execution, validates outputs,
+computes file hashes, and writes canonical artifacts.
 
 Install `jsonlite` in the selected R environment, then install the package:
 
@@ -19,8 +19,8 @@ requirements. Linux, macOS, and native Windows x64 are supported.
 Use `metewand init --language r` for ordinary `generate(context)`,
 `solve(data, context)`, and `evaluate(data, result, context)` functions. Select
 functions in YAML with `function: benchmark.R:solve`. Install packages in the
-worker interpreter's site library as described in the
-[installation guide](../../docs/guide/getting-started.md#start-with-r).
+worker interpreter's site library as described in the [installation
+guide](../../docs/guide/getting-started.md#start-with-r).
 
 For separate preparation and solving, register named callbacks:
 
@@ -32,10 +32,10 @@ serve_implementation(
 )
 ```
 
-Select `protocol-transport: socket` for lifecycle workers. Context contains
-role parameters, problem parameters, seeds, scientific rules, assigned
-directories, and optional observation controls. Additional context fields and
-optional callbacks do not change existing function signatures. Callbacks remain
+Select `protocol-transport: socket` for lifecycle workers. Context contains role
+parameters, problem parameters, seeds, scientific rules, assigned directories,
+and optional observation controls. Additional context fields and optional
+callbacks do not change existing function signatures. Callbacks remain
 responsible for scientific semantics and seeding their random generators.
 
 Return named lists for ordinary JSON output. Use `dataset(data, files)`,
@@ -56,6 +56,7 @@ output values and artifact declarations. Canonicalization helpers, raw string
 wrappers, and descriptor arguments have been removed. R's optional in-worker
 solve timing is unavailable; the CLI's timing remains authoritative.
 
-See [package help](man/workers.Rd), the [authoring guide](../../docs/guide/authoring/index.md),
-and the runnable [R example](../../examples/r-package). CI checks source
-installation and the worker chain on Linux, macOS, and Windows.
+See [package help](man/workers.Rd), the [authoring
+guide](../../docs/guide/authoring/index.md), and the runnable [R
+example](../../examples/r-package). CI checks source installation and the worker
+chain on Linux, macOS, and Windows.

@@ -1,14 +1,23 @@
 Package: metewand
 Title: Define Metewand Benchmarks with R Functions
 Version: 0.1.0
-Authors@R: person("Johan", "Larsson", email = "johan@jolars.co", role = c("aut", "cre"))
+Authors@R:
+    person(
+      "Johan",
+      "Larsson",
+      email = "johan@jolars.co",
+      role = c("aut", "cre")
+    )
 Description: Define data generators, computational methods, and independent
     evaluators as ordinary R functions for Metewand benchmarks. Handles the
     stable callback API, scientific result values, and JSON utilities. The
     command-line client supplies worker adapters and manages artifacts.
 License: MIT + file LICENSE
-Encoding: UTF-8
-Depends: R (>= 4.2.0)
-Imports: jsonlite, utils
-NeedsCompilation: no
 URL: https://github.com/jolars/metewand
+Depends:
+    R (>= 4.2.0)
+Imports:
+    jsonlite,
+    utils
+Encoding: UTF-8
+NeedsCompilation: no
