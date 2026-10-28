@@ -24,21 +24,22 @@ write_json(path, value)
 }
 \value{
 \code{read_json()} returns the parsed value; \code{write_json()} returns invisibly.
-\code{json_object()} returns a named list and \code{json_array()} returns an \code{AsIs} value.
+\code{json_object()} returns a named list and \code{json_array()} returns an \code{AsIs}
+value.
 }
 \description{
-Small JSON utilities backed by jsonlite. The CLI owns canonical
-serialization and artifact validation.
+Small JSON utilities backed by jsonlite. The CLI owns canonical serialization
+and artifact validation.
 }
 \details{
-Named lists represent objects and unnamed lists represent arrays.
-Atomic vectors of length one become scalars. Use \code{json_array()} to preserve an
-array with one element, and \code{json_object()} for an empty object. \code{NULL} represents
+Named lists represent objects and unnamed lists represent arrays. Atomic
+vectors of length one become scalars. Use \code{json_array()} to preserve an array
+with one element, and \code{json_object()} for an empty object. \code{NULL} represents
 JSON null. Reading never simplifies arrays or objects into vectors or frames.
 Numbers are written with 17 significant digits to preserve binary64 values.
-Missing values, nonfinite numbers, unsafe integers, duplicate keys, unsupported
-classes, and invalid Unicode are rejected. R cannot represent embedded NUL
-strings; these are unsupported rather than silently truncated.
+Missing values, nonfinite numbers, unsafe integers, duplicate keys,
+unsupported classes, and invalid Unicode are rejected. R cannot represent
+embedded NUL strings; these are unsupported rather than silently truncated.
 }
 \examples{
 path <- tempfile()

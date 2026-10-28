@@ -28,7 +28,7 @@ fn r_sdk_contracts_and_roles_complete_a_validated_chain() {
     let library = package.path().join("library");
     fs::create_dir(&library).unwrap();
     let output = Command::new("R")
-        .args(["CMD", "INSTALL", "--preclean", "--clean"])
+        .args(["CMD", "INSTALL", "--preclean", "--clean", "--install-tests"])
         .env("CC", "false")
         .env("CXX", "false")
         .env("FC", "false")
@@ -40,8 +40,11 @@ fn r_sdk_contracts_and_roles_complete_a_validated_chain() {
     assert!(!library.join("metewand/libs").exists());
 
     let output = Command::new("Rscript")
-        .arg("--vanilla")
-        .arg(root().join("packages/r/tests/sdk.R"))
+        .args([
+            "--vanilla",
+            "-e",
+            "testthat::test_package('metewand', stop_on_failure = TRUE)",
+        ])
         .env("METEWAND_REPOSITORY", root())
         .env("R_LIBS_USER", &library)
         .output()

@@ -8,6 +8,8 @@
       packages = with pkgs.rPackages; [
         jsonlite
         roxygen2
+        testthat
+        withr
       ];
     })
   ];

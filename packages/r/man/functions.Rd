@@ -7,8 +7,9 @@
 serve_function(role = NULL, file = NULL, name = NULL)
 }
 \arguments{
-\item{role}{One of \code{dataset_materializer}, \code{implementation}, or \code{problem_evaluator}.
-When \code{NULL}, read role, file, and name from the three trailing command arguments.}
+\item{role}{One of \code{dataset_materializer}, \code{implementation}, or
+\code{problem_evaluator}. When \code{NULL}, read role, file, and name from the three
+trailing command arguments.}
 
 \item{file}{The selected source file, sourced during the worker handshake.}
 
@@ -18,20 +19,21 @@ When \code{NULL}, read role, file, and name from the three trailing command argu
 Returns invisibly after shutdown or a rejected handshake.
 }
 \description{
-Load a manifest-selected function inside a worker process and adapt
-it to the CLI-owned dataset, implementation, or evaluator lifecycle.
+Load a manifest-selected function inside a worker process and adapt it to the
+CLI-owned dataset, implementation, or evaluator lifecycle.
 }
 \details{
 Dataset functions take \code{context}; implementation functions take \code{data} and
-\code{context}; evaluator functions take \code{data}, \code{result}, and \code{context}. Context is a list
-containing \code{parameters}, \code{problem_parameters}, \code{seed}, and \code{semantics}. Seeds are
-available for generation and solving; scientific rules are available for
-evaluation. Unavailable objects are empty JSON objects and unavailable seeds
-are \code{NULL}. Callbacks return named lists or explicit output values. The CLI writes \code{data.json},
-dataset inventories, and standard result and metric envelopes.
+\code{context}; evaluator functions take \code{data}, \code{result}, and \code{context}. Context
+is a list containing \code{parameters}, \code{problem_parameters}, \code{seed}, and
+\code{semantics}. Seeds are available for generation and solving; scientific rules
+are available for evaluation. Unavailable objects are empty JSON objects and
+unavailable seeds are \code{NULL}. Callbacks return named lists or explicit output
+values. The CLI writes \code{data.json}, dataset inventories, and standard result
+and metric envelopes.
 
-Without validity or completion rules, plain metric objects receive the verdict
-\code{not_required}. Declared rules require an explicit evaluation object. Completion
-verdicts require completion rules. Use lifecycle workers for profiles, custom
-artifacts, and separate preparation.
+Without validity or completion rules, plain metric objects receive the
+verdict \code{not_required}. Declared rules require an explicit evaluation object.
+Completion verdicts require completion rules. Use lifecycle workers for
+profiles, custom artifacts, and separate preparation.
 }

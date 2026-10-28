@@ -14,6 +14,9 @@ jobs:
   python-package:
     uses: ./.github/workflows/python-package.yml
 
+  r-package:
+    uses: ./.github/workflows/r-package.yml
+
   fmt:
     name: rustfmt
     runs-on: ubuntu-latest
@@ -64,13 +67,6 @@ jobs:
       - uses: r-lib/actions/setup-r-dependencies@v2
         with:
           working-directory: packages/r
-          packages: |
-            any::jsonlite
-            any::roxygen2
-      - name: Check generated R documentation
-        run: |
-          Rscript --vanilla -e 'roxygen2::roxygenise("packages/r")'
-          git diff --exit-code -- packages/r/NAMESPACE packages/r/man
       - name: Install packages in the isolated R workers' site library
         run: |
           python - <<'PY'
@@ -101,23 +97,6 @@ jobs:
           tool: nextest
       - uses: Swatinem/rust-cache@v2
       - run: cargo nextest run --workspace --all-targets --locked --profile ci
-      - name: Check the R source package and its contracts
-        run: |
-          python - <<'PY'
-          import os
-          from pathlib import Path
-          import shutil
-          import subprocess
-          import tempfile
-
-          with tempfile.TemporaryDirectory() as temporary:
-              package = Path(temporary, "package")
-              shutil.copytree("packages/r", package)
-              environment = dict(os.environ, METEWAND_REPOSITORY=str(Path.cwd()))
-              subprocess.run(["R", "CMD", "build", "--no-build-vignettes", str(package)], cwd=temporary, env=environment, check=True)
-              tarball = next(Path(temporary).glob("metewand_*.tar.gz"))
-              subprocess.run(["R", "CMD", "check", "--no-manual", "--no-build-vignettes", str(tarball)], cwd=temporary, env=environment, check=True)
-          PY
       - name: Run the native R starter workflow
         run: |
           python - <<'PY'
@@ -150,7 +129,7 @@ jobs:
   versionary:
     name: versionary
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [fmt, clippy, test, python-package]
+    needs: [fmt, clippy, test, python-package, r-package]
     runs-on: ubuntu-latest
     permissions:
       contents: write

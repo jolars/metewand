@@ -26,7 +26,8 @@ worker_error(code, message, details = NULL)
 \item{representation}{Optional metadata describing shape, data type, byte
 order, or sparse layout.}
 
-\item{data}{A named list of scientific data. \code{NULL} omits \code{data.json} for a dataset.}
+\item{data}{A named list of scientific data. \code{NULL} omits \code{data.json} for a
+dataset.}
 
 \item{files}{A list of artifact declarations for completed files.}
 
@@ -45,13 +46,14 @@ An R object describing the output or a structured error condition.
 }
 \description{
 Construct callback values for binding API version 1. The CLI validates
-scientific data, hashes completed files, and writes canonical artifact envelopes.
+scientific data, hashes completed files, and writes canonical artifact
+envelopes.
 }
 \details{
-Write files beneath \code{context$output_dir} and close them before returning.
-The CLI rejects missing, duplicate, escaping, and undeclared files. Dataset and
-result callbacks may return a plain named list when they produce only JSON data.
-Use \code{stop(worker_error(...))} to report a structured callback failure.
+Write files beneath \code{context$output_dir} and close them before returning. The
+CLI rejects missing, duplicate, escaping, and undeclared files. Dataset and
+result callbacks may return a plain named list when they produce only JSON
+data. Use \code{stop(worker_error(...))} to report a structured callback failure.
 
 These constructors work without the CLI and perform no filesystem operations.
 }

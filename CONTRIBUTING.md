@@ -13,7 +13,8 @@ pages.
 ## Development environment
 
 Use Rust 1.98.0 and edition 2024. `devenv shell` provides the pinned toolchain,
-rustfmt, Clippy, Nextest, Python, R with `jsonlite` and `roxygen2`, and Node.js:
+rustfmt, Clippy, Nextest, Python, R with `jsonlite`, `roxygen2`, `testthat`, and
+`withr`, and Node.js:
 
 ```sh
 devenv shell
@@ -47,6 +48,23 @@ Rscript --vanilla -e 'roxygen2::roxygenise("packages/r")'
 Commit the generated `packages/r/man/*.Rd` files and `packages/r/NAMESPACE`
 alongside the source comments. These files let users install the package without
 roxygen2. Do not edit them directly.
+
+The R package tests use testthat edition 3. Run them from the repository root:
+
+```sh
+Rscript --vanilla -e 'testthat::test_local("packages/r")'
+```
+
+The reusable [R package workflow](.github/workflows/r-package.yml) uses
+`r-lib/actions` to install dependencies from `DESCRIPTION` and run `R CMD check`
+on the built source package. It checks the current R release on Linux, macOS,
+and Windows, plus R-devel and the previous release on Linux. Package warnings
+fail CI, and failed checks retain their logs and testthat output. The Linux
+release job also checks that the generated documentation is current.
+
+The Rust test jobs install the R package and `jsonlite` into the interpreter's
+site library so isolated CLI workers can load them. These jobs exercise the
+worker lifecycle and native R starter separately from the package checks.
 
 ## Architecture and source map
 

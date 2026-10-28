@@ -24,8 +24,8 @@ declared scientific rules, a named list of metrics.}
 Returns invisibly after shutdown.
 }
 \description{
-Delegate binding API version 1 callbacks to a CLI-supplied adapter.
-The package contains no worker protocol implementation.
+Delegate binding API version 1 callbacks to a CLI-supplied adapter. The
+package contains no worker protocol implementation.
 }
 \details{
 Implementations require \code{prepare(context)}, which returns state, and
@@ -40,15 +40,16 @@ Optional \code{check_applicability(context)} returns a support decision before
 preparation. Unsupported optional callbacks fail in the CLI adapter, allowing
 future callbacks without a package release.
 
-Context supplies \code{parameters}, \code{problem_parameters}, \code{seed}, \code{semantics}, assigned
-input and output directories, and \code{observation_control} where applicable. Additional
-optional fields may appear without changing callback signatures. Neither seeds
-nor random generators are set automatically.
+Context supplies \code{parameters}, \code{problem_parameters}, \code{seed}, \code{semantics},
+assigned input and output directories, and \code{observation_control} where
+applicable. Additional optional fields may appear without changing callback
+signatures. Neither seeds nor random generators are set automatically.
 
 Select \code{protocol-transport: socket} for lifecycle workers. Ordinary function
 launches select managed transport automatically. Standard output and standard
-error remain log channels. The CLI owns timing, protocol negotiation, artifact
-finalization, and publication. R diagnostic solve time is unavailable.
+error remain log channels. The CLI owns timing, protocol negotiation,
+artifact finalization, and publication. R diagnostic solve time is
+unavailable.
 
 Serving requires a Metewand CLI that supports binding API version 1; package
 and CLI release numbers need not match.
