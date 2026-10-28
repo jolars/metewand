@@ -1,4 +1,5 @@
-# These values describe scientific outputs; the CLI owns their artifact format.
+#' @rdname json
+#' @export
 json_object <- function(values = list()) {
   if (!is.list(values) || (length(values) && is.null(names(values)))) {
     stop("JSON objects must be named lists.", call. = FALSE)
@@ -7,6 +8,8 @@ json_object <- function(values = list()) {
   values
 }
 
+#' @rdname json
+#' @export
 json_array <- function(values) I(unname(values))
 
 .validate_json <- function(value) {
@@ -123,12 +126,40 @@ json_array <- function(values) I(unname(values))
   value
 }
 
+#' Read and Write Ordinary JSON
+#'
+#' Small JSON utilities backed by jsonlite. The CLI owns canonical
+#' serialization and artifact validation.
+#'
+#' @param path A file path.
+#' @param value A JSON-compatible R value.
+#' @param values A named list for an object, or values to represent as an array.
+#' @details
+#' Named lists represent objects and unnamed lists represent arrays.
+#' Atomic vectors of length one become scalars. Use `json_array()` to preserve an
+#' array with one element, and `json_object()` for an empty object. `NULL` represents
+#' JSON null. Reading never simplifies arrays or objects into vectors or frames.
+#' Numbers are written with 17 significant digits to preserve binary64 values.
+#' Missing values, nonfinite numbers, unsafe integers, duplicate keys, unsupported
+#' classes, and invalid Unicode are rejected. R cannot represent embedded NUL
+#' strings; these are unsupported rather than silently truncated.
+#' @returns `read_json()` returns the parsed value; `write_json()` returns invisibly.
+#' `json_object()` returns a named list and `json_array()` returns an `AsIs` value.
+#' @examples
+#' path <- tempfile()
+#' write_json(path, list(answer = 6, values = json_array(1)))
+#' read_json(path)
+#' unlink(path)
+#' @rdname json
+#' @export
 read_json <- function(path) {
   connection <- file(path, "rb")
   on.exit(close(connection))
   .parse_json(rawToChar(readBin(connection, "raw", n = file.info(path)$size)))
 }
 
+#' @rdname json
+#' @export
 write_json <- function(path, value) {
   bytes <- charToRaw(enc2utf8(.json_text(value)))
   connection <- file(path, "wb")
@@ -137,6 +168,8 @@ write_json <- function(path, value) {
   invisible(NULL)
 }
 
+#' @rdname artifacts
+#' @export
 artifact <- function(path, media_type, representation = NULL) {
   structure(
     list(path = path, media_type = media_type, representation = representation),
@@ -144,6 +177,8 @@ artifact <- function(path, media_type, representation = NULL) {
   )
 }
 
+#' @rdname artifacts
+#' @export
 dataset <- function(data = NULL, files = list()) {
   structure(
     list(data = if (is.null(data)) NULL else json_object(data), files = files),
@@ -151,6 +186,37 @@ dataset <- function(data = NULL, files = list()) {
   )
 }
 
+#' Describe Scientific Outputs
+#'
+#' Construct callback values for binding API version 1. The CLI validates
+#' scientific data, hashes completed files, and writes canonical artifact envelopes.
+#'
+#' @param data A named list of scientific data. `NULL` omits `data.json` for a dataset.
+#' @param files A list of artifact declarations for completed files.
+#' @param path A normalized file path relative to the assigned output directory.
+#' @param media_type The file's media type.
+#' @param representation Optional metadata describing shape, data type, byte
+#'   order, or sparse layout.
+#' @param metrics A named list of independently computed metrics.
+#' @param verdict One of `invalid`, `reached`, `not_reached`, or `not_required`.
+#' @param code A structured failure code understood by the CLI.
+#' @param message A nonempty failure message.
+#' @param details Optional named list of diagnostic details.
+#' @details
+#' Write files beneath `context$output_dir` and close them before returning.
+#' The CLI rejects missing, duplicate, escaping, and undeclared files. Dataset and
+#' result callbacks may return a plain named list when they produce only JSON data.
+#' Use `stop(worker_error(...))` to report a structured callback failure.
+#'
+#' These constructors work without the CLI and perform no filesystem operations.
+#' @returns An R object describing the output or a structured error condition.
+#' @examples
+#' result(list(answer = 6))
+#' dataset(list(values = list(1, 2, 3)))
+#' evaluation(list(error = 0), "not_required")
+#' artifact("coefficients.bin", "application/octet-stream")
+#' @rdname artifacts
+#' @export
 result <- function(data = json_object(), files = list()) {
   structure(
     list(data = json_object(data), files = files),
@@ -158,6 +224,8 @@ result <- function(data = json_object(), files = list()) {
   )
 }
 
+#' @rdname artifacts
+#' @export
 evaluation <- function(metrics, verdict) {
   structure(
     list(metrics = json_object(metrics), verdict = verdict),
@@ -165,6 +233,8 @@ evaluation <- function(metrics, verdict) {
   )
 }
 
+#' @rdname artifacts
+#' @export
 worker_error <- function(code, message, details = NULL) {
   structure(
     list(message = message, call = NULL, code = code, details = details),
@@ -200,14 +270,82 @@ worker_error <- function(code, message, details = NULL) {
   )
 }
 
+#' Register Stable Scientific Callbacks
+#'
+#' Delegate binding API version 1 callbacks to a CLI-supplied adapter.
+#' The package contains no worker protocol implementation.
+#'
+#' @param ... Named implementation callbacks described below.
+#' @param materialize Function of context returning a dataset or named list.
+#' @param evaluate Function of context returning an evaluation or, without
+#'   declared scientific rules, a named list of metrics.
+#' @details
+#' Implementations require `prepare(context)`, which returns state, and
+#' `execute(state, context)`, which returns solver output. Optional
+#' `result(output, context)` converts that output into a result or named list;
+#' `statistics(output, context)` returns diagnostics. Optional
+#' `reset(state, context)` clears slot state, and `shutdown(state, context)`
+#' releases resources. Execution consumes preparation, even on failure. The
+#' original preparation state remains available for cleanup.
+#'
+#' Optional `check_applicability(context)` returns a support decision before
+#' preparation. Unsupported optional callbacks fail in the CLI adapter, allowing
+#' future callbacks without a package release.
+#'
+#' Context supplies `parameters`, `problem_parameters`, `seed`, `semantics`, assigned
+#' input and output directories, and `observation_control` where applicable. Additional
+#' optional fields may appear without changing callback signatures. Neither seeds
+#' nor random generators are set automatically.
+#'
+#' Select `protocol-transport: socket` for lifecycle workers. Ordinary function
+#' launches select managed transport automatically. Standard output and standard
+#' error remain log channels. The CLI owns timing, protocol negotiation, artifact
+#' finalization, and publication. R diagnostic solve time is unavailable.
+#'
+#' Serving requires a Metewand CLI that supports binding API version 1; package
+#' and CLI release numbers need not match.
+#' @returns Returns invisibly after shutdown.
+#' @rdname workers
+#' @export
 serve_implementation <- function(...) .serve("implementation", list(...))
+
+#' @rdname workers
+#' @export
 serve_dataset_materializer <- function(materialize) {
   .serve("dataset_materializer", list(materialize = materialize))
 }
+
+#' @rdname workers
+#' @export
 serve_evaluator <- function(evaluate) {
   .serve("problem_evaluator", list(evaluate = evaluate))
 }
 
+#' Serve an Ordinary Benchmark Function
+#'
+#' Load a manifest-selected function inside a worker process and adapt
+#' it to the CLI-owned dataset, implementation, or evaluator lifecycle.
+#'
+#' @param role One of `dataset_materializer`, `implementation`, or `problem_evaluator`.
+#'   When `NULL`, read role, file, and name from the three trailing command arguments.
+#' @param file The selected source file, sourced during the worker handshake.
+#' @param name The name of the function defined in that file.
+#' @details
+#' Dataset functions take `context`; implementation functions take `data` and
+#' `context`; evaluator functions take `data`, `result`, and `context`. Context is a list
+#' containing `parameters`, `problem_parameters`, `seed`, and `semantics`. Seeds are
+#' available for generation and solving; scientific rules are available for
+#' evaluation. Unavailable objects are empty JSON objects and unavailable seeds
+#' are `NULL`. Callbacks return named lists or explicit output values. The CLI writes `data.json`,
+#' dataset inventories, and standard result and metric envelopes.
+#'
+#' Without validity or completion rules, plain metric objects receive the verdict
+#' `not_required`. Declared rules require an explicit evaluation object. Completion
+#' verdicts require completion rules. Use lifecycle workers for profiles, custom
+#' artifacts, and separate preparation.
+#' @returns Returns invisibly after shutdown or a rejected handshake.
+#' @rdname functions
+#' @export
 serve_function <- function(role = NULL, file = NULL, name = NULL) {
   if (is.null(role)) {
     arguments <- commandArgs(trailingOnly = TRUE)

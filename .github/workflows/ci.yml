@@ -64,7 +64,13 @@ jobs:
       - uses: r-lib/actions/setup-r-dependencies@v2
         with:
           working-directory: packages/r
-          packages: any::jsonlite
+          packages: |
+            any::jsonlite
+            any::roxygen2
+      - name: Check generated R documentation
+        run: |
+          Rscript --vanilla -e 'roxygen2::roxygenise("packages/r")'
+          git diff --exit-code -- packages/r/NAMESPACE packages/r/man
       - name: Install packages in the isolated R workers' site library
         run: |
           python - <<'PY'

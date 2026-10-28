@@ -13,7 +13,7 @@ pages.
 ## Development environment
 
 Use Rust 1.98.0 and edition 2024. `devenv shell` provides the pinned toolchain,
-rustfmt, Clippy, Nextest, Python, R with `jsonlite`, and Node.js:
+rustfmt, Clippy, Nextest, Python, R with `jsonlite` and `roxygen2`, and Node.js:
 
 ```sh
 devenv shell
@@ -35,6 +35,18 @@ for PowerShell commands. Nix and devenv are optional on other systems.
 
 The crates and packages are not yet published to registries. Use local path
 dependencies and install packages into the environment selected for the worker.
+
+The R package uses roxygen2 comments in `packages/r/R/` to generate its help
+pages and exports. After changing those comments or public function signatures,
+regenerate the documentation from the repository root:
+
+```sh
+Rscript --vanilla -e 'roxygen2::roxygenise("packages/r")'
+```
+
+Commit the generated `packages/r/man/*.Rd` files and `packages/r/NAMESPACE`
+alongside the source comments. These files let users install the package without
+roxygen2. Do not edit them directly.
 
 ## Architecture and source map
 
