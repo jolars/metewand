@@ -84,6 +84,11 @@ fn rejects_an_unobserved_declared_capability() {
     );
     assert!(worker.contains("capabilities=[],"));
     fs::write(repository.path().join("worker.py"), worker).unwrap();
+    let manifest = repository.path().join("metewand.yaml");
+    let source = fs::read_to_string(&manifest)
+        .unwrap()
+        .replace("protocol-transport: socket", "protocol-transport: pipes");
+    fs::write(manifest, source).unwrap();
     let output = check(repository.path());
     assert!(!output.status.success());
     assert!(
@@ -99,8 +104,8 @@ fn rejects_invalid_reference_results_and_evaluator_input_mutation() {
         if mutation {
             let path = repository.path().join("worker.py");
             let worker = fs::read_to_string(&path).unwrap().replace(
-                "\n    values = read_json(dataset_instance / \"data.json\")[\"values\"]",
-                "\n    values = read_json(dataset_instance / \"data.json\")[\"values\"]\n    write_json(result_dir / \"extra.json\", {})",
+                "\n    values = read_json(context.dataset_dir / \"data.json\")[\"values\"]",
+                "\n    values = read_json(context.dataset_dir / \"data.json\")[\"values\"]\n    (context.result_dir / \"extra.json\").write_text(\"{}\")",
             );
             fs::write(path, worker).unwrap();
         } else {
@@ -235,6 +240,11 @@ fn records_additional_capabilities_without_selecting_or_executing_them() {
         .replace("assert role == \"implementation\" and prepared is not None", "raise AssertionError(\"check must not execute implementations\")")
         .replace("\"schema\": \"schemas/metrics.json\",", "");
     fs::write(repository.path().join("worker.py"), worker).unwrap();
+    let manifest = repository.path().join("metewand.yaml");
+    let source = fs::read_to_string(&manifest)
+        .unwrap()
+        .replace("protocol-transport: socket", "protocol-transport: pipes");
+    fs::write(manifest, source).unwrap();
     let output = check(repository.path());
     assert!(output.status.success(), "{output:?}");
     let report: Value = serde_json::from_slice(&output.stdout).unwrap();

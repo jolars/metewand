@@ -8,7 +8,7 @@ on:
         type: string
         default: ''
       release-tag:
-        description: Release tag that must match the workspace version
+        description: Release tag that must match the Python package version
         type: string
         default: ''
 
@@ -39,10 +39,10 @@ jobs:
           from pathlib import Path
           import tomllib
 
-          version = tomllib.loads(Path("Cargo.toml").read_text())["workspace"]["package"]["version"]
+          version = tomllib.loads(Path("packages/python/pyproject.toml").read_text())["project"]["version"]
           tag = os.environ["RELEASE_TAG"]
           if tag and tag != f"metewand-v{version}":
-              raise SystemExit(f"Release tag {tag!r} does not match workspace version {version!r}.")
+              raise SystemExit(f"Release tag {tag!r} does not match Python package version {version!r}.")
           PY
       - name: Build source distribution and wheel
         run: python -m build --outdir dist packages/python

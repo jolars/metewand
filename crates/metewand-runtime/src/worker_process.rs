@@ -60,6 +60,50 @@ use thiserror::Error;
 
 use crate::{redaction::Redactor, worker_environment::WorkerEnvironmentProvenance};
 
+mod socket;
+
+/// Cancellable protocol I/O over a pipe or an authenticated loopback socket.
+#[derive(Debug)]
+pub struct ProtocolIo {
+    inner: ProtocolIoKind,
+}
+
+#[derive(Debug)]
+enum ProtocolIoKind {
+    Pipe(WorkerPipe<File>),
+    Socket(socket::SocketEndpoint),
+}
+
+impl From<WorkerPipe<File>> for ProtocolIo {
+    fn from(pipe: WorkerPipe<File>) -> Self {
+        Self {
+            inner: ProtocolIoKind::Pipe(pipe),
+        }
+    }
+}
+impl Read for ProtocolIo {
+    fn read(&mut self, bytes: &mut [u8]) -> io::Result<usize> {
+        match &mut self.inner {
+            ProtocolIoKind::Pipe(io) => io.read(bytes),
+            ProtocolIoKind::Socket(io) => io.read(bytes),
+        }
+    }
+}
+impl Write for ProtocolIo {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        match &mut self.inner {
+            ProtocolIoKind::Pipe(io) => io.write(bytes),
+            ProtocolIoKind::Socket(io) => io.write(bytes),
+        }
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        match &mut self.inner {
+            ProtocolIoKind::Pipe(io) => io.flush(),
+            ProtocolIoKind::Socket(io) => io.flush(),
+        }
+    }
+}
+
 /// Name of the environment variable containing the worker's protocol read descriptor.
 pub const PROTOCOL_READ_FD_ENV: &str = "METEWAND_PROTOCOL_READ_FD";
 
@@ -285,11 +329,11 @@ impl Drop for PipeCancellation {
 pub struct WorkerProcess {
     environment: Option<WorkerEnvironmentProvenance>,
     redactor: Redactor,
-    child: Child,
+    child: Arc<Mutex<Child>>,
     group: ProcessGroup,
     private_working_directory: Option<TempDir>,
-    protocol_reader: Option<FrameReader<WorkerPipe<File>>>,
-    protocol_writer: Option<WorkerPipe<File>>,
+    protocol_reader: Option<FrameReader<ProtocolIo>>,
+    protocol_writer: Option<ProtocolIo>,
     protocol_cancellation: PipeCancellation,
     log_cancellation: PipeCancellation,
     stdout_drain: JoinHandle<io::Result<CapturedWorkerLog>>,
@@ -357,8 +401,16 @@ impl WorkerProcess {
     pub(crate) fn spawn_redacted(
         mut command: Command,
         log_limits: WorkerLogLimits,
-        redactor: Redactor,
+        mut redactor: Redactor,
     ) -> Result<Self, WorkerProcessError> {
+        let protocol_cancellation = PipeCancellation::default();
+        let socket = socket::SocketListener::configure(
+            &mut command,
+            &mut redactor,
+            Arc::clone(&protocol_cancellation.0),
+        )
+        .map_err(WorkerProcessError::CreateRequestPipe)?;
+        let use_socket = socket.is_some();
         let (worker_request_reader, parent_request_writer) =
             protocol_pipe().map_err(WorkerProcessError::CreateRequestPipe)?;
         let (parent_response_reader, worker_response_writer) =
@@ -389,8 +441,10 @@ impl WorkerProcess {
         // in the child's environment without exposing the other pipe ends.
         unsafe {
             command.pre_exec(move || {
-                inherit_for_exec(worker_read_fd)?;
-                inherit_for_exec(worker_write_fd)?;
+                if !use_socket {
+                    inherit_for_exec(worker_read_fd)?;
+                    inherit_for_exec(worker_write_fd)?;
+                }
                 Ok(())
             });
         }
@@ -413,7 +467,6 @@ impl WorkerProcess {
         };
 
         let log_cancellation = PipeCancellation::default();
-        let protocol_cancellation = PipeCancellation::default();
         let stdout_live = Arc::new(Mutex::new(LiveLog::default()));
         let stderr_live = Arc::new(Mutex::new(LiveLog::default()));
         let stdout_drain = match start_log_drain(
@@ -458,20 +511,31 @@ impl WorkerProcess {
         };
 
         let group = ProcessGroup(child.id() as libc::pid_t);
+        let child = Arc::new(Mutex::new(child));
+        let (protocol_reader, protocol_writer) = if let Some(socket) = socket {
+            socket.pair(Arc::clone(&child))
+        } else {
+            (
+                WorkerPipe {
+                    inner: File::from(parent_response_reader),
+                    canceled: Arc::clone(&protocol_cancellation.0),
+                }
+                .into(),
+                WorkerPipe {
+                    inner: File::from(parent_request_writer),
+                    canceled: Arc::clone(&protocol_cancellation.0),
+                }
+                .into(),
+            )
+        };
         Ok(Self {
             environment: None,
             redactor,
             group,
             child,
             private_working_directory: None,
-            protocol_reader: Some(FrameReader::new(WorkerPipe {
-                inner: File::from(parent_response_reader),
-                canceled: Arc::clone(&protocol_cancellation.0),
-            })),
-            protocol_writer: Some(WorkerPipe {
-                inner: File::from(parent_request_writer),
-                canceled: Arc::clone(&protocol_cancellation.0),
-            }),
+            protocol_reader: Some(FrameReader::new(protocol_reader)),
+            protocol_writer: Some(protocol_writer),
             protocol_cancellation,
             log_cancellation,
             stdout_drain,
@@ -503,20 +567,20 @@ impl WorkerProcess {
     }
 
     /// Returns the bounded protocol response reader.
-    pub fn protocol_reader(&mut self) -> &mut FrameReader<WorkerPipe<File>> {
+    pub fn protocol_reader(&mut self) -> &mut FrameReader<ProtocolIo> {
         self.protocol_reader
             .as_mut()
             .expect("protocol I/O can be transferred only by the runtime session")
     }
 
     /// Returns the protocol request writer.
-    pub fn protocol_writer(&mut self) -> &mut WorkerPipe<File> {
+    pub fn protocol_writer(&mut self) -> &mut ProtocolIo {
         self.protocol_writer
             .as_mut()
             .expect("protocol I/O can be transferred only by the runtime session")
     }
 
-    pub(crate) fn take_protocol_io(&mut self) -> (FrameReader<WorkerPipe<File>>, WorkerPipe<File>) {
+    pub(crate) fn take_protocol_io(&mut self) -> (FrameReader<ProtocolIo>, ProtocolIo) {
         let reader = self
             .protocol_reader
             .take()
@@ -562,7 +626,7 @@ impl WorkerProcess {
     /// Returns the operating-system process identifier.
     #[must_use]
     pub fn id(&self) -> u32 {
-        self.child.id()
+        self.child.lock().expect("worker child lock poisoned").id()
     }
 
     /// Checks whether the worker has exited without blocking.
@@ -571,7 +635,11 @@ impl WorkerProcess {
     ///
     /// Returns an error if the child status cannot be observed.
     pub fn try_wait(&mut self) -> Result<Option<ExitStatus>, WorkerProcessError> {
-        self.child.try_wait().map_err(WorkerProcessError::Observe)
+        self.child
+            .lock()
+            .expect("worker child lock poisoned")
+            .try_wait()
+            .map_err(WorkerProcessError::Observe)
     }
 
     /// Interrupts the Unix worker's process group, including ordinary descendants.
@@ -611,7 +679,10 @@ impl WorkerProcess {
         {
             // Even a failed termination request must not turn session cleanup
             // into an unbounded wait for a still-running worker.
-            self.child.mark_terminated();
+            self.child
+                .lock()
+                .expect("worker child lock poisoned")
+                .mark_terminated();
             self.group.kill().map_err(WorkerProcessError::Kill)
         }
     }
@@ -625,7 +696,7 @@ impl WorkerProcess {
     pub fn wait(self) -> Result<WorkerProcessOutput, WorkerProcessError> {
         let Self {
             environment,
-            mut child,
+            child,
             group,
             private_working_directory: _private_working_directory,
             protocol_reader,
@@ -638,14 +709,17 @@ impl WorkerProcess {
         drop(protocol_reader);
         drop(protocol_writer);
 
-        let status = match child.wait() {
-            Ok(status) => status,
-            Err(source) => {
-                abort_spawn(&mut child);
-                log_cancellation.cancel();
-                let _ = stdout_drain.join();
-                let _ = stderr_drain.join();
-                return Err(WorkerProcessError::Wait(source));
+        let status = {
+            let mut child = child.lock().expect("worker child lock poisoned");
+            match child.wait() {
+                Ok(status) => status,
+                Err(source) => {
+                    abort_spawn(&mut child);
+                    log_cancellation.cancel();
+                    let _ = stdout_drain.join();
+                    let _ = stderr_drain.join();
+                    return Err(WorkerProcessError::Wait(source));
+                }
             }
         };
         #[cfg(unix)]

@@ -8,6 +8,11 @@ use tempfile::TempDir;
 #[test]
 fn r_sdk_example_publishes_two_accepted_observations() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let description = fs::read_to_string(root.join("packages/r/DESCRIPTION")).unwrap();
+    let version = description
+        .lines()
+        .find_map(|line| line.strip_prefix("Version: "))
+        .unwrap();
     let benchmark = TempDir::new().unwrap();
     let package = TempDir::new().unwrap();
     copy_tree(&root.join("examples/r-package"), benchmark.path());
@@ -44,7 +49,7 @@ fn r_sdk_example_publishes_two_accepted_observations() {
         let execution = &record["provenance"]["data"]["execution"];
         for role in ["implementation", "evaluator"] {
             assert_eq!(execution[role]["sdk"]["name"], "metewand-r");
-            assert_eq!(execution[role]["sdk"]["version"], "0.1.0");
+            assert_eq!(execution[role]["sdk"]["version"], version);
         }
     }
 }

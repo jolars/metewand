@@ -321,7 +321,7 @@ fn raw_workers_must_echo_the_selected_control() {
         )
         .unwrap();
         edit(stage.path(), "metewand.yaml", |s| {
-            s.replace("    runner: python\n    entrypoint: worker.py\n    sources: [worker.py, solver.py, \"metewand/*.py\"]",&format!("    runner: command\n    program: python3\n    args: [\"{{sources}}/raw.py\", {mode}]\n    sources: [raw.py]"))
+            s.replace("    runner: python\n    protocol-transport: socket\n    entrypoint: worker.py\n    sources: [worker.py, solver.py, \"metewand/*.py\"]",&format!("    runner: command\n    program: python3\n    args: [\"{{sources}}/raw.py\", {mode}]\n    sources: [raw.py]"))
         });
         let (output, report) = run(stage.path(), &[]);
         assert_eq!(
@@ -363,15 +363,17 @@ fn one_policy_can_mix_fresh_and_buffered_delivery() {
     let stage = stage(false);
     fs::write(
         stage.path().join("buffered.py"),
-        r#"from metewand import BufferedImplementation, serve_implementation
-class Solver(BufferedImplementation):
-    def prepare(self, *args): pass
-    def reset(self): pass
-    def execute_buffered(self, budget, trace):
+        r#"from metewand import serve_implementation
+class Solver:
+    def prepare(self, context): return self
+    def reset(self, state, context): pass
+    def execute_buffered(self, state, context):
+        trace = context.observer
         progress = {'check_index':0,'work':{}}
         trace.observe(progress, lambda:{'residual':0.04}, lambda:{'x':1.4})
         trace.finish(progress, lambda:{'residual':0.04}, lambda:{'x':1.4})
-serve_implementation(Solver())
+worker = Solver()
+serve_implementation(prepare=worker.prepare, execute_buffered=worker.execute_buffered, reset=worker.reset)
 "#,
     )
     .unwrap();
@@ -379,6 +381,7 @@ serve_implementation(Solver())
         s.replace("experiments:\n",r#"  buffered:
     runner: python
     entrypoint: buffered.py
+    protocol-transport: socket
     sources: [buffered.py, "metewand/*.py"]
     problem-contracts: [square_root]
     capabilities: [buffered_profile]

@@ -3,8 +3,8 @@
 from metewand import Evaluation, read_json, serve_evaluator
 
 
-def evaluate(dataset, contract, parameters, result, metrics_path):
-    x = read_json(result / "result.json")["data"]["x"]
+def evaluate(context):
+    x = read_json(context.result_dir / "result.json")["data"]["x"]
     if not 1 <= x <= 2:
         return Evaluation({"residual": abs(x * x - 2)}, "invalid")
     residual = round(abs(x * x - 2), 12)

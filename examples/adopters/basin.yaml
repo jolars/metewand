@@ -5,6 +5,7 @@ problems:
     contract: problem.yaml
     evaluator:
       runner: python
+      protocol-transport: socket
       entrypoint: evaluator.py
       args: [basin]
       sources: [evaluator.py, "metewand/*.py"]

@@ -770,3 +770,36 @@ fn applicability_exchange_preserves_checked_inputs_and_structured_reasons() {
     );
     assert!(validate_hello_response(&hello, &response, &[Capability::Applicability]).is_ok());
 }
+
+#[test]
+fn managed_output_responses_have_exact_canonical_bytes_and_strict_shapes() {
+    use metewand_protocol::ManagedOutputResponse;
+    let cases = [
+        (
+            json!({"id":"1","ok":true,"draft":"draft.json","implementation_time_ns":null,"statistics":{}}),
+            "{\"draft\":\"draft.json\",\"id\":\"1\",\"implementation_time_ns\":null,\"ok\":true,\"statistics\":{}}\n",
+        ),
+        (
+            json!({"id":"1","ok":true,"draft":"draft.json","verdict":"reached"}),
+            "{\"draft\":\"draft.json\",\"id\":\"1\",\"ok\":true,\"verdict\":\"reached\"}\n",
+        ),
+        (
+            json!({"id":"1","ok":true,"draft":"draft.json"}),
+            "{\"draft\":\"draft.json\",\"id\":\"1\",\"ok\":true}\n",
+        ),
+    ];
+    for (value, canonical) in cases {
+        let message: ManagedOutputResponse = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(encode_message(&message).unwrap(), canonical.as_bytes());
+        let mut extra = value;
+        extra["unknown"] = json!(true);
+        assert!(serde_json::from_value::<ManagedOutputResponse>(extra).is_err());
+    }
+    for invalid in [
+        json!({"id":"1","ok":true,"draft":""}),
+        json!({"id":"1","ok":false,"draft":"draft.json"}),
+        json!({"id":"1","ok":true,"draft":"draft.json","statistics":[],"implementation_time_ns":null}),
+    ] {
+        assert!(serde_json::from_value::<ManagedOutputResponse>(invalid).is_err());
+    }
+}

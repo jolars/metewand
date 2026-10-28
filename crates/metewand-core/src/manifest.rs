@@ -796,6 +796,8 @@ impl From<InterpretedRunner> for Runner {
 pub enum ProtocolTransport {
     /// Dedicated protocol pipes.
     Pipes,
+    /// Authenticated loopback sockets for CLI-owned language adapters.
+    Socket,
     /// Standard input and output.
     Stdio,
 }

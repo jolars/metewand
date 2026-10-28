@@ -1,0 +1,72 @@
+{
+  "version": 1,
+  "valid": [
+    {
+      "schema_version": 1,
+      "kind": "dataset",
+      "data": {
+        "values": [
+          1,
+          2
+        ]
+      },
+      "files": []
+    },
+    {
+      "schema_version": 1,
+      "kind": "result",
+      "data": {},
+      "files": [
+        {
+          "path": "coefficients.bin",
+          "media_type": "application/octet-stream",
+          "representation": {
+            "shape": [
+              3
+            ],
+            "data_type": "float64"
+          }
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "kind": "metrics",
+      "data": {
+        "error": 0
+      },
+      "files": []
+    }
+  ],
+  "invalid": [
+    {
+      "schema_version": 2,
+      "kind": "result",
+      "data": {},
+      "files": []
+    },
+    {
+      "schema_version": 1,
+      "kind": "result",
+      "data": {},
+      "files": [
+        {
+          "path": "../escape",
+          "media_type": "text/plain"
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "kind": "result",
+      "data": {},
+      "files": [
+        {
+          "path": "a",
+          "media_type": "text/plain",
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ]
+    }
+  ]
+}

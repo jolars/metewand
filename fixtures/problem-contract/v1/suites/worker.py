@@ -3,23 +3,23 @@
 import sys
 
 from metewand import (
-    Implementation,
+    Evaluation,
     read_json,
     serve_evaluator,
     serve_implementation,
-    write_metrics,
-    write_result,
 )
 
 ROLE, FAMILY, MODE = sys.argv[1:]
 
 
-class Reference(Implementation):
-    def prepare(self, dataset, contract, problem, implementation, seed):
+class Reference:
+    def prepare(self, context):
+        dataset, problem = context.dataset_dir, context.problem_parameters
         self.values = read_json(dataset / "data.json")["values"]
         self.parameters = problem
+        return self
 
-    def execute(self, budget, observation_control):
+    def execute(self, state, context):
         if FAMILY == "sum":
             self.result = {
                 "answer": sum(self.values) + self.parameters["offset"],
@@ -39,11 +39,11 @@ class Reference(Implementation):
         elif MODE == "semantically_invalid":
             self.result[semantic] += 1
 
-    def write_result(self, directory):
-        return write_result(directory, self.result, schema="schemas/result.json")
+        return self.result
 
 
-def evaluate(dataset, contract, parameters, result, metrics):
+def evaluate(context):
+    dataset, parameters, result = context.dataset_dir, context.problem_parameters, context.result_dir
     values = read_json(dataset / "data.json")["values"]
     candidate = read_json(result / "result.json")["data"]
     if FAMILY == "sum":
@@ -58,12 +58,13 @@ def evaluate(dataset, contract, parameters, result, metrics):
         first = next(i for i, value in enumerate(values) if value == expected)
         valid = candidate["index"] == first
         error = abs(candidate["value"] - expected)
-    write_metrics(metrics, {"absolute_error": error, "semantically_valid": valid},
-                  schema="schemas/metrics.json")
-    return "invalid" if not valid else "reached" if error == 0 else "not_reached"
+    verdict = "invalid" if not valid else "reached" if error == 0 else "not_reached"
+    return Evaluation({"absolute_error": error, "semantically_valid": valid}, verdict)
+
 
 
 if ROLE == "implementation":
-    serve_implementation(Reference())
+    worker = Reference()
+    serve_implementation(prepare=worker.prepare, execute=worker.execute)
 else:
     serve_evaluator(evaluate)

@@ -52,10 +52,10 @@ def metrics(kind, result):
     return {"epsilon_g": epsilon_g, "relative_objective_error": abs(objective - 1.190138888888889) / 1.190138888888889, "coefficient_error": max(abs(b - e) for b, e in zip(beta, [-1, 0.5, 1]))}
 
 
-def evaluate(dataset, contract, parameters, result, metrics_path):
+def evaluate(context):
     from metewand import Evaluation, read_json
 
-    measured = metrics(sys.argv[1], read_json(result / "result.json")["data"])
+    measured = metrics(sys.argv[1], read_json(context.result_dir / "result.json")["data"])
     reached = measured["objective"] <= 1e-10 if sys.argv[1] == "basin" else measured["epsilon_g"] <= 1e-8 and measured["relative_objective_error"] <= 1e-8
     return Evaluation(measured, "reached" if reached else "not_reached")
 

@@ -64,7 +64,7 @@ jobs:
       - uses: r-lib/actions/setup-r-dependencies@v2
         with:
           working-directory: packages/r
-          packages: any::digest
+          packages: any::jsonlite
       - name: Install packages in the isolated R workers' site library
         run: |
           python - <<'PY'
@@ -76,14 +76,14 @@ jobs:
           import tempfile
 
           rscript = shutil.which("Rscript")
-          digest = subprocess.check_output([rscript, "-e", "cat(find.package('digest'))"], text=True).strip()
+          jsonlite = subprocess.check_output([rscript, "-e", "cat(find.package('jsonlite'))"], text=True).strip()
           with tempfile.TemporaryDirectory() as temporary:
               package = Path(temporary, "package")
               shutil.copytree("packages/r", package)
               library = Path(temporary, "library")
               library.mkdir()
               subprocess.run(["R", "CMD", "INSTALL", "--preclean", "--clean", f"--library={library}", str(package)], check=True)
-              sources = [digest, str(library / "metewand")]
+              sources = [jsonlite, str(library / "metewand")]
               expression = f"stopifnot(file.copy(c({','.join(map(json.dumps, sources))}), .Library, recursive=TRUE))"
               command = [rscript, "--vanilla", "-e", expression]
               if os.name != "nt":

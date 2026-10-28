@@ -15,7 +15,7 @@ they do not provide container isolation or a locked publication environment.
 | Adopter qualification | [Basin and clustlasso-cd](adopters) | Adopter checkouts, Rust, Python, and CMake; prepared Python/R package runtime for the package track | Native comparisons and profiles, recovered interruption, and faithful exports |
 | Release overhead | [Controlled native worker](overhead) | Rust 1.98.0 | 198 repetitions across three timing scopes and two result sizes |
 | Python-only | [Python package](python-package) | Python 3.11+, staged in-tree package | Two answers of 8 |
-| R-only | [R package](r-package) | R, digest, C++17 compiler, installed in-tree package | Two answers of 8 |
+| R-only | [R package](r-package) | R, jsonlite, installed in-tree package | Two answers of 8 |
 | Native Rust | [Rust helpers](rust-worker) | Rust 1.98.0, compiled worker | Two answers of 8 |
 | Dataset-free | [Integer sum](dataset-free) | Python 3, standard library only | Answers 6 and 55 |
 | Scientific workflows | [Motivating workflow smoke cases](workflow-smoke) | Python 3, standard library only | Three independently evaluated regression fits |

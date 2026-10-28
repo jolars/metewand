@@ -1,19 +1,15 @@
-"""Serial callback dispatch over the inherited version-1 protocol pipes."""
+"""Serial binding callback dispatch over authenticated loopback sockets."""
 
 import os
 import re
 import time
 import traceback
-from abc import ABC, abstractmethod
-from contextlib import ExitStack
 from dataclasses import dataclass
 from pathlib import Path
 
-from ._artifacts import _object, _output_path, write_metrics, write_result
+from ._artifacts import _object, _output_path
 from ._canonical import MAX_SAFE_INTEGER, canonical_bytes, parse_json
-from . import __version__
 
-SDK_VERSION = __version__
 WIRE_PROTOCOL_VERSION = 1
 MAX_LINE_BYTES = 1024 * 1024
 _FAILURE_CODES = {
@@ -46,89 +42,6 @@ class WorkerError(Exception):
         self.details = details
 
 
-class _ImplementationLifecycle(ABC):
-    """Shared lifecycle for data callbacks and custom artifact writers."""
-
-    def check_applicability(self, dataset_instance, dataset_manifest, problem_contract,
-                            problem_parameters, implementation_parameters):
-        """Override to return outcome, code, reason, and optional details as a dict.
-
-        The callback runs before measured preparation and must not mutate data.
-        """
-        raise WorkerError("unsupported_operation", "Applicability is not implemented.")
-
-    @abstractmethod
-    def prepare(
-        self,
-        dataset_instance,
-        problem_contract,
-        problem_parameters,
-        implementation_parameters,
-        seed,
-    ):
-        """Establish clean state from the private dataset Path and supplied values."""
-
-    @abstractmethod
-    def execute(self, budget, observation_control):
-        """Run the computation and return diagnostic statistics or None.
-
-        Budget is None. Fresh-sequence executions receive the selected control.
-        """
-
-    def reset(self):
-        """Override to clear slot-scoped state when process reuse is appropriate."""
-        raise WorkerError(
-            "unsupported_operation", "This implementation does not support reset."
-        )
-
-    def shutdown(self):
-        """Release benchmark-owned resources before the process exits."""
-
-
-class BufferedImplementation(_ImplementationLifecycle):
-    """An adapter that returns a bounded trace through execute_buffered."""
-
-    def execute(self, budget, observation_control):
-        raise WorkerError("unsupported_operation", "One-shot execution is not implemented.")
-
-    @abstractmethod
-    def execute_buffered(self, budget, trace):
-        """Solve once, honor each stop decision, and finish or adopt the buffer."""
-
-
-class Implementation(_ImplementationLifecycle):
-    """An implementation with diagnostic execute output and a custom writer."""
-
-    @abstractmethod
-    def write_result(self, directory):
-        """Close all result files and return a manifest path relative to directory."""
-
-
-class OneShotImplementation(_ImplementationLifecycle):
-    """Return scientific data from execute, with optional conversion afterward.
-
-    prepare, execute, reset, and shutdown have the same arguments as Implementation.
-    execute returns the value passed to statistics and write_result. Only execute
-    is included in the package's diagnostic implementation time.
-    """
-
-    @abstractmethod
-    def execute(self, budget, observation_control):
-        """Run the computation and return scientific data or a solver-owned value."""
-
-    def result(self, output):
-        """Convert solver output to a JSON object outside diagnostic solve timing."""
-        return output
-
-    def statistics(self, output):
-        """Return optional diagnostic statistics outside diagnostic solve timing."""
-        return None
-
-    def write_result(self, directory, output):
-        """Write the standard envelope, or override for custom artifact files."""
-        return write_result(directory, self.result(output))
-
-
 @dataclass(frozen=True)
 class Evaluation:
     """Evaluator-owned metric data and an explicit version-1 scientific verdict."""
@@ -151,8 +64,10 @@ _FIELDS = {
         "output_dir": "string",
     },
     "check_applicability": {
-        "dataset_dir": "string", "dataset_manifest": "string",
-        "problem_contract_id": "string", "problem_parameters": "object",
+        "dataset_dir": "string",
+        "dataset_manifest": "string",
+        "problem_contract_id": "string",
+        "problem_parameters": "object",
         "implementation_parameters": "object",
     },
     "prepare": {
@@ -163,7 +78,7 @@ _FIELDS = {
         "implementation_seed": "seed",
     },
     "execute": {"result_dir": "string"},
-    "execute_buffered": {"result_root":"string", "profile":"object"},
+    "execute_buffered": {"result_root": "string", "profile": "object"},
     "reset": {},
     "evaluate": {
         "dataset_dir": "string",
@@ -175,7 +90,14 @@ _FIELDS = {
     "shutdown": {},
 }
 _METHODS = {
-    "implementation": {"check_applicability", "prepare", "execute", "execute_buffered", "reset", "shutdown"},
+    "implementation": {
+        "check_applicability",
+        "prepare",
+        "execute",
+        "execute_buffered",
+        "reset",
+        "shutdown",
+    },
     "dataset_materializer": {"materialize", "shutdown"},
     "problem_evaluator": {"evaluate", "shutdown"},
 }
@@ -260,14 +182,20 @@ def _completed_manifest(directory, manifest):
 
 
 class _Dispatcher:
-    def __init__(self, worker, role, semantics=False, fresh_sequence=False):
+    def __init__(self, worker, role, metadata):
         self.worker = worker
         self.role = role
         self.ready = False
         self.prepared = False
-        self.semantics = semantics
-        self.fresh_sequence = fresh_sequence
-        self.applicability = role == "implementation" and type(worker).check_applicability is not _ImplementationLifecycle.check_applicability
+        self.metadata = metadata
+        self.semantics = role == "problem_evaluator"
+        self.fresh_sequence = (
+            role == "implementation" and "execute" in worker.binding_callbacks
+        )
+        self.applicability = (
+            role == "implementation"
+            and "check_applicability" in worker.binding_callbacks
+        )
 
     def dispatch(self, request):
         if request.get("method") == "evaluate" and self.semantics:
@@ -279,8 +207,14 @@ class _Dispatcher:
                 )
         control = None
         if request.get("method") == "execute" and "observation_control" in request:
-            if not self.fresh_sequence or type(request["observation_control"]) is not dict:
-                raise WorkerError("invalid_request", "Observation controls require fresh_sequence support and an object.")
+            if (
+                not self.fresh_sequence
+                or type(request["observation_control"]) is not dict
+            ):
+                raise WorkerError(
+                    "invalid_request",
+                    "Observation controls require fresh_sequence support and an object.",
+                )
             request = request.copy()
             control = parse_json(canonical_bytes(request.pop("observation_control")))
         method = _validate_request(request)
@@ -295,11 +229,11 @@ class _Dispatcher:
                     "unsupported_operation", "No offered protocol version is supported."
                 )
             self.ready = True
-            capabilities = []
+            capabilities = ["managed_outputs"]
             if self.role == "implementation":
-                if not isinstance(self.worker, BufferedImplementation):
+                if "execute" in self.worker.binding_callbacks:
                     capabilities.append("one_shot")
-                if hasattr(self.worker, "execute_buffered"):
+                if "execute_buffered" in self.worker.binding_callbacks:
                     capabilities.append("buffered_profile")
                 if self.applicability:
                     capabilities.append("applicability")
@@ -310,7 +244,7 @@ class _Dispatcher:
             return {
                 "protocol": WIRE_PROTOCOL_VERSION,
                 "worker_id": request["worker_id"],
-                "sdk": {"name": "metewand-python", "version": SDK_VERSION},
+                "sdk": self.metadata,
                 "capabilities": capabilities,
             }
         if method == "hello":
@@ -323,12 +257,14 @@ class _Dispatcher:
                 "unsupported_operation",
                 f"The {self.role} role does not accept {method}.",
             )
+        if self.role == "implementation":
+            self.worker._request_context(request)
         if method == "check_applicability":
-            result = self.worker.check_applicability(
-                Path(request["dataset_dir"]), Path(request["dataset_manifest"]),
-                request["problem_contract_id"], request["problem_parameters"],
-                request["implementation_parameters"],
-            )
+            if not self.applicability:
+                raise WorkerError(
+                    "unsupported_operation", "Applicability is not implemented."
+                )
+            result = self.worker.check_applicability()
             _object(result, "Applicability decision")
             if set(result) - {"outcome", "code", "reason", "details"}:
                 raise ValueError("Unknown applicability decision field.")
@@ -342,15 +278,13 @@ class _Dispatcher:
             return result
         if method == "prepare":
             self.prepared = False
-            self.worker.prepare(
-                Path(request["dataset_dir"]),
-                request["problem_contract_id"],
-                request["problem_parameters"],
-                request["implementation_parameters"],
-                request["implementation_seed"],
-            )
+            self.worker.prepare()
             self.prepared = True
         elif method == "execute":
+            if "execute" not in self.worker.binding_callbacks:
+                raise WorkerError(
+                    "unsupported_operation", "One-shot execution is not implemented."
+                )
             if not self.prepared:
                 raise WorkerError(
                     "invalid_request", "Execute requires a successful prepare."
@@ -358,10 +292,11 @@ class _Dispatcher:
             self.prepared = False
             execute = self.worker.execute
             start = time.perf_counter_ns()
-            output = execute(None, None if control is None else parse_json(canonical_bytes(control)))
+            output = execute(
+                None, None if control is None else parse_json(canonical_bytes(control))
+            )
             elapsed = time.perf_counter_ns() - start
-            data_callback = isinstance(self.worker, OneShotImplementation)
-            statistics = self.worker.statistics(output) if data_callback else output
+            statistics = self.worker.statistics(output)
             statistics = (
                 {}
                 if statistics is None
@@ -370,11 +305,10 @@ class _Dispatcher:
             directory = Path(request["result_dir"])
             manifest = _completed_manifest(
                 directory,
-                self.worker.write_result(directory, output)
-                if data_callback else self.worker.write_result(directory),
+                self.worker.write_result(directory, output),
             )
             response = {
-                "result": {"manifest": manifest},
+                "draft": manifest,
                 "statistics": statistics,
                 "implementation_time_ns": elapsed
                 if 0 <= elapsed <= MAX_SAFE_INTEGER
@@ -384,13 +318,24 @@ class _Dispatcher:
                 response["observation_control"] = control
             return response
         elif method == "execute_buffered":
-            if not self.prepared or not hasattr(self.worker, "execute_buffered"):
-                raise WorkerError("invalid_request", "Buffered execution requires preparation and buffered_profile support.")
+            if "execute_buffered" not in self.worker.binding_callbacks:
+                raise WorkerError(
+                    "unsupported_operation", "Buffered execution is not implemented."
+                )
+            if not self.prepared:
+                raise WorkerError(
+                    "invalid_request", "Buffered execution requires preparation."
+                )
             self.prepared = False
             from ._buffered import BufferedTrace
+
             trace = BufferedTrace(request["profile"], Path(request["result_root"]))
             self.worker.execute_buffered(None, trace)
-            return {"buffer": {"manifest": _completed_manifest(trace.directory, trace.write())}}
+            return {
+                "buffer": {
+                    "manifest": _completed_manifest(trace.directory, trace.write())
+                }
+            }
         elif method == "reset":
             self.prepared = False
             self.worker.reset()
@@ -402,7 +347,7 @@ class _Dispatcher:
                 request["dataset_seed"],
                 directory,
             )
-            return {"dataset": {"manifest": _completed_manifest(directory, manifest)}}
+            return {"draft": _completed_manifest(directory, manifest)}
         elif method == "evaluate":
             metrics_path = Path(request["metrics_path"])
             verdict = self.worker(
@@ -413,16 +358,10 @@ class _Dispatcher:
                 Path(request["result_dir"]),
                 metrics_path,
             )
-            if isinstance(verdict, Evaluation):
-                write_metrics(metrics_path, verdict.metrics)
-                verdict = verdict.verdict
-            if type(verdict) is not str or verdict not in _VERDICTS:
-                raise ValueError(
-                    "Evaluators must return a version-1 scientific verdict."
-                )
-            if not metrics_path.is_file():
-                raise ValueError("The evaluator returned before writing metrics.")
-            return {"verdict": verdict}
+            from ._bindings import _draft
+
+            manifest = _draft(metrics_path.parent, "metrics", verdict.metrics)
+            return {"verdict": verdict.verdict, "draft": manifest}
         elif method == "shutdown" and self.role == "implementation":
             self.worker.shutdown()
         return {}
@@ -455,8 +394,8 @@ def _encode_failure(request_id, error):
             ) from failure
 
 
-def _serve(worker, role, reader, writer, semantics=False, fresh_sequence=False, initialize=None):
-    dispatcher = _Dispatcher(worker, role, semantics=semantics, fresh_sequence=fresh_sequence)
+def _serve(worker, role, reader, writer, *, metadata, initialize=None):
+    dispatcher = _Dispatcher(worker, role, metadata)
     while True:
         request = _read_frame(reader)
         # Check the envelope before attempting to build any failure response.
@@ -481,7 +420,11 @@ def _serve(worker, role, reader, writer, semantics=False, fresh_sequence=False, 
             frame = _encode_failure(request_id, error)
         except Exception:  # noqa: BLE001 - Callbacks may raise arbitrary exceptions.
             # Failed attempts persist wire diagnostics even when stderr is unavailable.
-            text = traceback.format_exc().encode("utf-8", "backslashreplace").decode("utf-8")
+            text = (
+                traceback.format_exc()
+                .encode("utf-8", "backslashreplace")
+                .decode("utf-8")
+            )
             if len(text) > 8192:
                 text = text[:4096] + "\n[traceback truncated]\n" + text[-4096:]
             traceback.print_exc()
@@ -498,99 +441,17 @@ def _serve(worker, role, reader, writer, semantics=False, fresh_sequence=False, 
             return
 
 
-def _serve_fds(worker, role, read_fd, write_fd, semantics=False, fresh_sequence=False, initialize=None):
-    if os.name == "nt" and read_fd is None and write_fd is None:
-        with ExitStack() as stack:
-            reader = stack.enter_context(_windows_protocol_stream("READ", "rb"))
-            writer = stack.enter_context(_windows_protocol_stream("WRITE", "wb"))
-            _serve(worker, role, reader, writer, semantics=semantics, fresh_sequence=fresh_sequence, initialize=initialize)
-        return
-    if read_fd is None:
-        read_fd = int(os.environ["METEWAND_PROTOCOL_READ_FD"])
-    if write_fd is None:
-        write_fd = int(os.environ["METEWAND_PROTOCOL_WRITE_FD"])
-    if read_fd == write_fd:
-        raise ValueError("The protocol requires separate read and write descriptors.")
-    with ExitStack() as stack:
-        reader = stack.enter_context(os.fdopen(os.dup(read_fd), "rb"))
-        writer = stack.enter_context(os.fdopen(os.dup(write_fd), "wb"))
-        _serve(worker, role, reader, writer, semantics=semantics, fresh_sequence=fresh_sequence, initialize=initialize)
+def _serve_socket(worker, role, *, metadata, initialize=None):
+    import socket
 
-
-def _windows_protocol_stream(direction, mode):
-    import ctypes
-    from ctypes import wintypes
-    import msvcrt
-
-    supplied = os.environ[f"METEWAND_PROTOCOL_{direction}_HANDLE"]
-    if not supplied.isascii() or not supplied.isdecimal():
-        raise ValueError("Protocol handles must be unsigned decimal integers.")
-    handle = int(supplied)
-    if not 0 < handle < (1 << (ctypes.sizeof(ctypes.c_void_p) * 8)) - 1:
-        raise ValueError("Invalid protocol handle.")
-    other = "WRITE" if direction == "READ" else "READ"
-    if handle == int(os.environ[f"METEWAND_PROTOCOL_{other}_HANDLE"]):
-        raise ValueError("The protocol requires separate read and write handles.")
-    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
-    kernel.GetCurrentProcess.restype = wintypes.HANDLE
-    kernel.DuplicateHandle.argtypes = [
-        wintypes.HANDLE, wintypes.HANDLE, wintypes.HANDLE,
-        ctypes.POINTER(wintypes.HANDLE), wintypes.DWORD, wintypes.BOOL, wintypes.DWORD,
-    ]
-    kernel.DuplicateHandle.restype = wintypes.BOOL
-    kernel.CloseHandle.argtypes = [wintypes.HANDLE]
-    kernel.CloseHandle.restype = wintypes.BOOL
-    os.set_handle_inheritable(handle, False)
-    duplicate = wintypes.HANDLE()
-    process = kernel.GetCurrentProcess()
-    if not kernel.DuplicateHandle(process, handle, process, ctypes.byref(duplicate), 0, False, 2):
-        raise ctypes.WinError(ctypes.get_last_error())
-    try:
-        flags = os.O_BINARY | os.O_NOINHERIT | (os.O_RDONLY if mode == "rb" else os.O_WRONLY)
-        descriptor = msvcrt.open_osfhandle(duplicate.value, flags)
-    except BaseException:
-        kernel.CloseHandle(duplicate)
-        raise
-    try:
-        return os.fdopen(descriptor, mode)
-    except BaseException:
-        os.close(descriptor)
-        raise
-
-
-def serve_implementation(implementation, *, fresh_sequence=False, read_fd=None, write_fd=None):
-    """Serve implementation callbacks on inherited or explicitly supplied pipes.
-
-    fresh_sequence opts in to controlled executions through the existing execute
-    callback. The package preserves the selected control for the response echo.
-    """
-    if not isinstance(implementation, (Implementation, OneShotImplementation, BufferedImplementation)):
-        raise TypeError("Expected an Implementation or OneShotImplementation instance.")
-    if type(fresh_sequence) is not bool:
-        raise TypeError("fresh_sequence must be a boolean.")
-    _serve_fds(implementation, "implementation", read_fd, write_fd, fresh_sequence=fresh_sequence)
-
-
-def serve_dataset_materializer(materialize, *, read_fd=None, write_fd=None):
-    """Serve materialize(source_dir, dataset_parameters, seed, output_dir).
-
-    The callback writes its files and returns a relative dataset manifest path.
-    """
-    if not callable(materialize):
-        raise TypeError("Expected a materializer callback.")
-    _serve_fds(materialize, "dataset_materializer", read_fd, write_fd)
-
-
-def serve_evaluator(evaluate, *, semantics=False, read_fd=None, write_fd=None):
-    """Serve evaluate(dataset, contract, parameters, result_dir, metrics_path).
-
-    Return Evaluation(metrics, verdict) to write the standard envelope, or write
-    metrics directly and return invalid, reached, not_reached, or not_required.
-    Only benchmark-owned evaluator code supplies this verdict.
-    With semantics=True, declared scientific rules follow parameters in the callback.
-    """
-    if not callable(evaluate):
-        raise TypeError("Expected an evaluator callback.")
-    if type(semantics) is not bool:
-        raise TypeError("semantics must be a boolean.")
-    _serve_fds(evaluate, "problem_evaluator", read_fd, write_fd, semantics=semantics)
+    with socket.create_connection(
+        ("127.0.0.1", int(os.environ["METEWAND_PROTOCOL_PORT"]))
+    ) as connection:
+        connection.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        connection.sendall(
+            os.environ["METEWAND_PROTOCOL_TOKEN"].encode("ascii") + b"\n"
+        )
+        with connection.makefile("rb") as reader, connection.makefile("wb") as writer:
+            _serve(
+                worker, role, reader, writer, metadata=metadata, initialize=initialize
+            )

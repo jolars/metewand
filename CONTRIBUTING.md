@@ -13,7 +13,7 @@ pages.
 ## Development environment
 
 Use Rust 1.98.0 and edition 2024. `devenv shell` provides the pinned toolchain,
-rustfmt, Clippy, Nextest, Python, R with `digest`, and Node.js:
+rustfmt, Clippy, Nextest, Python, R with `jsonlite`, and Node.js:
 
 ```sh
 devenv shell
@@ -23,14 +23,14 @@ test-rust
 
 `test-fast` runs core and protocol tests. `test-rust` runs the complete Rust
 suite. Both accept Nextest filters. The Python package requires Python 3.11 or
-later; the R package requires R 4.2 or later, `digest`, and a C++17
-compiler with floating-point `std::to_chars` support. The website needs Node.js
+later; the R package requires R 4.2 or later and `jsonlite`, with no native
+compilation step. The website needs Node.js
 22.18 or later.
 
 The local runner supports Linux, macOS, and native Windows x64. On Windows,
 install Rust's MSVC toolchain, Visual Studio C++ build tools with the Windows
-SDK, and Python on `PATH`. R package compilation separately uses R 4.3 or later
-and the matching Rtools release. See the [source installation guide](docs/guide/getting-started.md)
+SDK, and Python on `PATH`. The R package itself requires neither Rtools nor a
+C++ compiler. See the [source installation guide](docs/guide/getting-started.md)
 for PowerShell commands. Nix and devenv are optional on other systems.
 
 The crates and packages are not yet published to registries. Use local path
@@ -157,12 +157,15 @@ hashing](crates/metewand-runtime/src/local_tree.rs), and [fixtures](fixtures).
 
 ## Compatibility versions
 
-Package SemVer is shared across the workspace and managed by Versionary from
-Conventional Commits. It is separate from public compatibility versions:
+Rust workspace SemVer is shared across the crates. Python and R releases are
+independent and managed by Versionary from Conventional Commits. Binding API
+version 1 governs package compatibility with the CLI; equal package and CLI
+release numbers are unnecessary. It is separate from public compatibility versions:
 
   | Boundary                                                      | Current version                                                |
   | ------------------------------------------------------------- | -------------------------------------------------------------- |
   | Manifest, public schemas, wire protocol, and typed identities | 1                                                              |
+  | Language binding API                                        | 1                                                              |
   | Seed derivation and scheduling policy                         | 1                                                              |
   | Execution semantics                                           | 2                                                              |
   | Measurement provenance                                        | 2, with version-1 evidence still readable                      |
@@ -170,6 +173,7 @@ Conventional Commits. It is separate from public compatibility versions:
   | Exports and build evidence                                    | 1                                                              |
   | SQLite layout                                                 | 1 for one-shot, 2 for buffered profiles, 3 for fresh sequences |
 
+The binding API compatibility constant lives with the runtime adapters.
 The constants live with their authoritative types in core, protocol, and
 runtime. Public JSON Schemas declare their dialect and compatibility version.
 Version externally consumed boundaries; internal helpers stay private, and
@@ -193,7 +197,8 @@ interfaces.
 The POSIX launcher supplies separate binary pipes through
 `METEWAND_PROTOCOL_READ_FD` and `METEWAND_PROTOCOL_WRITE_FD`. Standard output
 and standard error remain log channels. There is no automatic stdin/stdout
-fallback. Workers exchange canonical JSON Lines, with an inclusive 1 MiB limit
+fallback. Native helpers emit canonical JSON Lines. Receivers accept ordinary
+JSON in the supported value domain, with an inclusive 1 MiB limit
 per frame including its final line feed. Responses must match the pending string
 request ID. Malformed frames and unusable sessions terminate serving.
 
@@ -201,9 +206,29 @@ The Windows launcher supplies dedicated synchronous worker pipe handles through
 `METEWAND_PROTOCOL_READ_HANDLE` and `METEWAND_PROTOCOL_WRITE_HANDLE`. It limits
 handle inheritance and assigns workers to a kill-on-close Job Object at
 creation. Parent endpoints support cancellation, and deadlines terminate the Job
-before bounded cleanup. Rust, Python, and R helpers duplicate supplied handles
-into owned binary streams and prevent further inheritance. Explicit descriptor
-APIs remain available to callers on both platforms.
+before bounded cleanup. The native Rust helper duplicates supplied handles into
+owned binary streams and prevents further inheritance. Explicit descriptor APIs
+remain available to native workers on both platforms.
+
+Language bindings register callbacks through binding API version 1. The CLI
+stages its bundled adapters in private worker directories and includes their
+hashes in resolved launch identities. Installed packages contain scientific
+values, JSON utilities, and delegates; they do not own protocol state or profile
+policies. R requires only `jsonlite`, and Python uses its standard library.
+
+Managed function launches automatically use authenticated loopback sockets.
+Lifecycle package workers select `protocol-transport: socket` explicitly.
+Endpoints bind to 127.0.0.1 on ephemeral ports, use per-worker authentication,
+and share the hello deadline and cancellation path. Ports and tokens do not
+enter identities or provenance; tokens are filtered from logs. Standard output
+and standard error remain independent logs. Native workers retain pipe transport.
+
+The `managed_outputs` capability admits version-1 output drafts with scientific
+data and unhashed artifact declarations. The runtime finalizes these into the
+existing canonical envelopes before the operation finishes. All serialization,
+hashing, and finalization remain inside the selected timing scope. The runtime
+then independently validates completed artifacts as before. R's secondary
+in-worker solve time is unavailable rather than approximated.
 
 A hello exchange negotiates protocol version, role, capabilities, identity, and
 package metadata (the existing `sdk` wire field). The Rust `SdkMetadata` type
@@ -234,8 +259,10 @@ executor-observed timing remains authoritative. Close every output file before
 replying. The runtime independently validates schemas, manifests, inventories,
 sizes, hashes, and path containment before publication.
 
-Python and R conformance suites consume the shared fixtures directly. Keep their
-canonical values and protocol behavior aligned with Rust. Add callback coverage
+The CLI-owned adapter conformance suites consume the shared fixtures directly.
+The installed binding packages test their stable values, registration interface,
+and serialization utilities. Keep adapter canonicalization and protocol behavior
+aligned with Rust. Add callback coverage
 where an interface is implemented; every package need not support every profile
 callback before an adopter can use one.
 
@@ -506,30 +533,29 @@ normally `~/.cargo/bin`. Worker runtimes and packages are installed separately.
 Installer tests run in the platform CI matrix, and website integration tests
 check the served bytes and content types.
 
-## Python releases
+## Language package releases
 
-Versionary creates release PRs, tags, changelogs, and GitHub Releases. Fixed
-monorepo mode keeps the Rust workspace and Python package at one shared version
-in a single release PR. The root uses the Rust strategy, and `packages/python`
-uses the Python strategy to update `pyproject.toml` and the discovered
-`src/metewand/__init__.py` version together. CI selects Versionary 1.7.1, which
-supports nested Python package discovery. The worker hello reports that same
-`metewand.__version__`. Package tests check both Python versions against the
-workspace version. Public compatibility versions remain
-independent and unchanged by this release setup.
+Versionary creates release PRs, tags, changelogs, and GitHub Releases in
+independent monorepo mode. The root uses the Rust strategy, `packages/python`
+uses the Python strategy, and `packages/r` uses the R strategy. Each package
+changes version when its own files change; CLI adapter changes belong to the
+root release. Python reads its installed version from distribution metadata,
+whose source is `pyproject.toml`. R reads its version from `DESCRIPTION`. Worker
+hello metadata reports the installed package version. Binding API version 1
+governs compatibility with the CLI independently of those release numbers.
 
-Versionary creates a root tag `vX.Y.Z` and a Python tag `metewand-vX.Y.Z`, with
-separate changelogs and GitHub Releases. The Python tag contains the matching
-CLI source. Prebuilt CLI artifacts use the root tag; source builds can use
-either tag from that shared release commit.
+Versionary creates root tags `vX.Y.Z`, Python tags `metewand-vX.Y.Z`, and R tags
+`metewand-r-vX.Y.Z`, with separate changelogs and GitHub Releases. Prebuilt CLI
+artifacts use the root tag. Package tags identify their source revisions and do
+not imply a CLI release with the same version.
 
 The reusable `.github/workflows/python-package.yml` builds the source
 distribution and a wheel from that distribution, checks both with
 `twine check --strict`, and tests each installed artifact on Python 3.11 and
 3.14 on Linux, macOS, and Windows. Tests run outside the checkout without
-`PYTHONPATH`; shared conformance fixtures come from the checkout. CI requires
-these checks before Versionary
-runs. To reproduce them locally, use a disposable virtual environment:
+`PYTHONPATH`. CLI adapter tests consume shared conformance fixtures in the
+workspace Rust suite. CI requires these checks before Versionary runs. To
+reproduce them locally, use a disposable virtual environment:
 
 ```sh
 python3 -m venv /tmp/metewand-package-test
@@ -561,16 +587,16 @@ Before the first publication, configure the external accounts:
 Publishing a Python GitHub Release triggers
 `.github/workflows/python-publish.yml`. Root releases do not publish to PyPI.
 The workflow checks out the Python release tag, requires the tag to equal
-`metewand-v` plus the workspace version, and runs the distribution checks before
-uploading those same artifacts with Trusted Publishing. No PyPI API token is
+`metewand-v` plus the Python package version, and runs the distribution checks
+before uploading those same artifacts with Trusted Publishing. No PyPI API token is
 needed. The workflow can also be dispatched manually with an existing Python
 release tag, for example if the release event did not trigger it. PyPI does not
 permit replacing previously uploaded files; a corrected package needs a new
 version.
 
-Review the release PR, matching CLI installation instructions, and Python
+Review the release PR, CLI installation instructions, and Python
 package README before publishing the first release. The Python package supplies
-worker helpers; users install the CLI separately from the matching root release
+worker helpers; users install the CLI separately from a compatible root release
 or source tag. Rust crates and the R package still require their own deliberate
 publication workflows.
 

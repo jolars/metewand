@@ -1464,7 +1464,7 @@ impl CommandError {
         Self {
             exit_code: EXIT_INVALID_REPOSITORY,
             diagnostic: Box::new(Diagnostic::new("worker_check_failed", error.to_string())
-                .with_remediation("For function workers, install the matching Metewand package in the environment on PATH. Inspect worker declarations and reference cases, then rerun `metewand check --workers`.")),
+                .with_remediation("For function workers, install a compatible Metewand binding package in the environment on PATH. Inspect worker declarations and reference cases, then rerun `metewand check --workers`.")),
         }
     }
 

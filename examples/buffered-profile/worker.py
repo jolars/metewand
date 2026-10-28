@@ -1,15 +1,17 @@
 """One unchanged trajectory, with direct recording or a local observer."""
 
-from metewand import BufferedImplementation, serve_implementation
+from metewand import serve_implementation
 
 
-class Halving(BufferedImplementation):
-    def prepare(self, dataset_instance, problem_contract, problem_parameters,
-                implementation_parameters, seed):
+class Halving:
+    def prepare(self, context):
+        implementation_parameters = context.parameters
         self.maximum_updates = implementation_parameters["maximum_updates"]
         self.local_bias = implementation_parameters["local_bias"]
+        return self
 
-    def execute_buffered(self, budget, trace):
+    def execute_buffered(self, state, context):
+        trace = context.observer
         x = 1.0
         index = 0
         while True:
@@ -26,9 +28,10 @@ class Halving(BufferedImplementation):
             index += 1
         trace.finish(progress, measure, snapshot)
 
-    def reset(self):
+    def reset(self, state, context):
         pass
 
 
 if __name__ == "__main__":
-    serve_implementation(Halving())
+    worker = Halving()
+    serve_implementation(prepare=worker.prepare, execute_buffered=worker.execute_buffered, reset=worker.reset)

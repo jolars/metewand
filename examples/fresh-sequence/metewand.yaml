@@ -5,17 +5,20 @@ problems:
     contract: problem.yaml
     evaluator:
       runner: python
+      protocol-transport: socket
       entrypoint: evaluator.py
       sources: [evaluator.py, "metewand/*.py"]
 implementations:
   bisection:
     runner: python
+    protocol-transport: socket
     entrypoint: worker.py
     sources: [worker.py, solver.py, "metewand/*.py"]
     problem-contracts: [square_root]
     capabilities: [fresh_sequence]
   uniroot:
     runner: r
+    protocol-transport: socket
     entrypoint: worker.R
     sources: [worker.R, "library/**/*"]
     problem-contracts: [square_root]

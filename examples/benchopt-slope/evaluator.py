@@ -30,12 +30,11 @@ def assess(data, result, parameters, semantics):
     return Evaluation(metrics, "reached" if gap <= target else "not_reached")
 
 
-def evaluate(dataset_instance, problem_contract, problem_parameters,
-             problem_semantics, result_dir, metrics_path):
-    return assess(read_json(dataset_instance / "data.json"),
-                  read_json(result_dir / "result.json")["data"],
-                  problem_parameters, problem_semantics)
+def evaluate(context):
+    return assess(read_json(context.dataset_dir / "data.json"),
+                  read_json(context.result_dir / "result.json")["data"],
+                  context.problem_parameters, context.semantics)
 
 
 if __name__ == "__main__":
-    serve_evaluator(evaluate, semantics=True)
+    serve_evaluator(evaluate)

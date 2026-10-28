@@ -1266,6 +1266,30 @@ pub(super) fn resolve_worker(
         "PATH".to_owned(),
         worker_search_path(None, source_executable)?,
     );
+    let function = match worker {
+        WorkerDefinition::Command(worker) => {
+            worker
+                .args
+                .starts_with(&["-m".to_owned(), "metewand".to_owned()])
+                || worker
+                    .args
+                    .get(2)
+                    .is_some_and(|arg| arg == "metewand::serve_function()")
+        }
+        _ => false,
+    };
+    if transport == Some(ProtocolTransport::Socket) || function {
+        let language = adapter_language(worker, &executable)?;
+        variables.insert(
+            "METEWAND_PROTOCOL_TRANSPORT".to_owned(),
+            "socket".to_owned(),
+        );
+        variables.insert("METEWAND_ADAPTER_LANGUAGE".to_owned(), language.to_owned());
+        variables.insert(
+            "METEWAND_ADAPTER_SHA256".to_owned(),
+            crate::language_adapter::digest(language)?,
+        );
+    }
     let normalized_program = if let Some(sources) = &sources
         && let Ok(relative) = executable.strip_prefix(sources.directory.path())
     {
@@ -1323,6 +1347,36 @@ pub(super) fn resolve_worker(
         executable_digest,
         provenance,
     })
+}
+
+fn adapter_language(
+    worker: &WorkerDefinition,
+    executable: &Path,
+) -> Result<&'static str, RunError> {
+    if let WorkerDefinition::Interpreted(worker) = worker {
+        return match worker.runner {
+            InterpretedRunner::Python => Ok("python"),
+            InterpretedRunner::R => Ok("r"),
+            InterpretedRunner::Julia => Err(unsupported(
+                "managed socket adapters require Python or R workers",
+            )),
+        };
+    }
+    let name = executable
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    let name = name.strip_suffix(".exe").unwrap_or(&name);
+    if name == "rscript" {
+        Ok("r")
+    } else if name.starts_with("python") {
+        Ok("python")
+    } else {
+        Err(unsupported(
+            "managed socket adapters require Python or R workers",
+        ))
+    }
 }
 
 fn snapshot(
@@ -1587,6 +1641,33 @@ fn unsupported(message: impl Into<String>) -> RunError {
 mod tests {
     use super::scientific_timeout;
     use std::time::Duration;
+
+    #[test]
+    fn command_adapter_selection_uses_only_the_executable_name() {
+        use metewand_core::manifest::{CommandWorker, WorkerDefinition};
+        let worker = WorkerDefinition::Command(CommandWorker {
+            program: "unused".to_owned(),
+            args: vec![],
+            sources: None,
+            environment: serde_json::from_value(serde_json::json!("local")).unwrap(),
+            protocol_transport: None,
+        });
+        for (path, language) in [
+            ("rscript-env/bin/python3", "python"),
+            ("rscript-env/bin/python3.14t", "python"),
+            ("rscript-env/Python.exe", "python"),
+            ("python-env/bin/Rscript", "r"),
+            ("python-env/Rscript.exe", "r"),
+        ] {
+            assert_eq!(
+                super::adapter_language(&worker, std::path::Path::new(path)).unwrap(),
+                language
+            );
+        }
+        assert!(
+            super::adapter_language(&worker, std::path::Path::new("python-env/solver")).is_err()
+        );
+    }
 
     #[test]
     #[cfg(unix)]

@@ -4,7 +4,7 @@
     pkgs.cargo-nextest
     pkgs.nodejs_24
     pkgs.python3
-    (pkgs.rWrapper.override { packages = [ pkgs.rPackages.digest ]; })
+    (pkgs.rWrapper.override { packages = [ pkgs.rPackages.jsonlite ]; })
   ];
 
   env.MINIFLARE_WORKERD_PATH = lib.mkIf pkgs.stdenv.hostPlatform.isLinux (

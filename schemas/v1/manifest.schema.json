@@ -92,7 +92,7 @@
         "environment": { "$ref": "common.schema.json#/$defs/name" },
         "protocol-transport": {
           "type": "string",
-          "enum": ["pipes", "stdio"]
+          "enum": ["pipes", "stdio", "socket"]
         }
       },
       "required": ["runner", "entrypoint", "sources"]
@@ -116,7 +116,7 @@
         "environment": { "$ref": "common.schema.json#/$defs/name" },
         "protocol-transport": {
           "type": "string",
-          "enum": ["pipes", "stdio"]
+          "enum": ["pipes", "stdio", "socket"]
         }
       },
       "required": ["runner", "program"]
@@ -491,7 +491,7 @@
         "protocol-transport": {
           "enum": [
             "pipes",
-            "stdio"
+            "stdio", "socket"
           ]
         }
       },

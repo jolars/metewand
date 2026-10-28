@@ -95,6 +95,9 @@ pub fn resolve_worker_environment(
                 | PROTOCOL_WRITE_FD_ENV
                 | "METEWAND_PROTOCOL_READ_HANDLE"
                 | "METEWAND_PROTOCOL_WRITE_HANDLE"
+                | "METEWAND_PROTOCOL_PORT"
+                | "METEWAND_PROTOCOL_TOKEN"
+                | "METEWAND_ADAPTER_PATH"
         ) || variables.get(name).is_some_and(|fixed| fixed != value)
         {
             return Err(WorkerEnvironmentError::ReservedVariable { name: name.clone() });

@@ -28,6 +28,7 @@ publish = false
 [workspace.dependencies]
 flate2 = "1.1"
 fluent-uri = "0.4.1"
+getrandom = "0.4"
 globset = "0.4.16"
 jsonschema = { version = "0.59.0", default-features = false }
 metewand-core = { path = "crates/metewand-core" }

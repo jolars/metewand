@@ -259,7 +259,7 @@
                     "applicability",
                     "fresh_sequence",
                     "buffered_profile",
-                    "streaming_profile",
+                    "managed_outputs", "streaming_profile",
                     "problem_semantics"
                   ]
                 }
@@ -273,7 +273,7 @@
                     "applicability",
                     "fresh_sequence",
                     "buffered_profile",
-                    "streaming_profile",
+                    "managed_outputs", "streaming_profile",
                     "problem_semantics"
                   ]
                 }

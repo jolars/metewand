@@ -3,17 +3,26 @@
   "version": 1,
   "review-mode": "pr",
   "release-type": "rust",
-  "monorepo-mode": "fixed",
+  "monorepo-mode": "independent",
   "allow-stable-major": false,
   "include-commit-authors": true,
   "release-reference-comments": "best-effort",
   "packages": {
     ".": {
-      "release-draft": true
+      "release-draft": true,
+      "exclude-paths": [
+        "packages/python/**",
+        "packages/r/**"
+      ]
     },
     "packages/python": {
       "release-type": "python",
       "package-name": "metewand",
+      "release-latest": false
+    },
+    "packages/r": {
+      "release-type": "r",
+      "package-name": "metewand-r",
       "release-latest": false
     }
   }

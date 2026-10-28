@@ -5,16 +5,18 @@ import sys
 
 import numpy as np
 
-from metewand import OneShotImplementation, read_json, serve_implementation
+from metewand import read_json, serve_implementation
 from upstream.objective import Objective
 
 
-class Solver(OneShotImplementation):
+class Solver:
     def __init__(self, method):
         self.solver_type = importlib.import_module(f"upstream.{method}").Solver
 
-    def prepare(self, dataset_instance, problem_contract, problem_parameters,
-                implementation_parameters, seed):
+    def prepare(self, context):
+        dataset_instance = context.dataset_dir
+        problem_parameters = context.problem_parameters
+        implementation_parameters = context.parameters
         data = read_json(dataset_instance / "data.json")
         objective = Objective(**problem_parameters)
         objective.set_data(np.asarray(data["x"]), np.asarray(data["y"]))
@@ -22,8 +24,9 @@ class Solver(OneShotImplementation):
         self.iterations = parameters.pop("iterations")
         self.solver = self.solver_type.get_instance(**parameters)
         self.solver.set_objective(**objective.get_objective())
+        return self
 
-    def execute(self, budget, observation_control):
+    def execute(self, state, context):
         self.completed = 0
 
         def callback():
@@ -36,13 +39,15 @@ class Solver(OneShotImplementation):
         self.solver.run(callback)
         return self.solver.get_result()
 
-    def result(self, output):
+    def result(self, output, context):
         return {"beta": output["beta"].tolist()}
 
-    def statistics(self, output):
+    def statistics(self, output, context):
         return {"iterations": self.completed}
 
 
 if __name__ == "__main__":
     method = {"pgd": "python_pgd", "admm": "admm"}[sys.argv[1]]
-    serve_implementation(Solver(method))
+    worker = Solver(method)
+    serve_implementation(prepare=worker.prepare, execute=worker.execute,
+                         result=worker.result, statistics=worker.statistics)

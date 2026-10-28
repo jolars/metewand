@@ -935,6 +935,7 @@ name = "metewand-runtime"
 version = "0.2.0"
 dependencies = [
  "flate2",
+ "getrandom 0.4.3",
  "globset",
  "libc",
  "metewand-core",

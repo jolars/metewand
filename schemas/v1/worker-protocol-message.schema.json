@@ -18,7 +18,7 @@
     },
     "capability": {
       "type": "string",
-      "enum": ["one_shot", "applicability", "fresh_sequence", "streaming_profile", "problem_semantics", "buffered_profile"]
+      "enum": ["one_shot", "applicability", "fresh_sequence", "streaming_profile", "problem_semantics", "buffered_profile", "managed_outputs"]
     },
     "path": {
       "type": "string",
@@ -375,6 +375,93 @@
         "buffer"
       ],
       "additionalProperties": false
+    },
+    "managed_execute_response": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/request_id"
+        },
+        "ok": {
+          "const": true
+        },
+        "implementation_time_ns": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/safe_nonnegative_integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "statistics": {
+          "type": "object"
+        },
+        "observation_control": {
+          "type": "object"
+        },
+        "draft": {
+          "$ref": "#/$defs/path"
+        }
+      },
+      "required": [
+        "id",
+        "ok",
+        "implementation_time_ns",
+        "statistics",
+        "draft"
+      ],
+      "additionalProperties": false
+    },
+    "managed_materialize_response": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/request_id"
+        },
+        "ok": {
+          "const": true
+        },
+        "draft": {
+          "$ref": "#/$defs/path"
+        }
+      },
+      "required": [
+        "id",
+        "ok",
+        "draft"
+      ],
+      "additionalProperties": false
+    },
+    "managed_evaluate_response": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/request_id"
+        },
+        "ok": {
+          "const": true
+        },
+        "verdict": {
+          "enum": [
+            "invalid",
+            "reached",
+            "not_reached",
+            "not_required"
+          ]
+        },
+        "draft": {
+          "$ref": "#/$defs/path"
+        }
+      },
+      "required": [
+        "id",
+        "ok",
+        "verdict",
+        "draft"
+      ],
+      "additionalProperties": false
     }
   },
   "oneOf": [
@@ -398,6 +485,9 @@
     },
     {
       "$ref": "#/$defs/execute_buffered_response"
-    }
+    },
+    {"$ref": "#/$defs/managed_execute_response"},
+    {"$ref": "#/$defs/managed_materialize_response"},
+    {"$ref": "#/$defs/managed_evaluate_response"}
   ]
 }

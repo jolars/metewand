@@ -5,11 +5,13 @@ problems:
     contract: problem.yaml
     evaluator:
       runner: python
+      protocol-transport: socket
       entrypoint: evaluator.py
       sources: [evaluator.py, "metewand/*.py"]
 implementations:
   observer:
     runner: python
+    protocol-transport: socket
     entrypoint: worker.py
     sources: [worker.py, "metewand/*.py"]
     problem-contracts: [square]
@@ -19,6 +21,7 @@ implementations:
       local_bias: { type: number, default: 0 }
   direct:
     runner: python
+    protocol-transport: socket
     entrypoint: worker.py
     sources: [worker.py, "metewand/*.py"]
     problem-contracts: [square]

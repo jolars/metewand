@@ -12,7 +12,7 @@ unambiguous local-environment and one-shot defaults, keeping timing and
 scientific choices explicit. No separate contract or schema files are needed.
 The dataset schema uses a YAML anchor so the dataset and problem share one
 declaration. The adapters return result data and an explicit metric verdict;
-the package writes the envelopes, and Metewand validates them against the selected
+the CLI writes the envelopes, and Metewand validates them against the selected
 problem contract.
 
 From the repository root, copy the example and package into a temporary benchmark
@@ -40,15 +40,15 @@ or later must be on `PATH`. The package has no runtime dependencies.
 
 Both observations contain `{"answer":8}` and evaluator metrics
 `{"absolute_error":0}`. Dataset construction happens once. `prepare` loads the
-private dataset view, `execute` returns the answer, and the package writes
+private dataset view, `execute` returns the answer, and the CLI writes
 the completed result envelope. The `prepare_and_execute` scope includes all
 three operations; the secondary package `implementation_time_ns` covers only the
 `execute` callback. The runtime resets the implementation between slots.
 
 The evaluator computes the expected answer from its private dataset view and
-supplied problem parameters. `serve_evaluator(..., semantics=True)` passes the
-contract rules to the evaluator, which reads its completion tolerance from
-`one_shot_completion.absolute_error`. The package handles protocol messages and error
-responses; the runtime owns scheduling, validation, and publication. See the
-[Python callbacks](../../packages/python/src/metewand/_worker.py) and
-[artifact helpers](../../packages/python/src/metewand/_artifacts.py) for their interfaces.
+supplied problem parameters. The evaluator receives the
+contract rules through its context, which reads its completion tolerance from
+`one_shot_completion.absolute_error`. The CLI-owned adapter handles protocol messages and failures; the runtime owns
+scheduling, validation, and publication. See the
+[Python callbacks](../../packages/python/src/metewand/__init__.py) and
+[output values](../../packages/python/src/metewand/__init__.py) for their interfaces.

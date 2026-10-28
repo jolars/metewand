@@ -20,6 +20,10 @@ impl Redactor {
         ))
     }
 
+    pub(crate) fn add(&mut self, secret: &[u8]) {
+        Arc::make_mut(&mut self.0).push(secret.to_vec());
+    }
+
     pub(crate) fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
@@ -79,7 +83,7 @@ impl Redactor {
         }
     }
 
-    fn text(&self, text: &str) -> String {
+    pub(crate) fn text(&self, text: &str) -> String {
         String::from_utf8(self.bytes(text.as_bytes())).expect("UTF-8 secret replacement")
     }
 }

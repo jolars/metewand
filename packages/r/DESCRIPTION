@@ -4,13 +4,11 @@ Version: 0.1.0
 Authors@R: person("Johan", "Larsson", email = "johan@jolars.co", role = c("aut", "cre"))
 Description: Define data generators, computational methods, and independent
     evaluators as ordinary R functions for Metewand benchmarks. Handles the
-    version-1 worker protocol, canonical JSON, artifact inventories, and lifecycle
-    callbacks over dedicated pipes.
+    stable callback API, scientific result values, and JSON utilities. The
+    command-line client supplies worker adapters and manages artifacts.
 License: MIT + file LICENSE
 Encoding: UTF-8
 Depends: R (>= 4.2.0)
-Imports: digest, stats, utils
-SystemRequirements: C++17 with floating-point std::to_chars; R >= 4.3 and
-    matching Rtools on Windows
-NeedsCompilation: yes
+Imports: jsonlite, utils
+NeedsCompilation: no
 URL: https://github.com/jolars/metewand

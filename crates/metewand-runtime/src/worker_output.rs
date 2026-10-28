@@ -388,7 +388,7 @@ fn validate_file_declarations(
     Ok(files)
 }
 
-fn validate_relative_path(value: &str) -> Result<PathBuf, WorkerOutputError> {
+pub(crate) fn validate_relative_path(value: &str) -> Result<PathBuf, WorkerOutputError> {
     let invalid = value.is_empty()
         || value.starts_with('/')
         || value.ends_with('/')
@@ -799,7 +799,7 @@ fn collect_entries(
     Ok(())
 }
 
-fn read_stable_file(root: &Path, relative: &Path) -> Result<Vec<u8>, WorkerOutputError> {
+pub(crate) fn read_stable_file(root: &Path, relative: &Path) -> Result<Vec<u8>, WorkerOutputError> {
     let absolute = root.join(relative);
     let before =
         fs::symlink_metadata(&absolute).map_err(|source| WorkerOutputError::EntryAccess {
@@ -1034,4 +1034,13 @@ pub enum WorkerOutputError {
         /// Observed digest.
         actual: String,
     },
+}
+
+pub(crate) fn output_files(root: &Path) -> Result<Vec<PathBuf>, WorkerOutputError> {
+    Ok(OutputTree::inspect(root)?
+        .entries
+        .into_iter()
+        .filter(|entry| matches!(entry.kind, EntryKind::File))
+        .map(|entry| entry.path)
+        .collect())
 }

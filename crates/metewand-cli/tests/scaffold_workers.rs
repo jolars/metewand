@@ -157,6 +157,16 @@ fn generated_adapters_negotiate_and_report_unfinished_science() {
                 }
                 _ => unreachable!(),
             };
+            if language != "rust" {
+                let adapter = metewand_runtime::language_adapter::stage(
+                    if language == "r" { "r" } else { "python" },
+                    benchmark.path(),
+                )
+                .unwrap();
+                command
+                    .env("METEWAND_ADAPTER_PATH", adapter)
+                    .env("METEWAND_PROTOCOL_TRANSPORT", "socket");
+            }
             command.current_dir(benchmark.path());
             let process =
                 PosixWorkerProcess::spawn(command, WorkerLogLimits::new(4096, 4096)).unwrap();

@@ -645,6 +645,7 @@ fn interpreted_runner(runner: InterpretedRunner) -> &'static str {
 fn protocol_transport(transport: ProtocolTransport) -> &'static str {
     match transport {
         ProtocolTransport::Pipes => "pipes",
+        ProtocolTransport::Socket => "socket",
         ProtocolTransport::Stdio => "stdio",
     }
 }

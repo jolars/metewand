@@ -555,9 +555,16 @@ impl WorkerProcess {
     pub(crate) fn spawn_windows(
         mut command: Command,
         log_limits: WorkerLogLimits,
-        redactor: Redactor,
+        mut redactor: Redactor,
         isolated: bool,
     ) -> Result<Self, WorkerProcessError> {
+        let protocol_cancellation = PipeCancellation::default();
+        let socket = socket::SocketListener::configure(
+            &mut command,
+            &mut redactor,
+            Arc::clone(&protocol_cancellation.0),
+        )
+        .map_err(WorkerProcessError::CreateRequestPipe)?;
         let (parent_request_writer, worker_request_reader) =
             pipe_pair(false).map_err(WorkerProcessError::CreateRequestPipe)?;
         let (parent_response_reader, worker_response_writer) =
@@ -602,13 +609,17 @@ impl WorkerProcess {
                 (worker_response_writer.as_raw_handle() as usize).to_string(),
             );
         let group = ProcessGroup::new().map_err(WorkerProcessError::Spawn)?;
-        let handles = [
-            worker_request_reader.as_raw_handle(),
-            worker_response_writer.as_raw_handle(),
+        let mut handles = vec![
             input.as_raw_handle(),
             worker_stdout.as_raw_handle(),
             worker_stderr.as_raw_handle(),
         ];
+        if socket.is_none() {
+            handles.extend([
+                worker_request_reader.as_raw_handle(),
+                worker_response_writer.as_raw_handle(),
+            ]);
+        }
         let mut child =
             spawn_child(&command, &handles, &group, isolated).map_err(WorkerProcessError::Spawn)?;
         drop((
@@ -618,7 +629,6 @@ impl WorkerProcess {
             worker_stdout,
             worker_stderr,
         ));
-        let protocol_cancellation = PipeCancellation::default();
         let log_cancellation = PipeCancellation::default();
         let stdout_live = Arc::new(Mutex::new(LiveLog::default()));
         let stderr_live = Arc::new(Mutex::new(LiveLog::default()));
@@ -662,20 +672,31 @@ impl WorkerProcess {
                 });
             }
         };
+        let child = Arc::new(Mutex::new(child));
+        let (protocol_reader, protocol_writer) = if let Some(socket) = socket {
+            socket.pair(Arc::clone(&child))
+        } else {
+            (
+                WorkerPipe {
+                    inner: parent_response_reader,
+                    canceled: Arc::clone(&protocol_cancellation.0),
+                }
+                .into(),
+                WorkerPipe {
+                    inner: parent_request_writer,
+                    canceled: Arc::clone(&protocol_cancellation.0),
+                }
+                .into(),
+            )
+        };
         Ok(Self {
             environment: None,
             redactor,
             child,
             group,
             private_working_directory: None,
-            protocol_reader: Some(FrameReader::new(WorkerPipe {
-                inner: parent_response_reader,
-                canceled: Arc::clone(&protocol_cancellation.0),
-            })),
-            protocol_writer: Some(WorkerPipe {
-                inner: parent_request_writer,
-                canceled: Arc::clone(&protocol_cancellation.0),
-            }),
+            protocol_reader: Some(FrameReader::new(protocol_reader)),
+            protocol_writer: Some(protocol_writer),
             protocol_cancellation,
             log_cancellation,
             stdout_drain,

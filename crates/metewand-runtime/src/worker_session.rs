@@ -25,7 +25,7 @@ use crate::{
     executor::{Executor, LocalProcessExecutor},
     redaction::Redactor,
     worker_environment::WorkerEnvironmentProvenance,
-    worker_process::{WorkerPipe, WorkerProcess, WorkerProcessError, WorkerProcessOutput},
+    worker_process::{ProtocolIo, WorkerProcess, WorkerProcessError, WorkerProcessOutput},
 };
 
 /// Fully resolved operational deadline for every Gate-1 worker phase.
@@ -200,6 +200,12 @@ impl WorkerSession {
                 .contains(&Capability::ProblemSemantics)
         {
             selected_capabilities.push(Capability::ProblemSemantics);
+        }
+        if response
+            .capabilities()
+            .contains(&Capability::ManagedOutputs)
+        {
+            selected_capabilities.push(Capability::ManagedOutputs);
         }
         let negotiated = match validate_hello_response(&request, &response, &selected_capabilities)
         {
@@ -646,6 +652,57 @@ impl WorkerSession {
         };
 
         self.redactor.value(&mut value);
+        if value.get("draft").is_some() {
+            let allowed = self.negotiated.as_ref().is_some_and(|session| {
+                session
+                    .selected_capabilities()
+                    .contains(&Capability::ManagedOutputs)
+            });
+            if !allowed {
+                self.discard();
+                return Err(WorkerSessionError::ManagedOutput {
+                    source: io::Error::other("managed output capability was not negotiated"),
+                });
+            }
+            let managed = match serde_json::from_value::<metewand_protocol::ManagedOutputResponse>(
+                value.clone(),
+            ) {
+                Ok(response) => response,
+                Err(source) => {
+                    self.discard();
+                    return Err(WorkerSessionError::ManagedOutput {
+                        source: io::Error::new(io::ErrorKind::InvalidData, source),
+                    });
+                }
+            };
+            let request: Value = serde_json::from_slice(
+                &encode_message(request).expect("previously encoded request"),
+            )
+            .expect("typed request JSON");
+            if request["method"].as_str() != Some(managed.method()) {
+                self.discard();
+                return Err(WorkerSessionError::ManagedOutput {
+                    source: io::Error::other(
+                        "managed response does not match the pending operation",
+                    ),
+                });
+            }
+            if let Err(source) =
+                crate::managed_output::finalize(&request, &mut value, started.checked_add(limit))
+            {
+                if started.elapsed() >= limit {
+                    self.discard_after_timeout();
+                    return Err(timeout_error());
+                }
+                self.discard();
+                let source = if self.redactor.is_empty() {
+                    source
+                } else {
+                    io::Error::new(source.kind(), self.redactor.text(&source.to_string()))
+                };
+                return Err(WorkerSessionError::ManagedOutput { source });
+            }
+        }
 
         let decoded = decode_operation_response::<R>(value, &mut self.requests);
         if started.elapsed() >= limit {
@@ -756,8 +813,8 @@ enum ProtocolIoError {
 }
 
 fn start_protocol_io(
-    mut reader: FrameReader<WorkerPipe<std::fs::File>>,
-    mut writer: WorkerPipe<std::fs::File>,
+    mut reader: FrameReader<ProtocolIo>,
+    mut writer: ProtocolIo,
 ) -> io::Result<(Sender<ProtocolCommand>, JoinHandle<()>)> {
     let (sender, receiver) = mpsc::channel();
     let thread = thread::Builder::new()
@@ -767,8 +824,8 @@ fn start_protocol_io(
 }
 
 fn run_protocol_io(
-    reader: &mut FrameReader<WorkerPipe<std::fs::File>>,
-    writer: &mut WorkerPipe<std::fs::File>,
+    reader: &mut FrameReader<ProtocolIo>,
+    writer: &mut ProtocolIo,
     receiver: &Receiver<ProtocolCommand>,
 ) {
     while let Ok(command) = receiver.recv() {
@@ -789,6 +846,13 @@ fn run_protocol_io(
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum WorkerSessionError {
+    /// A negotiated managed output draft could not be finalized.
+    #[error("managed output finalization failed: {source}")]
+    ManagedOutput {
+        /// Invalid draft, unsafe output, or filesystem failure.
+        #[source]
+        source: io::Error,
+    },
     #[error("execute response did not echo the selected observation control")]
     ObservationControlMismatch,
     /// A previously applied lifetime control no longer holds.

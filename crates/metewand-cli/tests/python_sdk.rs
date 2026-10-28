@@ -6,6 +6,53 @@ use serde_json::Value;
 use tempfile::TempDir;
 
 #[test]
+fn socket_adapter_selection_ignores_interpreter_parent_names() {
+    use std::os::unix::fs::symlink;
+
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let benchmark = TempDir::new().unwrap();
+    copy_tree(&root.join("examples/python-package"), benchmark.path());
+    copy_tree(
+        &root.join("packages/python/src/metewand"),
+        &benchmark.path().join("metewand"),
+    );
+    let interpreters = TempDir::new().unwrap();
+    let python = std::env::split_paths(&std::env::var_os("PATH").unwrap())
+        .map(|directory| directory.join("python3"))
+        .find(|path| path.is_file())
+        .unwrap();
+    let directory = interpreters.path().join("rscript-env/bin");
+    fs::create_dir_all(&directory).unwrap();
+    let program = directory.join("python3");
+    symlink(python.canonicalize().unwrap(), &program).unwrap();
+    let manifest = benchmark.path().join("metewand.yaml");
+    let mut source = fs::read_to_string(&manifest)
+        .unwrap()
+        .replace("runner: python", "runner: command")
+        .replace(
+            "entrypoint: worker.py",
+            &format!("program: {}", serde_json::to_string(&program).unwrap()),
+        );
+    for role in [
+        "dataset_materializer",
+        "implementation",
+        "problem_evaluator",
+    ] {
+        source = source.replace(
+            &format!("args: [{role}]"),
+            &format!("args: [\"{{sources}}/worker.py\", \"{role}\"]"),
+        );
+    }
+    fs::write(manifest, source).unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_metewand"))
+        .current_dir(benchmark.path())
+        .args(["check", "--workers", "--output", "json"])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+}
+
+#[test]
 fn callback_tracebacks_survive_failed_attempts_and_remain_explainable() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     for (trigger, code) in [
@@ -205,7 +252,11 @@ fn python_sdk_example_publishes_two_accepted_observations() {
         let execution = &record["provenance"]["data"]["execution"];
         for role in ["implementation", "evaluator"] {
             assert_eq!(execution[role]["sdk"]["name"], "metewand-python");
-            assert_eq!(execution[role]["sdk"]["version"], env!("CARGO_PKG_VERSION"));
+            assert!(
+                execution[role]["sdk"]["version"]
+                    .as_str()
+                    .is_some_and(|value| !value.is_empty())
+            );
         }
     }
 }
@@ -252,9 +303,12 @@ fn applicability_checks_precede_preparation_and_preserve_exact_inputs() {
         );
     fs::write(manifest, source).unwrap();
     let worker = benchmark.path().join("worker.py");
-    let source = fs::read_to_string(&worker).unwrap().replace("class Sum(OneShotImplementation):", r#"class Sum(OneShotImplementation):
-    def check_applicability(self, dataset_instance, dataset_manifest, problem_contract,
-                            problem_parameters, implementation_parameters):
+    let source = fs::read_to_string(&worker).unwrap().replace("class Sum:", r#"class Sum:
+    def check_applicability(self, context):
+        dataset_instance = context.dataset_dir
+        dataset_manifest = context.dataset_manifest
+        problem_parameters = context.problem_parameters
+        implementation_parameters = context.parameters
         assert not hasattr(self, 'values'), 'check must run before prepare'
         manifest = read_json(dataset_manifest)
         assert manifest['complete'] and manifest['files'][0]['path'] == 'data.json'
@@ -388,10 +442,10 @@ fn changed_applicability_evidence_invalidates_execution_and_resume_identities() 
     fs::write(&support, "supported_a").unwrap();
     let worker = benchmark.path().join("worker.py");
     let source = fs::read_to_string(&worker).unwrap().replace(
-        "class Sum(OneShotImplementation):",
+        "class Sum:",
         &format!(
-            r#"class Sum(OneShotImplementation):
-    def check_applicability(self, *args):
+            r#"class Sum:
+    def check_applicability(self, context):
         from pathlib import Path
         code = Path({support:?}).read_text()
         return dict(outcome='not_applicable' if code == 'excluded' else 'applicable',
@@ -525,8 +579,8 @@ fn failed_applicability_checks_never_become_measured_attempts() {
         );
         fs::write(manifest, source).unwrap();
         let worker = benchmark.path().join("worker.py");
-        let source = fs::read_to_string(&worker).unwrap().replace("class Sum(OneShotImplementation):",
-            &format!("class Sum(OneShotImplementation):\n    def check_applicability(self, dataset_instance, *args):\n        {callback}\n"));
+        let source = fs::read_to_string(&worker).unwrap().replace("class Sum:",
+            &format!("class Sum:\n    def check_applicability(self, context):\n        dataset_instance = context.dataset_dir\n        {callback}\n"));
         fs::write(worker, source).unwrap();
         let output = Command::new(env!("CARGO_BIN_EXE_metewand"))
             .current_dir(benchmark.path())

@@ -129,6 +129,8 @@ pub enum Capability {
     StreamingProfile,
     /// Returns a complete bounded local trace and selected results.
     BufferedProfile,
+    /// Returns drafts whose inventories and canonical envelopes the runtime finalizes.
+    ManagedOutputs,
     /// Receives declared scientific rules in independent evaluation requests.
     ProblemSemantics,
 }
@@ -1028,6 +1030,70 @@ impl ManifestReference {
     }
 }
 
+/// A draft reference returned only after negotiating `managed_outputs`.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(transparent)]
+pub struct ManagedOutputResponse(ManagedOutputBody);
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(untagged, deny_unknown_fields)]
+enum ManagedOutputBody {
+    /// A solve result finalized inside the selected execution envelope.
+    Execute {
+        id: RequestId,
+        ok: Success,
+        #[serde(deserialize_with = "deserialize_nonempty_string")]
+        draft: String,
+        #[serde(deserialize_with = "deserialize_required_safe_u64_option")]
+        implementation_time_ns: Option<u64>,
+        #[serde(deserialize_with = "deserialize_object")]
+        statistics: Value,
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_control"
+        )]
+        observation_control: Option<Value>,
+    },
+    /// An independently evaluated metrics document.
+    Evaluate {
+        id: RequestId,
+        ok: Success,
+        #[serde(deserialize_with = "deserialize_nonempty_string")]
+        draft: String,
+        verdict: EvaluationVerdict,
+    },
+    /// A materialized dataset.
+    Materialize {
+        id: RequestId,
+        ok: Success,
+        #[serde(deserialize_with = "deserialize_nonempty_string")]
+        draft: String,
+    },
+}
+impl ManagedOutputResponse {
+    /// Returns the operation whose completed response this draft replaces.
+    #[must_use]
+    pub const fn method(&self) -> &'static str {
+        match &self.0 {
+            ManagedOutputBody::Execute { .. } => "execute",
+            ManagedOutputBody::Evaluate { .. } => "evaluate",
+            ManagedOutputBody::Materialize { .. } => "materialize",
+        }
+    }
+}
+impl private::Sealed for ManagedOutputResponse {}
+impl WireMessage for ManagedOutputResponse {}
+impl WireResponse for ManagedOutputResponse {
+    fn id(&self) -> &RequestId {
+        match &self.0 {
+            ManagedOutputBody::Execute { id, .. }
+            | ManagedOutputBody::Evaluate { id, .. }
+            | ManagedOutputBody::Materialize { id, .. } => id,
+        }
+    }
+}
+
 /// A successful dataset materialization response.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -1625,6 +1691,7 @@ pub fn validate_hello_response(
     if let Some(capability) = selected_capabilities
         .iter()
         .find(|capability| match capability {
+            Capability::ManagedOutputs => false,
             Capability::ProblemSemantics => request.role != WorkerRole::ProblemEvaluator,
             _ => request.role != WorkerRole::Implementation,
         })
@@ -1642,6 +1709,7 @@ pub fn validate_hello_response(
                 | Capability::ProblemSemantics
                 | Capability::BufferedProfile
                 | Capability::FreshSequence
+                | Capability::ManagedOutputs
         )
     }) {
         return Err(HandshakeError::ReservedCapability {

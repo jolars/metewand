@@ -53,7 +53,8 @@ metewand export --output-dir run --format csv --destination tables
 
 Windows source builds use Rust's MSVC toolchain and Visual Studio C++ build
 tools. See [getting started](docs/guide/getting-started.md) for PowerShell
-installation, Rtools, and the local NTFS storage requirement.
+installation and the local NTFS storage requirement. The R package contains no
+native code and requires only `jsonlite` beyond standard R packages.
 
 The starter has two files: `metewand.yaml` and `benchmark.py`. Use
 `metewand init --language r` for R. Choose a new output directory, or explicitly

@@ -12,6 +12,7 @@ publish.workspace = true
 
 [dependencies]
 flate2.workspace = true
+getrandom.workspace = true
 globset.workspace = true
 metewand-core.workspace = true
 metewand-protocol.workspace = true

@@ -2,9 +2,8 @@
 
 use std::{
     fs,
-    io::Write,
     path::{Path, PathBuf},
-    process::{Command, Stdio},
+    process::Command,
     str::FromStr,
     time::Duration,
 };
@@ -30,13 +29,16 @@ fn r_sdk_contracts_and_roles_complete_a_validated_chain() {
     fs::create_dir(&library).unwrap();
     let output = Command::new("R")
         .args(["CMD", "INSTALL", "--preclean", "--clean"])
+        .env("CC", "false")
+        .env("CXX", "false")
+        .env("FC", "false")
         .arg(format!("--library={}", library.display()))
         .arg(package.path().join("r"))
         .output()
         .unwrap();
     assert!(output.status.success(), "{output:?}");
+    assert!(!library.join("metewand/libs").exists());
 
-    assert_public_descriptor_ownership(&library);
     let output = Command::new("Rscript")
         .arg("--vanilla")
         .arg(root().join("packages/r/tests/sdk.R"))
@@ -93,13 +95,16 @@ fn r_sdk_contracts_and_roles_complete_a_validated_chain() {
         let response = implementation
             .execute(result.path().to_str().unwrap())
             .unwrap();
-        assert!(response.implementation_time_ns().is_some());
+        assert!(response.implementation_time_ns().is_none());
         assert_eq!(response.statistics(), &json!({"input_count": 3}));
         let validated = validator
             .validate_execution_result(result.path(), &response, Path::new("schemas/result.json"))
             .unwrap();
         assert_eq!(validated.data().as_json(), &json!({"answer": 8}));
         implementation.reset().unwrap();
+        if seed == 23 {
+            fs::remove_file(result.path().join("result.json")).unwrap();
+        }
     }
     assert_logs(implementation.shutdown().unwrap(), "implementation");
 
@@ -127,43 +132,6 @@ fn r_sdk_contracts_and_roles_complete_a_validated_chain() {
     assert_logs(evaluator.shutdown().unwrap(), "problem_evaluator");
 }
 
-fn assert_public_descriptor_ownership(library: &Path) {
-    let mut child = Command::new("Rscript")
-        .args([
-            "--vanilla",
-            "-e",
-            "library(metewand); serve_dataset_materializer(function(...) NULL, read_fd=0, write_fd=1); \
-             pipes <- metewand:::.native(metewand:::C_mw_open, 0, 1); \
-             invisible(.Call(metewand:::C_mw_close, pipes)); cat('caller descriptors open\\n', file=stderr())",
-        ])
-        .env("R_LIBS_USER", library)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
-    let hello = json!({"id":"0", "method":"hello", "protocols":[1],
-        "role":"dataset_materializer", "worker_id":WORKER_ID});
-    let requests = format!("{hello}\n{{\"id\":\"1\",\"method\":\"shutdown\"}}\n");
-    child
-        .stdin
-        .take()
-        .unwrap()
-        .write_all(requests.as_bytes())
-        .unwrap();
-    let output = child.wait_with_output().unwrap();
-    assert!(output.status.success(), "{output:?}");
-    assert_eq!(output.stderr, b"caller descriptors open\n");
-    let responses: Vec<Value> = output
-        .stdout
-        .split(|byte| *byte == b'\n')
-        .filter(|line| !line.is_empty())
-        .map(|line| serde_json::from_slice(line).unwrap())
-        .collect();
-    assert_eq!(responses.len(), 2);
-    assert_eq!(responses[1], json!({"id":"1", "ok":true}));
-}
-
 fn connect(role_name: &str, role: WorkerRole, library: &Path) -> WorkerSession {
     let mut command = Command::new("Rscript");
     command
@@ -171,6 +139,11 @@ fn connect(role_name: &str, role: WorkerRole, library: &Path) -> WorkerSession {
         .arg(root().join("examples/r-package/worker.R"))
         .arg(role_name)
         .env("R_LIBS_USER", library);
+    let adapter = TempDir::new().unwrap();
+    let path = metewand_runtime::language_adapter::stage("r", adapter.path()).unwrap();
+    command
+        .env("METEWAND_ADAPTER_PATH", path)
+        .env("METEWAND_PROTOCOL_TRANSPORT", "socket");
     let process = PosixWorkerProcess::spawn(command, WorkerLogLimits::new(4096, 4096)).unwrap();
     let capabilities = if role == WorkerRole::Implementation {
         &[Capability::OneShot][..]
@@ -196,7 +169,12 @@ fn connect(role_name: &str, role: WorkerRole, library: &Path) -> WorkerSession {
     .unwrap();
     let sdk = session.negotiated().sdk().unwrap();
     assert_eq!(sdk.name(), "metewand-r");
-    assert_eq!(sdk.version(), "0.1.0");
+    let description = fs::read_to_string(root().join("packages/r/DESCRIPTION")).unwrap();
+    let version = description
+        .lines()
+        .find_map(|line| line.strip_prefix("Version: "))
+        .unwrap();
+    assert_eq!(sdk.version(), version);
     session
 }
 

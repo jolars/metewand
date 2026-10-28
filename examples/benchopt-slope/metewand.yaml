@@ -3,6 +3,7 @@ name: benchopt-slope
 datasets:
   simulated:
     runner: python
+    protocol-transport: socket
     entrypoint: dataset.py
     sources: [dataset.py, upstream/simulated.py, origins.json, "metewand/*.py"]
     output-schema: &dataset-schema
@@ -60,11 +61,13 @@ problems:
         expected-metrics: reference/metrics.json
     evaluator:
       runner: python
+      protocol-transport: socket
       entrypoint: evaluator.py
       sources: [evaluator.py, upstream/objective.py, origins.json, "metewand/*.py"]
 implementations:
   pgd:
     runner: python
+    protocol-transport: socket
     entrypoint: solver.py
     args: [pgd]
     sources: [solver.py, upstream/objective.py, upstream/python_pgd.py, origins.json, "metewand/*.py"]
@@ -76,6 +79,7 @@ implementations:
       acceleration: { type: string, enum: [none, fista], default: none }
   admm:
     runner: python
+    protocol-transport: socket
     entrypoint: solver.py
     args: [admm]
     sources: [solver.py, upstream/objective.py, upstream/admm.py, origins.json, "metewand/*.py"]

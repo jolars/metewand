@@ -70,9 +70,11 @@ schema, fixture, example, package, or document.
 
 ## Compatibility and releases
 
-Package SemVer is shared across the workspace and managed by Versionary from
-Conventional Commits. It is separate from the public compatibility constants for
-the manifest, schemas, identities, execution semantics, and wire protocol.
+Rust workspace SemVer is shared across the crates. Python and R have independent
+package releases, managed by Versionary from Conventional Commits. Keep their
+version-1 binding API stable across compatible CLI upgrades. Package SemVer is
+separate from the public compatibility constants for the manifest, schemas,
+identities, execution semantics, and wire protocol.
 Consider only the versions affected by a change, and record a consequential
 compatibility decision in the change description. Do not require a standalone
 review, a decision table for unchanged versions, or fixtures for speculative

@@ -171,7 +171,11 @@ fn reference_contracts_admit_correct_workers_and_reject_three_classes_of_bad_res
                     let response = implementation
                         .execute(result.path().to_str().unwrap())
                         .unwrap();
-                    assert!(response.implementation_time_ns().is_some(), "{context}");
+                    assert_eq!(
+                        response.implementation_time_ns().is_some(),
+                        language == "python",
+                        "{context}"
+                    );
                     let validated = validator.validate_execution_result(
                         result.path(),
                         &response,
@@ -246,7 +250,7 @@ fn evaluate(
             dataset.to_str().unwrap(),
             CONTRACT_ID,
             parameters.clone(),
-            json!({}),
+            contract.semantics.as_canonical().as_json().clone(),
             result.to_str().unwrap(),
             metrics.path().join("metrics.json").to_str().unwrap(),
         )
@@ -292,6 +296,11 @@ fn connect(
         family,
         mode,
     ]);
+    let adapter = TempDir::new().unwrap();
+    let path = metewand_runtime::language_adapter::stage(language, adapter.path()).unwrap();
+    command
+        .env("METEWAND_ADAPTER_PATH", path)
+        .env("METEWAND_PROTOCOL_TRANSPORT", "socket");
     let process = PosixWorkerProcess::spawn(command, WorkerLogLimits::new(4096, 4096)).unwrap();
     let limit = Duration::from_secs(10);
     WorkerSession::connect(

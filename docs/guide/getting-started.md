@@ -26,11 +26,10 @@ Restart your shell if `metewand` is not on `PATH`, then run
 `metewand --version` to check the installation. You can also download archives
 and checksums from [GitHub Releases](https://github.com/jolars/metewand/releases).
 
-Install worker packages separately. Use the same version for the Python
-package and CLI. The [Python package](https://github.com/jolars/metewand/tree/main/packages/python)
-README includes a command for installing the CLI from a specific release.
-Install the R package from a checkout of the matching release. For development
-from a checkout, build and install both components below.
+Install worker packages separately. Python, R, and the CLI have independent
+release numbers; compatibility follows binding API version 1. The CLI supplies
+its worker adapters, so compatible CLI upgrades do not require package updates.
+For development from a checkout, build and install the components below.
 
 ### From source
 
@@ -133,21 +132,19 @@ unsupported.
 
 ## Start with R
 
-Use R 4.2 or later, the `digest` package, and a C++17 compiler with floating-point
-`std::to_chars` support. On Windows, use R 4.3 or later with the matching Rtools
-release, and put `R.exe` and `Rscript.exe` on `PATH`.
-[Rtools43](https://developer.r-project.org/WindowsBuilds/Rtools43/rtools.html)
-and later supply a sufficiently recent compiler. Rtools supplies
-the compiler for the R package; building the CLI from source uses MSVC
-separately. Install `digest` and the package into the selected R environment's
-site library; workers use a private user library. Set up a writable R
-installation or run the installation commands with permission to write that
-library.
+Use R 4.2 or later and the `jsonlite` package. Metewand's R package contains no
+native code and needs no compiler or Rtools. Standard dependencies may contain
+native code and follow their own source-installation requirements. On Windows,
+put `R.exe` and `Rscript.exe` on `PATH`.
+
+Install `jsonlite` and Metewand into the selected R interpreter's site library;
+workers use a private user library. Use a writable R installation or run the
+installation commands with permission to write that library.
 
 From the Metewand checkout:
 
 ```sh
-Rscript --vanilla -e 'install.packages("digest", lib=.Library, repos="https://cloud.r-project.org")'
+Rscript --vanilla -e 'install.packages("jsonlite", lib=.Library, repos="https://cloud.r-project.org")'
 R CMD INSTALL --library=SITE_LIBRARY packages/r
 metewand init my-r-benchmark --language r
 cd my-r-benchmark

@@ -68,8 +68,12 @@ Lifecycle workers let you load data in `prepare`, run a method in `execute`,
 convert its output, and reset state before reuse. They also support custom
 artifact writers and configuration-dependent applicability checks.
 
-The Python package provides `OneShotImplementation` and `serve_implementation`.
-The R package provides `serve_implementation` with callbacks. Native Rust workers
+Python and R both provide `serve_implementation` with named callbacks.
+Use `prepare(context)` to return state and `execute(state, context)` to return
+solver output. Optional `result(output, context)` converts that output, and
+`reset(state, context)` clears slot state. Select `protocol-transport: socket`
+for these lifecycle workers. The CLI supplies the adapter; package and CLI
+release numbers need not match when they support binding API version 1. Native Rust workers
 implement the `Implementation` trait and use the same serving lifecycle.
 The runnable [Python](https://github.com/jolars/metewand/tree/main/examples/python-package),
 [R](https://github.com/jolars/metewand/tree/main/examples/r-package), and
@@ -94,9 +98,12 @@ provision its dependencies.
 
 Function workers exchange JSON objects. For large matrices, sparse structures,
 or native formats, use a materializer and custom result writers. Write all files
-under the assigned output directory, close them, and return a complete manifest
-with paths, media types, sizes, and hashes. The runtime validates the inventory
-and schemas before publication. See the
+under `context.output_dir` (or `context$output_dir` in R), close them, and return
+a `Dataset` or `Result` with `Artifact` declarations (`dataset`, `result`, and
+`artifact` in R). Declare paths, media types, and optional representation
+metadata. The CLI computes inventories and hashes, writes canonical envelopes,
+and validates schemas before publication. Native workers continue to return
+completed manifests directly. See the
 [generated-dataset example](https://github.com/jolars/metewand/tree/main/examples/generated-dataset).
 
 ## Move from final answers to profiles

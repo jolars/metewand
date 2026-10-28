@@ -26,7 +26,7 @@ use metewand_runtime::{
         SECRET_TEMPLATE, WorkerSecrets, resolve_worker_environment, worker_environment_template,
     },
     worker_process::{PROTOCOL_READ_FD_ENV, PROTOCOL_WRITE_FD_ENV, WorkerLogLimits},
-    worker_session::{PhaseTimeouts, WorkerSession},
+    worker_session::{PhaseTimeouts, WorkerSession, WorkerSessionError},
 };
 use serde_json::json;
 
@@ -76,7 +76,38 @@ fn fixture_worker() {
     let mut write =
         unsafe { File::from_raw_fd(env::var(PROTOCOL_WRITE_FD_ENV).unwrap().parse().unwrap()) };
     let mut request = String::new();
-    BufReader::new(read).read_line(&mut request).unwrap();
+    let mut read = BufReader::new(read);
+    read.read_line(&mut request).unwrap();
+    if mode == "managed-output" {
+        let hello: serde_json::Value = serde_json::from_str(&request).unwrap();
+        writeln!(
+            write,
+            "{}",
+            json!({"id": hello["id"], "ok": true, "protocol": 1,
+                "worker_id": hello["worker_id"], "sdk": null,
+                "capabilities": ["one_shot", "managed_outputs"]})
+        )
+        .unwrap();
+        request.clear();
+        read.read_line(&mut request).unwrap();
+        let execute: serde_json::Value = serde_json::from_str(&request).unwrap();
+        assert_eq!(execute["method"], "execute");
+        let output = std::path::Path::new(execute["result_dir"].as_str().unwrap());
+        fs::write(
+            output.join("draft.json"),
+            br#"{"schema_version":1,"kind":"result","data":{},"files":[]}"#,
+        )
+        .unwrap();
+        std::os::unix::fs::symlink("draft.json", output.join(&secret)).unwrap();
+        writeln!(
+            write,
+            "{}",
+            json!({"id": execute["id"], "ok": true, "draft": "draft.json",
+                "implementation_time_ns": null, "statistics": {}})
+        )
+        .unwrap();
+        return;
+    }
     if mode == "malformed" {
         writeln!(write, "{{\"{secret}\":1,\"{secret}\":2}}").unwrap();
     } else {
@@ -315,6 +346,63 @@ fn session_failures_redact_nested_values_keys_and_malformed_input() {
                 Some(&json!({"[REDACTED]": ["nested [REDACTED]"]}))
             );
         }
+        assert_eq!(fs::read_dir(root.path()).unwrap().count(), 0);
+    }
+}
+
+#[test]
+fn managed_output_finalization_errors_redact_secret_filenames() {
+    let root = tempfile::tempdir().unwrap();
+    for secret in ["artifact-secret", "secret-with-quote-\"-and-unicode-å"] {
+        let output = tempfile::tempdir().unwrap();
+        let mut launch = launch("managed-output");
+        launch
+            .environment_variables
+            .insert("TOKEN".into(), SECRET_TEMPLATE.into());
+        let secrets =
+            WorkerSecrets::new(BTreeMap::from([("TOKEN".into(), secret.into())])).unwrap();
+        let process = LocalProcessExecutor::new(Duration::ZERO)
+            .spawn_with_secrets(
+                &launch,
+                root.path(),
+                WorkerLogLimits::new(1024, 1024),
+                ExecutorRequirements::default(),
+                &secrets,
+            )
+            .unwrap();
+        let mut session = WorkerSession::connect(
+            process,
+            WorkerRole::Implementation,
+            "mw1-resolved-worker-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+                .parse()
+                .unwrap(),
+            &[metewand_protocol::Capability::OneShot],
+            PhaseTimeouts::default(),
+        )
+        .unwrap();
+        let error = session
+            .execute(output.path().to_str().unwrap())
+            .unwrap_err();
+        let WorkerSessionError::ManagedOutput { source } = &error else {
+            panic!("expected a managed output finalization error: {error:?}");
+        };
+        assert_eq!(source.kind(), std::io::ErrorKind::InvalidData);
+        assert_eq!(
+            source.to_string(),
+            "worker output `[REDACTED]` is not a regular file or directory"
+        );
+        for diagnostic in [
+            error.to_string(),
+            format!("{error:?}"),
+            format!("{source:?}"),
+        ] {
+            assert!(!diagnostic.contains(secret), "{diagnostic}");
+            assert!(diagnostic.contains("[REDACTED]"), "{diagnostic}");
+        }
+        assert!(matches!(
+            session.reset(),
+            Err(WorkerSessionError::SessionUnusable)
+        ));
         assert_eq!(fs::read_dir(root.path()).unwrap().count(), 0);
     }
 }

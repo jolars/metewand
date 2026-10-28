@@ -267,7 +267,18 @@ fn local_target_disagreement_censors_and_contract_agreement_fails() {
 fn native_loop_returns_the_same_buffer_without_python_callbacks() {
     let stage = stage();
     let path = stage.path().join("metewand.yaml");
-    let source=fs::read_to_string(&path).unwrap().replace("runner: python\n    entrypoint: worker.py\n    sources: [worker.py, \"metewand/*.py\"]",&format!("runner: command\n    program: {}\n    args: [--exact, native_buffered_entry, --nocapture]",serde_json::to_string(&std::env::current_exe().unwrap()).unwrap()));
+    let source = fs::read_to_string(&path).unwrap();
+    let worker = "runner: python\n    protocol-transport: socket\n    entrypoint: worker.py\n    sources: [worker.py, \"metewand/*.py\"]";
+    assert_eq!(
+        source.matches(worker).count(),
+        2,
+        "expected both buffered worker definitions to match"
+    );
+    let executable = serde_json::to_string(&std::env::current_exe().unwrap()).unwrap();
+    let source = source.replace(
+        worker,
+        &format!("runner: command\n    program: {executable}\n    args: [--exact, native_buffered_entry, --nocapture]"),
+    );
     fs::write(path, source).unwrap();
     let run = invoke(
         stage.path(),

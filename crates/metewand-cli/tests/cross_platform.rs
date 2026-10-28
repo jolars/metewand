@@ -99,14 +99,14 @@ fn r_package(directory: &Path) {
             .output()
             .unwrap();
         assert!(output.status.success(), "{output:?}");
-        let digest = Command::new("Rscript")
-            .args(["--vanilla", "-e", "cat(find.package('digest'))"])
+        let jsonlite = Command::new("Rscript")
+            .args(["--vanilla", "-e", "cat(find.package('jsonlite'))"])
             .output()
             .unwrap();
-        assert!(digest.status.success(), "{digest:?}");
+        assert!(jsonlite.status.success(), "{jsonlite:?}");
         copy(
-            Path::new(std::str::from_utf8(&digest.stdout).unwrap().trim()),
-            &library.join("digest"),
+            Path::new(std::str::from_utf8(&jsonlite.stdout).unwrap().trim()),
+            &library.join("jsonlite"),
         );
         temporary
     });
@@ -322,10 +322,16 @@ fn python_and_rust_buffered_profiles_are_portable() {
         if native {
             let executable = serde_json::to_string(&std::env::current_exe().unwrap()).unwrap();
             edit(directory.path(), "metewand.yaml", |source| {
+                let worker = "runner: python\n    protocol-transport: socket\n    entrypoint: worker.py\n    sources: [worker.py, \"metewand/*.py\"]";
+                assert_eq!(
+                    source.matches(worker).count(),
+                    2,
+                    "expected both buffered worker definitions to match"
+                );
                 source.replace(
-                "runner: python\n    entrypoint: worker.py\n    sources: [worker.py, \"metewand/*.py\"]",
-                &format!("runner: command\n    program: {executable}\n    args: [--exact, portable_native_buffered_entry, --nocapture]"),
-            )
+                    worker,
+                    &format!("runner: command\n    program: {executable}\n    args: [--exact, portable_native_buffered_entry, --nocapture]"),
+                )
             });
         }
         successful(directory.path(), &["check", "--workers"]);

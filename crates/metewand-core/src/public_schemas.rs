@@ -78,12 +78,14 @@ pub enum PublicSchema {
     DatamongerAcquisitionRequest,
     /// Verified provider evidence and exported raw artifact inventory.
     DatamongerAcquisitionResponse,
+    /// Scientific values and unhashed file declarations finalized by the runtime.
+    ManagedOutputDraft,
     /// Worker session handshake or one-shot exchange message.
     WorkerProtocolMessage,
 }
 
 /// Every public schema entry point in stable presentation order.
-pub const PUBLIC_SCHEMAS: [PublicSchema; 30] = [
+pub const PUBLIC_SCHEMAS: [PublicSchema; 31] = [
     PublicSchema::BuildEvidence,
     PublicSchema::ProfileObservationPolicy,
     PublicSchema::BufferedManifest,
@@ -112,6 +114,7 @@ pub const PUBLIC_SCHEMAS: [PublicSchema; 30] = [
     PublicSchema::DatamongerSelector,
     PublicSchema::DatamongerAcquisitionRequest,
     PublicSchema::DatamongerAcquisitionResponse,
+    PublicSchema::ManagedOutputDraft,
     PublicSchema::WorkerProtocolMessage,
     PublicSchema::WorkerEnvironment,
 ];
@@ -150,6 +153,7 @@ impl PublicSchema {
             Self::DatamongerSelector => "datamonger-selector",
             Self::DatamongerAcquisitionRequest => "datamonger-acquisition-request",
             Self::DatamongerAcquisitionResponse => "datamonger-acquisition-response",
+            Self::ManagedOutputDraft => "managed-output-draft",
             Self::WorkerProtocolMessage => "worker-protocol-message",
         }
     }
@@ -199,6 +203,7 @@ impl PublicSchema {
             Self::DatamongerAcquisitionResponse => {
                 "schemas/v1/datamonger-acquisition-response.schema.json"
             }
+            Self::ManagedOutputDraft => "schemas/v1/managed-output-draft.schema.json",
             Self::WorkerProtocolMessage => "schemas/v1/worker-protocol-message.schema.json",
         })
     }
@@ -248,6 +253,7 @@ impl PublicSchema {
             Self::DatamongerAcquisitionResponse => {
                 "metewand://schemas/v1/datamonger-acquisition-response.schema.json"
             }
+            Self::ManagedOutputDraft => "metewand://schemas/v1/managed-output-draft.schema.json",
             Self::WorkerProtocolMessage => {
                 "metewand://schemas/v1/worker-protocol-message.schema.json"
             }
@@ -325,6 +331,9 @@ impl PublicSchema {
             }
             Self::DatamongerAcquisitionResponse => {
                 include_str!("../../../schemas/v1/datamonger-acquisition-response.schema.json")
+            }
+            Self::ManagedOutputDraft => {
+                include_str!("../../../schemas/v1/managed-output-draft.schema.json")
             }
             Self::WorkerProtocolMessage => {
                 include_str!("../../../schemas/v1/worker-protocol-message.schema.json")

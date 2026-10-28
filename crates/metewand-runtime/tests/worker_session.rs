@@ -42,6 +42,7 @@ fn fixture_worker() {
         #[cfg(unix)]
         Ok("interrupt-timeout") => run_interrupt_timeout_fixture(),
         Ok("shared-deadline") => run_shared_deadline_fixture(),
+        Ok("managed-output") => run_managed_output_fixture(),
         Ok("hello-timeout") => run_hello_timeout_fixture(),
         Ok("shutdown-timeout") => run_shutdown_timeout_fixture(),
         Ok("reserved") => run_reserved_fixture(),
@@ -218,6 +219,56 @@ fn an_operational_limit_still_bounds_a_longer_scientific_scope() {
         phase: WorkerPhase::Execute, limit,
     }) if limit == Duration::from_millis(20))
     );
+}
+
+#[test]
+fn large_managed_outputs_respect_scientific_and_operational_deadlines() {
+    for scientific in [false, true] {
+        let root = tempfile::tempdir().unwrap();
+        let mut draft = File::create(root.path().join("draft.json")).unwrap();
+        draft
+            .write_all(br#"{"schema_version":1,"kind":"result","data":{"payload":""#)
+            .unwrap();
+        for _ in 0..400 {
+            draft.write_all(&[b'x'; 65536]).unwrap();
+        }
+        draft.write_all(br#""},"files":[]}"#).unwrap();
+        drop(draft);
+        let mut limits = timeouts();
+        if !scientific {
+            limits.execute = Duration::from_millis(20);
+        }
+        let mut session = WorkerSession::connect(
+            spawn_fixture("managed-output"),
+            WorkerRole::Implementation,
+            worker_identity(),
+            &[Capability::OneShot],
+            limits,
+        )
+        .unwrap();
+        if scientific {
+            session.set_scientific_deadline(Some(Instant::now() + Duration::from_millis(20)));
+        }
+        let started = Instant::now();
+        let error = session.execute(root.path().to_str().unwrap()).unwrap_err();
+        match error {
+            WorkerSessionError::ScientificTimeout {
+                phase: WorkerPhase::Execute,
+            } if scientific => {}
+            WorkerSessionError::Timeout {
+                phase: WorkerPhase::Execute,
+                limit,
+            } if !scientific && limit == Duration::from_millis(20) => {}
+            error => panic!("unexpected timeout kind: {error:?}"),
+        }
+        assert!(started.elapsed() < Duration::from_millis(500));
+        assert!(!root.path().join("result.json").exists());
+        assert!(root.path().join("draft.json").exists());
+        assert!(matches!(
+            session.reset(),
+            Err(WorkerSessionError::SessionUnusable)
+        ));
+    }
 }
 
 #[test]
@@ -568,6 +619,26 @@ fn run_failure_fixture() {
             },
         }),
     );
+}
+
+fn run_managed_output_fixture() {
+    let (mut reader, mut writer) = protocol_streams();
+    accept_hello(
+        &mut reader,
+        &mut writer,
+        "implementation",
+        json!(["one_shot", "managed_outputs"]),
+    );
+    let execute = read_message(&mut reader);
+    assert_eq!(execute["method"], "execute");
+    write_message(
+        &mut writer,
+        &json!({
+            "id":execute["id"], "ok":true, "draft":"draft.json",
+            "implementation_time_ns":null, "statistics":{},
+        }),
+    );
+    accept_shutdown(&mut reader, &mut writer, "2");
 }
 
 fn run_shared_deadline_fixture() {

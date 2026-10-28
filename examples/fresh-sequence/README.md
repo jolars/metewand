@@ -13,7 +13,7 @@ counts and tolerances are implementation controls, not equivalent work units.
 
 ## Stage and run
 
-Use `devenv shell`, which provides Python, R, and the R package's `digest` dependency.
+Use `devenv shell`, which provides Python, R, and the R package's `jsonlite` dependency.
 From the repository root:
 
 ```sh

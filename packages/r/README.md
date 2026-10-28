@@ -1,54 +1,61 @@
 # Metewand R package
 
-Define Metewand benchmarks with ordinary R functions for data generation,
-methods, and independent evaluation. The package handles worker communication
-and standard result files. It requires R 4.2
-or later, the `digest` package, and a C++17 compiler with floating-point
-`std::to_chars` support, such as GCC 11 or later. Linux, macOS, and native
-Windows x64 are supported. Windows requires R 4.3 or later and the matching
-Rtools release; building the separate CLI also requires Rust's MSVC toolchain and
-Visual Studio C++ build tools.
+Define benchmarks with ordinary R functions and small scientific result objects.
+This package contains no native code. It requires R 4.2 or later and `jsonlite`.
+The CLI supplies worker adapters, measures execution, validates outputs, computes
+file hashes, and writes canonical artifacts.
 
-Install `digest` into the selected worker environment, then install this package:
+Install `jsonlite` in the selected R environment, then install the package:
 
 ```sh
+Rscript --vanilla -e 'install.packages("jsonlite", repos="https://cloud.r-project.org")'
 R CMD INSTALL packages/r
 ```
 
-For function workers created by `metewand init --language r`, install both
-packages in the selected interpreter's site library. Workers use a private user
-library and do not inherit ambient R library paths. See the
-[installation guide](../../docs/guide/getting-started.md#start-with-r) for commands.
-The [R package example](../../examples/r-package) instead bundles its installed
-package beside the worker. Windows runs and caches require local NTFS.
+Metewand itself needs no compiler or Rtools. Standard dependencies may contain
+native code; installing those dependencies from source follows their own
+requirements. Linux, macOS, and native Windows x64 are supported.
 
-The package dispatches callbacks, writes canonical JSON and output envelopes, and
-reports structured failures. Metewand owns environments, source acquisition,
-seeds, scheduling, validation, and publication. Benchmark code owns scientific
-semantics and its random generators.
+Use `metewand init --language r` for ordinary `generate(context)`,
+`solve(data, context)`, and `evaluate(data, result, context)` functions. Select
+functions in YAML with `function: benchmark.R:solve`. Install packages in the
+worker interpreter's site library as described in the
+[installation guide](../../docs/guide/getting-started.md#start-with-r).
 
-Helpers automatically select inherited Unix descriptors or native Windows
-handles, preserve binary protocol frames, and keep standard output and standard
-error separate for logs. Explicit descriptor arguments remain caller-owned.
+For separate preparation and solving, register named callbacks:
 
-For a simple benchmark, use `metewand init --language r` and functions selected
-with `function: benchmark.R:solve`. Contexts, JSON data, and standard envelopes
-are handled by the package. Plain metrics imply `not_required` when no scientific
-rules are declared. Add explicit `evaluation(metrics, verdict)` when adding
-validity or completion rules.
-
-Lifecycle implementations return scientific data from `execute`; optional
-`result_data` converts solver state after diagnostic timing. Evaluators return
-`evaluation(metrics, verdict)`. The package writes standard envelopes, while custom
-`result` writers and evaluator-written metrics remain supported.
-
-See the [authoring guide](../../docs/guide/authoring/index.md),
-[package help](man/workers.Rd), and the runnable
-[R package example](../../examples/r-package). CI checks the R package and runs
-its contracts on Linux, macOS, and Windows. The portable Rust integration suite
-installs the package into temporary libraries and exercises all three roles
-through the native transport and output validator. For a focused check, run:
-
-```sh
-cargo test -p metewand-cli --test cross_platform --locked r_generated_dataset_and_fresh_sequences_are_portable
+```r
+serve_implementation(
+  prepare = function(context) read_json(file.path(context$dataset_dir, "data.json")),
+  execute = function(state, context) list(answer = sum(unlist(state$values))),
+  reset = function(state, context) NULL
+)
 ```
+
+Select `protocol-transport: socket` for lifecycle workers. Context contains
+role parameters, problem parameters, seeds, scientific rules, assigned
+directories, and optional observation controls. Additional context fields and
+optional callbacks do not change existing function signatures. Callbacks remain
+responsible for scientific semantics and seeding their random generators.
+
+Return named lists for ordinary JSON output. Use `dataset(data, files)`,
+`result(data, files)`, and `evaluation(metrics, verdict)` for explicit outputs.
+Write binary files beneath `context$output_dir`, close them, and declare them
+with `artifact(path, media_type, representation)`. The CLI computes inventories
+and hashes. Named lists represent objects; unnamed lists represent arrays. Use
+`json_object()` for an empty object and `json_array()` for a singleton array.
+
+The package implements **binding API version 1**, independently of package and
+CLI release numbers. Compatible CLI upgrades do not require reinstalling the
+package. Imports, output constructors, and JSON utilities work without the CLI;
+serving requires a compatible CLI and never downloads an adapter.
+
+The pre-MVP migration replaces positional callbacks with context callbacks,
+`result_data` with `result(output, context)`, and manual manifest writers with
+output values and artifact declarations. Canonicalization helpers, raw string
+wrappers, and descriptor arguments have been removed. R's optional in-worker
+solve timing is unavailable; the CLI's timing remains authoritative.
+
+See [package help](man/workers.Rd), the [authoring guide](../../docs/guide/authoring/index.md),
+and the runnable [R example](../../examples/r-package). CI checks source
+installation and the worker chain on Linux, macOS, and Windows.

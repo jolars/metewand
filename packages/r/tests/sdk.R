@@ -1,319 +1,72 @@
 library(metewand)
 
-context <- metewand:::.function_context(list(), semantics = list(validity = list(), one_shot_completion = list()))
-plain <- metewand:::.evaluate_function(function(data, result, context) list(error = 0), list(), list(), context)
-stopifnot(plain$verdict == "not_required", plain$metrics$error == 0)
-
-fails <- function(expr, class = "error") {
+fails <- function(expr, pattern) {
   error <- tryCatch({ force(expr); NULL }, error = identity)
-  stopifnot(inherits(error, class))
-  invisible(error)
+  stopifnot(inherits(error, "error"), grepl(pattern, conditionMessage(error)))
 }
-for (group in c("validity", "one_shot_completion")) {
-  rules <- list(validity = list(), one_shot_completion = list())
-  rules[[group]] <- list(error = 0)
-  context <- metewand:::.function_context(list(), semantics = rules)
-  fails(metewand:::.evaluate_function(function(...) list(error = 0), list(), list(), context))
-  verdict <- if (group == "one_shot_completion") "reached" else "not_required"
-  result <- metewand:::.evaluate_function(function(...) evaluation(list(error = 0), verdict), list(), list(), context)
-  stopifnot(result$verdict == verdict)
+stopifnot(inherits(result(list(answer = 1)), "metewand_result"),
+          inherits(dataset(files = list(artifact("data.bin", "application/octet-stream"))), "metewand_dataset"),
+          evaluation(list(error = 0), "not_required")$verdict == "not_required")
+path <- tempfile()
+value <- list(number = 1.0000000000000002, maximum = 9007199254740991,
+              small = 5e-324, text = "é", empty = json_object(), array = list(),
+              singleton = json_array(1), nothing = NULL)
+write_json(path, value)
+decoded <- read_json(path)
+stopifnot(identical(decoded$number, value$number), identical(decoded$maximum, value$maximum),
+          identical(decoded$small, value$small), identical(decoded$text, value$text),
+          identical(names(decoded$empty), character()), is.null(names(decoded$array)),
+          is.list(decoded$singleton), length(decoded$singleton) == 1L, decoded$singleton[[1L]] == 1, "nothing" %in% names(decoded))
+for (value in list(NA, Inf, 2^53, as.Date("2020-01-01"), as.raw(1), matrix(1),
+                   stats::setNames(list(1, 2), c("a", "a")))) {
+  fails(write_json(path, value), "JSON|Convert|Missing")
 }
-context <- metewand:::.function_context(list())
-fails(metewand:::.evaluate_function(function(...) evaluation(list(), "reached"), list(), list(), context))
-text <- function(value) rawToChar(canonical_bytes(value))
-root <- Sys.getenv("METEWAND_REPOSITORY", "../../..")
-vectors <- read_json(file.path(root, "fixtures/canonical-json/v1.json"))
-for (vector in vectors$accepted) {
-  stopifnot(identical(text(parse_json(vector$input)), vector$canonical))
+write_json(path, stats::setNames(list(list(value = 1)), ""))
+stopifnot(identical(names(read_json(path)), ""))
+for (source in c('"a\\u0000b"', '{"a":1,"a":2}')) {
+  writeLines(source, path)
+  fails(read_json(path), "NUL|unique|UTF-8")
 }
-for (vector in vectors$rejected) fails(parse_json(vector$input), "metewand_canonical_error")
-
-stopifnot(text(list()) == "[]", text(json_object()) == "{}")
-stopifnot(text(list(NULL, TRUE, -0, 1e-400)) == "[null,true,0,0]")
-stopifnot(text(parse_json('"a\\u0000b"')) == '"a\\u0000b"')
-stopifnot(text(parse_json('{"a\\u0000b":null,"":1}')) == '{"":1,"a\\u0000b":null}')
-stopifnot(text(json_object(list(1, 2), keys = list("", json_string(as.raw(0))))) ==
-            '{"":1,"\\u0000":2}')
-stopifnot(parse_json('{"a\\u0000b":null,"value":1}')$value == 1)
-fails(parse_json('{"a\\u0000":1,"a\\u0000":2}'), "metewand_canonical_error")
-for (value in list(NA, NA_real_, NA_character_, NaN, Inf, 2^53,
-                   c(1, 2), numeric(), factor("a"), matrix(1), as.Date("2020-01-01"),
-                   new.env(), as.raw(1), structure(1, names = "x"),
-                   setNames(list(1, 2), c("a", "a")))) {
-  fails(canonical_bytes(value), "metewand_canonical_error")
+for (source in c(paste0("\ufeff", '{"value":1}'),
+                 '/*comment*/{"value":1}', '//comment\n{"value":1}',
+                 '{"value":/*comment*/1}', '{"value":1/*comment*/}',
+                 '{"value":1}/*comment*/', '{"value":1}//comment')) {
+  writeLines(source, path)
+  fails(read_json(path), "JSON")
 }
-for (input in list(as.raw(c(34, 255, 34)), as.raw(c(239, 187, 191, 123, 125)),
-                   '"\\udfff"', '"\\ud800x"', '"\\u0000" true', '[1,]',
-                   '{"a":}', '1.', '+1', '1e', '"a\nb"')) {
-  fails(parse_json(input), "metewand_canonical_error")
+for (source in c(r"("\ud800")", r"("\uDBFF")", r"("\udfff")",
+                 r"("\uDC00")", r"("\ud800x")", r"("\ud800\u0041")",
+                 r"("\ud800\ud800")", r"("\udc00\ud800")",
+                 r"("\ud800\\udc00")", r"({"\ud800":1})",
+                 r"({"nested":["\ud800"]})", r"(["\ud800","\udc00"])",
+                 r"("\ud800\udc00\udc00")", r"("\\ud800\udc00")")) {
+  writeLines(source, path)
+  fails(read_json(path), "surrogate|UTF-8")
 }
-
-directory <- tempfile()
-dir.create(directory)
-write_json(file.path(directory, "data.json"), list(values = list(1, 2, 3)))
-entry <- file_entry(directory, "data.json", "application/json",
-                    representation = list(shape = list(3), data_type = "json"))
-stopifnot(entry$size_bytes == 18,
-          entry$sha256 == "abe0a9abcc957f9f5aa04d68c4f49fadee7c4b62343e403a3a1c0b646519d53c")
-manifest <- write_dataset_manifest(directory, list(entry))
-stopifnot(read_json(file.path(directory, manifest))$complete)
-manifest <- write_result(directory, list(answer = 6), schema = "schemas/result.json")
-stopifnot(text(read_json(file.path(directory, manifest))) ==
-            '{"data":{"answer":6},"files":[],"schema":"schemas/result.json","schema_version":1}')
-manifest <- write_result(directory, list(answer = 6))
-stopifnot(text(read_json(file.path(directory, manifest))) ==
-            '{"data":{"answer":6},"files":[],"schema_version":1}')
-write_metrics(file.path(directory, "metrics.json"), list(error = 0))
-stopifnot(text(read_json(file.path(directory, "metrics.json"))) ==
-            '{"data":{"error":0},"schema_version":1}')
-for (path in c("../escape", "/absolute", "a/./b", "a//b", "a\\b", "")) {
-  fails(file_entry(directory, path, "text/plain"))
+sources <- c(r"("\ud800\udc00")", r"("\uDBFF\uDFFF")", r"("\\\uD83D\uDE00")")
+expected <- c("\U00010000", "\U0010ffff", paste0("\\", "\U0001f600"))
+for (i in seq_along(sources)) {
+  writeLines(sources[[i]], path)
+  stopifnot(read_json(path) == expected[[i]])
 }
-fails(write_dataset_manifest(directory, list(entry, entry)))
-fails(file_entry(directory, "data.json", "text/plain", representation = list(shape = list(-1))))
-fails(write_result(directory, list(), schema = "s.json"))
-outside <- tempfile()
-dir.create(outside)
-linked <- suppressWarnings(file.symlink(outside, file.path(directory, "link")))
-if (!linked) {
-  stopifnot(.Platform$OS.type == "windows")
-  linked <- Sys.junction(outside, file.path(directory, "link"))
+writeLines(r"({"\uD83D\uDE00":"\ud83d\ude00"})", path)
+decoded <- read_json(path)
+stopifnot(identical(names(decoded), "\U0001f600"), decoded[[1L]] == "\U0001f600")
+for (text in c(r"(literal \ud800)", r"(literal \udfff)",
+               r"(literal \\ud800\udc00)", r"(literal \u0000)",
+               "\ufeff", "https://example.invalid/*comment*/ //comment")) {
+  write_json(path, list(text = text))
+  stopifnot(read_json(path)$text == text)
 }
-stopifnot(linked)
-fails(write_result(directory, json_object(), schema = "s.json", manifest = "link/escape.json"))
-linked <- suppressWarnings(file.symlink(file.path(outside, "missing"), file.path(directory, "dangling")))
-if (!linked) {
-  stopifnot(.Platform$OS.type == "windows")
-  target <- file.path(outside, "missing")
-  dir.create(target)
-  stopifnot(Sys.junction(target, file.path(directory, "dangling")))
-  unlink(target, recursive = TRUE)
-}
-fails(write_result(directory, json_object(), schema = "s.json", manifest = "dangling"))
-for (path in c("C:/escape", "C:escape", "file:stream", "NUL", "aux.txt", "COM1.json", "lpt²", "trailing.", "trailing ", "bad?name")) {
-  fails(metewand:::.windows_relative_path(path))
-}
-metewand:::.windows_relative_path("ordinary/file.json")
-before <- metewand:::.clock()
-Sys.sleep(0.002)
-stopifnot(metewand:::.clock() > before)
-
-hello <- function(role = "implementation") list(
-  id = "0", method = "hello", protocols = list(1), role = role,
-  worker_id = paste0("mw1-resolved-worker-", strrep("a", 64)))
-request <- function(method, ...) c(list(id = "1", method = method), list(...))
-exchange <- function(worker, role, requests, semantics = FALSE, fresh_sequence = FALSE) {
-  bytes <- do.call(c, lapply(requests, function(r) c(canonical_bytes(r), as.raw(10))))
-  input <- rawConnection(bytes)
-  output <- rawConnection(raw(), "wb")
-  on.exit({close(input); close(output)})
-  metewand:::.serve(worker, role, input, output, semantics = semantics, fresh_sequence = fresh_sequence)
-  lines <- strsplit(rawToChar(rawConnectionValue(output)), "\n", fixed = TRUE)[[1]]
-  lapply(lines, function(line) {
-    value <- parse_json(line)
-    stopifnot(text(value) == line)
-    value
-  })
-}
-prepare_request <- request("prepare", dataset_dir = directory, problem_contract_id = "c",
-                           problem_parameters = list(offset = 2),
-                           implementation_parameters = json_object(), implementation_seed = 23)
-events <- character()
-worker <- list(
-  prepare = function(dataset, contract, problem, implementation, seed) {
-    events <<- c(events, "prepare")
-    list(answer = sum(unlist(read_json(file.path(dataset, "data.json"))$values)) + problem$offset,
-         seed = seed)
-  },
-  execute = function(state, budget, observation_control) {
-    stopifnot(is.null(budget), is.null(observation_control))
-    events <<- c(events, "execute")
-    state
-  },
-  result = function(state, directory) {
-    events <<- c(events, "result")
-    write_result(directory, list(answer = state$answer), schema = "schemas/result.json")
-  },
-  reset = function(state) { events <<- c(events, "reset"); NULL },
-  shutdown = function(state) { events <<- c(events, "shutdown"); NULL }
-)
-responses <- exchange(worker, "implementation", list(hello(), prepare_request,
-  request("execute", result_dir = directory), request("reset"),
-  request("execute", result_dir = directory), request("shutdown")))
-stopifnot(identical(events, c("prepare", "execute", "result", "reset", "shutdown")),
-          responses[[1]]$sdk$name == "metewand-r",
-          text(responses[[1]]$capabilities) == '["one_shot"]',
-          responses[[3]]$ok, text(responses[[3]]$statistics) == "{}",
-          is.numeric(responses[[3]]$implementation_time_ns),
-          responses[[5]]$error$code == "invalid_request",
-          read_json(file.path(directory, "result.json"))$data$answer == 8)
-stopifnot(text(responses[[1]]) == paste0(
-  '{"capabilities":["one_shot"],"id":"0","ok":true,"protocol":1,',
-  '"sdk":{"name":"metewand-r","version":"0.1.0"},"worker_id":"',
-  hello()$worker_id, '"}'))
-greeting <- hello()
-greeting$id <- json_string(as.raw(c(97, 0, 98)))
-responses <- exchange(worker, "implementation", list(greeting, request("shutdown")))
-stopifnot(text(responses[[1]]$id) == '"a\\u0000b"')
-bad <- parse_json('{"id":"1","method":"reset","a\\u0000":1}')
-responses <- exchange(worker, "implementation", list(hello(), bad, request("shutdown")))
-stopifnot(responses[[2]]$error$code == "invalid_request")
-
-materialize_request <- request("materialize", source_dir = directory,
-  dataset_parameters = list(values = list(1)), dataset_seed = 17, output_dir = directory)
-materialize <- function(source, parameters, seed, output) {
-  stopifnot(source == directory, seed == 17)
-  write_json(file.path(output, "data.json"), parameters)
-  write_dataset_manifest(output, list(file_entry(output, "data.json", "application/json")))
-}
-responses <- exchange(materialize, "dataset_materializer", list(
-  hello("dataset_materializer"), materialize_request, request("shutdown")))
-stopifnot(responses[[2]]$dataset$manifest == "dataset-manifest.json")
-for (callback in list(function(...) stop("unexpected failure"), function(...) "missing.json")) {
-  responses <- exchange(callback, "dataset_materializer", list(
-    hello("dataset_materializer"), materialize_request, request("shutdown")))
-  stopifnot(responses[[2]]$error$code == "operation_failed", responses[[3]]$ok)
-  stopifnot(!grepl("see the worker log", responses[[2]]$error$message))
-  stopifnot(grepl("unexpected failure|returned before writing", responses[[2]]$error$message))
-}
-responses <- exchange(function(...) stop(simpleError(paste0(strrep("é", 1024 * 1024), "tail"))),
-  "dataset_materializer", list(hello("dataset_materializer"), materialize_request, request("shutdown")))
-stopifnot(responses[[2]]$error$code == "operation_failed",
-  grepl("[condition truncated]", responses[[2]]$error$message, fixed = TRUE),
-  nchar(responses[[2]]$error$message, type = "bytes") < 65536L, responses[[3]]$ok)
-evaluate_request <- request("evaluate", dataset_dir = directory, problem_contract_id = "c",
-  problem_parameters = json_object(), result_dir = directory,
-  metrics_path = file.path(directory, "metrics.json"))
-rules <- list(preprocessing = json_object(), validity = list(finite = TRUE),
-              one_shot_completion = list(absolute_error = 0.25))
-evaluate_rules <- function(dataset, contract, parameters, semantics, result, metrics) {
-  stopifnot(identical(semantics, rules))
-  write_metrics(metrics, list(error = 0.2))
-  if (0.2 <= semantics$one_shot_completion$absolute_error) "reached" else "not_reached"
-}
-rules_request <- c(evaluate_request, list(problem_semantics = rules))
-responses <- exchange(evaluate_rules, "problem_evaluator", list(
-  hello("problem_evaluator"), rules_request, request("shutdown")), semantics = TRUE)
-stopifnot(identical(responses[[1]]$capabilities, list("problem_semantics")),
-          responses[[2]]$verdict == "reached")
-for (invalid in list(NULL, list(), TRUE)) {
-  bad <- evaluate_request
-  bad["problem_semantics"] <- list(invalid)
-  responses <- exchange(evaluate_rules, "problem_evaluator", list(
-    hello("problem_evaluator"), bad, request("shutdown")), semantics = TRUE)
-  stopifnot(responses[[2]]$error$code == "invalid_request")
-}
-responses <- exchange(evaluate_rules, "problem_evaluator", list(
-  hello("problem_evaluator"), rules_request, request("shutdown")))
-stopifnot(responses[[2]]$error$code == "invalid_request")
-responses <- exchange(function(...) "reached", "problem_evaluator", list(
-  hello("problem_evaluator"), evaluate_request, request("shutdown")))
-stopifnot(responses[[2]]$error$code == "operation_failed")
-for (verdict in c("invalid", "reached", "not_reached", "not_required", "invented")) {
-  evaluate <- function(dataset, contract, parameters, result, metrics) {
-    write_metrics(metrics, list(error = 0), schema = "schemas/metrics.json")
-    verdict
-  }
-  responses <- exchange(evaluate, "problem_evaluator", list(
-    hello("problem_evaluator"), evaluate_request, request("shutdown")))
-  if (verdict == "invented") stopifnot(responses[[2]]$error$code == "operation_failed")
-  else stopifnot(responses[[2]]$verdict == verdict)
-}
-for (code in c("invalid_request", "unsupported_operation", "operation_failed", "internal_error")) {
-  fail <- function(...) stop(worker_error(code, "bad data", list(index = 2)))
-  responses <- exchange(fail, "dataset_materializer", list(
-    hello("dataset_materializer"), materialize_request, request("shutdown")))
-  stopifnot(text(responses[[2]]$error) == text(list(code = code, message = "bad data", details = list(index = 2))))
-}
-fails(worker_error("invented", "bad"))
-for (bad in list(request("execute", result_dir = directory, budget = json_object()),
-                 request("reset", extra = TRUE), request("shutdown", extra = TRUE),
-                 request("execute_stream"), materialize_request, hello(),
-                 replace(prepare_request, "implementation_seed", list(TRUE)))) {
-  responses <- exchange(worker, "implementation", list(hello(), bad, request("shutdown")))
-  stopifnot(!responses[[2]]$ok)
-}
-for (change in list(list(role = "problem_evaluator"), list(protocols = list(2)),
-                    list(protocols = list(1, 1)), list(worker_id = "wrong"), list(extra = 1))) {
-  greeting <- hello()
-  greeting[names(change)] <- change
-  responses <- exchange(worker, "implementation", list(greeting))
-  stopifnot(length(responses) == 1L, !responses[[1]]$ok)
-}
-for (bytes in list(charToRaw('{"id":"1","id":"2"}\n'), charToRaw("{}"),
-                   charToRaw('{"identifier":"1","method":"hello"}\n'),
-                   as.raw(c(255, 10)), charToRaw("{}\n"), charToRaw("NaN\n"),
-                   rep(as.raw(120), 1024 * 1024 + 1))) {
-  input <- rawConnection(bytes)
-  output <- rawConnection(raw(), "wb")
-  fails(metewand:::.serve(worker, "implementation", input, output), "metewand_protocol_error")
-  close(input)
-  close(output)
-}
-for (failing in c("prepare", "reset", "execute", "result")) {
-  broken <- worker
-  broken[[failing]] <- function(...) stop(worker_error("operation_failed", "broken"))
-  calls <- list(hello(), prepare_request)
-  if (failing == "reset") calls <- c(calls, list(request("reset")))
-  if (failing %in% c("execute", "result")) calls <- c(calls, list(request("execute", result_dir = directory)))
-  calls <- c(calls, list(request("execute", result_dir = directory), request("shutdown")))
-  responses <- exchange(broken, "implementation", calls)
-  stopifnot(responses[[length(responses) - 1]]$error$code == "invalid_request")
-}
-broken <- worker
-broken$reset <- NULL
-responses <- exchange(broken, "implementation", list(hello(), prepare_request,
-  request("reset"), request("execute", result_dir = directory), request("shutdown")))
-stopifnot(responses[[3]]$error$code == "unsupported_operation",
-          responses[[4]]$error$code == "invalid_request")
-
-limit <- 1024 * 1024
-frame <- metewand:::.encode_response(list(text = ""))
-stopifnot(length(metewand:::.encode_response(list(text = strrep("a", limit - length(frame))))) == limit)
-fails(metewand:::.encode_response(list(text = strrep("a", limit))))
-greeting <- canonical_bytes(hello())
-padding <- rep(as.raw(32), limit - length(greeting) - 1L)
-source <- c(greeting, padding, as.raw(10), canonical_bytes(request("shutdown")), as.raw(10))
-input <- rawConnection(source)
-output <- rawConnection(raw(), "wb")
-metewand:::.serve(worker, "implementation", input, output)
-stopifnot(length(strsplit(rawToChar(rawConnectionValue(output)), "\n", fixed = TRUE)[[1L]]) == 2L)
-close(input)
-close(output)
-fail <- function(...) stop(worker_error("operation_failed", "large", list(text = strrep("x", limit))))
-responses <- exchange(fail, "dataset_materializer", list(
-  hello("dataset_materializer"), materialize_request, request("shutdown")))
-stopifnot(responses[[2]]$error$code == "internal_error")
-fails(metewand:::.encode_failure(strrep("i", limit), worker_error("operation_failed", "bad")),
-      "metewand_protocol_error")
-write_json(file.path(directory, "data.json"), list(values = list(1, 2, 3)))
-data_worker <- worker
-data_worker$execute <- function(state, budget, observation_control) list(answer = state$answer)
-data_worker$result <- NULL
-responses <- exchange(data_worker, "implementation", list(hello(), prepare_request,
-  request("execute", result_dir = directory), request("shutdown")))
-stopifnot(responses[[3]]$ok,
-          text(read_json(file.path(directory, "result.json"))) ==
-            '{"data":{"answer":8},"files":[],"schema_version":1}')
-data_worker$execute <- function(state, budget, observation_control) state$answer
-data_worker$result_data <- function(output) list(answer = output)
-responses <- exchange(data_worker, "implementation", list(hello(), prepare_request,
-  request("execute", result_dir = directory), request("shutdown")))
-stopifnot(responses[[3]]$ok, read_json(file.path(directory, "result.json"))$data$answer == 8)
-evaluate_data <- function(...) evaluation(list(error = 1), "not_reached")
-responses <- exchange(evaluate_data, "problem_evaluator", list(
-  hello("problem_evaluator"), evaluate_request, request("shutdown")))
-stopifnot(responses[[2]]$verdict == "not_reached",
-          text(read_json(evaluate_request$metrics_path)) ==
-            '{"data":{"error":1},"schema_version":1}')
-fails(evaluation(list(error = 0), "invented"))
-fails(evaluation(list(), "reached"))
-fails(evaluation(list(error = NaN), "invalid"))
-fails(serve_implementation(NULL, function(...) NULL, function(...) NULL))
-fails(serve_dataset_materializer(NULL))
-fails(serve_evaluator(NULL))
-fails(serve_evaluator(function(...) NULL, read_fd = 1, write_fd = 1))
-fails(serve_evaluator(function(...) NULL, read_fd = -1, write_fd = 1))
-unlink(c(directory, outside), recursive = TRUE)
-source(file.path(root, "packages/r/tests/helpers/conformance.R"))
-cat("R package contracts passed.\n")
+Sys.unsetenv("METEWAND_ADAPTER_PATH")
+fails(serve_implementation(), "Metewand CLI")
+adapter <- tempfile(fileext = ".R")
+writeLines(c("binding_api_version <- 1L", "serve_bindings <- function(...) list(...)"), adapter)
+Sys.setenv(METEWAND_ADAPTER_PATH = adapter)
+callback <- function(state, context) NULL
+call <- serve_implementation(prepare = function(context) NULL, execute = callback, future_callback = callback)
+stopifnot(call[[1L]] == 1L, identical(call[[3L]]$future_callback, callback))
+writeLines("binding_api_version <- 2L", adapter)
+fails(serve_implementation(), "binding API")
+Sys.unsetenv("METEWAND_ADAPTER_PATH")
+unlink(c(path, adapter))

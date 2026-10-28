@@ -4,10 +4,10 @@ role <- args[[1L]]
 family <- args[[2L]]
 mode <- args[[3L]]
 
-prepare <- function(dataset, contract, problem, implementation, seed) {
-  list(values = read_json(file.path(dataset, "data.json"))$values, parameters = problem)
+prepare <- function(context) {
+  list(values = read_json(file.path(context$dataset_dir, "data.json"))$values, parameters = context$problem_parameters)
 }
-execute <- function(state, budget, control) {
+execute <- function(state, context) {
   values <- unlist(state$values)
   if (family == "sum") {
     result <- list(answer = sum(values) + state$parameters$offset, count = length(values))
@@ -25,13 +25,12 @@ execute <- function(state, budget, control) {
   else if (mode == "semantically_invalid") result[[semantic]] <- result[[semantic]] + 1
   result
 }
-result <- function(state, directory) write_result(directory, state, schema = "schemas/result.json")
 
-evaluate <- function(dataset, contract, parameters, result, metrics) {
-  values <- read_json(file.path(dataset, "data.json"))$values
-  candidate <- read_json(file.path(result, "result.json"))$data
+evaluate <- function(context) {
+  values <- read_json(file.path(context$dataset_dir, "data.json"))$values
+  candidate <- read_json(file.path(context$result_dir, "result.json"))$data
   if (family == "sum") {
-    expected <- parameters$offset
+    expected <- context$problem_parameters$offset
     for (value in values) expected <- expected + value
     valid <- candidate$count == length(values)
     error <- abs(candidate$answer - expected)
@@ -41,12 +40,12 @@ evaluate <- function(dataset, contract, parameters, result, metrics) {
     valid <- candidate$index == first
     error <- abs(candidate$value - expected)
   }
-  write_metrics(metrics, list(absolute_error = error, semantically_valid = valid), schema = "schemas/metrics.json")
-  if (!valid) "invalid" else if (error == 0) "reached" else "not_reached"
+  verdict <- if (!valid) "invalid" else if (error == 0) "reached" else "not_reached"
+  evaluation(list(absolute_error = error, semantically_valid = valid), verdict)
 }
 
 if (role == "implementation") {
-  serve_implementation(prepare, execute, result)
+  serve_implementation(prepare = prepare, execute = execute)
 } else {
   serve_evaluator(evaluate)
 }

@@ -17,6 +17,7 @@ datasets:
             required: [path]
       required: [schema_version, complete, files]
     runner: python
+    protocol-transport: socket
     entrypoint: worker.py
     args: [dataset_materializer]
     sources: ["worker.py", "metewand/*.py"]
@@ -51,12 +52,14 @@ problems:
         expected-metrics: reference/metrics.json
     evaluator:
       runner: python
+      protocol-transport: socket
       entrypoint: worker.py
       args: [problem_evaluator]
       sources: ["worker.py", "metewand/*.py"]
 implementations:
   reference:
     runner: python
+    protocol-transport: socket
     entrypoint: worker.py
     args: [implementation]
     sources: ["worker.py", "metewand/*.py"]

@@ -19,10 +19,6 @@ __pycache__/
 /packages/python/build/
 /packages/python/dist/
 
-# R
-/packages/r/src/*.o
-/packages/r/src/*.so
-
 # Website
 /docs/node_modules/
 /docs/.vitepress/cache/

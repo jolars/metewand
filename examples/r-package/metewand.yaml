@@ -4,6 +4,7 @@ datasets:
   numbers:
     output-schema: "schemas/dataset.json"
     runner: "command"
+    protocol-transport: socket
     program: "Rscript"
     args: ["--vanilla", "{sources}/worker.R", "dataset_materializer"]
     sources: ["worker.R", "library/metewand/**"]
@@ -16,6 +17,7 @@ problems:
     parameter-defaults: { offset: 2 }
     evaluator:
       runner: "command"
+      protocol-transport: socket
       program: "Rscript"
       args: ["--vanilla", "{sources}/worker.R", "problem_evaluator"]
       sources: ["worker.R", "library/metewand/**"]
@@ -23,6 +25,7 @@ problems:
 implementations:
   reference:
     runner: "command"
+    protocol-transport: socket
     program: "Rscript"
     args: ["--vanilla", "{sources}/worker.R", "implementation"]
     sources: ["worker.R", "library/metewand/**"]

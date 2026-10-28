@@ -85,7 +85,7 @@ impl Starter {
             let bin = root.path().join("bin");
             fs::create_dir(&bin).unwrap();
             let script = bin.join("Rscript");
-            // Preserve the site libraries that provide dependencies such as digest.
+            // Preserve the site libraries that provide dependencies such as jsonlite.
             fs::write(
                 &script,
                 format!(
@@ -226,7 +226,7 @@ fn missing_function_sdk_has_an_actionable_check_diagnostic() {
     let text = diagnostic.to_string();
     assert!(text.contains("worker_check_failed"), "{text}");
     assert!(
-        text.contains("install the matching Metewand package"),
+        text.contains("install a compatible Metewand binding package"),
         "{text}"
     );
 }

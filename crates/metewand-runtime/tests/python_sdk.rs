@@ -25,18 +25,28 @@ const WORKER_ID: &str =
 
 #[test]
 fn python_sdk_unit_and_canonical_contracts() {
-    let output = Command::new("python3")
-        .args(["-m", "unittest", "discover", "-s"])
-        .arg(root().join("packages/python/tests"))
-        .env("PYTHONPATH", root().join("packages/python/src"))
-        .env("PYTHONDONTWRITEBYTECODE", "1")
-        .output()
-        .unwrap();
-    assert!(output.status.success(), "{output:?}");
+    let pythonpath = std::env::join_paths([
+        root().join("packages/python/src"),
+        root().join("crates/metewand-runtime/adapters/python"),
+    ])
+    .unwrap();
+    for tests in [
+        "packages/python/tests",
+        "crates/metewand-runtime/adapters/python/tests",
+    ] {
+        let output = Command::new("python3")
+            .args(["-m", "unittest", "discover", "-s"])
+            .arg(root().join(tests))
+            .env("PYTHONPATH", &pythonpath)
+            .env("PYTHONDONTWRITEBYTECODE", "1")
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+    }
 }
 
 #[test]
-fn python_sdk_roles_complete_a_validated_chain_over_dedicated_pipes() {
+fn python_bindings_complete_a_validated_chain_over_sockets() {
     let source = TempDir::new().unwrap();
     let dataset = TempDir::new().unwrap();
     let result = TempDir::new().unwrap();
@@ -97,6 +107,9 @@ fn python_sdk_roles_complete_a_validated_chain_over_dedicated_pipes() {
             .unwrap();
         assert_eq!(validated.data().as_json(), &json!({"answer": 8}));
         implementation.reset().unwrap();
+        if seed == 23 {
+            fs::remove_file(result.path().join("result.json")).unwrap();
+        }
     }
     assert_logs(implementation.shutdown().unwrap(), "implementation");
 
@@ -131,6 +144,11 @@ fn connect(role_name: &str, role: WorkerRole) -> WorkerSession {
         .arg(role_name)
         .env("PYTHONPATH", root().join("packages/python/src"))
         .env("PYTHONDONTWRITEBYTECODE", "1");
+    let adapter = TempDir::new().unwrap();
+    let path = metewand_runtime::language_adapter::stage("python", adapter.path()).unwrap();
+    command
+        .env("METEWAND_ADAPTER_PATH", path)
+        .env("METEWAND_PROTOCOL_TRANSPORT", "socket");
     let process = PosixWorkerProcess::spawn(command, WorkerLogLimits::new(4096, 4096)).unwrap();
     let capabilities = if role == WorkerRole::Implementation {
         &[Capability::OneShot][..]
@@ -156,7 +174,7 @@ fn connect(role_name: &str, role: WorkerRole) -> WorkerSession {
     .unwrap();
     let sdk = session.negotiated().sdk().unwrap();
     assert_eq!(sdk.name(), "metewand-python");
-    assert_eq!(sdk.version(), env!("CARGO_PKG_VERSION"));
+    assert!(!sdk.version().is_empty());
     session
 }
 

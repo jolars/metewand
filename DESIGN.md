@@ -50,8 +50,10 @@ parameter choices, and requests repetitions of the resulting comparisons.
 A small benchmark needs a YAML manifest and ordinary Python or R functions. The
 manifest declares data generation, result and metric shapes, methods, and
 experiments. Functions generate data, solve the problem, and evaluate results.
-The Metewand package for the chosen language handles transport and standard
-artifact envelopes.
+The language package supplies stable callback registration and scientific result
+values. The CLI supplies its worker adapters and owns transport, standard artifact
+envelopes, canonicalization, and file inventories. Binding API version 1 permits
+compatible CLI development without corresponding language-package releases.
 
 Authors can add parameter grids, scientific rules, analytic reference cases,
 repetitions, and named policies as the comparison grows. Separate contracts and
