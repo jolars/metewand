@@ -1,11 +1,10 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
-    fs::{self, File},
+    fs::{self},
     io::Read as _,
     path::Path,
 };
 
-use crate::durability::sync_all;
 use metewand_core::{
     cache::{
         CACHE_MAINTENANCE_VERSION, CacheOperation, CacheReport, CacheTargetReport, CacheTargetState,
@@ -305,28 +304,28 @@ impl ArtifactStore {
             let live = self.object_path(digest);
             let garbage = self.root.join("garbage").join(&target.id);
             if !missing(&garbage)? {
-                sync_all(&File::open(self.root.join("objects"))?)?;
-                sync_all(&File::open(self.root.join("garbage"))?)?;
+                crate::platform_fs::complete_namespace_change(&self.root.join("objects"))?;
+                crate::platform_fs::complete_namespace_change(&self.root.join("garbage"))?;
                 catalog.pending(&sha, true)?;
                 #[cfg(test)]
                 crate::fault_injection::hit("cache.cleanup.before");
                 fs::remove_dir_all(&garbage)?;
                 #[cfg(test)]
                 crate::fault_injection::hit("cache.cleanup.after");
-                sync_all(&File::open(self.root.join("garbage"))?)?;
+                crate::platform_fs::complete_namespace_change(&self.root.join("garbage"))?;
             }
             if !missing(&live)? {
                 catalog.pending(&sha, false)?;
                 rename_no_replace(&live, &garbage)?;
-                sync_all(&File::open(self.root.join("objects"))?)?;
-                sync_all(&File::open(self.root.join("garbage"))?)?;
+                crate::platform_fs::complete_namespace_change(&self.root.join("objects"))?;
+                crate::platform_fs::complete_namespace_change(&self.root.join("garbage"))?;
                 catalog.pending(&sha, true)?;
                 #[cfg(test)]
                 crate::fault_injection::hit("cache.cleanup.before");
                 fs::remove_dir_all(&garbage)?;
                 #[cfg(test)]
                 crate::fault_injection::hit("cache.cleanup.after");
-                sync_all(&File::open(self.root.join("garbage"))?)?;
+                crate::platform_fs::complete_namespace_change(&self.root.join("garbage"))?;
             }
             catalog.forget(&sha)?;
         }

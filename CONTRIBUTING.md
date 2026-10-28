@@ -23,9 +23,15 @@ test-rust
 
 `test-fast` runs core and protocol tests. `test-rust` runs the complete Rust
 suite. Both accept Nextest filters. The Python package requires Python 3.11 or
-later; the R package requires R 4.2 or later, POSIX, `digest`, and a C++17
+later; the R package requires R 4.2 or later, `digest`, and a C++17
 compiler with floating-point `std::to_chars` support. The website needs Node.js
 22.18 or later.
+
+The local runner supports Linux, macOS, and native Windows x64. On Windows,
+install Rust's MSVC toolchain, Visual Studio C++ build tools with the Windows
+SDK, and Python on `PATH`. R package compilation separately uses R 4.3 or later
+and the matching Rtools release. See the [source installation guide](docs/guide/getting-started.md)
+for PowerShell commands. Nix and devenv are optional on other systems.
 
 The crates and packages are not yet published to registries. Use local path
 dependencies and install packages into the environment selected for the worker.
@@ -160,6 +166,7 @@ Conventional Commits. It is separate from public compatibility versions:
   | Seed derivation and scheduling policy                         | 1                                                              |
   | Execution semantics                                           | 2                                                              |
   | Measurement provenance                                        | 2, with version-1 evidence still readable                      |
+  | Worker environment provenance                                 | 1 on Unix, 2 on Windows                                        |
   | Exports and build evidence                                    | 1                                                              |
   | SQLite layout                                                 | 1 for one-shot, 2 for buffered profiles, 3 for fresh sequences |
 
@@ -189,6 +196,14 @@ and standard error remain log channels. There is no automatic stdin/stdout
 fallback. Workers exchange canonical JSON Lines, with an inclusive 1 MiB limit
 per frame including its final line feed. Responses must match the pending string
 request ID. Malformed frames and unusable sessions terminate serving.
+
+The Windows launcher supplies dedicated synchronous worker pipe handles through
+`METEWAND_PROTOCOL_READ_HANDLE` and `METEWAND_PROTOCOL_WRITE_HANDLE`. It limits
+handle inheritance and assigns workers to a kill-on-close Job Object at
+creation. Parent endpoints support cancellation, and deadlines terminate the Job
+before bounded cleanup. Rust, Python, and R helpers duplicate supplied handles
+into owned binary streams and prevent further inheritance. Explicit descriptor
+APIs remain available to callers on both platforms.
 
 A hello exchange negotiates protocol version, role, capabilities, identity, and
 package metadata (the existing `sdk` wire field). The Rust `SdkMetadata` type
@@ -234,11 +249,20 @@ use the selected `PATH`. `{sources}/PATH` is an explicit argument reference, not
 general interpolation.
 
 The local launcher uses an environment allowlist, fixed locale and timezone,
-umask `0077`, and private working, home, temporary, configuration, and cache
-directories. Do not inherit ambient language search paths. Resolved launch
+and private working, home, temporary, configuration, and cache directories.
+Do not inherit ambient language search paths. Resolved launch
 identities use stable path templates and content hashes; provenance records
 allocated paths. The local environment does not establish a dependency closure
 or isolation from undeclared host files.
+
+Unix workers use umask `0077` and retain worker-environment provenance version 1.
+Windows records version 2 with observed ACL evidence, required Windows system
+variables, and no Unix umask. Environment names cannot conflict when compared
+without ASCII case on Windows. Logical source and artifact paths retain `/`;
+Windows filesystem operations reject reserved names, aliases, alternate data
+streams, case collisions, and unsupported reparse points. Python launch
+resolution preserves the selected virtual environment, including its Windows
+`Scripts` directory.
 
 Materialization separates source acquisition, derivation identity, and output
 content. Construct a dataset configuration once per run, or reuse its verified
@@ -269,7 +293,8 @@ Measurement payloads distinguish `complete`, `partial`, and `unavailable`.
 Nanoseconds and bytes are safe integers. Linux CPU and peak-RSS evidence is
 partial because it covers the implementation process without descendants. Peak
 RSS covers its lifetime through execution, even for execute-only timing.
-Historical unavailable fields remain unavailable.
+CPU and peak-RSS evidence is unavailable on macOS and Windows. Historical
+unavailable fields remain unavailable.
 
 Fresh sequences reserve cumulative time per repetition, commit stopping
 decisions with accepted points, and retain skipped slot dispositions. Resume
@@ -320,7 +345,7 @@ Connections require WAL, full synchronization, foreign keys, recursive triggers,
 and strict tables. Initialization probes filesystem locking, synchronization,
 atomic no-replace publication, and SQLite behavior. Unsupported durability
 requirements fail rather than falling back to weaker guarantees. Network
-filesystems are unsupported.
+filesystems are unsupported. Windows writable roots must be on local NTFS.
 
 Reserve and transition attempts in short immediate transactions with ownership,
 lease, and expected-revision checks. Never hold a transaction across worker
@@ -328,8 +353,13 @@ execution, hashing, synchronization, or rename. Leases last 30 seconds and renew
 every five seconds. Expired owners require explicit recovery.
 
 Publish complete immutable artifacts before terminal acceptance. Synchronize
-files and directories and use atomic no-replace rename. Register only verified
-artifacts. Finalization claims coordinate competing successful attempts; one
+files and, on Unix, directories, and use atomic no-replace rename. Windows
+flushes owned files through writable handles and publishes on the destination
+volume with no-replace `MoveFileExW`; it does not claim Unix directory
+synchronization. Storage evidence records this behavior for successful and
+failed attempts. Recovery on Windows covers abrupt process death, without a
+power-loss guarantee. Register only verified artifacts. Finalization claims
+coordinate competing successful attempts; one
 wins acceptance, and another can retain a superseded valid observation. Report
 success only after the terminal transaction commits.
 
@@ -371,8 +401,9 @@ cargo test -p metewand-runtime --lib --locked \
 ```
 
 The [durability workflow](.github/workflows/durability.yml) runs the exhaustive
-campaigns separately. They interrupt subprocesses at application and SQLite
-boundaries and verify recovery, identity, acceptance, and retry invariants. They
+campaigns separately on Linux, macOS, and Windows. They interrupt subprocesses
+at application and SQLite boundaries and verify recovery, identity, acceptance,
+and retry invariants. They
 model abrupt process death, not storage hardware losing power.
 
 ## Machine output and exports
@@ -415,6 +446,12 @@ cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 cargo nextest run --workspace --all-targets --locked --profile ci
 ```
 
+CI compiles, runs Clippy, and tests on Linux, macOS, and Windows. The portable
+CLI suite exercises Python, R, and Rust workers, generated dataset caching,
+fresh sequences, buffered profiles, failures, resume, inspection, and both
+exports. Keep Unix-only tests narrowly scoped to Unix operations. R package
+contracts and native R starter checks run on all three platforms.
+
 Documentation and website changes require:
 
 ```sh
@@ -449,8 +486,9 @@ CLI source, so package installation instructions use it for both components.
 The reusable `.github/workflows/python-package.yml` builds the source
 distribution and a wheel from that distribution, checks both with
 `twine check --strict`, and tests each installed artifact on Python 3.11 and
-3.14. Tests run outside the checkout without `PYTHONPATH`; shared conformance
-fixtures come from the checkout. CI requires these checks before Versionary
+3.14 on Linux, macOS, and Windows. Tests run outside the checkout without
+`PYTHONPATH`; shared conformance fixtures come from the checkout. CI requires
+these checks before Versionary
 runs. To reproduce them locally, use a disposable virtual environment:
 
 ```sh

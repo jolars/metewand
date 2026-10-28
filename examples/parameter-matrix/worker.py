@@ -16,12 +16,27 @@ def write_json(path, value):
     Path(path).write_text(json.dumps(value, separators=(",", ":"), sort_keys=True))
 
 
+def protocol_stream(direction, mode):
+    if os.name == "nt":
+        import msvcrt
+
+        handle = int(os.environ[f"METEWAND_PROTOCOL_{direction}_HANDLE"])
+        os.set_handle_inheritable(handle, False)
+        flags = os.O_BINARY | os.O_NOINHERIT
+        flags |= os.O_RDONLY if mode == "rb" else os.O_WRONLY
+        descriptor = msvcrt.open_osfhandle(handle, flags)
+    else:
+        descriptor = int(os.environ[f"METEWAND_PROTOCOL_{direction}_FD"])
+        os.set_inheritable(descriptor, False)
+    return os.fdopen(descriptor, mode)
+
+
 def main():
     role = sys.argv[1]
     representation = sys.argv[2] if len(sys.argv) > 2 else "list"
     assert representation in {"list", "packed"}
-    reader = os.fdopen(int(os.environ["METEWAND_PROTOCOL_READ_FD"]), "rb")
-    writer = os.fdopen(int(os.environ["METEWAND_PROTOCOL_WRITE_FD"]), "wb")
+    reader = protocol_stream("READ", "rb")
+    writer = protocol_stream("WRITE", "wb")
     print(f"{role} stdout", flush=True)
     print(f"{role} stderr", file=sys.stderr, flush=True)
     prepared = None

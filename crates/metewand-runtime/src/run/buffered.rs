@@ -267,7 +267,7 @@ pub(super) fn execute(
         wire_protocol_version: metewand_protocol::WIRE_PROTOCOL_VERSION,
         execution_semantics_version: EXECUTION_SEMANTICS_VERSION,
         data: canonical(
-            json!({"context":measurement.provenance.as_json(),"measurements":measurements,"profile":{"selected":profile,"buffer":buffer_evidence,"worker_reuse":candidate.reuse_key.policy.worker_reuse,"worker_startup_time_ns":startup.get(),"warmups":warmups}}),
+            json!({"context":measurement.provenance.as_json(),"measurements":measurements,"storage":crate::platform_fs::storage_evidence(),"profile":{"selected":profile,"buffer":buffer_evidence,"worker_reuse":candidate.reuse_key.policy.worker_reuse,"worker_startup_time_ns":startup.get(),"warmups":warmups}}),
         )?,
     };
     let mut record = RunAttemptRecord {

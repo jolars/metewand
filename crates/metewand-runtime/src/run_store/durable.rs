@@ -1,7 +1,6 @@
 use std::{
     fs::{self, File, OpenOptions, TryLockError},
     io::{self, Write},
-    os::unix::fs::OpenOptionsExt,
     path::{Path, PathBuf},
     thread,
     time::{Duration, Instant},
@@ -70,14 +69,19 @@ impl RunStore {
     }
 
     fn open_version(root: &Path, check: &Check<'_>, layout: u32) -> Result<Self, RunStoreError> {
-        if !root.is_absolute() || !fs::symlink_metadata(root)?.is_dir() {
+        if !root.is_absolute()
+            || !crate::platform_fs::is_real_directory(&fs::symlink_metadata(root)?)
+        {
             return Err(RunStoreError::UnsafePath(root.to_owned()));
         }
-        let root_file = File::open(root)?;
+        let root_file = crate::platform_fs::open_directory(root)?;
         reject_network_filesystem(&root_file)?;
+        crate::platform_fs::check_storage_root(root)?;
+        #[cfg(windows)]
+        crate::platform_fs::set_private_directory(root)?;
         let lock = open_lock(&root.join(".run-store-init.lock"))?;
         let _guard = acquire_lock(lock, check)?;
-        preflight(root, &root_file, check)?;
+        preflight(root, check)?;
 
         let database_path = root.join("run.sqlite3");
         for path in [
@@ -87,7 +91,9 @@ impl RunStore {
             root.join("run.sqlite3-journal"),
         ] {
             match fs::symlink_metadata(&path) {
-                Ok(metadata) if !metadata.is_file() => return Err(RunStoreError::UnsafePath(path)),
+                Ok(metadata) if !crate::platform_fs::is_regular_file(&metadata) => {
+                    return Err(RunStoreError::UnsafePath(path));
+                }
                 Ok(_) => (),
                 Err(error) if error.kind() == io::ErrorKind::NotFound => (),
                 Err(error) => return Err(error.into()),
@@ -108,8 +114,9 @@ impl RunStore {
             })?;
         }
         tx.commit()?;
-        sync_file(&File::open(&database_path)?, check)?;
-        sync_directory(&root_file, check)?;
+        check(Operation::FileSync)?;
+        crate::platform_fs::sync_owned_file(&database_path)?;
+        sync_directory(root, check)?;
         Ok(Self {
             database_path,
             connection,
@@ -162,14 +169,14 @@ enum Operation {
 type Check<'a> = dyn Fn(Operation) -> io::Result<()> + 'a;
 
 fn open_lock(path: &Path) -> Result<File, RunStoreError> {
-    let file = OpenOptions::new()
-        .read(true)
-        .write(true)
-        .create(true)
-        .truncate(false)
-        .mode(0o600)
-        .custom_flags(rustix::fs::OFlags::NOFOLLOW.bits() as i32)
-        .open(path)?;
+    let file = crate::platform_fs::open_regular(
+        path,
+        OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false),
+    )?;
     if !file.metadata()?.is_file() {
         return Err(RunStoreError::UnsafePath(path.to_owned()));
     }
@@ -197,13 +204,13 @@ fn sync_file(file: &File, check: &Check<'_>) -> Result<(), RunStoreError> {
     Ok(())
 }
 
-fn sync_directory(file: &File, check: &Check<'_>) -> Result<(), RunStoreError> {
+fn sync_directory(path: &Path, check: &Check<'_>) -> Result<(), RunStoreError> {
     check(Operation::DirectorySync)?;
-    crate::durability::sync_all(file)?;
+    crate::platform_fs::complete_namespace_change(path)?;
     Ok(())
 }
 
-fn preflight(root: &Path, root_file: &File, check: &Check<'_>) -> Result<(), RunStoreError> {
+fn preflight(root: &Path, check: &Check<'_>) -> Result<(), RunStoreError> {
     let probe = tempfile::Builder::new()
         .prefix(".run-store-probe-")
         .tempdir_in(root)?;
@@ -229,6 +236,7 @@ fn preflight(root: &Path, root_file: &File, check: &Check<'_>) -> Result<(), Run
         .map_err(|_| RunStoreError::Capability("file lock release"))?;
     second.unlock()?;
     check(Operation::Lock)?;
+    #[cfg(unix)]
     probe_record_lock(&first)?;
     drop((first, second));
 
@@ -239,11 +247,11 @@ fn preflight(root: &Path, root_file: &File, check: &Check<'_>) -> Result<(), Run
     payload.write_all(b"metewand durable initialization\n")?;
     sync_file(&payload, check)?;
     drop(payload);
-    sync_directory(&File::open(&source)?, check)?;
-    sync_directory(&File::open(path)?, check)?;
+    sync_directory(&source, check)?;
+    sync_directory(path, check)?;
     check(Operation::Rename)?;
     rename_no_replace(&source, &destination)?;
-    sync_directory(&File::open(path)?, check)?;
+    sync_directory(path, check)?;
     if source.exists()
         || fs::read(destination.join("payload"))? != b"metewand durable initialization\n"
     {
@@ -281,13 +289,14 @@ fn preflight(root: &Path, root_file: &File, check: &Check<'_>) -> Result<(), Run
     }
     probe_sqlite(&path.join("probe.sqlite3"))?;
     probe.close()?;
-    sync_directory(root_file, check)?;
+    sync_directory(root, check)?;
     Ok(())
 }
 
 // POSIX record locks belong to a process, so independent descriptors in the
 // parent cannot verify exclusion. The child performs only async-signal-safe
 // fcntl and _exit operations and never touches SQLite or Rust-owned state.
+#[cfg(unix)]
 fn probe_record_lock(file: &File) -> Result<(), RunStoreError> {
     use rustix::fs::{FlockOperation, fcntl_lock};
 
@@ -298,6 +307,7 @@ fn probe_record_lock(file: &File) -> Result<(), RunStoreError> {
     record_lock_child(file, false)
 }
 
+#[cfg(unix)]
 fn record_lock_child(file: &File, should_conflict: bool) -> Result<(), RunStoreError> {
     // SAFETY: The child calls only the async-signal-safe fcntl and _exit
     // operations, using a descriptor opened before fork. It never unwinds,
@@ -624,6 +634,7 @@ mod tests {
         }
     }
 
+    #[cfg(unix)]
     #[test]
     fn record_lock_probe_rejects_missing_exclusion_and_missing_release() {
         let file = tempfile::tempfile().unwrap();

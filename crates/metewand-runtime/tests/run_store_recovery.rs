@@ -1,4 +1,4 @@
-#![cfg(unix)]
+#![cfg(any(unix, windows))]
 
 use std::{
     fs, io,
@@ -768,6 +768,7 @@ fn live_unlocked_stages_are_preserved_until_expiration() {
     assert!(store.recover(|| 100).unwrap().terminals.is_empty());
 }
 
+#[cfg(unix)]
 #[test]
 fn unsafe_staging_and_dependency_symlinks_never_cross_the_recovery_boundary() {
     let _isolation = isolate_probes();

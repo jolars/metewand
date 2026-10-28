@@ -120,12 +120,12 @@ impl CommandResult {
             repository_schemas: repository.schema_count,
             source_bundles: repository.source_bundle_count,
             worker_launches: 0,
-            #[cfg(unix)]
+            #[cfg(any(unix, windows))]
             worker_check: None,
         })
     }
 
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     pub fn set_worker_check(&mut self, report: metewand_runtime::run::WorkerCheckReport) {
         if let Self::Check(result) = self {
             result.worker_launches = report.workers.len();
@@ -460,7 +460,7 @@ pub struct CheckResult {
     repository_schemas: usize,
     source_bundles: usize,
     worker_launches: usize,
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     #[serde(flatten, skip_serializing_if = "Option::is_none")]
     worker_check: Option<metewand_runtime::run::WorkerCheckReport>,
 }
@@ -476,7 +476,7 @@ impl CheckResult {
             self.source_bundles,
             self.worker_launches,
         );
-        #[cfg(unix)]
+        #[cfg(any(unix, windows))]
         if let Some(report) = &self.worker_check {
             for worker in &report.workers {
                 writeln!(
@@ -1361,7 +1361,7 @@ pub struct CommandError {
 }
 
 impl CommandError {
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     pub fn cache(error: &metewand_runtime::artifact_store::ArtifactStoreError) -> Self {
         use metewand_runtime::artifact_store::ArtifactStoreError;
         let (exit_code, code) = match error {
@@ -1422,7 +1422,7 @@ impl CommandError {
         }
     }
 
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     pub fn export(error: &metewand_runtime::export::ExportError) -> Self {
         use metewand_runtime::export::ExportError;
         if let ExportError::Inspection(error) = error {
@@ -1439,7 +1439,7 @@ impl CommandError {
         Self { exit_code, diagnostic: Box::new(Diagnostic::new(code, error.to_string()).with_remediation("Select a verified run with `--output-dir PATH` and a new export directory with `--destination PATH`.")) }
     }
 
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     pub fn inspection(error: &metewand_runtime::inspection::InspectionError) -> Self {
         use metewand_runtime::{
             inspection::InspectionError, publication::PublicationError, run_store::RunStoreError,
@@ -1459,7 +1459,7 @@ impl CommandError {
         Self { exit_code, diagnostic: Box::new(Diagnostic::new(code, error.to_string()).with_remediation("Select an existing run with `--output-dir PATH`, a checked repository with `--manifest PATH`, or both.")) }
     }
 
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     pub fn worker_check(error: &metewand_runtime::run::WorkerCheckError) -> Self {
         Self {
             exit_code: EXIT_INVALID_REPOSITORY,
@@ -1468,7 +1468,7 @@ impl CommandError {
         }
     }
 
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     pub fn execution(error: &metewand_runtime::run::RunError) -> Self {
         use metewand_runtime::run::RunError;
         if let RunError::Selection(message) = error {

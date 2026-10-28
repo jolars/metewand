@@ -17,6 +17,7 @@ on:
       - crates/metewand-runtime/src/durability.rs
       - crates/metewand-runtime/src/fault_injection.rs
       - crates/metewand-runtime/src/local_tree.rs
+      - crates/metewand-runtime/src/platform_fs.rs
       - crates/metewand-runtime/src/publication.rs
       - crates/metewand-runtime/src/run_store.rs
       - crates/metewand-runtime/src/run_store/**
@@ -30,8 +31,12 @@ env:
 
 jobs:
   crash-campaign:
-    name: Exhaustive crash campaign
-    runs-on: ubuntu-latest
+    name: Exhaustive crash campaign (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7

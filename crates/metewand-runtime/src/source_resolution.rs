@@ -2,7 +2,7 @@
 
 use std::{
     collections::BTreeMap,
-    fs::{self, File},
+    fs,
     io::{self, Read},
     path::{Path, PathBuf},
 };
@@ -241,8 +241,13 @@ pub fn resolve_source(
             }
             let expanded = expand_source_bundle(&root, sources)?;
             let directory = staging(private_parent)?;
+            let mut copied = Vec::<&Path>::new();
             for path in expanded.paths() {
+                if copied.iter().any(|parent| path.starts_with(parent)) {
+                    continue;
+                }
                 copy_entry(&root.join(path), &directory.path().join(path))?;
+                copied.push(path);
             }
             if identify_source_bundle(&root, sources)? != *expected
                 || identify_source_bundle(directory.path(), sources)? != *expected
@@ -325,12 +330,37 @@ pub fn resolve_source(
 }
 
 fn staging(parent: &Path) -> Result<TempDir, io::Error> {
-    Builder::new().prefix("metewand-source-").tempdir_in(parent)
+    let directory = Builder::new()
+        .prefix("metewand-source-")
+        .tempdir_in(parent)?;
+    #[cfg(any(unix, windows))]
+    crate::platform_fs::set_private_directory(directory.path())?;
+    Ok(directory)
+}
+
+fn reject_reparse(path: &Path, metadata: &fs::Metadata) -> Result<(), SourceResolutionError> {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        if metadata.file_attributes()
+            & windows_sys::Win32::Storage::FileSystem::FILE_ATTRIBUTE_REPARSE_POINT
+            != 0
+        {
+            return Err(SourceResolutionError::UnsupportedEntry {
+                path: path.to_path_buf(),
+            });
+        }
+    }
+    let _ = (path, metadata);
+    Ok(())
 }
 
 fn copy_entry(source: &Path, destination: &Path) -> Result<(), SourceResolutionError> {
     let metadata = fs::symlink_metadata(source)?;
+    reject_reparse(source, &metadata)?;
     if metadata.is_dir() {
+        #[cfg(windows)]
+        crate::platform_fs::validate_directory_names(source)?;
         fs::create_dir_all(destination)?;
         for entry in fs::read_dir(source)? {
             let entry = entry?;
@@ -338,6 +368,9 @@ fn copy_entry(source: &Path, destination: &Path) -> Result<(), SourceResolutionE
         }
     } else if metadata.is_file() {
         fs::create_dir_all(destination.parent().expect("a copied file has a parent"))?;
+        #[cfg(any(unix, windows))]
+        crate::platform_fs::copy_owned_file(source, destination)?;
+        #[cfg(not(any(unix, windows)))]
         fs::copy(source, destination)?;
     } else {
         return Err(SourceResolutionError::UnsupportedEntry {
@@ -354,15 +387,20 @@ fn inventory(root: &Path) -> Result<(Vec<SourceFile>, Vec<PathBuf>), SourceResol
         files: &mut Vec<SourceFile>,
         directories: &mut Vec<PathBuf>,
     ) -> Result<(), SourceResolutionError> {
-        if !fs::symlink_metadata(directory)?.is_dir() {
+        let metadata = fs::symlink_metadata(directory)?;
+        reject_reparse(directory, &metadata)?;
+        if !metadata.is_dir() {
             return Err(SourceResolutionError::UnsupportedEntry {
                 path: directory.to_path_buf(),
             });
         }
+        #[cfg(windows)]
+        crate::platform_fs::validate_directory_names(directory)?;
         for entry in fs::read_dir(directory)? {
             let entry = entry?;
             let path = entry.path();
             let kind = entry.file_type()?;
+            reject_reparse(&path, &fs::symlink_metadata(&path)?)?;
             if kind.is_dir() {
                 directories.push(
                     path.strip_prefix(root)
@@ -386,7 +424,11 @@ fn inventory(root: &Path) -> Result<(Vec<SourceFile>, Vec<PathBuf>), SourceResol
                 .map_err(|_| SourceResolutionError::UnsupportedEntry {
                     path: relative.to_path_buf(),
                 })?;
-                let mut file = File::open(&path)?;
+                #[cfg(any(unix, windows))]
+                let mut file =
+                    crate::platform_fs::open_regular(&path, fs::OpenOptions::new().read(true))?;
+                #[cfg(not(any(unix, windows)))]
+                let mut file = fs::File::open(&path)?;
                 let mut hash = Sha256::new();
                 let mut size_bytes = 0;
                 let mut buffer = [0_u8; 64 * 1024];

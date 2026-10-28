@@ -81,7 +81,7 @@ pub fn finalize_failed_attempt(
     root: &Path,
     record: RunAttemptRecord,
 ) -> Result<(IdentifiedRecord<RunAttemptRecord>, PathBuf), PublicationError> {
-    if !root.is_absolute() || !fs::symlink_metadata(root)?.is_dir() {
+    if !root.is_absolute() || !crate::platform_fs::is_real_directory(&fs::symlink_metadata(root)?) {
         return Err(PublicationError::InvalidRoot);
     }
     if !matches!(
@@ -123,7 +123,9 @@ pub fn finalize_fixed_dataset(
     result: &FixedDatasetResult,
     request: PublicationRequest<'_>,
 ) -> Result<PublishedOneShot, PublicationError> {
-    if !request.root.is_absolute() || !fs::symlink_metadata(request.root)?.is_dir() {
+    if !request.root.is_absolute()
+        || !crate::platform_fs::is_real_directory(&fs::symlink_metadata(request.root)?)
+    {
         return Err(PublicationError::InvalidRoot);
     }
     let root = request.root;
@@ -181,7 +183,8 @@ pub(crate) fn prepare_fixed_dataset(
             "context": request.provenance_data.as_json(),
             "measurements": result.measurements,
             "execution": result.execution_provenance,
-            "result_manifest": Path::new("result").join(result.validated_result().manifest_path()),
+            "result_manifest": crate::platform_fs::relative_path(&Path::new("result").join(result.validated_result().manifest_path()))?,
+            "storage": crate::platform_fs::storage_evidence(),
             "implementation_statistics": result.statistics,
             "logs": {
                 "implementation": log_metadata(&result.implementation_output),
@@ -208,16 +211,16 @@ pub(crate) fn prepare_fixed_dataset(
     // the observation without creating an identity cycle.
     let attempt_id = record_id(&attempt)?;
     let observation_stage = Builder::new().prefix("metewand-observation-").tempdir()?;
+    crate::platform_fs::set_private_directory(observation_stage.path())?;
     let result_copy = observation_stage.path().join("result");
     copy_result(result, &result_copy)?;
     let metrics_path = result.metrics_document();
-    if !fs::symlink_metadata(&metrics_path)?.is_file()
-        || !fs::symlink_metadata(
+    if !crate::platform_fs::is_regular_file(&fs::symlink_metadata(&metrics_path)?)
+        || !crate::platform_fs::is_real_directory(&fs::symlink_metadata(
             metrics_path
                 .parent()
                 .expect("private metrics have a parent"),
-        )?
-        .is_dir()
+        )?)
     {
         return Err(PublicationError::UnsafeEntry(metrics_path));
     }
@@ -294,6 +297,7 @@ pub(crate) fn prepare_fixed_dataset(
     attempt.finished_at = SystemTime::now();
     let attempt = identify_record(attempt)?;
     let attempt_stage = Builder::new().prefix("metewand-attempt-").tempdir()?;
+    crate::platform_fs::set_private_directory(attempt_stage.path())?;
     write_logs(
         attempt_stage.path(),
         "implementation",
@@ -313,14 +317,16 @@ pub(crate) fn prepare_fixed_dataset(
 }
 
 pub(crate) fn copy_prepared(source: &Path, destination: &Path) -> io::Result<()> {
+    crate::platform_fs::validate_directory_names(source)?;
     for entry in fs::read_dir(source)? {
         let entry = entry?;
         let target = destination.join(entry.file_name());
-        if entry.file_type()?.is_dir() {
+        let metadata = fs::symlink_metadata(entry.path())?;
+        if crate::platform_fs::is_real_directory(&metadata) {
             fs::create_dir(&target)?;
             copy_prepared(&entry.path(), &target)?;
-        } else if entry.file_type()?.is_file() {
-            fs::copy(entry.path(), target)?;
+        } else if crate::platform_fs::is_regular_file(&metadata) {
+            crate::platform_fs::copy_owned_file(&entry.path(), &target)?;
         } else {
             return Err(io::Error::other(
                 "prepared publication contains an unsafe entry",
@@ -359,7 +365,7 @@ fn copy_result(result: &FixedDatasetResult, destination: &Path) -> Result<(), Pu
     for entry in files.values() {
         let target = destination.join(&entry.path);
         fs::create_dir_all(target.parent().expect("a destination file has a parent"))?;
-        fs::copy(result.result_directory().join(&entry.path), target)?;
+        crate::platform_fs::copy_owned_file(&result.result_directory().join(&entry.path), &target)?;
     }
     // Validate the copy rather than trusting a pre-copy hash if the source
     // changed while files were being copied.
@@ -387,9 +393,9 @@ fn write_logs(root: &Path, role: &str, output: &WorkerLogSnapshot) -> Result<(),
 fn durable_child(parent: &Path, name: &str) -> Result<PathBuf, PublicationError> {
     let path = parent.join(name);
     match fs::create_dir(&path) {
-        Ok(()) => crate::durability::sync_all(&File::open(parent)?)?,
+        Ok(()) => crate::platform_fs::complete_namespace_change(parent)?,
         Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
-            if !fs::symlink_metadata(&path)?.is_dir() {
+            if !crate::platform_fs::is_real_directory(&fs::symlink_metadata(&path)?) {
                 return Err(PublicationError::UnsafeEntry(path));
             }
         }
@@ -399,7 +405,7 @@ fn durable_child(parent: &Path, name: &str) -> Result<PathBuf, PublicationError>
 }
 
 fn staging(parent: &Path) -> Result<TempDir, PublicationError> {
-    Ok(Builder::new().prefix(".staging-").tempdir_in(parent)?)
+    Ok(crate::platform_fs::private_tempdir_in(parent, ".staging-")?)
 }
 
 pub(crate) fn write_file(path: &Path, bytes: &[u8]) -> Result<(), PublicationError> {
@@ -432,7 +438,7 @@ pub(crate) fn prepare_directory(stage: &Path) -> Result<(), PublicationError> {
         return Err(PublicationError::Conflict(stage.join("manifest.json")));
     }
     for entry in files.values() {
-        crate::durability::sync_all(&File::open(stage.join(&entry.path))?)?;
+        crate::platform_fs::sync_owned_file(&stage.join(&entry.path))?;
     }
     sync_directories(stage)?;
     let marker = CanonicalValue::try_from(json!({
@@ -446,7 +452,7 @@ pub(crate) fn prepare_directory(stage: &Path) -> Result<(), PublicationError> {
         PublicSchema::ArtifactManifest,
         &marker,
     )?;
-    crate::durability::sync_all(&File::open(stage)?)?;
+    crate::platform_fs::complete_namespace_change(stage)?;
     verify_finalized_directory(stage)
 }
 
@@ -465,22 +471,22 @@ pub(crate) fn publish_prepared_directory(
             // A competing writer may not yet have synchronized the destination
             // parent, so this writer independently completes the durability work.
             for entry in inventory(destination)?.values() {
-                crate::durability::sync_all(&File::open(destination.join(&entry.path))?)?;
+                crate::platform_fs::sync_owned_file(&destination.join(&entry.path))?;
             }
             sync_directories(destination)?;
             fs::remove_dir_all(stage)?;
         }
         Err(error) => return Err(error.into()),
     }
-    crate::durability::sync_all(&File::open(
+    crate::platform_fs::complete_namespace_change(
         destination
             .parent()
             .expect("published directory has a parent"),
-    )?)?;
+    )?;
     if stage.parent() != destination.parent() {
-        crate::durability::sync_all(&File::open(
+        crate::platform_fs::complete_namespace_change(
             stage.parent().expect("staging directory has a parent"),
-        )?)?;
+        )?;
     }
     Ok(())
 }
@@ -507,7 +513,18 @@ pub(crate) fn rename_no_replace(source: &Path, destination: &Path) -> io::Result
     result
 }
 
+#[cfg(windows)]
+pub(crate) fn rename_no_replace(source: &Path, destination: &Path) -> io::Result<()> {
+    #[cfg(test)]
+    crate::fault_injection::hit("rename.before");
+    let result = crate::platform_fs::rename_no_replace(source, destination);
+    #[cfg(test)]
+    crate::fault_injection::hit("rename.after");
+    result
+}
+
 #[cfg(not(any(
+    windows,
     target_os = "linux",
     target_os = "macos",
     target_os = "ios",
@@ -524,11 +541,11 @@ pub(crate) fn sync_directories(root: &Path) -> io::Result<()> {
     let mut entries = fs::read_dir(root)?.collect::<Result<Vec<_>, _>>()?;
     entries.sort_by_key(|entry| entry.file_name());
     for entry in entries {
-        if entry.file_type()?.is_dir() {
+        if crate::platform_fs::is_real_directory(&fs::symlink_metadata(entry.path())?) {
             sync_directories(&entry.path())?;
         }
     }
-    crate::durability::sync_all(&File::open(root)?)
+    crate::platform_fs::complete_namespace_change(root)
 }
 
 #[derive(Debug, Deserialize)]
@@ -545,8 +562,10 @@ struct FileEntry {
 }
 
 fn read_marker(directory: &Path) -> Result<Marker, PublicationError> {
-    if !fs::symlink_metadata(directory)?.is_dir()
-        || !fs::symlink_metadata(directory.join("manifest.json"))?.is_file()
+    if !crate::platform_fs::is_real_directory(&fs::symlink_metadata(directory)?)
+        || !crate::platform_fs::is_regular_file(&fs::symlink_metadata(
+            directory.join("manifest.json"),
+        )?)
     {
         return Err(PublicationError::UnsafeEntry(directory.to_path_buf()));
     }
@@ -565,19 +584,20 @@ fn inventory(root: &Path) -> Result<BTreeMap<String, FileEntry>, PublicationErro
         files: &mut BTreeMap<String, FileEntry>,
     ) -> Result<(), PublicationError> {
         let mut count = 0;
+        crate::platform_fs::validate_directory_names(&root.join(relative))?;
         for entry in fs::read_dir(root.join(relative))? {
             let entry = entry?;
             let path = relative.join(entry.file_name());
-            let text = path
-                .to_str()
-                .ok_or_else(|| PublicationError::UnsafeEntry(path.clone()))?;
-            serde_json::from_value::<RepositoryPath>(json!(text))
+            let text = crate::platform_fs::relative_path(&path)
                 .map_err(|_| PublicationError::UnsafeEntry(path.clone()))?;
-            let kind = entry.file_type()?;
-            if kind.is_dir() {
+            serde_json::from_value::<RepositoryPath>(json!(&text))
+                .map_err(|_| PublicationError::UnsafeEntry(path.clone()))?;
+            let metadata = fs::symlink_metadata(entry.path())?;
+            if crate::platform_fs::is_real_directory(&metadata) {
                 walk(root, &path, files)?;
-            } else if kind.is_file() {
-                let mut file = File::open(entry.path())?;
+            } else if crate::platform_fs::is_regular_file(&metadata) {
+                let mut file =
+                    crate::platform_fs::open_regular(&entry.path(), OpenOptions::new().read(true))?;
                 let mut hasher = Sha256::new();
                 let mut size_bytes = 0;
                 let mut buffer = [0_u8; 64 * 1024];
@@ -615,7 +635,7 @@ fn inventory(root: &Path) -> Result<BTreeMap<String, FileEntry>, PublicationErro
         }
         Ok(())
     }
-    if !fs::symlink_metadata(root)?.is_dir() {
+    if !crate::platform_fs::is_real_directory(&fs::symlink_metadata(root)?) {
         return Err(PublicationError::UnsafeEntry(root.to_path_buf()));
     }
     let mut files = BTreeMap::new();
@@ -721,7 +741,6 @@ pub enum PublicationError {
 mod tests {
     use super::*;
     use std::{
-        os::unix::fs::symlink,
         sync::{Arc, Barrier},
         thread,
     };
@@ -790,6 +809,29 @@ mod tests {
         assert_eq!(fs::read_dir(empty).unwrap().count(), 0);
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn readonly_prepared_payloads_are_copied_and_published_with_writable_owned_files() {
+        let root = tempfile::tempdir().unwrap();
+        let source = tempfile::tempdir().unwrap();
+        let payload = source.path().join("payload.bin");
+        fs::write(&payload, b"read-only worker output").unwrap();
+        let original_permissions = fs::metadata(&payload).unwrap().permissions();
+        let mut permissions = original_permissions.clone();
+        permissions.set_readonly(true);
+        fs::set_permissions(&payload, permissions).unwrap();
+        let stage = staging(root.path()).unwrap();
+        copy_prepared(source.path(), stage.path()).unwrap();
+        let published = publish(stage, &root.path().join("published")).unwrap();
+        verify_finalized_directory(&published).unwrap();
+        let copied = published.join("payload.bin");
+        assert!(!fs::metadata(&copied).unwrap().permissions().readonly());
+        crate::platform_fs::sync_owned_file(&copied).unwrap();
+        assert_eq!(fs::read(&copied).unwrap(), b"read-only worker output");
+        assert!(fs::metadata(&payload).unwrap().permissions().readonly());
+        fs::set_permissions(payload, original_permissions).unwrap();
+    }
+
     #[test]
     fn concurrent_identical_publishers_share_only_a_complete_object() {
         let root = tempfile::tempdir().unwrap();
@@ -817,6 +859,7 @@ mod tests {
             "changed",
             "missing",
             "undeclared",
+            #[cfg(unix)]
             "symlink",
             "empty_directory",
             "incomplete",
@@ -832,7 +875,12 @@ mod tests {
                 "undeclared" => fs::write(directory.join("extra"), b"extra").unwrap(),
                 "symlink" => {
                     fs::remove_file(directory.join("payload.bin")).unwrap();
-                    symlink("../object/manifest.json", directory.join("payload.bin")).unwrap();
+                    #[cfg(unix)]
+                    std::os::unix::fs::symlink(
+                        "../object/manifest.json",
+                        directory.join("payload.bin"),
+                    )
+                    .unwrap();
                 }
                 "empty_directory" => fs::create_dir(directory.join("extra")).unwrap(),
                 "incomplete" => fs::remove_file(directory.join("manifest.json")).unwrap(),
@@ -861,13 +909,15 @@ mod tests {
         }
     }
 
+    #[cfg(unix)]
     #[test]
     fn symbolic_links_and_special_files_cannot_enter_staging() {
         let root = tempfile::tempdir().unwrap();
         let stage = object(root.path(), b"abc");
-        symlink("payload.bin", stage.path().join("link")).unwrap();
+        std::os::unix::fs::symlink("payload.bin", stage.path().join("link")).unwrap();
         assert!(publish(stage, &root.path().join("object")).is_err());
         let stage = object(root.path(), b"abc");
+        #[cfg(unix)]
         std::os::unix::net::UnixListener::bind(stage.path().join("socket")).unwrap();
         assert!(publish(stage, &root.path().join("object")).is_err());
         assert_eq!(fs::read_dir(root.path()).unwrap().count(), 0);

@@ -1,26 +1,21 @@
 //! Trusted local-worker launch and private working-directory allocation.
 
-use std::{
-    fs::{self, DirBuilder, Permissions},
-    os::unix::{
-        fs::{DirBuilderExt, PermissionsExt},
-        process::CommandExt,
-    },
-    path::Path,
-    process::Command,
-};
+#[cfg(unix)]
+use std::os::unix::process::CommandExt;
+use std::{fs, path::Path, process::Command};
 
 use metewand_core::records::{ResolvedLaunchRecord, WorkerWorkingDirectory};
-use tempfile::Builder;
 use thiserror::Error;
 
+#[cfg(unix)]
+use crate::worker_environment::WORKER_UMASK;
 use crate::{
     redaction::Redactor,
     worker_environment::{
-        WORKER_UMASK, WorkerEnvironmentError, WorkerEnvironmentProvenance, WorkerSecrets,
+        WorkerEnvironmentError, WorkerEnvironmentProvenance, WorkerSecrets,
         resolve_worker_environment,
     },
-    worker_process::{PosixWorkerProcess, WorkerLogLimits, WorkerProcessError},
+    worker_process::{WorkerLogLimits, WorkerProcess, WorkerProcessError},
 };
 
 /// Launches an already resolved worker as a trusted local process.
@@ -42,7 +37,7 @@ pub fn launch_trusted_local_worker(
     launch: &ResolvedLaunchRecord,
     private_root: &Path,
     log_limits: WorkerLogLimits,
-) -> Result<PosixWorkerProcess, LocalWorkerLaunchError> {
+) -> Result<WorkerProcess, LocalWorkerLaunchError> {
     launch_trusted_local_worker_with_secrets(
         launch,
         private_root,
@@ -64,53 +59,38 @@ pub fn launch_trusted_local_worker_with_secrets(
     private_root: &Path,
     log_limits: WorkerLogLimits,
     secrets: &WorkerSecrets,
-) -> Result<PosixWorkerProcess, LocalWorkerLaunchError> {
+) -> Result<WorkerProcess, LocalWorkerLaunchError> {
     let mut variables = resolve_worker_environment(&launch.environment_variables)?;
     secrets.validate(&variables)?;
     let private_root = fs::canonicalize(private_root)
         .map_err(LocalWorkerLaunchError::CreatePrivateWorkingDirectory)?;
     let private_working_directory = match launch.working_directory {
-        WorkerWorkingDirectory::PrivateRunDirectory => Builder::new()
-            .prefix("worker-")
-            .permissions(Permissions::from_mode(0o700))
-            .tempdir_in(&private_root)
-            .map_err(LocalWorkerLaunchError::CreatePrivateWorkingDirectory)?,
+        WorkerWorkingDirectory::PrivateRunDirectory => {
+            crate::platform_fs::private_tempdir_in(&private_root, "worker-")
+                .map_err(LocalWorkerLaunchError::CreatePrivateWorkingDirectory)?
+        }
     };
-    // The creation mode prevents a permissive window; resetting it afterward
-    // keeps restrictive umasks from making the worker directory unusable.
-    fs::set_permissions(
-        private_working_directory.path(),
-        Permissions::from_mode(0o700),
-    )
-    .map_err(LocalWorkerLaunchError::CreatePrivateWorkingDirectory)?;
 
-    let directory = private_working_directory
-        .path()
-        .to_str()
-        .ok_or(WorkerEnvironmentError::InvalidPath)?;
     for value in variables.values_mut() {
         if let Some(relative) = value.strip_prefix("{worker}/") {
             let mut path = private_working_directory.path().to_owned();
             for component in relative.split('/') {
                 path.push(component);
                 if !path.exists() {
-                    DirBuilder::new()
-                        .mode(0o700)
-                        .create(&path)
-                        .map_err(LocalWorkerLaunchError::CreatePrivateWorkingDirectory)?;
-                    fs::set_permissions(&path, Permissions::from_mode(0o700))
+                    crate::platform_fs::create_private_directory(&path)
                         .map_err(LocalWorkerLaunchError::CreatePrivateWorkingDirectory)?;
                 }
             }
-            *value = format!("{directory}/{relative}");
+            *value = path
+                .to_str()
+                .ok_or(WorkerEnvironmentError::InvalidPath)?
+                .to_owned();
         }
     }
-    let provenance = WorkerEnvironmentProvenance {
-        version: 1,
-        working_directory: private_working_directory.path().to_owned(),
-        environment_variables: variables.clone(),
-        umask: "0077".to_owned(),
-    };
+    let provenance = WorkerEnvironmentProvenance::new(
+        private_working_directory.path().to_owned(),
+        variables.clone(),
+    );
     variables.extend(
         secrets
             .values
@@ -127,6 +107,7 @@ pub fn launch_trusted_local_worker_with_secrets(
 
     // SAFETY: POSIX umask is async-signal-safe. Applying it only in the
     // forked child avoids races with other orchestrator threads.
+    #[cfg(unix)]
     unsafe {
         command.pre_exec(|| {
             libc::umask(WORKER_UMASK);
@@ -134,8 +115,12 @@ pub fn launch_trusted_local_worker_with_secrets(
         });
     }
 
+    #[cfg(unix)]
+    let mut process = WorkerProcess::spawn_redacted(command, log_limits, Redactor::new(secrets))
+        .map_err(LocalWorkerLaunchError::Spawn)?;
+    #[cfg(windows)]
     let mut process =
-        PosixWorkerProcess::spawn_redacted(command, log_limits, Redactor::new(secrets))
+        WorkerProcess::spawn_windows(command, log_limits, Redactor::new(secrets), true)
             .map_err(LocalWorkerLaunchError::Spawn)?;
     process.retain_environment(provenance);
     process.retain_private_working_directory(private_working_directory);

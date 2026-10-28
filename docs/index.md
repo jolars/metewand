@@ -40,7 +40,7 @@ plan, and runs workers through a versioned process protocol.
 ```sh
 metewand check --manifest benchmark/metewand.yaml
 metewand plan --manifest benchmark/metewand.yaml
-metewand run --manifest benchmark/metewand.yaml --output-dir /tmp/metewand-run
+metewand run --manifest benchmark/metewand.yaml --output-dir metewand-run
 ```
 
 The benchmark author defines what counts as a valid result and how to measure

@@ -1,6 +1,7 @@
 """Explicit file inventories and version-1 worker output envelopes."""
 
 import hashlib
+import os
 import re
 from pathlib import Path
 
@@ -21,7 +22,7 @@ def write_json(path, value):
 def _relative_path(value):
     if not isinstance(value, (str, Path)):
         raise TypeError("Paths must be strings or pathlib Paths.")
-    value = str(value)
+    value = value.as_posix() if isinstance(value, Path) else value
     if (
         not value
         or value.startswith("/")
@@ -37,11 +38,22 @@ def _relative_path(value):
 
 def _output_path(directory, relative):
     relative = _relative_path(relative)
+    if os.name == "nt":
+        _windows_relative_path(relative)
     root = Path(directory).resolve()
     target = root / relative
     if not target.resolve().is_relative_to(root):
         raise ValueError("Output paths must stay beneath the assigned directory.")
     return target
+
+
+def _windows_relative_path(relative):
+    for part in relative.split("/"):
+        stem = part.split(".", 1)[0].upper()
+        reserved = stem in {"CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$"}
+        reserved |= len(stem) == 4 and stem[:3] in {"COM", "LPT"} and stem[3] in "123456789¹²³"
+        if reserved or part.endswith((".", " ")) or any(ord(c) < 32 or c in '<>:"|?*' for c in part):
+            raise ValueError("Output paths must identify ordinary Windows files.")
 
 
 def _object(value, name):

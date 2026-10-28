@@ -1,4 +1,4 @@
-#![cfg(unix)]
+#![cfg(any(unix, windows))]
 
 use std::{fs, io, path::Path};
 
@@ -168,7 +168,15 @@ fn an_expired_owner_after_rename_leaves_an_orphan_without_terminal_database_stat
 
 #[test]
 fn unsafe_or_caller_supplied_completion_entries_never_get_database_references() {
-    for case in ["symlink", "socket", "empty", "manifest", "outcome"] {
+    for case in [
+        #[cfg(unix)]
+        "symlink",
+        #[cfg(unix)]
+        "socket",
+        "empty",
+        "manifest",
+        "outcome",
+    ] {
         let (_root, mut store, db) = setup();
         let attempt = reserve(&mut store);
         let attempt = store
@@ -180,7 +188,9 @@ fn unsafe_or_caller_supplied_completion_entries_never_get_database_references() 
             &[],
             |path| {
                 match case {
+                    #[cfg(unix)]
                     "symlink" => std::os::unix::fs::symlink("/etc/passwd", path.join("link"))?,
+                    #[cfg(unix)]
                     "socket" => {
                         std::os::unix::net::UnixListener::bind(path.join("socket"))?;
                     }
@@ -381,15 +391,18 @@ fn late_sql_failure_rolls_back_completion_but_keeps_a_verified_orphan() {
 
 #[test]
 fn staging_is_locked_leased_and_on_the_destination_filesystem_outside_database_transactions() {
+    #[cfg(unix)]
     use std::os::unix::fs::MetadataExt;
     let (root, mut store, db) = setup();
     let attempt = reserve(&mut store);
     store.publish_artifact(&attempt, ArtifactKind::Other, |path| {
+        assert!(path.starts_with(root.path()));
+        #[cfg(unix)]
         assert_eq!(fs::metadata(path)?.dev(), fs::metadata(root.path())?.dev());
         let stage = path.parent().unwrap();
         let lock = fs::File::open(stage.join("lock"))?;
         assert!(matches!(lock.try_lock(), Err(fs::TryLockError::WouldBlock)));
-        let relative = stage.strip_prefix(root.path()).unwrap().to_str().unwrap();
+        let relative = stage.strip_prefix(root.path()).unwrap().to_str().unwrap().replace(std::path::MAIN_SEPARATOR, "/");
         assert_eq!(db.query_row("SELECT count(*) FROM leases WHERE purpose = 'staging' AND staging_path = ?1 AND released_at_ns IS NULL", [relative], |r| r.get::<_, i64>(0)).unwrap(), 1);
         // A second connection can commit while population is still in progress.
         db.execute("INSERT INTO events(occurred_at_ns, kind, payload_json) VALUES (11, 'test', '{}')", []).unwrap();

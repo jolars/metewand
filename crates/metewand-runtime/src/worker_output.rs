@@ -143,7 +143,8 @@ impl<'a> WorkerOutputValidator<'a> {
                 .ok_or_else(|| WorkerOutputError::InvalidRelativePath {
                     path: metrics_path.to_path_buf(),
                 })?;
-        let metrics_path = validate_relative_path(metrics_path)?;
+        let metrics_path = metrics_path.replace(std::path::MAIN_SEPARATOR, "/");
+        let metrics_path = validate_relative_path(&metrics_path)?;
         let output = OutputTree::inspect(output_root)?;
         output.validate_document_only_inventory(&metrics_path)?;
         let metrics = output.read_document(&metrics_path)?;
@@ -402,6 +403,12 @@ fn validate_relative_path(value: &str) -> Result<PathBuf, WorkerOutputError> {
             path: PathBuf::from(value),
         })
     } else {
+        #[cfg(windows)]
+        crate::platform_fs::relative_path(Path::new(value)).map_err(|_| {
+            WorkerOutputError::InvalidRelativePath {
+                path: PathBuf::from(value),
+            }
+        })?;
         Ok(PathBuf::from(value))
     }
 }
@@ -614,6 +621,17 @@ impl OutputTree {
     }
 }
 
+fn open_output_file(path: &Path) -> io::Result<File> {
+    #[cfg(any(unix, windows))]
+    {
+        crate::platform_fs::open_regular(path, fs::OpenOptions::new().read(true))
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        File::open(path)
+    }
+}
+
 fn hash_stable_file(
     root: &Path,
     relative: &Path,
@@ -638,10 +656,11 @@ fn hash_stable_file(
         });
     }
 
-    let mut file = File::open(&absolute).map_err(|source| WorkerOutputError::EntryAccess {
-        path: relative.to_path_buf(),
-        source,
-    })?;
+    let mut file =
+        open_output_file(&absolute).map_err(|source| WorkerOutputError::EntryAccess {
+            path: relative.to_path_buf(),
+            source,
+        })?;
     let mut hasher = Sha256::new();
     let mut remaining = expected_size;
     let mut buffer = [0_u8; 64 * 1024];
@@ -695,6 +714,13 @@ fn collect_entries(
     relative_directory: &Path,
     entries: &mut Vec<OutputEntry>,
 ) -> Result<(), WorkerOutputError> {
+    #[cfg(windows)]
+    crate::platform_fs::validate_directory_names(absolute_directory).map_err(|source| {
+        WorkerOutputError::EntryAccess {
+            path: relative_directory.to_path_buf(),
+            source,
+        }
+    })?;
     let display_path = if relative_directory.as_os_str().is_empty() {
         PathBuf::from(".")
     } else {
@@ -723,13 +749,38 @@ fn collect_entries(
                 path: relative_directory.join(name),
             });
         }
-        let path = relative_directory.join(name);
+        let relative = relative_directory
+            .to_str()
+            .expect("output paths are UTF-8")
+            .replace(std::path::MAIN_SEPARATOR, "/");
+        let text = if relative.is_empty() {
+            name
+        } else {
+            format!("{relative}/{name}")
+        };
+        let path = validate_relative_path(&text)?;
         let file_type = child
             .file_type()
             .map_err(|source| WorkerOutputError::EntryAccess {
                 path: path.clone(),
                 source,
             })?;
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::MetadataExt;
+            let metadata = fs::symlink_metadata(child.path()).map_err(|source| {
+                WorkerOutputError::EntryAccess {
+                    path: path.clone(),
+                    source,
+                }
+            })?;
+            if metadata.file_attributes()
+                & windows_sys::Win32::Storage::FileSystem::FILE_ATTRIBUTE_REPARSE_POINT
+                != 0
+            {
+                return Err(WorkerOutputError::UnsupportedEntryType { path });
+            }
+        }
         let kind = if file_type.is_dir() {
             EntryKind::Directory
         } else if file_type.is_file() {
@@ -765,10 +816,11 @@ fn read_stable_file(root: &Path, relative: &Path) -> Result<Vec<u8>, WorkerOutpu
             path: relative.to_path_buf(),
             size: before.len(),
         })?;
-    let mut file = File::open(&absolute).map_err(|source| WorkerOutputError::EntryAccess {
-        path: relative.to_path_buf(),
-        source,
-    })?;
+    let mut file =
+        open_output_file(&absolute).map_err(|source| WorkerOutputError::EntryAccess {
+            path: relative.to_path_buf(),
+            source,
+        })?;
     let mut bytes = Vec::with_capacity(expected_size);
     file.read_to_end(&mut bytes)
         .map_err(|source| WorkerOutputError::EntryAccess {

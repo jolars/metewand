@@ -115,7 +115,7 @@ pub fn command(arguments: &[OsString]) -> Result<CommandResult, CommandError> {
     maintain(path, operation, ids, root, dry_run)
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn maintain(
     path: PathBuf,
     operation: CacheOperation,
@@ -147,7 +147,7 @@ fn maintain(
     Ok(CommandResult::Cache(Box::new(result)))
 }
 
-#[cfg(not(unix))]
+#[cfg(not(any(unix, windows)))]
 fn maintain(
     _: PathBuf,
     _: CacheOperation,

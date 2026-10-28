@@ -850,6 +850,13 @@ fn read_utf8_file(absolute: &Path, diagnostic: &Path) -> Result<String, Reposito
 }
 
 fn contained_path(root: &Path, path: &Path) -> Result<PathBuf, RepositoryCheckError> {
+    #[cfg(windows)]
+    crate::platform_fs::relative_path(path).map_err(|source| {
+        RepositoryCheckError::RepositoryFileAccess {
+            path: path.to_path_buf(),
+            source,
+        }
+    })?;
     let absolute = fs::canonicalize(root.join(path)).map_err(|source| {
         RepositoryCheckError::RepositoryFileAccess {
             path: path.to_path_buf(),

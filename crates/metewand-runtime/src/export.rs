@@ -220,14 +220,7 @@ impl ResultSet {
                 stage.path().join("export.json"),
                 canonical_bytes(&manifest)?,
             )?;
-            rustix::fs::renameat_with(
-                rustix::fs::CWD,
-                stage.path(),
-                rustix::fs::CWD,
-                &target,
-                rustix::fs::RenameFlags::NOREPLACE,
-            )
-            .map_err(io::Error::from)?;
+            crate::publication::rename_no_replace(stage.path(), &target)?;
             destination_path = Some(target.to_string_lossy().into_owned());
         }
         let index_path = if rebuild_index {

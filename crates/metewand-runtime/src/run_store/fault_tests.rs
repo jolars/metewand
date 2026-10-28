@@ -822,8 +822,14 @@ fn every_durability_boundary_survives_process_death_and_resume() {
         "database.after",
         "file_sync.before",
         "file_sync.after",
+        #[cfg(unix)]
         "directory_sync.before",
+        #[cfg(unix)]
         "directory_sync.after",
+        #[cfg(windows)]
+        "namespace_change.before",
+        #[cfg(windows)]
+        "namespace_change.after",
         "rename.before",
         "rename.after",
         "finalization.before",

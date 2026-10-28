@@ -12,16 +12,13 @@
       "$ref": "datamonger-selector.schema.json"
     },
     "cache_dir": {
-      "type": "string",
-      "pattern": "^/"
+      "$ref": "common.schema.json#/$defs/native_absolute_path"
     },
     "output_dir": {
-      "type": "string",
-      "pattern": "^/"
+      "$ref": "common.schema.json#/$defs/native_absolute_path"
     },
     "receipt_path": {
-      "type": "string",
-      "pattern": "^/"
+      "$ref": "common.schema.json#/$defs/native_absolute_path"
     },
     "offline": {
       "type": "boolean"

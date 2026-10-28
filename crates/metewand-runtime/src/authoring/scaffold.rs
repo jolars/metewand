@@ -362,6 +362,11 @@ fn open_manifest(path: &Path, dry_run: bool) -> Result<File, ScaffoldError> {
         use std::os::unix::fs::OpenOptionsExt as _;
         options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
     }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt as _;
+        options.custom_flags(windows_sys::Win32::Storage::FileSystem::FILE_FLAG_OPEN_REPARSE_POINT);
+    }
     let file = options
         .open(path)
         .map_err(|error| ScaffoldError::io(path, error))?;
@@ -392,6 +397,19 @@ fn verify_manifest_file(path: &Path, file: &File) -> Result<(), ScaffoldError> {
     {
         use std::os::unix::fs::MetadataExt as _;
         same &= current.dev() == opened.dev() && current.ino() == opened.ino();
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt as _;
+        let reparses = windows_sys::Win32::Storage::FileSystem::FILE_ATTRIBUTE_REPARSE_POINT;
+        same &=
+            current.file_attributes() & reparses == 0 && opened.file_attributes() & reparses == 0;
+        let current_file = crate::platform_fs::open_regular(path, OpenOptions::new().read(true))
+            .map_err(|error| ScaffoldError::io(path, error))?;
+        same &= crate::platform_fs::file_signature(&current_file)
+            .map_err(|error| ScaffoldError::io(path, error))?
+            == crate::platform_fs::file_signature(file)
+                .map_err(|error| ScaffoldError::io(path, error))?;
     }
     if !same {
         return Err(ScaffoldError::new(

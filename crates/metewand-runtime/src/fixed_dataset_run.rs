@@ -4,8 +4,7 @@ mod buffered;
 pub(crate) use buffered::{BufferedEvent, run_buffered};
 
 use std::{
-    fs::{self, Permissions},
-    os::unix::fs::PermissionsExt,
+    fs,
     path::{Path, PathBuf},
     time::{Duration, Instant, SystemTime},
 };
@@ -20,7 +19,6 @@ use metewand_core::{
 };
 use metewand_protocol::{Capability, EvaluationVerdict, WorkerIdentity, WorkerRole};
 use serde_json::Value;
-use tempfile::Builder;
 use thiserror::Error;
 
 use crate::{
@@ -758,12 +756,7 @@ fn verify_result_tree(root: &Path, expected: ContentDigest) -> Result<(), FixedD
 }
 
 fn private_directory(root: &Path, prefix: &str) -> Result<tempfile::TempDir, FixedDatasetRunError> {
-    let directory = Builder::new()
-        .prefix(prefix)
-        .permissions(Permissions::from_mode(0o700))
-        .tempdir_in(root)
-        .map_err(FixedDatasetRunError::PrivateDirectory)?;
-    fs::set_permissions(directory.path(), Permissions::from_mode(0o700))
+    let directory = crate::platform_fs::private_tempdir_in(root, prefix)
         .map_err(FixedDatasetRunError::PrivateDirectory)?;
     Ok(directory)
 }

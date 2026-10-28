@@ -1,4 +1,4 @@
-#![cfg(unix)]
+#![cfg(any(unix, windows))]
 use metewand_core::{
     canonical::CanonicalValue,
     profile::{SelectedBufferedProfile, StopReason},
@@ -73,6 +73,12 @@ fn measurement_and_snapshot_work_remain_in_cumulative_time() {
     );
     assert_eq!(manifest.instrumented_total_time_ns, 84);
     assert_eq!(manifest.snapshots.len(), 3);
+    for (index, snapshot) in manifest.snapshots.iter().enumerate() {
+        assert_eq!(
+            snapshot.manifest.to_str().unwrap(),
+            format!("snapshots/{index}/result.json")
+        );
+    }
 }
 
 #[test]
@@ -113,6 +119,42 @@ fn bounds_stop_explicitly_and_reserve_the_terminal_result() {
                 .is_err()
         );
     }
+}
+
+#[test]
+fn returned_buffers_reject_native_separators_in_logical_paths() {
+    let root = tempfile::tempdir().unwrap();
+    let mut trace = BufferedTrace::with_clock(profile(), root.path().to_owned(), || 100).unwrap();
+    trace
+        .record(progress(0), json!({"gap":0.005}), || Ok(json!({"x":1})))
+        .unwrap();
+    trace.finish(progress(0), || panic!(), || panic!()).unwrap();
+    let path = trace.write().unwrap();
+    let (mut manifest, _) = validate_buffer(root.path(), Path::new(&path), &profile()).unwrap();
+
+    assert_eq!(
+        validate_buffer(
+            root.path(),
+            Path::new(r"snapshots\0\result.json"),
+            &profile()
+        )
+        .unwrap_err(),
+        "buffer path must be normalized and relative"
+    );
+
+    manifest.files[1].path = r"snapshots\0\result.json".into();
+    fs::write(
+        root.path().join(&path),
+        CanonicalValue::try_from(serde_json::to_value(manifest).unwrap())
+            .unwrap()
+            .to_canonical_bytes()
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        validate_buffer(root.path(), Path::new(&path), &profile()).unwrap_err(),
+        "buffer path must be normalized and relative"
+    );
 }
 
 fn rewrite_trace(root: &Path, change: impl FnOnce(&mut Vec<Value>)) {

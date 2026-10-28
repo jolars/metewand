@@ -4,34 +4,34 @@
 //! Attempt writers fence transactions by lease ownership and revision. See
 //! `CONTRIBUTING.md#durability-and-recovery` for the transaction and validation requirements.
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 mod attempts;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 mod coordination;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 mod durable;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 pub(crate) mod fresh;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 pub use coordination::SlotProgress;
-#[cfg(all(test, unix))]
+#[cfg(all(test, any(unix, windows)))]
 mod fault_tests;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 mod publisher;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 pub(crate) mod reader;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 mod recovery;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 pub use attempts::{
     ArtifactRegistration, AttemptPhase, ClaimDisposition, Finalization, LeaseRequest, OwnedAttempt,
     RetryAuthorization, TerminalAttempt, TerminalOutcome,
 };
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 pub use durable::{RunStore, RunStoreError};
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 pub use publisher::{ArtifactKind, PublishedArtifact, PublishedFinalization};
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 pub use recovery::{RecoveryReport, RejectedArtifact};
 
 /// Internal SQLite layout version, independent of public record compatibility.

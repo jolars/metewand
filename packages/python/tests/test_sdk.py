@@ -1,6 +1,7 @@
 import io
 import json
 import os
+import subprocess
 import tempfile
 import tomllib
 import unittest
@@ -180,7 +181,15 @@ class ArtifactTests(unittest.TestCase):
             for path in ["../escape", "/absolute", "a/./b", "a//b", "a\\b", ""]:
                 with self.subTest(path=path), self.assertRaises(ValueError):
                     file_entry(root, path, "application/octet-stream")
-            (root / "link").symlink_to(Path(outside))
+            try:
+                (root / "link").symlink_to(Path(outside), target_is_directory=True)
+            except OSError:
+                if os.name != "nt":
+                    raise
+                subprocess.run(
+                    ["cmd", "/d", "/c", "mklink", "/J", str(root / "link"), outside],
+                    check=True, capture_output=True,
+                )
             with self.assertRaises(ValueError):
                 write_result(root, {}, schema="s.json", manifest="link/escape.json")
             with self.assertRaises(ValueError):

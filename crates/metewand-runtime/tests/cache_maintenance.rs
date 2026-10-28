@@ -1,11 +1,47 @@
-#![cfg(unix)]
+#![cfg(any(unix, windows))]
 
 use std::{collections::BTreeMap, fs, path::Path};
 
 use metewand_core::{cache::CacheTargetState, materialization::hex};
 use metewand_runtime::{artifact_store::ArtifactStore, local_tree::hash_local_tree};
 
-fn files(root: &Path) -> BTreeMap<String, Vec<u8>> {
+#[derive(Debug, Eq, PartialEq)]
+enum FileState {
+    Bytes(Vec<u8>),
+    #[cfg(windows)]
+    LockedSharedMemory {
+        len: u64,
+        modified: std::time::SystemTime,
+    },
+}
+
+fn file_state(path: &Path) -> FileState {
+    match fs::read(path) {
+        Ok(bytes) => FileState::Bytes(bytes),
+        #[cfg(windows)]
+        Err(error)
+            if error.raw_os_error()
+                == Some(windows_sys::Win32::Foundation::ERROR_LOCK_VIOLATION as i32)
+                && path
+                    .file_name()
+                    .unwrap()
+                    .to_str()
+                    .unwrap()
+                    .ends_with(".sqlite3-shm") =>
+        {
+            // SQLite's mandatory Windows locks prevent separate handles
+            // from reading its WAL index during a write transaction.
+            let metadata = fs::metadata(path).unwrap();
+            FileState::LockedSharedMemory {
+                len: metadata.len(),
+                modified: metadata.modified().unwrap(),
+            }
+        }
+        Err(error) => panic!("cannot read {path:?}: {error}"),
+    }
+}
+
+fn files(root: &Path) -> BTreeMap<String, FileState> {
     let mut result = BTreeMap::new();
     for entry in fs::read_dir(root).unwrap() {
         let entry = entry.unwrap();
@@ -15,7 +51,7 @@ fn files(root: &Path) -> BTreeMap<String, Vec<u8>> {
                 result.insert(format!("{name}/{path}"), bytes);
             }
         } else {
-            result.insert(name, fs::read(entry.path()).unwrap());
+            result.insert(name, file_state(&entry.path()));
         }
     }
     result
@@ -167,6 +203,7 @@ fn catalog_snapshots_see_commits_and_exclude_uncommitted_roots_without_writes() 
 
 #[test]
 fn unsafe_paths_and_incompatible_catalogs_fail_before_any_object_is_detached() {
+    #[cfg(unix)]
     use std::os::unix::fs::symlink;
 
     let cache = tempfile::tempdir().unwrap();
@@ -176,13 +213,16 @@ fn unsafe_paths_and_incompatible_catalogs_fail_before_any_object_is_detached() {
     let object = store.import_tree(source.path(), digest).unwrap();
     let object_path = object.directory().parent().unwrap().to_owned();
     drop(object);
-    let saved = cache.path().join("saved");
-    fs::rename(&object_path, &saved).unwrap();
-    symlink(&saved, &object_path).unwrap();
-    assert!(store.collect(&[], false).is_err());
-    assert!(saved.join("data").exists());
-    fs::remove_file(&object_path).unwrap();
-    fs::rename(&saved, &object_path).unwrap();
+    #[cfg(unix)]
+    {
+        let saved = cache.path().join("saved");
+        fs::rename(&object_path, &saved).unwrap();
+        symlink(&saved, &object_path).unwrap();
+        assert!(store.collect(&[], false).is_err());
+        assert!(saved.join("data").exists());
+        fs::remove_file(&object_path).unwrap();
+        fs::rename(&saved, &object_path).unwrap();
+    }
     let db = rusqlite::Connection::open(cache.path().join("cache.sqlite3")).unwrap();
     db.pragma_update(None, "user_version", 99).unwrap();
     drop(db);

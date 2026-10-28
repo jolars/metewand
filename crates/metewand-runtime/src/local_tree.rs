@@ -81,6 +81,13 @@ fn collect_entries(
     } else {
         PathBuf::from(relative_directory)
     };
+    #[cfg(windows)]
+    crate::platform_fs::validate_directory_names(absolute_directory).map_err(|source| {
+        LocalTreeHashError::ReadDirectory {
+            path: error_path.clone(),
+            source,
+        }
+    })?;
     let mut directory_entries = fs::read_dir(absolute_directory)
         .map_err(|source| LocalTreeHashError::ReadDirectory {
             path: error_path.clone(),
@@ -117,12 +124,31 @@ fn collect_entries(
                 path: PathBuf::from(&path),
                 source,
             })?;
-        let kind = if file_type.is_dir() {
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::MetadataExt;
+            let metadata = fs::symlink_metadata(entry.path()).map_err(|source| {
+                LocalTreeHashError::EntryAccess {
+                    path: PathBuf::from(&path),
+                    source,
+                }
+            })?;
+            if metadata.file_attributes()
+                & windows_sys::Win32::Storage::FileSystem::FILE_ATTRIBUTE_REPARSE_POINT
+                != 0
+                && !file_type.is_symlink()
+            {
+                return Err(LocalTreeHashError::UnsupportedEntryType {
+                    path: PathBuf::from(&path),
+                });
+            }
+        }
+        let kind = if file_type.is_symlink() {
+            EntryKind::Symlink
+        } else if file_type.is_dir() {
             EntryKind::Directory
         } else if file_type.is_file() {
             EntryKind::File
-        } else if file_type.is_symlink() {
-            EntryKind::Symlink
         } else {
             EntryKind::Unsupported
         };

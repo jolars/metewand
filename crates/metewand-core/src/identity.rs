@@ -277,7 +277,7 @@ fn path(value: &std::path::Path) -> Value {
         value
             .to_str()
             .expect("repository paths are validated as UTF-8")
-            .to_owned(),
+            .replace(std::path::MAIN_SEPARATOR, "/"),
     )
 }
 

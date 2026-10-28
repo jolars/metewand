@@ -4,6 +4,20 @@
   "x-metewand-compatibility-version": 1,
   "title": "Metewand version 1 shared schema definitions",
   "$defs": {
+    "native_absolute_path": {
+      "type": "string",
+      "anyOf": [
+        {
+          "pattern": "^/"
+        },
+        {
+          "pattern": "^[A-Za-z]:[\\\\/]"
+        },
+        {
+          "pattern": "^\\\\\\\\[^\\\\/]+[\\\\/][^\\\\/]+"
+        }
+      ]
+    },
     "compact_type": {
       "enum": ["number", "integer", "string", "boolean", "null", "array"]
     },

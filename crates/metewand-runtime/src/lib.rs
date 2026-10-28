@@ -6,55 +6,57 @@ pub const LOCAL_TREE_HASH_VERSION: u32 = 1;
 /// Compatibility version of the source-resolution boundary and its receipts.
 pub const SOURCE_RESOLUTION_VERSION: u32 = 1;
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 mod durability;
-#[cfg(all(test, unix))]
+#[cfg(all(test, any(unix, windows)))]
 mod fault_injection;
+#[cfg(any(unix, windows))]
+pub(crate) mod platform_fs;
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 pub mod artifact_store;
 pub mod authoring;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 pub mod buffered;
 pub mod build_evidence;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 pub mod datamonger;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 pub mod dataset_materialization;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 pub mod export;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 pub mod fixed_dataset_run;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 pub mod inspection;
 pub mod local_tree;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 pub mod local_worker;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 pub mod publication;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 mod redaction;
 pub mod repository;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 mod resource_accounting;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 pub mod run;
 pub mod run_store;
 pub mod source_acquisition;
 pub mod source_bundle;
 pub mod source_resolution;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 pub mod worker_environment;
 pub mod worker_output;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 pub mod worker_process;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 pub mod worker_sdk;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 pub mod worker_session;
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 pub mod executor;
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 pub mod worker_reuse;

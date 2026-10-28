@@ -6,6 +6,16 @@ use metewand_runtime::source_bundle::{
 };
 use tempfile::TempDir;
 
+#[test]
+fn expands_globs_with_an_empty_literal_prefix() {
+    let repository = TempDir::new().unwrap();
+    write(repository.path(), "a.py");
+    write(repository.path(), "src/b.py");
+    let bundle =
+        expand_source_bundle(repository.path(), &[pattern("*.py"), pattern("**/*.py")]).unwrap();
+    assert_eq!(bundle.paths(), &[Path::new("a.py"), Path::new("src/b.py")]);
+}
+
 fn pattern(value: &str) -> RepositoryPath {
     serde_json::from_str(&format!("{value:?}")).expect("test pattern must be a repository path")
 }
@@ -55,6 +65,7 @@ fn expands_recursive_globs_without_following_discovered_symlink_directories() {
     );
 }
 
+#[cfg(unix)]
 #[test]
 fn supports_the_documented_glob_forms_and_includes_dotfiles() {
     let repository = TempDir::new().unwrap();

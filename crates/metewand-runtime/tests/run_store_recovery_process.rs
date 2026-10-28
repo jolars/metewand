@@ -1,4 +1,4 @@
-#![cfg(unix)]
+#![cfg(any(unix, windows))]
 
 use metewand_core::records::{RecordId, ResolvedAttemptSlotRecord};
 use metewand_runtime::run_store::{

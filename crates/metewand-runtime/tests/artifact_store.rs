@@ -1,8 +1,9 @@
-#![cfg(unix)]
+#![cfg(any(unix, windows))]
 
+#[cfg(unix)]
+use std::os::unix::fs::{MetadataExt, PermissionsExt, symlink};
 use std::{
     fs,
-    os::unix::fs::{MetadataExt, PermissionsExt, symlink},
     sync::{Arc, Barrier},
     thread,
 };
@@ -19,6 +20,7 @@ fn imported_trees_survive_reopening_and_attempt_views_are_independent() {
     let attempts = tempfile::tempdir().unwrap();
     fs::create_dir(source.path().join("empty")).unwrap();
     fs::write(source.path().join("payload"), b"abc").unwrap();
+    #[cfg(unix)]
     fs::set_permissions(
         source.path().join("payload"),
         fs::Permissions::from_mode(0o755),
@@ -32,6 +34,7 @@ fn imported_trees_survive_reopening_and_attempt_views_are_independent() {
     let second = object.private_view(attempts.path()).unwrap();
     assert_eq!(store.active_leases().unwrap().len(), 3);
     assert_ne!(first.directory(), second.directory());
+    #[cfg(unix)]
     assert_ne!(
         fs::metadata(first.directory().join("payload"))
             .unwrap()
@@ -40,6 +43,7 @@ fn imported_trees_survive_reopening_and_attempt_views_are_independent() {
             .unwrap()
             .ino()
     );
+    #[cfg(unix)]
     assert_ne!(
         fs::metadata(first.directory().join("payload"))
             .unwrap()
@@ -106,13 +110,16 @@ fn incomplete_changed_and_unsafe_trees_cannot_be_consumed() {
         Err(ArtifactStoreError::ChangedContent)
     ));
     fs::write(source.path().join("payload"), b"abc").unwrap();
-    symlink("payload", source.path().join("link")).unwrap();
-    assert!(
-        store
-            .import_tree(source.path(), hash_local_tree(source.path()).unwrap())
-            .is_err()
-    );
-    fs::remove_file(source.path().join("link")).unwrap();
+    #[cfg(unix)]
+    {
+        symlink("payload", source.path().join("link")).unwrap();
+        assert!(
+            store
+                .import_tree(source.path(), hash_local_tree(source.path()).unwrap())
+                .is_err()
+        );
+        fs::remove_file(source.path().join("link")).unwrap();
+    }
     let object = store.import_tree(source.path(), digest).unwrap();
     fs::remove_file(object.directory().parent().unwrap().join("manifest.json")).unwrap();
     assert!(store.get(digest).is_err());
@@ -129,6 +136,40 @@ fn empty_unit_trees_are_valid_cache_objects() {
         .unwrap();
     object.verify().unwrap();
     assert_eq!(fs::read_dir(object.directory()).unwrap().count(), 0);
+}
+
+#[test]
+fn readonly_datasets_are_imported_and_flushed_without_changing_the_source() {
+    let cache = tempfile::tempdir().unwrap();
+    let source = tempfile::tempdir().unwrap();
+    let views = tempfile::tempdir().unwrap();
+    let payload = source.path().join("payload");
+    fs::write(&payload, b"immutable dataset").unwrap();
+    let original_permissions = fs::metadata(&payload).unwrap().permissions();
+    let mut permissions = original_permissions.clone();
+    permissions.set_readonly(true);
+    fs::set_permissions(&payload, permissions).unwrap();
+    let digest = hash_local_tree(source.path()).unwrap();
+    let store = ArtifactStore::open(cache.path()).unwrap();
+    let object = store.import_tree(source.path(), digest).unwrap();
+    object.verify().unwrap();
+    let view = object.private_view(views.path()).unwrap();
+    view.verify().unwrap();
+    for directory in [object.directory(), view.directory()] {
+        let copied = directory.join("payload");
+        assert!(!fs::metadata(&copied).unwrap().permissions().readonly());
+        fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&copied)
+            .unwrap()
+            .sync_all()
+            .unwrap();
+        assert_eq!(fs::read(copied).unwrap(), b"immutable dataset");
+    }
+    assert!(fs::metadata(&payload).unwrap().permissions().readonly());
+    assert_eq!(hash_local_tree(source.path()).unwrap(), digest);
+    fs::set_permissions(payload, original_permissions).unwrap();
 }
 
 #[test]
@@ -336,10 +377,12 @@ fn quarantine_process_helper() {
 fn corrupted_objects_are_quarantined_without_worker_copies() {
     for corruption in [
         "bytes",
+        #[cfg(unix)]
         "mode",
         "missing",
         "extra",
         "directory",
+        #[cfg(unix)]
         "symlink",
         "version",
         "incomplete",
@@ -355,11 +398,13 @@ fn corrupted_objects_are_quarantined_without_worker_copies() {
         let data = object.directory();
         match corruption {
             "bytes" => fs::write(data.join("payload"), b"abd").unwrap(),
+            #[cfg(unix)]
             "mode" => fs::set_permissions(data.join("payload"), fs::Permissions::from_mode(0o700))
                 .unwrap(),
             "missing" => fs::remove_file(data.join("payload")).unwrap(),
             "extra" => fs::write(data.join("extra"), b"extra").unwrap(),
             "directory" => fs::create_dir(data.join("empty")).unwrap(),
+            #[cfg(unix)]
             "symlink" => {
                 fs::remove_file(data.join("payload")).unwrap();
                 symlink(source.path().join("payload"), data.join("payload")).unwrap();
@@ -522,6 +567,7 @@ fn provider_exports_enter_the_store_through_independent_verified_copies() {
     }
     let provider = tempfile::tempdir().unwrap();
     fs::write(provider.path().join("payload"), b"abc").unwrap();
+    #[cfg(unix)]
     fs::set_permissions(
         provider.path().join("payload"),
         fs::Permissions::from_mode(0o644),
@@ -556,6 +602,7 @@ fn provider_exports_enter_the_store_through_independent_verified_copies() {
         fs::read(provider.path().join("payload")).unwrap(),
         b"provider changed"
     );
+    #[cfg(unix)]
     assert_eq!(
         fs::metadata(provider.path().join("payload"))
             .unwrap()

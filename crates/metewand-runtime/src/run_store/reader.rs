@@ -2,9 +2,8 @@
 
 use std::{
     collections::BTreeMap,
-    fs::{self, File, Metadata, OpenOptions},
+    fs::{self, File, OpenOptions},
     io,
-    os::unix::fs::{MetadataExt, OpenOptionsExt},
     path::{Path, PathBuf},
     time::{Duration, Instant},
 };
@@ -21,13 +20,14 @@ pub(crate) struct StoreSnapshot {
 
 impl StoreSnapshot {
     pub fn read(root: &Path) -> Result<Self, RunStoreError> {
-        if !fs::symlink_metadata(root)?.is_dir() {
+        if !crate::platform_fs::is_real_directory(&fs::symlink_metadata(root)?) {
             return Err(RunStoreError::UnsafePath(root.to_owned()));
         }
         let root = fs::canonicalize(root)?;
         let private = tempfile::Builder::new()
             .prefix("metewand-inspect-")
             .tempdir()?;
+        crate::platform_fs::set_private_directory(private.path())?;
         copy_database_snapshot(&root, private.path(), "run.sqlite3")?;
         let connection = Connection::open_with_flags(
             private.path().join("run.sqlite3"),
@@ -109,22 +109,35 @@ pub(crate) fn copy_database_snapshot(
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
         let database = open_source(&root.join(name))?;
+        #[cfg(windows)]
+        let shared_memory = match windows_snapshot_locks(root, name, &database) {
+            Ok(file) => file,
+            Err(RunStoreError::Busy) if Instant::now() < deadline => {
+                std::thread::sleep(Duration::from_millis(10));
+                continue;
+            }
+            Err(error) => return Err(error),
+        };
         let wal_name = format!("{name}-wal");
         let wal = match open_source(&root.join(&wal_name)) {
             Ok(file) => Some(file),
             Err(RunStoreError::Io(error)) if error.kind() == io::ErrorKind::NotFound => None,
             Err(error) => return Err(error),
         };
-        let database_before = signature(&database.metadata()?);
+        let database_before = crate::platform_fs::file_signature(&database)?;
         let wal_before = wal
             .as_ref()
-            .map(File::metadata)
-            .transpose()?
-            .as_ref()
-            .map(signature);
-        io::copy(&mut &database, &mut File::create(target.join(name))?)?;
+            .map(crate::platform_fs::file_signature)
+            .transpose()?;
+        io::copy(
+            &mut io::Read::take(&database, database.metadata()?.len()),
+            &mut File::create(target.join(name))?,
+        )?;
         if let Some(wal) = &wal {
-            io::copy(&mut &*wal, &mut File::create(target.join(&wal_name))?)?;
+            io::copy(
+                &mut io::Read::take(wal, wal.metadata()?.len()),
+                &mut File::create(target.join(&wal_name))?,
+            )?;
         } else {
             match fs::remove_file(target.join(&wal_name)) {
                 Ok(()) => (),
@@ -134,6 +147,19 @@ pub(crate) fn copy_database_snapshot(
         }
         let unchanged = source_signature(&root.join(name))? == Some(database_before)
             && source_signature(&root.join(&wal_name))? == wal_before;
+        #[cfg(windows)]
+        let unchanged = unchanged && {
+            // A newly created WAL index needs its locks acquired on the next
+            // pass. Existing indexes must retain the identity we locked.
+            let current = source_signature(&root.join(format!("{name}-shm")))?;
+            match &shared_memory {
+                Some(file) => current.is_some_and(|signature| {
+                    crate::platform_fs::file_signature(file)
+                        .is_ok_and(|locked| signature[..3] == locked[..3])
+                }),
+                None => current.is_none(),
+            }
+        };
         if unchanged {
             return Ok(());
         }
@@ -144,35 +170,78 @@ pub(crate) fn copy_database_snapshot(
     }
 }
 
+#[cfg(windows)]
+fn windows_snapshot_locks(
+    root: &Path,
+    name: &str,
+    database: &File,
+) -> Result<Option<File>, RunStoreError> {
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::{
+        Foundation::ERROR_LOCK_VIOLATION,
+        Storage::FileSystem::{LOCKFILE_FAIL_IMMEDIATELY, LockFileEx},
+        System::IO::OVERLAPPED,
+    };
+
+    fn lock(file: &File, offset: u32, length: u32) -> Result<(), RunStoreError> {
+        let mut overlapped = OVERLAPPED::default();
+        overlapped.Anonymous.Anonymous.Offset = offset;
+        // SAFETY: The owned file and synchronous OVERLAPPED stay live during
+        // the call. Closing the file releases this shared byte-range lock.
+        if unsafe {
+            LockFileEx(
+                file.as_raw_handle(),
+                LOCKFILE_FAIL_IMMEDIATELY,
+                0,
+                length,
+                0,
+                &mut overlapped,
+            )
+        } == 0
+        {
+            let error = io::Error::last_os_error();
+            if error.raw_os_error() == Some(ERROR_LOCK_VIOLATION as i32) {
+                return Err(RunStoreError::Busy);
+            }
+            return Err(error.into());
+        }
+        Ok(())
+    }
+
+    // These are the bundled Windows SQLite VFS lock ranges. The database's
+    // shared lock prevents mode changes and sidecar deletion. The WAL-index
+    // checkpoint, recovery, and read locks prevent database backfill and WAL
+    // reset while permitting an existing WAL writer to append. Windows file
+    // timestamps alone cannot detect writes until their handles close.
+    // https://sqlite.org/walformat.html#wal_locks
+    lock(database, 0x4000_0002, 510)?;
+    let shared_memory = match open_source(&root.join(format!("{name}-shm"))) {
+        Ok(file) => file,
+        Err(RunStoreError::Io(error)) if error.kind() == io::ErrorKind::NotFound => {
+            return Ok(None);
+        }
+        Err(error) => return Err(error),
+    };
+    lock(&shared_memory, 121, 7)?;
+    Ok(Some(shared_memory))
+}
+
 fn open_source(path: &Path) -> Result<File, RunStoreError> {
-    if !fs::symlink_metadata(path)?.is_file() {
+    if !crate::platform_fs::is_regular_file(&fs::symlink_metadata(path)?) {
         return Err(RunStoreError::UnsafePath(path.to_owned()));
     }
-    Ok(OpenOptions::new()
-        .read(true)
-        .custom_flags(rustix::fs::OFlags::NOFOLLOW.bits() as i32)
-        .open(path)?)
+    Ok(crate::platform_fs::open_regular(
+        path,
+        OpenOptions::new().read(true),
+    )?)
 }
 
 fn source_signature(path: &Path) -> Result<Option<[u64; 7]>, RunStoreError> {
-    match fs::symlink_metadata(path) {
-        Ok(metadata) if metadata.is_file() => Ok(Some(signature(&metadata))),
-        Ok(_) => Err(RunStoreError::UnsafePath(path.to_owned())),
-        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
-        Err(error) => Err(error.into()),
+    match open_source(path) {
+        Ok(file) => Ok(Some(crate::platform_fs::file_signature(&file)?)),
+        Err(RunStoreError::Io(error)) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error),
     }
-}
-
-fn signature(metadata: &Metadata) -> [u64; 7] {
-    [
-        metadata.dev(),
-        metadata.ino(),
-        metadata.len(),
-        metadata.mtime() as u64,
-        metadata.mtime_nsec() as u64,
-        metadata.ctime() as u64,
-        metadata.ctime_nsec() as u64,
-    ]
 }
 
 const QUERIES: &[(&str, &str)] = &[
@@ -223,14 +292,50 @@ mod tests {
     use super::*;
     use crate::run_store::RunStore;
 
-    fn files(root: &Path) -> BTreeMap<String, Vec<u8>> {
+    #[derive(Debug, Eq, PartialEq)]
+    enum FileState {
+        Bytes(Vec<u8>),
+        #[cfg(windows)]
+        LockedSharedMemory {
+            len: u64,
+            modified: std::time::SystemTime,
+        },
+    }
+
+    fn file_state(path: &Path) -> FileState {
+        match fs::read(path) {
+            Ok(bytes) => FileState::Bytes(bytes),
+            #[cfg(windows)]
+            Err(error)
+                if error.raw_os_error()
+                    == Some(windows_sys::Win32::Foundation::ERROR_LOCK_VIOLATION as i32)
+                    && path
+                        .file_name()
+                        .unwrap()
+                        .to_str()
+                        .unwrap()
+                        .ends_with(".sqlite3-shm") =>
+            {
+                // SQLite's mandatory Windows locks prevent separate handles
+                // from reading its WAL index during a write transaction.
+                let metadata = fs::metadata(path).unwrap();
+                FileState::LockedSharedMemory {
+                    len: metadata.len(),
+                    modified: metadata.modified().unwrap(),
+                }
+            }
+            Err(error) => panic!("cannot read {path:?}: {error}"),
+        }
+    }
+
+    fn files(root: &Path) -> BTreeMap<String, FileState> {
         fs::read_dir(root)
             .unwrap()
             .map(|entry| {
                 let entry = entry.unwrap();
                 (
                     entry.file_name().into_string().unwrap(),
-                    fs::read(entry.path()).unwrap(),
+                    file_state(&entry.path()),
                 )
             })
             .collect()
@@ -265,6 +370,35 @@ mod tests {
         );
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn snapshot_locks_block_checkpoints_and_release_without_writing_source_files() {
+        let root = tempfile::tempdir().unwrap();
+        let store = RunStore::open(root.path()).unwrap();
+        store.connection.execute("INSERT INTO events(occurred_at_ns, kind, payload_json) VALUES (0, 'committed', '{}')", []).unwrap();
+        let checkpointer = Connection::open(store.database_path()).unwrap();
+        checkpointer.busy_timeout(Duration::ZERO).unwrap();
+        checkpointer
+            .query_row("SELECT count(*) FROM events", [], |r| r.get::<_, u32>(0))
+            .unwrap();
+        store.connection.execute_batch("BEGIN IMMEDIATE; INSERT INTO events(occurred_at_ns, kind, payload_json) VALUES (1, 'uncommitted', '{}');").unwrap();
+        let before = files(root.path());
+        let database = open_source(store.database_path()).unwrap();
+        let shared_memory = windows_snapshot_locks(root.path(), "run.sqlite3", &database).unwrap();
+        assert!(shared_memory.is_some());
+        let busy: u32 = checkpointer
+            .query_row("PRAGMA wal_checkpoint(PASSIVE)", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(busy, 1);
+        assert_eq!(files(root.path()), before);
+        store.connection.execute_batch("COMMIT").unwrap();
+        drop((shared_memory, database));
+        let busy: u32 = checkpointer
+            .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(busy, 0);
+    }
+
     #[test]
     fn missing_uninitialized_incompatible_and_symlinked_databases_are_not_changed() {
         let root = tempfile::tempdir().unwrap();
@@ -284,17 +418,20 @@ mod tests {
             assert_eq!(files(root.path()), before);
         }
         drop(connection);
-        fs::rename(&path, root.path().join("other")).unwrap();
-        std::os::unix::fs::symlink("other", &path).unwrap();
-        assert!(matches!(
-            StoreSnapshot::read(root.path()),
-            Err(RunStoreError::UnsafePath(_))
-        ));
-        assert!(
-            fs::symlink_metadata(&path)
-                .unwrap()
-                .file_type()
-                .is_symlink()
-        );
+        #[cfg(unix)]
+        {
+            fs::rename(&path, root.path().join("other")).unwrap();
+            std::os::unix::fs::symlink("other", &path).unwrap();
+            assert!(matches!(
+                StoreSnapshot::read(root.path()),
+                Err(RunStoreError::UnsafePath(_))
+            ));
+            assert!(
+                fs::symlink_metadata(&path)
+                    .unwrap()
+                    .file_type()
+                    .is_symlink()
+            );
+        }
     }
 }

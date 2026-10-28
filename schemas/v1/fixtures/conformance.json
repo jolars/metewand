@@ -2,6 +2,17 @@
   "version": 1,
   "valid": [
     {
+      "name": "native Windows worker environment records its private ACL policy",
+      "schema": "worker-environment",
+      "instance": {
+        "version": 2,
+        "working_directory": "C:\\worker space\\run",
+        "environment_variables": {},
+        "umask": null,
+        "directory_access": "current_user_and_system"
+      }
+    },
+    {
       "name": "manifest accepts optional applicability",
       "schema": "manifest",
       "instance": {

@@ -1,16 +1,18 @@
-#![cfg(unix)]
-
 use std::{
     env,
     fs::File,
     io::{self, BufRead, BufReader, Write},
-    os::fd::FromRawFd,
     process::Command,
     thread,
     time::{Duration, Instant},
 };
 
-use metewand_runtime::worker_process::{PosixWorkerProcess, WorkerLogLimits};
+#[cfg(unix)]
+use std::os::fd::FromRawFd;
+#[cfg(windows)]
+use std::os::windows::io::FromRawHandle;
+
+use metewand_runtime::worker_process::{WorkerLogLimits, WorkerProcess};
 use serde_json::json;
 
 const FIXTURE_MODE: &str = "METEWAND_TEST_WORKER_MODE";
@@ -21,6 +23,7 @@ fn fixture_worker() {
     match env::var(FIXTURE_MODE).as_deref() {
         Ok("exchange") => run_exchange_fixture(),
         Ok("flood") => run_flood_fixture(),
+        #[cfg(unix)]
         Ok("closed-stdio-parent") => run_closed_stdio_parent_fixture(),
         _ => {}
     }
@@ -28,7 +31,7 @@ fn fixture_worker() {
 
 #[test]
 fn protocol_uses_dedicated_inherited_pipes() {
-    let mut worker = PosixWorkerProcess::spawn(
+    let mut worker = WorkerProcess::spawn(
         fixture_command("exchange"),
         WorkerLogLimits::new(1024, 1024),
     )
@@ -73,7 +76,7 @@ fn protocol_uses_dedicated_inherited_pipes() {
 fn stdout_and_stderr_continue_draining_after_capture_limits() {
     let stdout_limit = 31;
     let stderr_limit = 47;
-    let mut worker = PosixWorkerProcess::spawn(
+    let mut worker = WorkerProcess::spawn(
         fixture_command("flood"),
         WorkerLogLimits::new(stdout_limit, stderr_limit),
     )
@@ -107,6 +110,7 @@ fn stdout_and_stderr_continue_draining_after_capture_limits() {
 }
 
 #[test]
+#[cfg(unix)]
 fn protocol_descriptors_remain_dedicated_when_parent_stdio_is_closed() {
     let status = fixture_command("closed-stdio-parent")
         .status()
@@ -126,18 +130,7 @@ fn fixture_command(mode: &str) -> Command {
 }
 
 fn run_exchange_fixture() {
-    let read_fd = protocol_fd("METEWAND_PROTOCOL_READ_FD");
-    let write_fd = protocol_fd("METEWAND_PROTOCOL_WRITE_FD");
-    assert_ne!(read_fd, write_fd);
-    assert!(read_fd > 2);
-    assert!(write_fd > 2);
-
-    // SAFETY: The runtime grants the worker ownership of each inherited
-    // protocol descriptor, and this fixture constructs exactly one owner for
-    // each descriptor.
-    let read_pipe = unsafe { File::from_raw_fd(read_fd) };
-    // SAFETY: See the ownership argument above.
-    let mut write_pipe = unsafe { File::from_raw_fd(write_fd) };
+    let (read_pipe, mut write_pipe) = protocol_files();
     let mut request = String::new();
     BufReader::new(read_pipe)
         .read_line(&mut request)
@@ -163,6 +156,7 @@ fn run_flood_fixture() {
     stderr.join().expect("stderr writer must not panic");
 }
 
+#[cfg(unix)]
 fn run_closed_stdio_parent_fixture() -> ! {
     for descriptor in 0..=2 {
         // SAFETY: This isolated fixture process deliberately takes ownership
@@ -171,7 +165,7 @@ fn run_closed_stdio_parent_fixture() -> ! {
         drop(unsafe { File::from_raw_fd(descriptor) });
     }
 
-    let mut worker = PosixWorkerProcess::spawn(
+    let mut worker = WorkerProcess::spawn(
         fixture_command("exchange"),
         WorkerLogLimits::new(1024, 1024),
     )
@@ -214,6 +208,7 @@ fn write_repeated(mut destination: impl Write, byte: u8) {
         .expect("the complete log must be flushed");
 }
 
+#[cfg(unix)]
 fn protocol_fd(name: &str) -> i32 {
     env::var(name)
         .unwrap_or_else(|_| panic!("{name} must be set"))
@@ -222,6 +217,7 @@ fn protocol_fd(name: &str) -> i32 {
 }
 
 #[test]
+#[cfg(unix)]
 fn escaped_descendant_cannot_hold_log_cleanup_open() {
     for flood in [false, true] {
         let mut command = Command::new("python3");
@@ -248,7 +244,7 @@ os.read(ready, 5)
 os._exit(0)
 "#,
         ]);
-        let worker = PosixWorkerProcess::spawn(command, WorkerLogLimits::new(32, 32)).unwrap();
+        let worker = WorkerProcess::spawn(command, WorkerLogLimits::new(32, 32)).unwrap();
         let started = Instant::now();
         let error = worker
             .wait()
@@ -258,5 +254,35 @@ os._exit(0)
             error,
             metewand_runtime::worker_process::WorkerProcessError::LogDrainDeadline { .. }
         ));
+    }
+}
+
+#[cfg(unix)]
+fn protocol_files() -> (File, File) {
+    let read = protocol_fd("METEWAND_PROTOCOL_READ_FD");
+    let write = protocol_fd("METEWAND_PROTOCOL_WRITE_FD");
+    assert_ne!(read, write);
+    assert!(read > 2 && write > 2);
+    // SAFETY: Each inherited endpoint is transferred to exactly one owner.
+    unsafe { (File::from_raw_fd(read), File::from_raw_fd(write)) }
+}
+
+#[cfg(windows)]
+fn protocol_files() -> (File, File) {
+    let handle = |name| env::var(name).unwrap().parse::<usize>().unwrap() as *mut _;
+    let read = handle("METEWAND_PROTOCOL_READ_HANDLE");
+    let write = handle("METEWAND_PROTOCOL_WRITE_HANDLE");
+    assert_ne!(read, write);
+    // SAFETY: Each inherited endpoint is transferred to exactly one owner.
+    unsafe { (File::from_raw_handle(read), File::from_raw_handle(write)) }
+}
+
+#[test]
+fn concurrent_workers_keep_protocol_and_log_endpoints_separate() {
+    let workers: Vec<_> = (0..8)
+        .map(|_| thread::spawn(protocol_uses_dedicated_inherited_pipes))
+        .collect();
+    for worker in workers {
+        worker.join().unwrap();
     }
 }

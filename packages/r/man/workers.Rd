@@ -35,8 +35,10 @@ evaluation(metrics, verdict)
   \item{shutdown}{Optional function of state that releases resources before exit.}
   \item{statistics}{Optional function of state returning a diagnostic JSON object
   or NULL. This callback runs outside implementation timing.}
-  \item{read_fd, write_fd}{Separate inherited POSIX pipe descriptors. Defaults
-  read METEWAND_PROTOCOL_READ_FD and METEWAND_PROTOCOL_WRITE_FD.}
+  \item{read_fd, write_fd}{Separate caller-owned pipe descriptors. By default,
+  Unix workers read METEWAND_PROTOCOL_READ_FD and METEWAND_PROTOCOL_WRITE_FD;
+  Windows workers use METEWAND_PROTOCOL_READ_HANDLE and
+  METEWAND_PROTOCOL_WRITE_HANDLE. Streams are binary on both platforms.}
   \item{materialize}{Function of source directory, dataset parameters, seed, and
   output directory. Closes all files and returns the relative dataset manifest.}
   \item{evaluate}{Function of dataset directory, contract identity, problem

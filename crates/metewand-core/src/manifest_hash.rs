@@ -1,6 +1,6 @@
 //! Canonical hashing for complete, name-resolved benchmark manifests.
 
-use std::{collections::BTreeMap, fmt, path::Path};
+use std::{collections::BTreeMap, fmt};
 
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
@@ -608,23 +608,15 @@ fn optional_canonical(value: Option<&CanonicalValue>) -> Value {
 }
 
 fn repository_path(path: &RepositoryPath) -> Value {
-    path_value(path.as_path())
+    Value::String(path.as_str().to_owned())
 }
 
 fn repository_root_path(path: &RepositoryRootPath) -> Value {
-    path_value(path.as_path())
+    Value::String(path.as_str().to_owned())
 }
 
 fn repository_paths(paths: &[RepositoryPath]) -> Value {
     Value::Array(paths.iter().map(repository_path).collect())
-}
-
-fn path_value(path: &Path) -> Value {
-    Value::String(
-        path.to_str()
-            .expect("repository paths are validated as UTF-8")
-            .to_owned(),
-    )
 }
 
 fn names(names: &[Name]) -> Value {

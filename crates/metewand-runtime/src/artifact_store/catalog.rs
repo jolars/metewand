@@ -1,9 +1,8 @@
-use std::{collections::BTreeMap, fs::File, time::Duration};
+use std::{collections::BTreeMap, time::Duration};
 
 use rusqlite::{Connection, OpenFlags, params};
 
 use super::{ArtifactStore, ArtifactStoreError, missing, regular_file};
-use crate::durability::sync_all;
 
 /// The cache catalog has a separate layout version from content manifests.
 pub const CACHE_CATALOG_VERSION: u32 = 1;
@@ -67,8 +66,8 @@ impl Catalog {
             tx.execute_batch(SCHEMA)?;
         }
         tx.commit()?;
-        sync_all(&File::open(store.root.join(NAME))?)?;
-        sync_all(&File::open(&store.root)?)?;
+        crate::platform_fs::sync_owned_file(&store.root.join(NAME))?;
+        crate::platform_fs::complete_namespace_change(&store.root)?;
         Ok(Self(connection))
     }
 
@@ -76,6 +75,7 @@ impl Catalog {
         let private = tempfile::Builder::new()
             .prefix("metewand-cache-snapshot-")
             .tempdir()?;
+        crate::platform_fs::set_private_directory(private.path())?;
         crate::run_store::reader::copy_database_snapshot(&store.root, private.path(), NAME)?;
         let connection = Connection::open_with_flags(
             private.path().join(NAME),

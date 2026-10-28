@@ -92,7 +92,7 @@ pub fn command(
     inspect(command, manifest, output_directory, id)
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn inspect(
     command: &'static str,
     manifest: Option<PathBuf>,
@@ -126,7 +126,7 @@ fn inspect(
     }
 }
 
-#[cfg(not(unix))]
+#[cfg(not(any(unix, windows)))]
 fn inspect(
     _: &'static str,
     _: Option<PathBuf>,

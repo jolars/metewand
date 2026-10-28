@@ -12,8 +12,7 @@
       "$ref": "common.schema.json#/$defs/identity"
     },
     "dataset_dir": {
-      "type": "string",
-      "pattern": "^/"
+      "$ref": "common.schema.json#/$defs/native_absolute_path"
     },
     "manifest": {
       "$ref": "common.schema.json#/$defs/repository_path"

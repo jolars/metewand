@@ -1,4 +1,4 @@
-#![cfg(unix)]
+#![cfg(any(unix, windows))]
 
 use std::{fs, sync::Arc, thread};
 
@@ -108,14 +108,17 @@ fn requires_an_existing_absolute_directory_and_regular_database() {
     ] {
         assert!(RunStore::open(path).is_err());
     }
-    let other = TempDir::new().unwrap();
-    std::os::unix::fs::symlink(other.path(), root.path().join("link")).unwrap();
-    assert!(RunStore::open(&root.path().join("link")).is_err());
-    let target = other.path().join("target.sqlite3");
-    fs::write(&target, b"do not change").unwrap();
-    std::os::unix::fs::symlink(&target, root.path().join("run.sqlite3")).unwrap();
-    assert!(RunStore::open(root.path()).is_err());
-    assert_eq!(fs::read(target).unwrap(), b"do not change");
+    #[cfg(unix)]
+    {
+        let other = TempDir::new().unwrap();
+        std::os::unix::fs::symlink(other.path(), root.path().join("link")).unwrap();
+        assert!(RunStore::open(&root.path().join("link")).is_err());
+        let target = other.path().join("target.sqlite3");
+        fs::write(&target, b"do not change").unwrap();
+        std::os::unix::fs::symlink(&target, root.path().join("run.sqlite3")).unwrap();
+        assert!(RunStore::open(root.path()).is_err());
+        assert_eq!(fs::read(target).unwrap(), b"do not change");
+    }
 }
 
 #[test]
@@ -186,6 +189,7 @@ fn initialization_lock_contention_is_bounded_and_releases_cleanly() {
     RunStore::open(root.path()).unwrap();
 }
 
+#[cfg(unix)]
 #[test]
 fn refuses_symlinked_lock_files_and_sqlite_sidecars() {
     for name in [

@@ -17,6 +17,20 @@ cargo run --locked -p metewand-cli -- run \
   --output-dir "$demo_dir/run" --output jsonl
 ```
 
+On native Windows, install Rtools for your R release and put `R.exe` and
+`Rscript.exe` on `PATH`. In PowerShell:
+
+```powershell
+$demo = Join-Path $env:TEMP ([guid]::NewGuid().ToString())
+Copy-Item examples/r-package $demo -Recurse
+New-Item "$demo/library" -ItemType Directory
+R CMD INSTALL "--library=$demo/library" packages/r
+cargo run --locked -p metewand-cli -- run --manifest "$demo/metewand.yaml" --output-dir "$demo/run" --output jsonl
+```
+
+Use local NTFS for the temporary directory and install `digest` into the R
+interpreter's site library as described in [getting started](../../docs/guide/getting-started.md#start-with-r).
+
 The explicit source bundle includes `worker.R` and the installed `metewand`
 package under `library/`. The worker loads that staged package using an explicit
 library path beside its entrypoint. Install `digest` in the selected

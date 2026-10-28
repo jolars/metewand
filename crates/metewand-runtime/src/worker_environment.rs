@@ -11,12 +11,13 @@ use crate::worker_process::{PROTOCOL_READ_FD_ENV, PROTOCOL_WRITE_FD_ENV};
 pub const SECRET_TEMPLATE: &str = "{secret}";
 
 /// Fixed child umask, applied after fork without changing the orchestrator.
+#[cfg(unix)]
 pub const WORKER_UMASK: libc::mode_t = 0o077;
 
 /// Returns the stable, path-independent environment supplied to every worker.
 #[must_use]
 pub fn worker_environment_template() -> BTreeMap<String, String> {
-    [
+    let variables = [
         ("LANG", "C"),
         ("LC_ALL", "C"),
         ("TZ", "UTC"),
@@ -40,7 +41,23 @@ pub fn worker_environment_template() -> BTreeMap<String, String> {
     ]
     .into_iter()
     .map(|(name, value)| (name.to_owned(), value.to_owned()))
-    .collect()
+    .collect();
+    #[cfg(windows)]
+    let variables = {
+        let mut variables: BTreeMap<String, String> = variables;
+        for (name, value) in [
+            ("USERPROFILE", "{worker}/home"),
+            ("APPDATA", "{worker}/config"),
+            ("LOCALAPPDATA", "{worker}/data"),
+            ("SYSTEMROOT", "{system_root}"),
+            ("WINDIR", "{system_root}"),
+            ("PATHEXT", ".EXE"),
+        ] {
+            variables.insert(name.to_owned(), value.to_owned());
+        }
+        variables
+    };
+    variables
 }
 
 /// Validates an allowlist and fills in the mandatory worker settings.
@@ -51,26 +68,59 @@ pub fn resolve_worker_environment(
     allowlist: &BTreeMap<String, String>,
 ) -> Result<BTreeMap<String, String>, WorkerEnvironmentError> {
     let mut variables = worker_environment_template();
+    #[cfg(windows)]
+    let mut names = std::collections::BTreeSet::new();
     for (name, value) in allowlist {
         validate_name(name)?;
+        #[cfg(windows)]
+        let name = &name.to_ascii_uppercase();
+        #[cfg(windows)]
+        if !names.insert(name.clone()) {
+            return Err(WorkerEnvironmentError::ReservedVariable { name: name.clone() });
+        }
         if value.contains('\0') {
             return Err(WorkerEnvironmentError::InvalidValue);
         }
         if let Some(relative) = value.strip_prefix("{worker}/")
-            && relative
-                .split('/')
-                .any(|part| matches!(part, "" | "." | ".."))
+            && (relative.contains(['\\', ':'])
+                || relative
+                    .split('/')
+                    .any(|part| matches!(part, "" | "." | "..")))
         {
             return Err(WorkerEnvironmentError::InvalidPath);
         }
-        if matches!(name.as_str(), PROTOCOL_READ_FD_ENV | PROTOCOL_WRITE_FD_ENV)
-            || variables.get(name).is_some_and(|fixed| fixed != value)
+        if matches!(
+            name.as_str(),
+            PROTOCOL_READ_FD_ENV
+                | PROTOCOL_WRITE_FD_ENV
+                | "METEWAND_PROTOCOL_READ_HANDLE"
+                | "METEWAND_PROTOCOL_WRITE_HANDLE"
+        ) || variables.get(name).is_some_and(|fixed| fixed != value)
         {
             return Err(WorkerEnvironmentError::ReservedVariable { name: name.clone() });
         }
         variables.insert(name.clone(), value.clone());
     }
+    #[cfg(windows)]
+    {
+        let root = system_root()?;
+        let root = root.to_str().ok_or(WorkerEnvironmentError::InvalidPath)?;
+        for value in variables.values_mut() {
+            if value.contains("{system_root}") {
+                *value = value.replace("{system_root}", root);
+            }
+        }
+    }
     Ok(variables)
+}
+
+#[cfg(windows)]
+pub(crate) fn system_root() -> Result<PathBuf, WorkerEnvironmentError> {
+    let root = std::env::var_os("SystemRoot")
+        .map(PathBuf::from)
+        .filter(|path| path.is_absolute() && path.is_dir())
+        .ok_or(WorkerEnvironmentError::InvalidPath)?;
+    Ok(root)
 }
 
 /// Ephemeral values for explicitly declared `{secret}` environment channels.
@@ -94,6 +144,19 @@ impl WorkerSecrets {
                 return Err(WorkerEnvironmentError::InvalidSecret);
             }
         }
+        #[cfg(windows)]
+        let values = {
+            let mut normalized = BTreeMap::new();
+            for (name, value) in values {
+                if normalized
+                    .insert(name.to_ascii_uppercase(), value)
+                    .is_some()
+                {
+                    return Err(WorkerEnvironmentError::SecretChannels);
+                }
+            }
+            normalized
+        };
         Ok(Self { values })
     }
 
@@ -131,7 +194,93 @@ pub struct WorkerEnvironmentProvenance {
     /// Realized values with secret values replaced by `{secret}`.
     pub environment_variables: BTreeMap<String, String>,
     /// Fixed octal umask.
-    pub umask: String,
+    pub umask: Option<String>,
+    /// Windows directory ACL policy, absent from historical Unix records.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub directory_access: Option<String>,
+}
+
+impl WorkerEnvironmentProvenance {
+    /// Records the permissions enforced by the platform's private-directory backend.
+    #[must_use]
+    pub fn new(
+        working_directory: PathBuf,
+        environment_variables: BTreeMap<String, String>,
+    ) -> Self {
+        Self {
+            version: if cfg!(windows) { 2 } else { 1 },
+            working_directory,
+            environment_variables,
+            umask: if cfg!(unix) {
+                Some("0077".to_owned())
+            } else {
+                None
+            },
+            directory_access: if cfg!(windows) {
+                Some("current_user_and_system".to_owned())
+            } else {
+                None
+            },
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn worker_directory_templates_require_normalized_logical_paths() {
+        for relative in [
+            "",
+            ".",
+            "..",
+            "/escaped",
+            "../escaped",
+            "nested/../escaped",
+            "nested//escaped",
+            "nested/./escaped",
+            "nested/",
+            r"..\..\escaped",
+            r"nested\escaped",
+            r"\escaped",
+            r"C:\escaped",
+            "C:/escaped",
+            "C:escaped",
+            "nested/C:escaped",
+            r"\\server\share\escaped",
+        ] {
+            let variables =
+                BTreeMap::from([("EXTRA_CACHE".to_owned(), format!("{{worker}}/{relative}"))]);
+            assert!(
+                matches!(
+                    resolve_worker_environment(&variables),
+                    Err(WorkerEnvironmentError::InvalidPath)
+                ),
+                "{relative:?}"
+            );
+        }
+    }
+}
+
+#[cfg(all(test, windows))]
+mod windows_tests {
+    use super::*;
+
+    #[test]
+    fn rejects_environment_aliases_and_protocol_handles() {
+        for values in [
+            [("Path", "one"), ("PATH", "two")],
+            [("home", "outside"), ("OTHER", "value")],
+            [("metewand_protocol_read_handle", "12"), ("OTHER", "value")],
+        ] {
+            let variables = values
+                .into_iter()
+                .map(|(k, v)| (k.to_owned(), v.to_owned()))
+                .collect();
+            assert!(resolve_worker_environment(&variables).is_err());
+        }
+    }
 }
 
 /// Invalid worker environment, with no secret values in diagnostics.

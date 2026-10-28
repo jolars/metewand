@@ -32,6 +32,10 @@ not separate gates before implementation.
   commands, cache maintenance, and runnable local examples.
 - [x] Add one-shot scientific smoke cases for intercepts, SLOPE, and clustered
   lasso, and pin the currently implemented compatibility boundaries.
+- [x] Support local Python, R, and Rust workers on Linux, macOS, and native
+  Windows x64, including one-shot runs, fresh sequences, buffered profiles,
+  caching, recovery, inspection, and exports. Verify native Windows on local
+  NTFS in CI, with explicit process-death recovery guarantees.
 
 These capabilities and their existing regression tests remain the starting
 point. The complete agent-loop test and exhaustive crash campaign remain opt-in;

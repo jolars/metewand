@@ -5,7 +5,8 @@ methods as separate processes, evaluates answers independently, and retains
 settings, timings, metrics, failures, and provenance.
 
 Start with the Metewand Python or R package: write ordinary functions and declare
-your comparison in YAML. The `metewand` CLI checks and runs the benchmark.
+your comparison in YAML. The `metewand` CLI checks and runs the benchmark on
+Linux, macOS, and native Windows x64.
 
 Read the [overview](docs/guide/overview.md), follow
 [getting started](docs/guide/getting-started.md), or work through the multipart
@@ -21,14 +22,18 @@ cargo install --locked --path crates/metewand-cli
 python3 -m venv .venv
 . .venv/bin/activate
 python3 -m pip install ./packages/python
-metewand init /tmp/my-benchmark
-cd /tmp/my-benchmark
+metewand init my-benchmark
+cd my-benchmark
 metewand check --workers
 metewand plan
 metewand run --output-dir run
 metewand status --output-dir run
 metewand export --output-dir run --format csv --destination tables
 ```
+
+Windows uses Rust's MSVC toolchain and Visual Studio C++ build tools. See
+[getting started](docs/guide/getting-started.md) for PowerShell installation,
+Rtools, and the local NTFS storage requirement.
 
 The starter has two files: `metewand.yaml` and `benchmark.py`. Use
 `metewand init --language r` for R. Choose a new output directory, or explicitly

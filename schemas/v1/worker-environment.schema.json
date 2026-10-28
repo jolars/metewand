@@ -5,15 +5,69 @@
   "title": "Realized worker environment provenance",
   "type": "object",
   "properties": {
-    "version": { "const": 1 },
-    "working_directory": { "type": "string", "pattern": "^/" },
+    "version": {
+      "enum": [
+        1,
+        2
+      ]
+    },
+    "working_directory": {
+      "$ref": "common.schema.json#/$defs/native_absolute_path"
+    },
     "environment_variables": {
       "type": "object",
-      "propertyNames": { "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
-      "additionalProperties": { "type": "string" }
+      "propertyNames": {
+        "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+      },
+      "additionalProperties": {
+        "type": "string"
+      }
     },
-    "umask": { "const": "0077" }
+    "umask": {
+      "enum": [
+        "0077",
+        null
+      ]
+    },
+    "directory_access": {
+      "const": "current_user_and_system"
+    }
   },
-  "required": ["version", "working_directory", "environment_variables", "umask"],
-  "additionalProperties": false
+  "required": [
+    "version",
+    "working_directory",
+    "environment_variables",
+    "umask"
+  ],
+  "additionalProperties": false,
+  "oneOf": [
+    {
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "umask": {
+          "const": "0077"
+        }
+      },
+      "not": {
+        "required": [
+          "directory_access"
+        ]
+      }
+    },
+    {
+      "properties": {
+        "version": {
+          "const": 2
+        },
+        "umask": {
+          "type": "null"
+        }
+      },
+      "required": [
+        "directory_access"
+      ]
+    }
+  ]
 }

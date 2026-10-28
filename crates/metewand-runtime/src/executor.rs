@@ -1,4 +1,4 @@
-//! Reusable execution boundary and trusted POSIX local-process implementation.
+//! Reusable execution boundary and trusted local-process implementation.
 
 use crate::{
     local_worker::{
@@ -6,7 +6,7 @@ use crate::{
         launch_trusted_local_worker_with_secrets,
     },
     worker_environment::WorkerSecrets,
-    worker_process::{PosixWorkerProcess, WorkerLogLimits, WorkerProcessError},
+    worker_process::{WorkerLogLimits, WorkerProcess, WorkerProcessError},
 };
 use metewand_core::records::ResolvedLaunchRecord;
 use std::{
@@ -63,14 +63,17 @@ pub trait Executor {
         requirements: ExecutorRequirements,
     ) -> Result<Self::Process, Self::Error>;
 
-    /// Interrupts execution, allows a bounded grace period, then forces exit.
+    /// Terminates execution and waits for bounded cleanup.
+    ///
+    /// Unix workers receive an interrupt and a grace period before forced
+    /// termination. Windows jobs terminate the complete tree immediately.
     ///
     /// # Errors
     /// Returns an error on signal failure, observation failure, or failure to exit.
     fn terminate(&self, process: &mut Self::Process) -> Result<(), Self::Error>;
 }
 
-/// Trusted local executor with POSIX process-group cleanup.
+/// Trusted local executor with Unix process-group or Windows job cleanup.
 #[derive(Clone, Copy, Debug)]
 pub struct LocalProcessExecutor {
     grace: Duration,
@@ -107,7 +110,7 @@ impl LocalProcessExecutor {
         logs: WorkerLogLimits,
         requirements: ExecutorRequirements,
         secrets: &WorkerSecrets,
-    ) -> Result<PosixWorkerProcess, ExecutorError> {
+    ) -> Result<WorkerProcess, ExecutorError> {
         self.preflight(requirements)?;
         Ok(launch_trusted_local_worker_with_secrets(
             launch,
@@ -119,19 +122,19 @@ impl LocalProcessExecutor {
 }
 
 impl Executor for LocalProcessExecutor {
-    type Process = PosixWorkerProcess;
+    type Process = WorkerProcess;
     type Error = ExecutorError;
 
     fn preflight(
         &self,
         requirements: ExecutorRequirements,
     ) -> Result<ExecutorCapabilities, ExecutorError> {
-        if requirements.complete_process_tree {
+        if requirements.complete_process_tree && !cfg!(windows) {
             return Err(ExecutorError::UnsupportedCompleteProcessTree);
         }
         Ok(ExecutorCapabilities {
-            process_groups: true,
-            complete_process_tree: false,
+            process_groups: cfg!(unix),
+            complete_process_tree: cfg!(windows),
             private_working_directory: true,
         })
     }
@@ -148,16 +151,21 @@ impl Executor for LocalProcessExecutor {
     }
 
     fn terminate(&self, process: &mut Self::Process) -> Result<(), ExecutorError> {
+        #[cfg(unix)]
         process.interrupt()?;
         // The leader may exit before its descendants; preserve the full grace
         // period and always signal the group afterward.
+        #[cfg(unix)]
         let start = Instant::now();
+        #[cfg(unix)]
         while start.elapsed() < self.grace {
             process.try_wait()?;
             thread::sleep(
                 (self.grace - start.elapsed().min(self.grace)).min(Duration::from_millis(5)),
             );
         }
+        #[cfg(windows)]
+        let _ = self.grace;
         process.kill()?;
         let start = Instant::now();
         loop {

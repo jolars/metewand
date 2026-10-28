@@ -79,7 +79,7 @@ pub enum WorkerCheckError {
     Executor(#[from] crate::executor::ExecutorError),
     /// Worker resolution or source integrity failure.
     #[error(transparent)]
-    Resolution(#[from] RunError),
+    Resolution(Box<RunError>),
     /// Private staging failed.
     #[error(transparent)]
     Io(#[from] io::Error),
@@ -98,6 +98,12 @@ pub enum WorkerCheckError {
     /// Reference conformance or input integrity failed.
     #[error("{0}")]
     Conformance(String),
+}
+
+impl From<RunError> for WorkerCheckError {
+    fn from(error: RunError) -> Self {
+        Self::Resolution(Box::new(error))
+    }
 }
 
 /// Launches declared local workers and evaluates every problem reference case.
@@ -412,9 +418,9 @@ fn stage_reference(
             serde_json::to_vec(&value).expect("JSON value"),
         )?;
     } else {
-        fs::copy(
-            path,
-            destination.join(source.as_path().file_name().expect("repository file name")),
+        crate::platform_fs::copy_owned_file(
+            &path,
+            &destination.join(source.as_path().file_name().expect("repository file name")),
         )?;
     }
     Ok(())
@@ -428,7 +434,7 @@ fn copy_tree(source: &Path, destination: &Path) -> io::Result<()> {
             fs::create_dir(&target)?;
             copy_tree(&entry.path(), &target)?;
         } else {
-            fs::copy(entry.path(), target)?;
+            crate::platform_fs::copy_owned_file(&entry.path(), &target)?;
         }
     }
     Ok(())

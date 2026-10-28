@@ -37,18 +37,33 @@
 }
 .output_path <- function(directory, relative) {
   relative <- .relative_path(relative)
-  root <- normalizePath(directory, mustWork = TRUE)
+  if (.Platform$OS.type == "windows") .windows_relative_path(relative)
+  root <- normalizePath(directory, winslash = "/", mustWork = TRUE)
   target <- file.path(root, relative)
   link <- Sys.readlink(target)
   if (!file.exists(target) && !is.na(link) && nzchar(link)) {
     stop("Output paths cannot identify dangling symlinks.", call. = FALSE)
   }
-  parent <- normalizePath(dirname(target), mustWork = TRUE)
-  resolved <- if (file.exists(target)) normalizePath(target, mustWork = TRUE) else file.path(parent, basename(target))
+  parent <- normalizePath(dirname(target), winslash = "/", mustWork = TRUE)
+  resolved <- if (file.exists(target)) normalizePath(target, winslash = "/", mustWork = TRUE) else file.path(parent, basename(target))
+  if (.Platform$OS.type == "windows") {
+    root <- tolower(root)
+    resolved <- tolower(resolved)
+  }
   if (!startsWith(resolved, paste0(sub("/+$", "", root), "/"))) {
     stop("Output paths must stay beneath the assigned directory.", call. = FALSE)
   }
   target
+}
+.windows_relative_path <- function(relative) {
+  parts <- strsplit(relative, "/", fixed = TRUE)[[1L]]
+  stems <- toupper(sub("\\..*$", "", parts))
+  reserved <- stems %in% c("CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$") |
+    grepl("^(COM|LPT)[1-9\u00b9\u00b2\u00b3]$", stems)
+  if (any(reserved | grepl('[<>:"|?*[:cntrl:]]|[. ]$', parts))) {
+    stop("Output paths must identify ordinary Windows files.", call. = FALSE)
+  }
+  invisible(relative)
 }
 
 read_json <- function(path) {

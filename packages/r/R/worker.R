@@ -207,6 +207,12 @@ evaluation <- function(metrics, verdict) {
 }
 
 .serve_fds <- function(worker, role, read_fd, write_fd, semantics = FALSE, fresh_sequence = FALSE, initialize = NULL) {
+  if (.Platform$OS.type == "windows" && is.null(read_fd) && is.null(write_fd)) {
+    pipes <- .native(C_mw_open_handles, Sys.getenv("METEWAND_PROTOCOL_READ_HANDLE"),
+                     Sys.getenv("METEWAND_PROTOCOL_WRITE_HANDLE"), error = stop)
+    on.exit(.Call(C_mw_close, pipes))
+    return(.serve(worker, role, pipes, pipes, semantics = semantics, fresh_sequence = fresh_sequence, initialize = initialize))
+  }
   if (is.null(read_fd)) read_fd <- suppressWarnings(as.double(Sys.getenv("METEWAND_PROTOCOL_READ_FD")))
   if (is.null(write_fd)) write_fd <- suppressWarnings(as.double(Sys.getenv("METEWAND_PROTOCOL_WRITE_FD")))
   if (!.is_integer(read_fd, .Machine$integer.max) || !.is_integer(write_fd, .Machine$integer.max)) {

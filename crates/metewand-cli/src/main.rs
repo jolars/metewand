@@ -262,13 +262,13 @@ fn check_command(arguments: &[OsString]) -> Result<CommandResult, CommandError> 
         check_repository(&manifest).map_err(|error| CommandError::repository("check", &error))?;
     let mut result = CommandResult::check(&repository);
     if workers == 1 {
-        #[cfg(unix)]
+        #[cfg(any(unix, windows))]
         {
             let report = metewand_runtime::run::check_repository_workers(&repository)
                 .map_err(|error| CommandError::worker_check(&error))?;
             result.set_worker_check(report);
         }
-        #[cfg(not(unix))]
+        #[cfg(not(any(unix, windows)))]
         return Err(CommandError::unsupported(
             "worker checks require POSIX protocol pipes",
             "Run on a supported POSIX host.",

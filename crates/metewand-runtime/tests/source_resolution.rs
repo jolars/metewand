@@ -17,6 +17,38 @@ use serde_json::json;
 use sha2::{Digest, Sha256};
 use tempfile::TempDir;
 
+#[test]
+fn overlapping_selections_copy_read_only_files_once() {
+    let repository = TempDir::new().unwrap();
+    let private = TempDir::new().unwrap();
+    fs::create_dir_all(repository.path().join("library/nested")).unwrap();
+    let file = repository.path().join("library/nested/data.txt");
+    fs::write(&file, b"immutable source").unwrap();
+    let mut permissions = fs::metadata(&file).unwrap().permissions();
+    permissions.set_readonly(true);
+    fs::set_permissions(&file, permissions).unwrap();
+    let sources: Vec<RepositoryPath> = ["library", "library/**"]
+        .into_iter()
+        .map(|path| serde_json::from_value(json!(path)).unwrap())
+        .collect();
+    let expected = identify_source_bundle(repository.path(), &sources).unwrap();
+    let resolved = resolve_source(
+        &SourceRequest::Repository {
+            root: repository.path(),
+            sources: &sources,
+            expected,
+        },
+        None,
+        private.path(),
+    )
+    .unwrap();
+    assert_eq!(
+        fs::read(resolved.directory().join("library/nested/data.txt")).unwrap(),
+        b"immutable source"
+    );
+    resolved.verify().unwrap();
+}
+
 fn path(value: &str) -> RepositoryPath {
     serde_json::from_value(json!(value)).unwrap()
 }

@@ -4,11 +4,12 @@
 //! These helpers own transport and standard JSON artifacts. The executor still
 //! validates outputs and owns authoritative timing and publication.
 
+#[cfg(unix)]
+use std::os::fd::{FromRawFd, OwnedFd};
 use std::{
     collections::BTreeMap,
     fs::{self, File},
     io::{self, Read, Write},
-    os::fd::{FromRawFd, OwnedFd},
     panic::{AssertUnwindSafe, catch_unwind},
     path::{Path, PathBuf},
     time::Instant,
@@ -593,6 +594,7 @@ fn encode_failure(id: RequestId, error: WorkerError) -> Result<Vec<u8>, ServeErr
         })
 }
 
+#[cfg(unix)]
 fn inherited_pipes() -> Result<(File, File), ServeError> {
     let descriptor = |name| {
         std::env::var(name)
@@ -618,6 +620,60 @@ fn inherited_pipes() -> Result<(File, File), ServeError> {
         }
         // The successful duplication creates a new, exclusively owned descriptor.
         Ok(File::from(unsafe { OwnedFd::from_raw_fd(duplicated) }))
+    }
+    Ok((duplicate(read)?, duplicate(write)?))
+}
+
+#[cfg(windows)]
+fn inherited_pipes() -> Result<(File, File), ServeError> {
+    use std::os::windows::io::{FromRawHandle, OwnedHandle};
+    use windows_sys::Win32::{
+        Foundation::{
+            DUPLICATE_SAME_ACCESS, DuplicateHandle, HANDLE, HANDLE_FLAG_INHERIT,
+            INVALID_HANDLE_VALUE, SetHandleInformation,
+        },
+        System::Threading::GetCurrentProcess,
+    };
+    let handle = |name| {
+        std::env::var(name)
+            .ok()
+            .and_then(|value| value.parse::<usize>().ok())
+            .filter(|value| *value != 0 && (*value as HANDLE) != INVALID_HANDLE_VALUE)
+            .map(|value| value as HANDLE)
+            .ok_or(ServeError::Protocol(
+                "Separate protocol read and write handles must be supplied.",
+            ))
+    };
+    let read = handle(crate::worker_process::PROTOCOL_READ_HANDLE_ENV)?;
+    let write = handle(crate::worker_process::PROTOCOL_WRITE_HANDLE_ENV)?;
+    if read == write {
+        return Err(ServeError::Protocol(
+            "The protocol requires separate handles.",
+        ));
+    }
+    fn duplicate(handle: HANDLE) -> io::Result<File> {
+        let mut duplicated = std::ptr::null_mut();
+        // The launch handle stays borrowed. Both it and the owned duplicate must
+        // stop propagating into benchmark-created subprocesses.
+        unsafe {
+            if SetHandleInformation(handle, HANDLE_FLAG_INHERIT, 0) == 0 {
+                return Err(io::Error::last_os_error());
+            }
+            let process = GetCurrentProcess();
+            if DuplicateHandle(
+                process,
+                handle,
+                process,
+                &mut duplicated,
+                0,
+                0,
+                DUPLICATE_SAME_ACCESS,
+            ) == 0
+            {
+                return Err(io::Error::last_os_error());
+            }
+            Ok(File::from(OwnedHandle::from_raw_handle(duplicated)))
+        }
     }
     Ok((duplicate(read)?, duplicate(write)?))
 }
@@ -653,13 +709,17 @@ fn output_path(directory: &Path, manifest: &str) -> WorkerResult<PathBuf> {
             "Manifest paths must be normalized and relative.",
         ));
     }
+    crate::platform_fs::relative_path(Path::new(manifest))?;
     let mut target = directory.canonicalize()?;
     for component in manifest.split('/') {
         target.push(component);
         match fs::symlink_metadata(&target) {
-            Ok(metadata) if metadata.file_type().is_symlink() => {
+            Ok(metadata)
+                if !crate::platform_fs::is_real_directory(&metadata)
+                    && !crate::platform_fs::is_regular_file(&metadata) =>
+            {
                 return Err(WorkerError::operation_failed(
-                    "Output paths must not traverse symlinks.",
+                    "Output paths must not traverse links or special files.",
                 ));
             }
             Ok(_) => {}
@@ -700,14 +760,23 @@ pub fn write_json(path: &Path, data: Value) -> WorkerResult<()> {
 /// types, invalid canonical JSON, or I/O failures.
 pub fn write_dataset_manifest(directory: &Path, files: &[(&str, &str)]) -> WorkerResult<String> {
     let mut entries = BTreeMap::new();
+    #[cfg(windows)]
+    let mut native_names = std::collections::BTreeSet::from(["dataset-manifest.json".to_owned()]);
     for &(path, media_type) in files {
+        #[cfg(windows)]
+        if !native_names.insert(path.to_lowercase()) {
+            return Err(WorkerError::operation_failed(
+                "Dataset file names must be distinct on Windows.",
+            ));
+        }
         if path == "dataset-manifest.json" || entries.contains_key(path) || media_type.is_empty() {
             return Err(WorkerError::operation_failed(
                 "Dataset files must be unique, exclude the manifest, and have media types.",
             ));
         }
         let target = output_path(directory, path)?;
-        let mut file = File::open(target)?;
+        let mut file =
+            crate::platform_fs::open_regular(&target, std::fs::OpenOptions::new().read(true))?;
         let metadata = file.metadata()?;
         if !metadata.is_file() {
             return Err(WorkerError::operation_failed(

@@ -17,7 +17,6 @@ pub use metewand_core::run_output::RunOptions;
 
 use std::{
     fs, io,
-    os::unix::fs::{DirBuilderExt, PermissionsExt},
     path::{Path, PathBuf},
     thread,
     time::SystemTime,
@@ -183,11 +182,10 @@ pub fn run_repository_with_options(
         }
     }
     if !options.resume {
-        fs::DirBuilder::new()
-            .mode(0o700)
-            .create(&output_directory)?;
-        fs::set_permissions(&output_directory, fs::Permissions::from_mode(0o700))?;
-        fs::File::open(output_directory.parent().expect("destination has a parent"))?.sync_all()?;
+        crate::platform_fs::create_private_directory(&output_directory)?;
+        crate::platform_fs::complete_namespace_change(
+            output_directory.parent().expect("destination has a parent"),
+        )?;
         store = Some(
             if resolved
                 .candidates
@@ -877,7 +875,7 @@ fn failed_attempt(
             wire_protocol_version: metewand_protocol::WIRE_PROTOCOL_VERSION,
             execution_semantics_version: EXECUTION_SEMANTICS_VERSION,
             data: canonical(
-                json!({"context": measurement.provenance.as_json(), "logs_available": false, "measurements": measurements}),
+                json!({"context": measurement.provenance.as_json(), "logs_available": false, "measurements": measurements, "storage": crate::platform_fs::storage_evidence()}),
             )?,
         },
     };

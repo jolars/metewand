@@ -1,7 +1,6 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     env, fs, io,
-    os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
     sync::Arc,
     time::Duration,
@@ -291,11 +290,7 @@ pub(super) fn resolve(
     let private_root = Builder::new().prefix("metewand-run-").tempdir()?;
     let executor = identify_record(ExecutorDefinitionRecord {
         kind: serde_json::from_value(json!("trusted_local")).expect("static valid name"),
-        configuration: canonical(
-            json!({"environment_class": "development", "isolation": "unsupported",
-                "worker_cache": {"policy": "clear_all_between_slots"},
-                "timeout_termination": {"interrupt": "SIGINT", "grace_ms": 100, "force": "SIGKILL", "exit_wait_ms": 1000}}),
-        )?,
+        configuration: canonical(executor_configuration())?,
     })?;
     // Resolve every launch and fixed dataset before any acquisition or worker runs.
     let mut prepared = Vec::new();
@@ -1072,8 +1067,13 @@ fn resolve_applicability(
                     )
                 })
                 .collect();
-            json!({"version": environment.version, "working_directory": "{worker}",
-                "environment_variables": variables, "umask": environment.umask})
+            {
+                let mut record =
+                    serde_json::to_value(environment).expect("typed worker environment");
+                record["working_directory"] = json!("{worker}");
+                record["environment_variables"] = json!(variables);
+                record
+            }
         });
         let checked = session.check_applicability(
             view.directory().to_string_lossy().into_owned(),
@@ -1166,7 +1166,7 @@ pub(super) fn resolve_worker(
     }
     if transport == Some(ProtocolTransport::Stdio) {
         return Err(unsupported(
-            "Gate 1 workers require dedicated POSIX protocol pipes",
+            "local workers require dedicated protocol pipes",
         ));
     }
     let sources = patterns
@@ -1175,7 +1175,14 @@ pub(super) fn resolve_worker(
     let original_executable = find_program(&repository.root, &program)?;
     let mut arguments = arguments;
     let mut executable = original_executable.clone();
-    if let Ok(relative) = fs::canonicalize(&original_executable)?.strip_prefix(&repository.root) {
+    // Windows virtual environments copy their interpreters. Moving a PATH-selected
+    // interpreter into a source snapshot would separate it from pyvenv.cfg.
+    let repository_program = !cfg!(windows)
+        || Path::new(&program).is_absolute()
+        || Path::new(&program).components().count() > 1;
+    if repository_program
+        && let Ok(relative) = fs::canonicalize(&original_executable)?.strip_prefix(&repository.root)
+    {
         let sources = sources.as_ref().ok_or_else(|| {
             unsupported("repository command programs must be included in `sources`")
         })?;
@@ -1234,7 +1241,10 @@ pub(super) fn resolve_worker(
                         relative.display()
                     ))
                 })?;
-            normalized_arguments.push(format!("{{sources}}/{}", text_path(&relative)?));
+            normalized_arguments.push(format!(
+                "{{sources}}/{}",
+                crate::platform_fs::relative_path(&relative)?
+            ));
             actual_arguments.push(text_path(&staged)?);
         } else if let LaunchArgument::Literal(argument) = argument {
             if argument.contains(&text_path(&repository.root)?)
@@ -1254,17 +1264,15 @@ pub(super) fn resolve_worker(
     let mut variables = crate::worker_environment::worker_environment_template();
     variables.insert(
         "PATH".to_owned(),
-        if source_executable {
-            "/usr/bin:/bin"
-        } else {
-            "{program_directory}:/usr/bin:/bin"
-        }
-        .to_owned(),
+        worker_search_path(None, source_executable)?,
     );
     let normalized_program = if let Some(sources) = &sources
         && let Ok(relative) = executable.strip_prefix(sources.directory.path())
     {
-        format!("{{sources}}/{}", text_path(relative)?)
+        format!(
+            "{{sources}}/{}",
+            crate::platform_fs::relative_path(relative)?
+        )
     } else {
         format!("sha256:{executable_digest}")
     };
@@ -1288,18 +1296,7 @@ pub(super) fn resolve_worker(
         .to_string()
         .parse()
         .expect("typed resolved worker ID");
-    let program_directory = if source_executable {
-        "/usr/bin:/bin".to_owned()
-    } else {
-        format!(
-            "{}:/usr/bin:/bin",
-            text_path(
-                executable
-                    .parent()
-                    .expect("absolute executable has a parent")
-            )?
-        )
-    };
+    let program_directory = worker_search_path(executable.parent(), source_executable)?;
     variables.insert("PATH".to_owned(), program_directory);
     let launch = ResolvedLaunchRecord {
         environment: environment_record.id,
@@ -1382,7 +1379,7 @@ pub(super) fn file_inventory(root: &Path) -> Result<Vec<Value>, RunError> {
                     .strip_prefix(root)
                     .expect("inventory stays beneath root")
                     .to_path_buf();
-                files.insert(relative.clone(), json!({"path": relative, "sha256": file_digest(&path)?, "size_bytes": entry.metadata()?.len(), "media_type": if path.extension().is_some_and(|extension| extension == "json") { "application/json" } else { "application/octet-stream" }}));
+                files.insert(relative.clone(), json!({"path": crate::platform_fs::relative_path(&relative)?, "sha256": file_digest(&path)?, "size_bytes": entry.metadata()?.len(), "media_type": if path.extension().is_some_and(|extension| extension == "json") { "application/json" } else { "application/octet-stream" }}));
             }
         }
         Ok(())
@@ -1401,11 +1398,10 @@ fn find_program(root: &Path, program: &str) -> Result<PathBuf, RunError> {
         env::var_os("PATH")
             .and_then(|paths| {
                 env::split_paths(&paths)
-                    .map(|path| path.join(program))
+                    .flat_map(|path| executable_candidates(&path, program))
                     .find(|path| {
                         path.is_file()
-                            && fs::metadata(path)
-                                .is_ok_and(|metadata| metadata.permissions().mode() & 0o111 != 0)
+                            && fs::metadata(path).is_ok_and(|metadata| runnable_file(&metadata))
                     })
             })
             .ok_or_else(|| {
@@ -1421,6 +1417,12 @@ fn find_program(root: &Path, program: &str) -> Result<PathBuf, RunError> {
         )
         .into());
     };
+    #[cfg(windows)]
+    let path = if !path.is_file() && path.extension().is_none() {
+        path.with_extension("exe")
+    } else {
+        path
+    };
     let selected_path = std::path::absolute(path)?;
     let path = fs::canonicalize(&selected_path)?;
     if !Path::new(program).is_absolute()
@@ -1432,7 +1434,7 @@ fn find_program(root: &Path, program: &str) -> Result<PathBuf, RunError> {
         ));
     }
     let metadata = fs::metadata(&path)?;
-    if !metadata.is_file() || metadata.permissions().mode() & 0o111 == 0 {
+    if !metadata.is_file() || !runnable_file(&metadata) {
         return Err(io::Error::new(
             io::ErrorKind::PermissionDenied,
             format!("program `{program}` is not an executable regular file"),
@@ -1441,11 +1443,92 @@ fn find_program(root: &Path, program: &str) -> Result<PathBuf, RunError> {
     }
     // Python discovers a virtual environment beside the selected interpreter,
     // so following its final symlink would silently change the software context.
-    if path.starts_with(root) {
+    if cfg!(windows) && Path::new(program).components().count() == 1 {
+        Ok(selected_path)
+    } else if path.starts_with(root) {
         Ok(path)
     } else {
         Ok(selected_path)
     }
+}
+
+fn runnable_file(metadata: &fs::Metadata) -> bool {
+    #[cfg(unix)]
+    {
+        crate::platform_fs::is_executable(metadata)
+    }
+    #[cfg(windows)]
+    {
+        crate::platform_fs::is_regular_file(metadata)
+    }
+}
+
+fn executable_candidates(directory: &Path, program: &str) -> Vec<PathBuf> {
+    #[cfg(unix)]
+    {
+        vec![directory.join(program)]
+    }
+    #[cfg(windows)]
+    {
+        if program.eq_ignore_ascii_case("python3") {
+            vec![directory.join("python3.exe"), directory.join("python.exe")]
+        } else if Path::new(program).extension().is_none() {
+            vec![directory.join(format!("{program}.exe"))]
+        } else {
+            vec![directory.join(program)]
+        }
+    }
+}
+
+fn worker_search_path(
+    program_directory: Option<&Path>,
+    source_executable: bool,
+) -> Result<String, RunError> {
+    #[cfg(unix)]
+    {
+        Ok(if source_executable {
+            "/usr/bin:/bin".to_owned()
+        } else if let Some(directory) = program_directory {
+            format!("{}:/usr/bin:/bin", text_path(directory)?)
+        } else {
+            "{program_directory}:/usr/bin:/bin".to_owned()
+        })
+    }
+    #[cfg(windows)]
+    {
+        let mut paths = Vec::new();
+        if !source_executable {
+            paths.push(
+                program_directory
+                    .map_or_else(|| PathBuf::from("{program_directory}"), Path::to_path_buf),
+            );
+        }
+        paths.extend([
+            PathBuf::from("{system_root}/System32"),
+            PathBuf::from("{system_root}"),
+        ]);
+        env::join_paths(paths)
+            .map_err(|_| unsupported("worker search path cannot be represented"))?
+            .into_string()
+            .map_err(|_| unsupported("worker search path must be UTF-8"))
+    }
+}
+
+fn executor_configuration() -> Value {
+    let configuration = json!({"environment_class": "development", "isolation": "unsupported",
+        "worker_cache": {"policy": "clear_all_between_slots"},
+        "timeout_termination": {"interrupt": "SIGINT", "grace_ms": 100, "force": "SIGKILL", "exit_wait_ms": 1000}});
+    #[cfg(windows)]
+    let configuration = {
+        let mut configuration = configuration;
+        configuration["timeout_termination"] = json!({"interrupt": null, "grace_ms": 0,
+            "force": "TerminateJobObject", "exit_wait_ms": 1000});
+        configuration["transport"] = json!("windows_inherited_handles");
+        configuration["storage"] = serde_json::to_value(crate::platform_fs::storage_evidence())
+            .expect("typed storage evidence");
+        configuration
+    };
+    configuration
 }
 
 pub(super) fn canonical(value: Value) -> Result<CanonicalValue, RunError> {
@@ -1506,6 +1589,7 @@ mod tests {
     use std::time::Duration;
 
     #[test]
+    #[cfg(unix)]
     fn local_interpreter_preserves_symlinked_virtual_environment() {
         let root = tempfile::tempdir().unwrap();
         let venv = root.path().join(".venv");

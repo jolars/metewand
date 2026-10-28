@@ -7,8 +7,7 @@ pub use catalog::CACHE_CATALOG_VERSION;
 
 use std::{
     fs::{self, File, OpenOptions, TryLockError},
-    io::{self, Read, Write},
-    os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt},
+    io::{self, Read},
     path::{Path, PathBuf},
 };
 
@@ -86,7 +85,7 @@ pub struct CacheLeaseRecord {
 #[derive(Debug)]
 struct Lease {
     directory: Option<TempDir>,
-    _lock: File,
+    lock: Option<File>,
     store: ArtifactStore,
 }
 
@@ -103,6 +102,8 @@ impl Drop for Lease {
     fn drop(&mut self) {
         // Serialize removal with lease snapshots and abandoned-owner recovery.
         let _guard = self.store.lock();
+        // Closing the handle first lets Windows remove the entire directory.
+        drop(self.lock.take());
         drop(self.directory.take());
     }
 }
@@ -116,6 +117,9 @@ impl ArtifactStore {
             return Err(ArtifactStoreError::InvalidRoot);
         }
         create_directory(root)?;
+        crate::platform_fs::check_storage_root(root)?;
+        #[cfg(windows)]
+        crate::platform_fs::set_private_directory(root)?;
         let root = fs::canonicalize(root)?;
         for child in ["objects", "derivations", "leases", "quarantine", "garbage"] {
             create_directory(&root.join(child))?;
@@ -175,7 +179,7 @@ impl ArtifactStore {
         }))?;
         validate(PublicSchema::ArtifactCacheObject, &marker)?;
         write_file(&stage.join("manifest.json"), &marker.to_canonical_bytes()?)?;
-        File::open(&stage)?.sync_all()?;
+        crate::platform_fs::complete_namespace_change(&stage)?;
         verify_object(&stage, expected)?;
         let destination = self.object_path(expected);
         let _guard = self.lock()?;
@@ -191,8 +195,8 @@ impl ArtifactStore {
             }
             Err(error) => return Err(error.into()),
         }
-        File::open(lease.directory())?.sync_all()?;
-        File::open(self.root.join("objects"))?.sync_all()?;
+        crate::platform_fs::complete_namespace_change(lease.directory())?;
+        crate::platform_fs::complete_namespace_change(&self.root.join("objects"))?;
         self.register_object(expected)?;
         Ok(StoredArtifact {
             store: self.clone(),
@@ -276,7 +280,7 @@ impl ArtifactStore {
             &document.to_canonical_bytes()?,
         )?;
         publish(stage, &destination)?;
-        File::open(lease.directory())?.sync_all()?;
+        crate::platform_fs::complete_namespace_change(lease.directory())?;
         Ok(artifact)
     }
 
@@ -325,7 +329,7 @@ impl ArtifactStore {
             if missing(&path)? {
                 continue;
             }
-            let file = regular_file(&path)?;
+            let file = regular_file(&lease_lock_path(&entry.path()))?;
             match file.try_lock() {
                 Ok(()) => {}
                 Err(TryLockError::WouldBlock) => {
@@ -355,7 +359,7 @@ impl ArtifactStore {
         for entry in fs::read_dir(self.root.join("leases"))? {
             let entry = entry?;
             real_directory(&entry.path())?;
-            let path = entry.path().join("lease.json");
+            let path = lease_lock_path(&entry.path());
             let file = if missing(&path)? {
                 None
             } else {
@@ -374,8 +378,8 @@ impl ArtifactStore {
             )?;
             removed += 1;
         }
-        File::open(self.root.join("leases"))?.sync_all()?;
-        File::open(self.root.join("quarantine"))?.sync_all()?;
+        crate::platform_fs::complete_namespace_change(&self.root.join("leases"))?;
+        crate::platform_fs::complete_namespace_change(&self.root.join("quarantine"))?;
         Ok(removed)
     }
 
@@ -399,9 +403,9 @@ impl ArtifactStore {
             rename_no_replace(&object, &quarantine.path().join("object"))?;
             // Retain the evidence even if synchronizing the move fails.
             let quarantine = quarantine.keep();
-            File::open(&quarantine)?.sync_all()?;
-            File::open(self.root.join("quarantine"))?.sync_all()?;
-            File::open(self.root.join("objects"))?.sync_all()?;
+            crate::platform_fs::complete_namespace_change(&quarantine)?;
+            crate::platform_fs::complete_namespace_change(&self.root.join("quarantine"))?;
+            crate::platform_fs::complete_namespace_change(&self.root.join("objects"))?;
             return Err(ArtifactStoreError::Quarantined {
                 tree_sha256: hex(digest),
                 source: Box::new(source),
@@ -415,14 +419,14 @@ impl ArtifactStore {
     }
 
     fn lock_file(&self, create: bool) -> Result<File, ArtifactStoreError> {
-        let lock = OpenOptions::new()
-            .create(create)
-            .truncate(false)
-            .read(true)
-            .write(true)
-            .mode(0o600)
-            .custom_flags(rustix::fs::OFlags::NOFOLLOW.bits() as i32)
-            .open(self.root.join(".lock"))?;
+        let lock = crate::platform_fs::open_regular(
+            &self.root.join(".lock"),
+            OpenOptions::new()
+                .create(create)
+                .truncate(false)
+                .read(true)
+                .write(true),
+        )?;
         if !lock.metadata()?.is_file() {
             return Err(ArtifactStoreError::UnsafeEntry(self.root.join(".lock")));
         }
@@ -435,12 +439,10 @@ impl ArtifactStore {
         let directory = Builder::new()
             .prefix("lease-")
             .tempdir_in(self.root.join("leases"))?;
-        let mut file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create_new(true)
-            .mode(0o600)
-            .open(directory.path().join("lease.json"))?;
+        let file = crate::platform_fs::open_regular(
+            &lease_lock_path(directory.path()),
+            OpenOptions::new().read(true).write(true).create_new(true),
+        )?;
         file.lock()?;
         let document = canonical(json!(CacheLeaseRecord {
             schema_version: ARTIFACT_STORE_VERSION,
@@ -448,16 +450,32 @@ impl ArtifactStore {
             owner_pid: std::process::id(),
             tree_sha256: hex(digest)
         }))?;
-        file.write_all(&document.to_canonical_bytes()?)?;
-        file.sync_all()?;
-        File::open(directory.path())?.sync_all()?;
-        File::open(self.root.join("leases"))?.sync_all()?;
+        #[cfg(unix)]
+        std::io::Write::write_all(&mut &file, &document.to_canonical_bytes()?)?;
+        // Windows byte-range locks prevent reads through another handle. Keep
+        // the public lease receipt separate so other processes can inspect it.
+        #[cfg(windows)]
+        write_file(
+            &directory.path().join("lease.json"),
+            &document.to_canonical_bytes()?,
+        )?;
+        crate::durability::sync_all(&file)?;
+        crate::platform_fs::complete_namespace_change(directory.path())?;
+        crate::platform_fs::complete_namespace_change(&self.root.join("leases"))?;
         Ok(Lease {
             directory: Some(directory),
-            _lock: file,
+            lock: Some(file),
             store: self.clone(),
         })
     }
+}
+
+fn lease_lock_path(directory: &Path) -> PathBuf {
+    directory.join(if cfg!(windows) {
+        "lease.lock"
+    } else {
+        "lease.json"
+    })
 }
 
 impl StoredArtifact {
@@ -483,9 +501,7 @@ impl StoredArtifact {
         let lease = self.store.lease("view", self.digest)?;
         let _guard = self.store.lock()?;
         self.store.verify_or_quarantine(self.digest)?;
-        let directory = Builder::new()
-            .prefix("metewand-dataset-view-")
-            .tempdir_in(parent)?;
+        let directory = crate::platform_fs::private_tempdir_in(&parent, "metewand-dataset-view-")?;
         let copied = copy_verified(self.directory(), directory.path(), self.digest);
         self.store.verify_or_quarantine(self.digest)?;
         copied?;
@@ -550,22 +566,21 @@ impl Entry {
 fn inventory(root: &Path) -> Result<Vec<Entry>, ArtifactStoreError> {
     fn visit(root: &Path, dir: &Path, entries: &mut Vec<Entry>) -> Result<(), ArtifactStoreError> {
         real_directory(dir)?;
+        crate::platform_fs::validate_directory_names(dir)?;
         for entry in fs::read_dir(dir)? {
             let entry = entry?;
             let absolute = entry.path();
-            let path = absolute
-                .strip_prefix(root)
-                .expect("tree-relative entry")
-                .to_str()
-                .ok_or_else(|| ArtifactStoreError::UnsafeEntry(absolute.clone()))?
-                .to_owned();
+            let path = crate::platform_fs::relative_path(
+                absolute.strip_prefix(root).expect("tree-relative entry"),
+            )
+            .map_err(|_| ArtifactStoreError::UnsafeEntry(absolute.clone()))?;
             serde_json::from_value::<RepositoryPath>(json!(path))
                 .map_err(|_| ArtifactStoreError::UnsafeEntry(absolute.clone()))?;
             let metadata = fs::symlink_metadata(&absolute)?;
-            if metadata.is_dir() {
+            if crate::platform_fs::is_real_directory(&metadata) {
                 entries.push(Entry::Directory { path });
                 visit(root, &absolute, entries)?;
-            } else if metadata.is_file() {
+            } else if crate::platform_fs::is_regular_file(&metadata) {
                 let mut file = regular_file(&absolute)?;
                 let mut hasher = Sha256::new();
                 let mut size_bytes = 0;
@@ -584,7 +599,7 @@ fn inventory(root: &Path) -> Result<Vec<Entry>, ArtifactStoreError> {
                     path,
                     size_bytes,
                     sha256: hex(ContentDigest::new(hasher.finalize().into())),
-                    executable: metadata.permissions().mode() & 0o111 != 0,
+                    executable: crate::platform_fs::is_executable(&metadata),
                 });
             } else {
                 return Err(ArtifactStoreError::UnsafeEntry(absolute));
@@ -616,13 +631,17 @@ fn copy_verified(
             Entry::Directory { .. } => fs::create_dir(&destination)?,
             Entry::File { executable, .. } => {
                 let mut input = regular_file(&source.join(entry.path()))?;
-                let mut output = OpenOptions::new()
-                    .create_new(true)
-                    .write(true)
-                    .mode(if *executable { 0o700 } else { 0o600 })
-                    .open(destination)?;
+                let mut options = OpenOptions::new();
+                options.create_new(true).write(true);
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::OpenOptionsExt;
+                    options.mode(if *executable { 0o700 } else { 0o600 });
+                }
+                let mut output = options.open(&destination)?;
+                crate::platform_fs::set_executable(&destination, *executable)?;
                 io::copy(&mut input, &mut output)?;
-                output.sync_all()?;
+                crate::durability::sync_all(&output)?;
             }
         }
     }
@@ -716,9 +735,11 @@ fn verify_receipt(
 }
 
 fn create_directory(path: &Path) -> Result<(), ArtifactStoreError> {
-    match fs::DirBuilder::new().mode(0o700).create(path) {
+    match crate::platform_fs::create_private_directory(path) {
         Ok(()) => {
-            File::open(path.parent().ok_or(ArtifactStoreError::InvalidRoot)?)?.sync_all()?;
+            crate::platform_fs::complete_namespace_change(
+                path.parent().ok_or(ArtifactStoreError::InvalidRoot)?,
+            )?;
         }
         Err(error) if error.kind() == io::ErrorKind::AlreadyExists => real_directory(path)?,
         Err(error) => return Err(error.into()),
@@ -726,19 +747,19 @@ fn create_directory(path: &Path) -> Result<(), ArtifactStoreError> {
     Ok(())
 }
 fn real_directory(path: &Path) -> Result<(), ArtifactStoreError> {
-    if !fs::symlink_metadata(path)?.is_dir() {
+    if !crate::platform_fs::is_real_directory(&fs::symlink_metadata(path)?) {
         return Err(ArtifactStoreError::UnsafeEntry(path.to_owned()));
     }
     Ok(())
 }
 fn regular_file(path: &Path) -> Result<File, ArtifactStoreError> {
-    if !fs::symlink_metadata(path)?.is_file() {
+    if !crate::platform_fs::is_regular_file(&fs::symlink_metadata(path)?) {
         return Err(ArtifactStoreError::UnsafeEntry(path.to_owned()));
     }
-    Ok(OpenOptions::new()
-        .read(true)
-        .custom_flags((rustix::fs::OFlags::NOFOLLOW | rustix::fs::OFlags::NONBLOCK).bits() as i32)
-        .open(path)?)
+    Ok(crate::platform_fs::open_regular(
+        path,
+        OpenOptions::new().read(true),
+    )?)
 }
 fn missing(path: &Path) -> io::Result<bool> {
     match fs::symlink_metadata(path) {

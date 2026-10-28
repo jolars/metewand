@@ -1,14 +1,10 @@
-//! POSIX worker transport and bounded standard-stream capture.
+//! Dedicated worker transport and bounded standard-stream capture.
 
 use std::{
     fs::File,
     io::{self, Read, Write},
-    os::{
-        fd::{AsRawFd, BorrowedFd, OwnedFd, RawFd},
-        unix::process::CommandExt,
-    },
     path::Path,
-    process::{Child, Command, ExitStatus, Stdio},
+    process::{Command, ExitStatus},
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, Ordering},
@@ -17,11 +13,26 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[cfg(unix)]
+use std::{
+    os::{
+        fd::{AsRawFd, BorrowedFd, OwnedFd, RawFd},
+        unix::process::CommandExt,
+    },
+    process::{Child, Stdio},
+};
+
+#[cfg(windows)]
+mod windows;
+#[cfg(windows)]
+use windows::{Child, ProcessGroup, abort_spawn};
+
 use metewand_protocol::framing::FrameReader;
-#[cfg(target_os = "espidf")]
+#[cfg(all(unix, target_os = "espidf"))]
 use rustix::io::fcntl_dupfd;
-#[cfg(not(target_os = "espidf"))]
+#[cfg(all(unix, not(target_os = "espidf")))]
 use rustix::io::fcntl_dupfd_cloexec;
+#[cfg(unix)]
 use rustix::io::{FdFlags, fcntl_setfd};
 #[cfg(any(
     target_vendor = "apple",
@@ -32,14 +43,17 @@ use rustix::io::{FdFlags, fcntl_setfd};
     target_os = "nto"
 ))]
 use rustix::pipe::pipe;
-#[cfg(not(any(
-    target_vendor = "apple",
-    target_os = "aix",
-    target_os = "espidf",
-    target_os = "haiku",
-    target_os = "horizon",
-    target_os = "nto"
-)))]
+#[cfg(all(
+    unix,
+    not(any(
+        target_vendor = "apple",
+        target_os = "aix",
+        target_os = "espidf",
+        target_os = "haiku",
+        target_os = "horizon",
+        target_os = "nto"
+    ))
+))]
 use rustix::pipe::{PipeFlags, pipe_with};
 use tempfile::TempDir;
 use thiserror::Error;
@@ -51,6 +65,12 @@ pub const PROTOCOL_READ_FD_ENV: &str = "METEWAND_PROTOCOL_READ_FD";
 
 /// Name of the environment variable containing the worker's protocol write descriptor.
 pub const PROTOCOL_WRITE_FD_ENV: &str = "METEWAND_PROTOCOL_WRITE_FD";
+
+/// Name of the Windows environment variable containing the worker's read handle.
+pub const PROTOCOL_READ_HANDLE_ENV: &str = "METEWAND_PROTOCOL_READ_HANDLE";
+
+/// Name of the Windows environment variable containing the worker's write handle.
+pub const PROTOCOL_WRITE_HANDLE_ENV: &str = "METEWAND_PROTOCOL_WRITE_HANDLE";
 
 /// Independent retained-byte limits for a worker's standard streams.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -176,6 +196,7 @@ pub struct WorkerPipe<T> {
     canceled: Arc<AtomicBool>,
 }
 
+#[cfg(unix)]
 impl<T: AsRawFd> WorkerPipe<T> {
     fn ready(&self, events: libc::c_short) -> io::Result<()> {
         loop {
@@ -206,6 +227,7 @@ impl<T: AsRawFd> WorkerPipe<T> {
     }
 }
 
+#[cfg(unix)]
 impl<T: Read + AsRawFd> Read for WorkerPipe<T> {
     fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
         self.ready(libc::POLLIN)?;
@@ -213,6 +235,7 @@ impl<T: Read + AsRawFd> Read for WorkerPipe<T> {
     }
 }
 
+#[cfg(unix)]
 impl<T: Write + AsRawFd> Write for WorkerPipe<T> {
     fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
         loop {
@@ -251,14 +274,15 @@ impl Drop for PipeCancellation {
     }
 }
 
-/// A spawned worker using dedicated version-1 POSIX protocol pipes.
+/// A spawned worker using dedicated version-1 protocol pipes.
 ///
 /// Standard output and standard error are reserved for logs and begin draining
 /// on separate threads immediately after the process is spawned. Protocol
-/// requests and responses use the inherited descriptors named by
-/// [`PROTOCOL_READ_FD_ENV`] and [`PROTOCOL_WRITE_FD_ENV`].
+/// requests and responses use inherited descriptors on Unix and inherited
+/// handles on Windows. Workers discover the endpoints through the corresponding
+/// `PROTOCOL_*_FD_ENV` or `PROTOCOL_*_HANDLE_ENV` constants.
 #[derive(Debug)]
-pub struct PosixWorkerProcess {
+pub struct WorkerProcess {
     environment: Option<WorkerEnvironmentProvenance>,
     redactor: Redactor,
     child: Child,
@@ -275,13 +299,19 @@ pub struct PosixWorkerProcess {
     log_limits: WorkerLogLimits,
 }
 
-impl PosixWorkerProcess {
+/// Compatibility name for the Unix worker backend.
+#[cfg(unix)]
+pub type PosixWorkerProcess = WorkerProcess;
+
+impl WorkerProcess {
     /// Spawns a worker with dedicated protocol pipes and bounded log drains.
     ///
     /// The command is consumed because its inherited-descriptor setup is valid
     /// for exactly one spawn attempt. Existing values for the two protocol
     /// descriptor environment variables and standard-stream configuration are
-    /// replaced.
+    /// replaced. On Windows, the program must be a resolved absolute `.exe`
+    /// path, and the command's explicit environment changes apply to the ambient
+    /// environment. Use [`Self::spawn_isolated`] for an explicit environment.
     ///
     /// # Errors
     ///
@@ -294,6 +324,36 @@ impl PosixWorkerProcess {
         Self::spawn_redacted(command, log_limits, Redactor::default())
     }
 
+    /// Spawns with only the command's explicitly supplied environment variables.
+    ///
+    /// On Windows, `spawn` inherits the ambient environment and applies the
+    /// command's environment changes. Use this entry point for isolation because
+    /// stable Rust does not expose whether `Command::env_clear` was requested.
+    ///
+    /// # Errors
+    /// Returns the same transport and launch failures as [`Self::spawn`].
+    pub fn spawn_isolated(
+        command: Command,
+        log_limits: WorkerLogLimits,
+    ) -> Result<Self, WorkerProcessError> {
+        #[cfg(unix)]
+        {
+            let variables: Vec<_> = command
+                .get_envs()
+                .filter_map(|(name, value)| value.map(|value| (name.to_owned(), value.to_owned())))
+                .collect();
+            let mut command = command;
+            command.env_clear();
+            command.envs(variables);
+            Self::spawn_redacted(command, log_limits, Redactor::default())
+        }
+        #[cfg(windows)]
+        {
+            Self::spawn_windows(command, log_limits, Redactor::default(), true)
+        }
+    }
+
+    #[cfg(unix)]
     pub(crate) fn spawn_redacted(
         mut command: Command,
         log_limits: WorkerLogLimits,
@@ -314,6 +374,8 @@ impl PosixWorkerProcess {
         let worker_read_fd = worker_request_reader.as_raw_fd();
         let worker_write_fd = worker_response_writer.as_raw_fd();
         command
+            .env_remove(PROTOCOL_READ_HANDLE_ENV)
+            .env_remove(PROTOCOL_WRITE_HANDLE_ENV)
             .env(PROTOCOL_READ_FD_ENV, worker_read_fd.to_string())
             .env(PROTOCOL_WRITE_FD_ENV, worker_write_fd.to_string())
             .process_group(0)
@@ -512,27 +574,46 @@ impl PosixWorkerProcess {
         self.child.try_wait().map_err(WorkerProcessError::Observe)
     }
 
-    /// Interrupts the worker's process group, including ordinary descendants.
+    /// Interrupts the Unix worker's process group, including ordinary descendants.
     ///
     /// # Errors
-    /// Returns an error if the signal cannot be sent.
+    /// Returns an error if the signal cannot be sent or the platform does not
+    /// support cooperative interruption. Windows jobs use forced termination.
     pub fn interrupt(&mut self) -> Result<(), WorkerProcessError> {
-        self.group
-            .signal(libc::SIGINT)
-            .map_err(WorkerProcessError::Kill)
+        #[cfg(unix)]
+        {
+            self.group
+                .signal(libc::SIGINT)
+                .map_err(WorkerProcessError::Kill)
+        }
+        #[cfg(windows)]
+        {
+            Err(WorkerProcessError::InterruptUnsupported)
+        }
     }
 
-    /// Forces termination of the worker's process group.
+    /// Forces termination of the worker and its contained descendants.
     ///
-    /// Descendants that deliberately create a new session can escape this
-    /// reproducibility control; it is not a security boundary.
+    /// Windows jobs contain the complete process tree. Unix process groups cover
+    /// ordinary descendants, but a descendant can escape by creating a session.
+    /// The trusted local executor is a reproducibility control, not a sandbox.
     ///
     /// # Errors
     /// Returns an error if the signal cannot be sent.
     pub fn kill(&mut self) -> Result<(), WorkerProcessError> {
-        self.group
-            .signal(libc::SIGKILL)
-            .map_err(WorkerProcessError::Kill)
+        #[cfg(unix)]
+        {
+            self.group
+                .signal(libc::SIGKILL)
+                .map_err(WorkerProcessError::Kill)
+        }
+        #[cfg(windows)]
+        {
+            // Even a failed termination request must not turn session cleanup
+            // into an unbounded wait for a still-running worker.
+            self.child.mark_terminated();
+            self.group.kill().map_err(WorkerProcessError::Kill)
+        }
     }
 
     /// Closes the protocol pipes, waits for exit, and joins both log drains.
@@ -567,9 +648,12 @@ impl PosixWorkerProcess {
                 return Err(WorkerProcessError::Wait(source));
             }
         };
+        #[cfg(unix)]
         group
             .signal(libc::SIGKILL)
             .map_err(WorkerProcessError::Kill)?;
+        #[cfg(windows)]
+        group.kill().map_err(WorkerProcessError::Kill)?;
         let deadline = Instant::now() + Duration::from_secs(1);
         while !(stdout_drain.is_finished() && stderr_drain.is_finished())
             && Instant::now() < deadline
@@ -607,10 +691,13 @@ impl std::fmt::Display for WorkerLogStream {
     }
 }
 
-/// Failure to establish or complete a POSIX worker transport.
+/// Failure to establish or complete a local worker transport.
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum WorkerProcessError {
+    /// Windows has no equivalent of an isolated POSIX group interrupt.
+    #[error("cooperative worker interruption is unavailable on this platform")]
+    InterruptUnsupported,
     /// The orchestrator-to-worker pipe could not be created.
     #[error("failed to create the worker protocol request pipe: {0}")]
     CreateRequestPipe(#[source] io::Error),
@@ -758,6 +845,7 @@ fn join_log_drain(
         })
 }
 
+#[cfg(unix)]
 fn inherit_for_exec(raw_fd: RawFd) -> io::Result<()> {
     // SAFETY: The caller guarantees that `raw_fd` remains open until the
     // `pre_exec` closure has completed.
@@ -765,14 +853,17 @@ fn inherit_for_exec(raw_fd: RawFd) -> io::Result<()> {
     fcntl_setfd(descriptor, FdFlags::empty()).map_err(io::Error::from)
 }
 
-#[cfg(not(any(
-    target_vendor = "apple",
-    target_os = "aix",
-    target_os = "espidf",
-    target_os = "haiku",
-    target_os = "horizon",
-    target_os = "nto"
-)))]
+#[cfg(all(
+    unix,
+    not(any(
+        target_vendor = "apple",
+        target_os = "aix",
+        target_os = "espidf",
+        target_os = "haiku",
+        target_os = "horizon",
+        target_os = "nto"
+    ))
+))]
 fn protocol_pipe() -> io::Result<(OwnedFd, OwnedFd)> {
     let (reader, writer) = pipe_with(PipeFlags::CLOEXEC).map_err(io::Error::from)?;
     dedicated_pipe_ends(reader, writer)
@@ -793,10 +884,12 @@ fn protocol_pipe() -> io::Result<(OwnedFd, OwnedFd)> {
     dedicated_pipe_ends(reader, writer)
 }
 
+#[cfg(unix)]
 fn dedicated_pipe_ends(reader: OwnedFd, writer: OwnedFd) -> io::Result<(OwnedFd, OwnedFd)> {
     Ok((dedicated_fd(reader)?, dedicated_fd(writer)?))
 }
 
+#[cfg(unix)]
 fn dedicated_fd(descriptor: OwnedFd) -> io::Result<OwnedFd> {
     if descriptor.as_raw_fd() > 2 {
         return Ok(descriptor);
@@ -805,18 +898,19 @@ fn dedicated_fd(descriptor: OwnedFd) -> io::Result<OwnedFd> {
     duplicate_cloexec(&descriptor)
 }
 
-#[cfg(not(target_os = "espidf"))]
+#[cfg(all(unix, not(target_os = "espidf")))]
 fn duplicate_cloexec(descriptor: &OwnedFd) -> io::Result<OwnedFd> {
     fcntl_dupfd_cloexec(descriptor, 3).map_err(io::Error::from)
 }
 
-#[cfg(target_os = "espidf")]
+#[cfg(all(unix, target_os = "espidf"))]
 fn duplicate_cloexec(descriptor: &OwnedFd) -> io::Result<OwnedFd> {
     let duplicate = fcntl_dupfd(descriptor, 3).map_err(io::Error::from)?;
     fcntl_setfd(&duplicate, FdFlags::CLOEXEC).map_err(io::Error::from)?;
     Ok(duplicate)
 }
 
+#[cfg(unix)]
 fn abort_spawn(child: &mut Child) {
     let _ = ProcessGroup(child.id() as libc::pid_t).signal(libc::SIGKILL);
     let _ = child.wait();
@@ -825,8 +919,10 @@ fn abort_spawn(child: &mut Child) {
 // Retaining the group until log drains finish prevents ordinary descendants
 // from keeping the pipes open after the group leader exits.
 #[derive(Debug)]
+#[cfg(unix)]
 struct ProcessGroup(libc::pid_t);
 
+#[cfg(unix)]
 impl ProcessGroup {
     fn signal(&self, signal: libc::c_int) -> io::Result<()> {
         // SAFETY: A negative process ID addresses the private worker group.
@@ -842,6 +938,7 @@ impl ProcessGroup {
     }
 }
 
+#[cfg(unix)]
 impl Drop for ProcessGroup {
     fn drop(&mut self) {
         let _ = self.signal(libc::SIGKILL);

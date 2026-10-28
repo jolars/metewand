@@ -3,8 +3,8 @@
 Define Metewand benchmarks with ordinary Python functions for data generation,
 methods, and independent evaluation. The package handles worker communication
 and standard result files. It requires Python 3.11 or later and has no runtime
-dependencies. Running benchmarks also requires a POSIX system and the separate
-Metewand CLI, built with Rust 1.98.0 or later. Installing this Python package does
+dependencies. Running benchmarks requires Linux, macOS, or native Windows x64
+and the separate Metewand CLI, built with Rust 1.98.0. Installing this Python package does
 not install the CLI.
 
 ## Install and run
@@ -48,6 +48,21 @@ python3 -m venv .venv
 python3 -m pip install ./packages/python
 ```
 
+On Windows, use PowerShell with the MSVC Rust toolchain and Visual Studio C++
+build tools. After cloning, build and install from source with:
+
+```powershell
+cargo install --locked --path crates/metewand-cli
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install ./packages/python
+```
+
+Keep the environment active. Workers select its `python.exe` when the default
+`python3` name is unavailable. Use local NTFS for run and cache directories.
+See [getting started](https://metewand.org/guide/getting-started) for complete
+platform requirements and recovery guarantees.
+
 This is an experimental package. Use matching CLI and Python package versions,
 and pin the version or source revision for retained benchmarks. Authoring syntax
 and profile APIs may change before the MVP. Package versions are separate from
@@ -62,6 +77,11 @@ implementation callback. The CLI owns source acquisition, seeds, scheduling,
 worker lifecycle, artifact validation, and
 durable publication. The package does not set random generators or infer scientific
 semantics. Install scientific dependencies into the worker environment yourself.
+
+Protocol pipes remain separate from standard output and standard error. Helpers
+use inherited Unix descriptors or native Windows handles automatically and keep
+frames binary on both platforms. Explicit descriptor arguments remain
+caller-owned.
 
 For a simple benchmark, use `metewand init` and ordinary functions selected in
 YAML with `function: benchmark.py:solve`. The package supplies the context, JSON data,
@@ -78,14 +98,16 @@ See the [authoring guide](https://metewand.org/guide/authoring/),
 [callback interfaces](https://github.com/jolars/metewand/blob/main/packages/python/src/metewand/_worker.py),
 and the runnable
 [Python package example](https://github.com/jolars/metewand/tree/main/examples/python-package).
-Run the package tests from a repository checkout with:
+With the package installed in the active environment, run its tests from a
+repository checkout with:
 
 ```sh
-PYTHONPATH=packages/python/src python3 -m unittest discover -s packages/python/tests -v
+python -m unittest discover -s packages/python/tests -v
 ```
 
-The normal Rust workspace tests also run this suite and exercise all three
-Python roles through the Rust transport and output validator.
+CI tests the installed wheel and source distribution on Linux, macOS, and
+Windows. The Rust workspace tests exercise all three Python roles through the
+native transport and output validator.
 
 ## Configuration-dependent support
 

@@ -10,6 +10,7 @@ License: MIT + file LICENSE
 Encoding: UTF-8
 Depends: R (>= 4.2.0)
 Imports: digest, stats, utils
-SystemRequirements: POSIX, C++17 with floating-point std::to_chars
+SystemRequirements: C++17 with floating-point std::to_chars; R >= 4.3 and
+    matching Rtools on Windows
 NeedsCompilation: yes
 URL: https://github.com/jolars/metewand

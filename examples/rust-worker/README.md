@@ -19,6 +19,22 @@ cargo run --locked -p metewand-cli -- run \
   --output-dir "$demo_dir/run" --output jsonl
 ```
 
+On Windows, use PowerShell and stage the executable with its `.exe` extension:
+
+```powershell
+cargo build --locked -p metewand-runtime --example rust-worker
+$demo = Join-Path $env:TEMP ([guid]::NewGuid().ToString())
+Copy-Item examples/rust-worker $demo -Recurse
+Copy-Item target/debug/examples/rust-worker.exe "$demo/worker.exe"
+(Get-Content "$demo/metewand.yaml" -Raw).Replace('./worker', './worker.exe').Replace('[worker]', '[worker.exe]') | Set-Content "$demo/metewand.yaml" -Encoding utf8NoBOM
+cargo run --locked -p metewand-cli -- check --manifest "$demo/metewand.yaml" --workers
+cargo run --locked -p metewand-cli -- run --manifest "$demo/metewand.yaml" --output-dir "$demo/run" --output jsonl
+```
+
+These commands require PowerShell 7 or later. Keep the temporary directory on
+local NTFS. The MSVC toolchain and Visual Studio C++ build tools compile the
+CLI and worker.
+
 The source bundle includes the compiled `worker` executable. Metewand stages
 and hashes it, loads the fixed data, checks the reference fixture, and retains
 two accepted observations with `{"answer":8}` and `{"absolute_error":0}`.

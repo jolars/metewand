@@ -25,7 +25,7 @@ use crate::{
     executor::{Executor, LocalProcessExecutor},
     redaction::Redactor,
     worker_environment::WorkerEnvironmentProvenance,
-    worker_process::{PosixWorkerProcess, WorkerPipe, WorkerProcessError, WorkerProcessOutput},
+    worker_process::{WorkerPipe, WorkerProcess, WorkerProcessError, WorkerProcessOutput},
 };
 
 /// Fully resolved operational deadline for every Gate-1 worker phase.
@@ -121,7 +121,7 @@ pub struct WorkerSession {
     requests: RequestTracker,
     timeouts: PhaseTimeouts,
     scientific_deadline: Option<Instant>,
-    process: Option<PosixWorkerProcess>,
+    process: Option<WorkerProcess>,
     protocol_sender: Option<Sender<ProtocolCommand>>,
     protocol_thread: Option<JoinHandle<()>>,
     usable: bool,
@@ -137,7 +137,7 @@ impl WorkerSession {
     ///
     /// Returns a typed phase, transport, protocol, timeout, or handshake error.
     pub fn connect(
-        process: PosixWorkerProcess,
+        process: WorkerProcess,
         role: WorkerRole,
         worker_id: WorkerIdentity,
         selected_capabilities: &[Capability],
@@ -159,7 +159,7 @@ impl WorkerSession {
     ///
     /// Returns the same failures as `connect`, including scientific deadline expiry.
     pub fn connect_with_deadline(
-        mut process: PosixWorkerProcess,
+        mut process: WorkerProcess,
         role: WorkerRole,
         worker_id: WorkerIdentity,
         selected_capabilities: &[Capability],
@@ -232,9 +232,7 @@ impl WorkerSession {
     /// Returns realized worker settings while the session owns its process.
     #[must_use]
     pub fn environment(&self) -> Option<&WorkerEnvironmentProvenance> {
-        self.process
-            .as_ref()
-            .and_then(PosixWorkerProcess::environment)
+        self.process.as_ref().and_then(WorkerProcess::environment)
     }
 
     /// Captures the worker's bounded process-lifetime log prefixes.
@@ -253,7 +251,7 @@ impl WorkerSession {
     pub(crate) fn private_working_directory(&self) -> Option<&std::path::Path> {
         self.process
             .as_ref()
-            .and_then(PosixWorkerProcess::private_working_directory)
+            .and_then(WorkerProcess::private_working_directory)
     }
 
     pub(crate) fn process_usage(&self) -> crate::resource_accounting::ProcessUsage {
@@ -668,11 +666,8 @@ impl WorkerSession {
     }
 
     fn verify_controls(&mut self) -> Result<(), WorkerSessionError> {
-        use std::os::unix::fs::PermissionsExt;
         if let Some(directory) = self.private_working_directory() {
-            let private = std::fs::symlink_metadata(directory).is_ok_and(|metadata| {
-                metadata.is_dir() && metadata.permissions().mode() & 0o777 == 0o700
-            });
+            let private = crate::platform_fs::verify_private_directory(directory).is_ok();
             if !private {
                 self.discard();
                 return Err(WorkerSessionError::ControlEnforcementLost {

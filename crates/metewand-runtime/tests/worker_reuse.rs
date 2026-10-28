@@ -1,15 +1,19 @@
-#![cfg(unix)]
+#![cfg(any(unix, windows))]
 
 use std::{
     collections::BTreeMap,
     env,
     fs::{self, File},
     io::{BufRead, BufReader, Write},
-    os::{
-        fd::FromRawFd,
-        unix::fs::{PermissionsExt, symlink},
-    },
     path::Path,
+};
+
+#[cfg(windows)]
+use std::os::windows::io::FromRawHandle;
+#[cfg(unix)]
+use std::os::{
+    fd::FromRawFd,
+    unix::fs::{PermissionsExt, symlink},
 };
 
 use metewand_core::{
@@ -38,12 +42,7 @@ fn fixture_worker() {
     let Some(mode) = env::var_os(MODE) else {
         return;
     };
-    let fd = |name| env::var(name).unwrap().parse().unwrap();
-    // SAFETY: The launcher transfers these two descriptors to the worker, and
-    // each descriptor has exactly one owner here.
-    let mut reader = BufReader::new(unsafe { File::from_raw_fd(fd("METEWAND_PROTOCOL_READ_FD")) });
-    // SAFETY: The write descriptor is distinct from the read descriptor.
-    let mut writer = unsafe { File::from_raw_fd(fd("METEWAND_PROTOCOL_WRITE_FD")) };
+    let (mut reader, mut writer) = protocol_streams();
     let mut executed = 0;
     let mut prepared = false;
     loop {
@@ -68,7 +67,8 @@ fn fixture_worker() {
                 if let Some(path) = env::var_os("CUSTOM_PRIVATE") {
                     assert!(Path::new(&path).is_dir());
                     assert!(!Path::new(&path).join("dirty").exists());
-                    assert!(!Path::new("outside-link").exists());
+                    assert!(fs::symlink_metadata("outside-link").is_err());
+                    #[cfg(unix)]
                     assert_eq!(
                         fs::metadata(".").unwrap().permissions().mode() & 0o777,
                         0o700
@@ -85,7 +85,13 @@ fn fixture_worker() {
                 fs::write("cache/dirty", b"cache").unwrap();
                 if let Some(path) = env::var_os("CUSTOM_PRIVATE") {
                     fs::write(Path::new(&path).join("dirty"), b"private").unwrap();
-                    symlink(env::var_os("OUTSIDE").unwrap(), "outside-link").unwrap();
+                    let outside = env::var_os("OUTSIDE").unwrap();
+                    directory_link(Path::new(&outside), Path::new("outside-link"));
+                    directory_link(
+                        Path::new(&outside),
+                        &Path::new("cache").join("outside-link"),
+                    );
+                    #[cfg(unix)]
                     fs::set_permissions("cache", fs::Permissions::from_mode(0o777)).unwrap();
                 }
                 executed += 1;
@@ -106,6 +112,48 @@ fn fixture_worker() {
         writer.write_all(b"\n").unwrap();
         writer.flush().unwrap();
     }
+}
+
+#[cfg(unix)]
+fn protocol_streams() -> (BufReader<File>, File) {
+    let fd = |name| env::var(name).unwrap().parse().unwrap();
+    // SAFETY: The launcher transfers these two descriptors to the worker, and
+    // each descriptor has exactly one owner here.
+    let reader = BufReader::new(unsafe { File::from_raw_fd(fd("METEWAND_PROTOCOL_READ_FD")) });
+    // SAFETY: The write descriptor is distinct from the read descriptor.
+    let writer = unsafe { File::from_raw_fd(fd("METEWAND_PROTOCOL_WRITE_FD")) };
+    (reader, writer)
+}
+
+#[cfg(windows)]
+fn protocol_streams() -> (BufReader<File>, File) {
+    let handle = |name| env::var(name).unwrap().parse::<usize>().unwrap() as *mut _;
+    // SAFETY: The fixture takes ownership of each inherited endpoint once.
+    let reader =
+        BufReader::new(unsafe { File::from_raw_handle(handle("METEWAND_PROTOCOL_READ_HANDLE")) });
+    // SAFETY: The write endpoint is distinct from the read endpoint.
+    let writer = unsafe { File::from_raw_handle(handle("METEWAND_PROTOCOL_WRITE_HANDLE")) };
+    (reader, writer)
+}
+
+#[cfg(unix)]
+fn directory_link(target: &Path, link: &Path) {
+    symlink(target, link).unwrap();
+}
+
+#[cfg(windows)]
+fn directory_link(target: &Path, link: &Path) {
+    // Junctions exercise directory-link cleanup without requiring symlink privileges.
+    let output = std::process::Command::new("cmd.exe")
+        .args(["/D", "/C", "mklink", "/J"])
+        .arg(link)
+        .arg(target)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "junction creation failed: {output:?}"
+    );
 }
 
 fn launch_record(mode: &str) -> ResolvedLaunchRecord {
@@ -408,17 +456,18 @@ fn cleanup_restores_private_paths_and_permissions_without_following_links() {
     launch
         .environment_variables
         .insert("OUTSIDE".into(), outside.path().to_str().unwrap().into());
-    let reuse_key = key(&launch, true, 0);
+    let reuse_key = key(&launch, true, 2);
     let mut owner = ReusableWorker::default();
-    owner
+    let first = owner
         .run_slot(
             reuse_key.clone(),
             || connect(&launch, root.path()),
-            |_, _| unreachable!(),
+            |session, _| slot(session).map(|_| ()),
             slot,
         )
         .unwrap();
-    owner
+    assert_eq!(first["executed"], 3);
+    let next = owner
         .run_slot(
             reuse_key,
             || panic!("must reuse"),
@@ -426,6 +475,8 @@ fn cleanup_restores_private_paths_and_permissions_without_following_links() {
             slot,
         )
         .unwrap();
+    assert_eq!(first["pid"], next["pid"]);
+    assert_eq!(next["executed"], 4);
     owner.discard();
     assert_eq!(fs::read(outside.path().join("keep")).unwrap(), b"outside");
     assert_eq!(fs::read_dir(root.path()).unwrap().count(), 0);

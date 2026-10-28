@@ -8,15 +8,26 @@
 #include <algorithm>
 #include <cerrno>
 #include <charconv>
+#include <chrono>
 #include <climits>
 #include <cmath>
 #include <cstdio>
+#include <cstdint>
 #include <cstring>
 #include <memory>
 #include <stdexcept>
 #include <string>
-#include <time.h>
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#include <fcntl.h>
+#include <io.h>
+#else
+#include <fcntl.h>
 #include <unistd.h>
+#endif
 #include <utility>
 #include <vector>
 
@@ -439,6 +450,59 @@ int descriptor(SEXP value) {
     require(std::isfinite(fd) && fd >= 0 && fd <= INT_MAX && fd == std::trunc(fd), "Invalid protocol descriptor.");
     return static_cast<int>(fd);
 }
+FILE* duplicate_descriptor(int descriptor, const char* mode) {
+#ifdef _WIN32
+    int copy = _dup(descriptor);
+    require(copy >= 0, "Could not duplicate protocol descriptor.");
+    if (_setmode(copy, _O_BINARY) < 0 ||
+        !SetHandleInformation(reinterpret_cast<HANDLE>(_get_osfhandle(copy)), HANDLE_FLAG_INHERIT, 0)) {
+        _close(copy);
+        throw std::runtime_error("Could not configure binary protocol descriptor.");
+    }
+    FILE* stream = _fdopen(copy, mode);
+    if (!stream) _close(copy);
+#else
+    int copy = dup(descriptor);
+    require(copy >= 0, "Could not duplicate protocol descriptor.");
+    if (fcntl(copy, F_SETFD, FD_CLOEXEC) < 0) {
+        close(copy);
+        throw std::runtime_error("Could not prevent protocol descriptor inheritance.");
+    }
+    FILE* stream = fdopen(copy, mode);
+    if (!stream) close(copy);
+#endif
+    require(stream != nullptr, "Could not open protocol stream.");
+    return stream;
+}
+#ifdef _WIN32
+HANDLE protocol_handle(SEXP value) {
+    require(TYPEOF(value) == STRSXP && XLENGTH(value) == 1 && STRING_ELT(value, 0) != NA_STRING,
+            "Invalid protocol handle.");
+    std::string text = CHAR(STRING_ELT(value, 0));
+    uintptr_t number = 0;
+    const auto parsed = std::from_chars(text.data(), text.data() + text.size(), number);
+    require(parsed.ec == std::errc() && parsed.ptr == text.data() + text.size() && number > 0 &&
+            number != UINTPTR_MAX, "Invalid protocol handle.");
+    HANDLE handle = reinterpret_cast<HANDLE>(number);
+    require(SetHandleInformation(handle, HANDLE_FLAG_INHERIT, 0), "Could not prevent protocol handle inheritance.");
+    return handle;
+}
+FILE* duplicate_handle(HANDLE handle, const char* mode, int flags) {
+    HANDLE copy = nullptr;
+    HANDLE process = GetCurrentProcess();
+    require(DuplicateHandle(process, handle, process, &copy, 0, FALSE, DUPLICATE_SAME_ACCESS),
+            "Could not duplicate protocol handle.");
+    int descriptor = _open_osfhandle(reinterpret_cast<intptr_t>(copy), flags | _O_BINARY | _O_NOINHERIT);
+    if (descriptor < 0) {
+        CloseHandle(copy);
+        throw std::runtime_error("Could not configure binary protocol handle.");
+    }
+    FILE* stream = _fdopen(descriptor, mode);
+    if (!stream) _close(descriptor);
+    require(stream != nullptr, "Could not open protocol stream.");
+    return stream;
+}
+#endif
 }
 
 extern "C" SEXP mw_encode(SEXP value) {
@@ -454,16 +518,29 @@ extern "C" SEXP mw_open(SEXP read_fd, SEXP write_fd) {
         Protected pointer(R_MakeExternalPtr(nullptr, R_NilValue, R_NilValue));
         R_RegisterCFinalizerEx(pointer.value, close_pipes, TRUE);
         auto pair = std::make_unique<Pipes>();
-        int fd = dup(input);
-        require(fd >= 0, "Could not duplicate protocol read descriptor.");
-        pair->reader = fdopen(fd, "rb");
-        if (!pair->reader) { close(fd); throw std::runtime_error("Could not open protocol reader."); }
-        fd = dup(output);
-        require(fd >= 0, "Could not duplicate protocol write descriptor.");
-        pair->writer = fdopen(fd, "wb");
-        if (!pair->writer) { close(fd); throw std::runtime_error("Could not open protocol writer."); }
+        pair->reader = duplicate_descriptor(input, "rb");
+        pair->writer = duplicate_descriptor(output, "wb");
         R_SetExternalPtrAddr(pointer.value, pair.release());
         return pointer.value;
+    });
+}
+extern "C" SEXP mw_open_handles(SEXP read_handle, SEXP write_handle) {
+    return guarded([&]() -> SEXP {
+#ifdef _WIN32
+        HANDLE input = protocol_handle(read_handle), output = protocol_handle(write_handle);
+        require(input != output, "The protocol requires separate handles.");
+        Protected pointer(R_MakeExternalPtr(nullptr, R_NilValue, R_NilValue));
+        R_RegisterCFinalizerEx(pointer.value, close_pipes, TRUE);
+        auto pair = std::make_unique<Pipes>();
+        pair->reader = duplicate_handle(input, "rb", _O_RDONLY);
+        pair->writer = duplicate_handle(output, "wb", _O_WRONLY);
+        R_SetExternalPtrAddr(pointer.value, pair.release());
+        return pointer.value;
+#else
+        (void) read_handle;
+        (void) write_handle;
+        throw std::runtime_error("Native protocol handles require Windows.");
+#endif
     });
 }
 extern "C" SEXP mw_close(SEXP pointer) { close_pipes(pointer); return R_NilValue; }
@@ -496,9 +573,10 @@ extern "C" SEXP mw_write(SEXP target, SEXP bytes) {
 }
 extern "C" SEXP mw_clock() {
     return guarded([]() {
-        timespec now;
-        require(clock_gettime(CLOCK_MONOTONIC, &now) == 0, "Monotonic clock is unavailable.");
-        return Rf_ScalarReal(now.tv_sec * 1e9 + now.tv_nsec);
+        using clock = std::chrono::steady_clock;
+        static const auto epoch = clock::now();
+        auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(clock::now() - epoch);
+        return Rf_ScalarReal(static_cast<double>(elapsed.count()));
     });
 }
 
@@ -507,6 +585,7 @@ extern "C" void R_init_metewand(DllInfo* dll) {
         {"C_mw_encode", reinterpret_cast<DL_FUNC>(&mw_encode), 1},
         {"C_mw_parse", reinterpret_cast<DL_FUNC>(&mw_parse), 1},
         {"C_mw_open", reinterpret_cast<DL_FUNC>(&mw_open), 2},
+        {"C_mw_open_handles", reinterpret_cast<DL_FUNC>(&mw_open_handles), 2},
         {"C_mw_close", reinterpret_cast<DL_FUNC>(&mw_close), 1},
         {"C_mw_read", reinterpret_cast<DL_FUNC>(&mw_read), 1},
         {"C_mw_write", reinterpret_cast<DL_FUNC>(&mw_write), 2},

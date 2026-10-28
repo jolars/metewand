@@ -97,7 +97,7 @@ pub fn command(arguments: &[OsString]) -> Result<CommandResult, CommandError> {
     export(root, destination, format, ids, rebuild_index)
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn export(
     root: PathBuf,
     destination: Option<PathBuf>,
@@ -113,7 +113,7 @@ fn export(
     Ok(CommandResult::Export(Box::new(report)))
 }
 
-#[cfg(not(unix))]
+#[cfg(not(any(unix, windows)))]
 fn export(
     _: PathBuf,
     _: Option<PathBuf>,

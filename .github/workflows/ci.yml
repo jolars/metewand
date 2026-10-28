@@ -24,8 +24,12 @@ jobs:
       - run: cargo fmt --all -- --check
 
   clippy:
-    name: clippy
-    runs-on: ubuntu-latest
+    name: clippy (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@v7
       - name: Install Clippy
@@ -34,17 +38,103 @@ jobs:
       - run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 
   test:
-    name: test
-    runs-on: ubuntu-latest
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v7
-      - name: Install R package dependencies
-        run: sudo apt-get update && sudo apt-get install -y r-base-dev r-cran-digest
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: release
+          use-public-rspm: true
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          working-directory: packages/r
+          packages: any::digest
+      - name: Install packages in the isolated R workers' site library
+        run: |
+          python - <<'PY'
+          import os
+          import json
+          from pathlib import Path
+          import shutil
+          import subprocess
+          import tempfile
+
+          rscript = shutil.which("Rscript")
+          digest = subprocess.check_output([rscript, "-e", "cat(find.package('digest'))"], text=True).strip()
+          with tempfile.TemporaryDirectory() as temporary:
+              package = Path(temporary, "package")
+              shutil.copytree("packages/r", package)
+              library = Path(temporary, "library")
+              library.mkdir()
+              subprocess.run(["R", "CMD", "INSTALL", "--preclean", "--clean", f"--library={library}", str(package)], check=True)
+              sources = [digest, str(library / "metewand")]
+              expression = f"stopifnot(file.copy(c({','.join(map(json.dumps, sources))}), .Library, recursive=TRUE))"
+              command = [rscript, "--vanilla", "-e", expression]
+              if os.name != "nt":
+                  command.insert(0, "sudo")
+              subprocess.run(command, check=True)
+          PY
       - uses: taiki-e/install-action@v2
         with:
           tool: nextest
       - uses: Swatinem/rust-cache@v2
       - run: cargo nextest run --workspace --all-targets --locked --profile ci
+      - name: Check the R source package and its contracts
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          import shutil
+          import subprocess
+          import tempfile
+
+          with tempfile.TemporaryDirectory() as temporary:
+              package = Path(temporary, "package")
+              shutil.copytree("packages/r", package)
+              environment = dict(os.environ, METEWAND_REPOSITORY=str(Path.cwd()))
+              subprocess.run(["R", "CMD", "build", "--no-build-vignettes", str(package)], cwd=temporary, env=environment, check=True)
+              tarball = next(Path(temporary).glob("metewand_*.tar.gz"))
+              subprocess.run(["R", "CMD", "check", "--no-manual", "--no-build-vignettes", str(tarball)], cwd=temporary, env=environment, check=True)
+          PY
+      - name: Run the native R starter workflow
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          import subprocess
+          import tempfile
+
+          executable = Path("target/debug", "metewand.exe" if os.name == "nt" else "metewand").resolve()
+          with tempfile.TemporaryDirectory(prefix="metewand R starter é ") as temporary:
+              project = Path(temporary, "benchmark")
+              def invoke(*arguments):
+                  output = subprocess.run([str(executable), *arguments, "--output", "json"], cwd=temporary, check=True, capture_output=True)
+                  return json.loads(output.stdout)["data"]
+              invoke("init", str(project), "--language", "r")
+              manifest = ["--manifest", str(project / "metewand.yaml")]
+              invoke("check", *manifest, "--workers")
+              invoke("plan", *manifest)
+              run = str(project / "run")
+              first = invoke("run", *manifest, "--output-dir", run, "--max-attempts", "1")
+              assert first["summary"]["accepted_attempts"] == 1, first
+              resumed = invoke("run", *manifest, "--output-dir", run, "--resume")
+              assert resumed["summary"]["accepted_attempts"] == 1, resumed
+              invoke("status", "--output-dir", run)
+              for format in ["csv", "jsonl"]:
+                  invoke("export", "--output-dir", run, "--format", format, "--destination", str(project / format))
+          PY
 
   versionary:
     name: versionary

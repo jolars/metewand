@@ -744,12 +744,14 @@ fn inventory_files(
         let entry = entry.map_err(|e| e.to_string())?;
         let metadata = fs::symlink_metadata(entry.path()).map_err(|e| e.to_string())?;
         let path = entry.path();
-        let relative = path.strip_prefix(root).map_err(|e| e.to_string())?;
-        safe_path(relative)?;
+        let relative =
+            crate::platform_fs::relative_path(path.strip_prefix(root).map_err(|e| e.to_string())?)
+                .map_err(|e| e.to_string())?;
+        safe_path(Path::new(&relative))?;
         if metadata.is_dir() {
             inventory_files(root, &path, files)?;
         } else if metadata.is_file() {
-            files.insert(relative.to_owned(), metadata.len());
+            files.insert(relative.into(), metadata.len());
         } else {
             return Err("buffer entries must be regular files or directories".into());
         }

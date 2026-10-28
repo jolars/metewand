@@ -14,6 +14,39 @@ use serde_json::Value;
 const CONFORMANCE_CASES: &str = include_str!("../../../schemas/v1/fixtures/conformance.json");
 
 #[test]
+fn native_path_boundaries_accept_windows_and_preserve_unix_records() {
+    let catalog = public_schema_catalog().unwrap();
+    for directory in [
+        "/worker",
+        r"C:\worker space\data",
+        r"\\?\C:\worker\data",
+        r"\\host\share\data",
+    ] {
+        let unix = serde_json::json!({"version": 1, "working_directory": directory,
+            "environment_variables": {}, "umask": "0077"});
+        catalog
+            .validate(PublicSchema::WorkerEnvironment.repository_path(), &unix)
+            .unwrap();
+        let windows = serde_json::json!({"version": 2, "working_directory": directory,
+            "environment_variables": {}, "umask": null,
+            "directory_access": "current_user_and_system"});
+        catalog
+            .validate(PublicSchema::WorkerEnvironment.repository_path(), &windows)
+            .unwrap();
+    }
+    for directory in ["worker", r"C:worker", r"\worker", ""] {
+        let instance = serde_json::json!({"version": 2, "working_directory": directory,
+            "environment_variables": {}, "umask": null,
+            "directory_access": "current_user_and_system"});
+        assert!(
+            catalog
+                .validate(PublicSchema::WorkerEnvironment.repository_path(), &instance)
+                .is_err()
+        );
+    }
+}
+
+#[test]
 fn concurrency_schema_rejects_bounds_outside_the_canonical_integer_domain() {
     let catalog = public_schema_catalog().unwrap();
     let instance = serde_json::json!({

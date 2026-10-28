@@ -74,10 +74,29 @@ fails(file_entry(directory, "data.json", "text/plain", representation = list(sha
 fails(write_result(directory, list(), schema = "s.json"))
 outside <- tempfile()
 dir.create(outside)
-stopifnot(file.symlink(outside, file.path(directory, "link")))
+linked <- suppressWarnings(file.symlink(outside, file.path(directory, "link")))
+if (!linked) {
+  stopifnot(.Platform$OS.type == "windows")
+  linked <- Sys.junction(outside, file.path(directory, "link"))
+}
+stopifnot(linked)
 fails(write_result(directory, json_object(), schema = "s.json", manifest = "link/escape.json"))
-stopifnot(file.symlink(file.path(outside, "missing"), file.path(directory, "dangling")))
+linked <- suppressWarnings(file.symlink(file.path(outside, "missing"), file.path(directory, "dangling")))
+if (!linked) {
+  stopifnot(.Platform$OS.type == "windows")
+  target <- file.path(outside, "missing")
+  dir.create(target)
+  stopifnot(Sys.junction(target, file.path(directory, "dangling")))
+  unlink(target, recursive = TRUE)
+}
 fails(write_result(directory, json_object(), schema = "s.json", manifest = "dangling"))
+for (path in c("C:/escape", "C:escape", "file:stream", "NUL", "aux.txt", "COM1.json", "lpt²", "trailing.", "trailing ", "bad?name")) {
+  fails(metewand:::.windows_relative_path(path))
+}
+metewand:::.windows_relative_path("ordinary/file.json")
+before <- metewand:::.clock()
+Sys.sleep(0.002)
+stopifnot(metewand:::.clock() > before)
 
 hello <- function(role = "implementation") list(
   id = "0", method = "hello", protocols = list(1), role = role,
@@ -296,5 +315,5 @@ fails(serve_evaluator(NULL))
 fails(serve_evaluator(function(...) NULL, read_fd = 1, write_fd = 1))
 fails(serve_evaluator(function(...) NULL, read_fd = -1, write_fd = 1))
 unlink(c(directory, outside), recursive = TRUE)
-source(file.path(root, "packages/r/tests/conformance.R"))
+source(file.path(root, "packages/r/tests/helpers/conformance.R"))
 cat("R package contracts passed.\n")

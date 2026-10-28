@@ -3,7 +3,6 @@
 use std::{
     fs::{self, File},
     io::Write,
-    os::fd::FromRawFd,
     path::Path,
     time::{Duration, Instant},
 };
@@ -12,6 +11,26 @@ use metewand_core::canonical::CanonicalValue;
 use metewand_protocol::{EvaluateRequest, EvaluationVerdict, framing::FrameReader};
 use metewand_runtime::worker_sdk::{Evaluation, WorkerResult, read_json, serve_evaluator};
 use serde_json::{Value, json};
+
+fn protocol_file(direction: &str) -> Result<File, Box<dyn std::error::Error>> {
+    #[cfg(unix)]
+    let inherited = {
+        use std::os::fd::FromRawFd;
+        let descriptor = std::env::var(format!("METEWAND_PROTOCOL_{direction}_FD"))?.parse()?;
+        // The launcher transfers ownership of this dedicated descriptor.
+        unsafe { File::from_raw_fd(descriptor) }
+    };
+    #[cfg(windows)]
+    let inherited = {
+        use std::os::windows::io::{FromRawHandle, RawHandle};
+        let handle: usize =
+            std::env::var(format!("METEWAND_PROTOCOL_{direction}_HANDLE"))?.parse()?;
+        // The launcher transfers ownership of this dedicated handle.
+        unsafe { File::from_raw_handle(handle as RawHandle) }
+    };
+    // Cloning creates a noninheritable endpoint before benchmark code can spawn children.
+    Ok(inherited.try_clone()?)
+}
 
 fn evaluate(request: &EvaluateRequest) -> WorkerResult<Evaluation> {
     let result = read_json(&Path::new(request.result_dir()).join("result.json"))?;
@@ -33,10 +52,8 @@ pub fn serve(role: &str) -> Result<(), Box<dyn std::error::Error>> {
         serve_evaluator(&mut evaluate)?;
         return Ok(());
     }
-    // The runner transfers ownership of these dedicated protocol descriptors.
-    let reader = unsafe { File::from_raw_fd(std::env::var("METEWAND_PROTOCOL_READ_FD")?.parse()?) };
-    let mut writer =
-        unsafe { File::from_raw_fd(std::env::var("METEWAND_PROTOCOL_WRITE_FD")?.parse()?) };
+    let reader = protocol_file("READ")?;
+    let mut writer = protocol_file("WRITE")?;
     let mut reader = FrameReader::new(reader);
     let mut parameters = Value::Null;
     while let Some(request) = reader.read_frame()? {

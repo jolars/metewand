@@ -1,5 +1,3 @@
-#![cfg(unix)]
-
 use std::{fs, io::Cursor, path::Path, process::Command, str::FromStr, time::Duration};
 
 use metewand_protocol::{
@@ -116,6 +114,7 @@ fn materializers_write_canonical_inventories_and_validate_requests() {
         .unwrap();
 }
 
+#[cfg(unix)]
 #[test]
 fn materializers_report_callback_and_inventory_failures() {
     let directory = TempDir::new().unwrap();
@@ -359,10 +358,23 @@ fn native_worker_entry() {
     println!("native worker stdout");
     eprintln!("native worker stderr");
     serve_implementation(&mut Sum::default()).unwrap();
+    #[cfg(unix)]
     for name in ["METEWAND_PROTOCOL_READ_FD", "METEWAND_PROTOCOL_WRITE_FD"] {
         let descriptor = std::env::var(name).unwrap().parse::<i32>().unwrap();
         // The package must close only its duplicates of the caller's descriptors.
         assert_ne!(unsafe { libc::fcntl(descriptor, libc::F_GETFD) }, -1);
+    }
+    #[cfg(windows)]
+    for name in [
+        "METEWAND_PROTOCOL_READ_HANDLE",
+        "METEWAND_PROTOCOL_WRITE_HANDLE",
+    ] {
+        use windows_sys::Win32::Foundation::{GetHandleInformation, HANDLE_FLAG_INHERIT};
+        let handle = std::env::var(name).unwrap().parse::<usize>().unwrap() as *mut _;
+        let mut flags = 0;
+        // SAFETY: Querying flags borrows the launch handle without closing it.
+        assert_ne!(unsafe { GetHandleInformation(handle, &mut flags) }, 0);
+        assert_eq!(flags & HANDLE_FLAG_INHERIT, 0);
     }
 }
 
@@ -370,14 +382,14 @@ fn native_worker_entry() {
 fn native_worker_uses_dedicated_pipes_and_runtime_validation() {
     use metewand_runtime::{
         worker_output::WorkerOutputValidator,
-        worker_process::{PosixWorkerProcess, WorkerLogLimits},
+        worker_process::{WorkerLogLimits, WorkerProcess},
         worker_session::{PhaseTimeouts, WorkerSession},
     };
     let mut command = Command::new(std::env::current_exe().unwrap());
     command
         .args(["--exact", "native_worker_entry", "--nocapture"])
         .env("METEWAND_TEST_RUST_WORKER", "1");
-    let process = PosixWorkerProcess::spawn(command, WorkerLogLimits::new(4096, 4096)).unwrap();
+    let process = WorkerProcess::spawn(command, WorkerLogLimits::new(4096, 4096)).unwrap();
     let timeout = Duration::from_secs(5);
     let mut session = WorkerSession::connect(
         process,
@@ -490,14 +502,17 @@ fn malformed_frames_and_unsafe_result_data_fail() {
         assert!(metewand_runtime::worker_sdk::write_result(directory.path(), data).is_err());
         assert!(!directory.path().join("result.json").exists());
     }
-    let outside = TempDir::new().unwrap();
-    std::os::unix::fs::symlink(
-        outside.path().join("escape.json"),
-        directory.path().join("result.json"),
-    )
-    .unwrap();
-    assert!(metewand_runtime::worker_sdk::write_result(directory.path(), json!({})).is_err());
-    assert!(!Path::new(&outside.path().join("escape.json")).exists());
+    #[cfg(unix)]
+    {
+        let outside = TempDir::new().unwrap();
+        std::os::unix::fs::symlink(
+            outside.path().join("escape.json"),
+            directory.path().join("result.json"),
+        )
+        .unwrap();
+        assert!(metewand_runtime::worker_sdk::write_result(directory.path(), json!({})).is_err());
+        assert!(!Path::new(&outside.path().join("escape.json")).exists());
+    }
 }
 
 #[test]
@@ -627,4 +642,34 @@ fn optional_applicability_callback_runs_without_preparation() {
         json!({"id":"1","ok":true,"outcome":"not_applicable",
         "code":"unsupported_intercept","reason":"Only zero intercepts are supported."})
     );
+}
+
+#[test]
+#[cfg(windows)]
+fn dataset_inventory_rejects_windows_aliases_and_native_path_escape() {
+    let directory = TempDir::new().unwrap();
+    fs::write(directory.path().join("data.json"), b"{}").unwrap();
+    for path in [
+        "C:/escape.json",
+        "C:escape.json",
+        "data.json:stream",
+        "NUL",
+        "data.json.",
+    ] {
+        assert!(
+            write_dataset_manifest(directory.path(), &[(path, "application/json")]).is_err(),
+            "{path}"
+        );
+    }
+    assert!(
+        write_dataset_manifest(
+            directory.path(),
+            &[
+                ("data.json", "application/json"),
+                ("DATA.JSON", "application/json"),
+            ]
+        )
+        .is_err()
+    );
+    assert!(!directory.path().join("dataset-manifest.json").exists());
 }

@@ -2,7 +2,6 @@ use std::{
     collections::BTreeSet,
     fs::{self, File, OpenOptions, TryLockError},
     io,
-    os::unix::fs::OpenOptionsExt,
     path::{Component, Path, PathBuf},
 };
 
@@ -99,7 +98,7 @@ impl RunStore {
             .to_owned();
         let objects = root.join("artifacts");
         ensure_directory(&objects)?;
-        crate::durability::sync_all(&File::open(&root)?)?;
+        crate::platform_fs::complete_namespace_change(&root)?;
         let mut report = RecoveryReport::default();
         let (stages, busy_attempts) = self.lock_stages(&root, &objects, &mut report)?;
         let orphans = self.find_orphans(&root, &objects, now, &mut report)?;
@@ -155,7 +154,7 @@ impl RunStore {
                     sync_tree(&safe_path(&root, &artifact.artifact.relative_path)?)?;
                 }
                 sync_tree(&root.join(&orphan.artifact.relative_path))?;
-                crate::durability::sync_all(&File::open(&objects)?)?;
+                crate::platform_fs::complete_namespace_change(&objects)?;
                 let tx = self
                     .connection
                     .transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -209,22 +208,22 @@ impl RunStore {
             if source.try_exists()? {
                 let quarantine = objects.join(".quarantine");
                 ensure_directory(&quarantine)?;
-                crate::durability::sync_all(&File::open(&objects)?)?;
+                crate::platform_fs::complete_namespace_change(&objects)?;
                 let target = quarantine.join(source.file_name().expect("stage has a name"));
                 rename_no_replace(&source, &target)?;
-                crate::durability::sync_all(&File::open(&objects)?)?;
-                crate::durability::sync_all(&File::open(&quarantine)?)?;
+                crate::platform_fs::complete_namespace_change(&objects)?;
+                crate::platform_fs::complete_namespace_change(&quarantine)?;
                 report
                     .quarantined_stages
                     .push(target.strip_prefix(&root).expect("inside store").to_owned());
             }
-            crate::durability::sync_all(&File::open(&objects)?)?;
+            crate::platform_fs::complete_namespace_change(&objects)?;
             let quarantine = objects.join(".quarantine");
             if quarantine.try_exists()? {
-                if !fs::symlink_metadata(&quarantine)?.is_dir() {
+                if !crate::platform_fs::is_real_directory(&fs::symlink_metadata(&quarantine)?) {
                     return Err(RunStoreError::UnsafePath(quarantine));
                 }
-                crate::durability::sync_all(&File::open(quarantine)?)?;
+                crate::platform_fs::complete_namespace_change(&quarantine)?;
             }
             if let Some(id) = &stage.lease_id {
                 tx.execute("UPDATE leases SET released_at_ns = max(?2, acquired_at_ns) WHERE id = ?1 AND released_at_ns IS NULL", params![id, checked])?;
@@ -283,9 +282,7 @@ impl RunStore {
                 .connection
                 .query_row(
                     "SELECT id, attempt_id FROM leases WHERE staging_path = ?1",
-                    [relative_path
-                        .to_str()
-                        .ok_or_else(|| RunStoreError::UnsafePath(path.clone()))?],
+                    [crate::platform_fs::relative_path(&relative_path)?],
                     |r| Ok((r.get(0)?, r.get(1)?)),
                 )
                 .optional()?;
@@ -295,7 +292,9 @@ impl RunStore {
             };
             let mut lock = None;
             match fs::symlink_metadata(&path) {
-                Ok(metadata) if !metadata.is_dir() => return Err(RunStoreError::UnsafePath(path)),
+                Ok(metadata) if !crate::platform_fs::is_real_directory(&metadata) => {
+                    return Err(RunStoreError::UnsafePath(path));
+                }
                 Ok(_) => match open_lock(&path.join("lock"), false) {
                     Ok(file) => match file.try_lock() {
                         Ok(()) => lock = Some(file),
@@ -395,7 +394,7 @@ impl RunStore {
                 }
             } else {
                 sync_tree(&path)?;
-                crate::durability::sync_all(&File::open(objects)?)?;
+                crate::platform_fs::complete_namespace_change(objects)?;
                 let tx = self
                     .connection
                     .transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -514,19 +513,19 @@ pub(super) fn coordination_lock(store: &RunStore, shared: bool) -> Result<File, 
         Err(TryLockError::Error(error)) => return Err(error.into()),
     }
     crate::durability::sync_all(&file)?;
-    crate::durability::sync_all(&File::open(root)?)?;
+    crate::platform_fs::complete_namespace_change(root)?;
     Ok(file)
 }
 
 fn open_lock(path: &Path, create: bool) -> Result<File, RunStoreError> {
-    let file = OpenOptions::new()
-        .read(true)
-        .write(true)
-        .create(create)
-        .truncate(false)
-        .mode(0o600)
-        .custom_flags(rustix::fs::OFlags::NOFOLLOW.bits() as i32)
-        .open(path)?;
+    let file = crate::platform_fs::open_regular(
+        path,
+        OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(create)
+            .truncate(false),
+    )?;
     if !file.metadata()?.is_file() {
         return Err(RunStoreError::UnsafePath(path.to_owned()));
     }
@@ -539,7 +538,7 @@ fn ensure_directory(path: &Path) -> Result<(), RunStoreError> {
         Err(error) if error.kind() == io::ErrorKind::AlreadyExists => (),
         Err(error) => return Err(error.into()),
     }
-    if !fs::symlink_metadata(path)?.is_dir() {
+    if !crate::platform_fs::is_real_directory(&fs::symlink_metadata(path)?) {
         return Err(RunStoreError::UnsafePath(path.to_owned()));
     }
     Ok(())
@@ -704,7 +703,9 @@ fn safe_path(root: &Path, relative: &str) -> Result<PathBuf, RunStoreError> {
         };
         path.push(name);
         let metadata = fs::symlink_metadata(&path)?;
-        if metadata.is_symlink() || (!metadata.is_dir() && !metadata.is_file()) {
+        if !crate::platform_fs::is_real_directory(&metadata)
+            && !crate::platform_fs::is_regular_file(&metadata)
+        {
             return Err(RunStoreError::UnsafePath(path));
         }
     }
@@ -780,8 +781,8 @@ fn verify_registered(root: &Path, stored: &StoredArtifact) -> Result<(), RunStor
     let artifact = &stored.artifact;
     let path = safe_path(root, &artifact.relative_path)?;
     let metadata = fs::symlink_metadata(&path)?;
-    if (stored.storage_kind == "directory" && !metadata.is_dir())
-        || (stored.storage_kind == "file" && !metadata.is_file())
+    if (stored.storage_kind == "directory" && !crate::platform_fs::is_real_directory(&metadata))
+        || (stored.storage_kind == "file" && !crate::platform_fs::is_regular_file(&metadata))
     {
         return Err(invalid("dependency storage kind changed"));
     }
@@ -804,16 +805,18 @@ fn verify_registered(root: &Path, stored: &StoredArtifact) -> Result<(), RunStor
 
 fn sync_tree(path: &Path) -> Result<(), RunStoreError> {
     let metadata = fs::symlink_metadata(path)?;
-    if metadata.is_dir() {
+    if crate::platform_fs::is_real_directory(&metadata) {
         let mut entries = fs::read_dir(path)?.collect::<Result<Vec<_>, _>>()?;
         entries.sort_by_key(|entry| entry.file_name());
         for entry in entries {
             sync_tree(&entry.path())?;
         }
-    } else if !metadata.is_file() {
+        crate::platform_fs::complete_namespace_change(path)?;
+    } else if crate::platform_fs::is_regular_file(&metadata) {
+        crate::platform_fs::sync_owned_file(path)?;
+    } else {
         return Err(RunStoreError::UnsafePath(path.to_owned()));
     }
-    crate::durability::sync_all(&File::open(path)?)?;
     Ok(())
 }
 

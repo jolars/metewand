@@ -21,7 +21,7 @@ use crate::{
     source_resolution::{
         AcquiredSource, SourceAcquirer, SourceFile, SourceRequest, SourceResolutionError,
     },
-    worker_process::{PosixWorkerProcess, WorkerLogLimits},
+    worker_process::{WorkerLogLimits, WorkerProcess},
 };
 
 /// Compatibility version of the selector and standalone acquisition command.
@@ -145,7 +145,12 @@ impl SourceAcquirer for DatamongerAcquirer {
             .env_clear()
             .stdin(Stdio::null())
             .current_dir(work.path());
-        let mut process = PosixWorkerProcess::spawn(command, WorkerLogLimits::new(8192, 8192))
+        #[cfg(windows)]
+        command.env(
+            "SYSTEMROOT",
+            crate::worker_environment::system_root().map_err(failure)?,
+        );
+        let mut process = WorkerProcess::spawn_isolated(command, WorkerLogLimits::new(8192, 8192))
             .map_err(failure)?;
         let started = Instant::now();
         loop {

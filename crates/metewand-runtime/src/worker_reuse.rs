@@ -1,9 +1,6 @@
 //! Serial worker ownership, slot cleanup, and process-local warm-up accounting.
 
-use std::{
-    fs, io,
-    os::unix::fs::{DirBuilderExt, PermissionsExt},
-};
+use std::{fs, io};
 
 use metewand_core::{
     manifest::TimingScope,
@@ -155,10 +152,21 @@ fn reset_and_clear<E: std::error::Error + 'static>(
         .ok_or(WorkerReuseError::MissingPrivateDirectory)?;
     // A worker can change its directory mode; restore the executor's private
     // boundary before making it available to another slot.
-    fs::set_permissions(root, fs::Permissions::from_mode(0o700))?;
+    crate::platform_fs::set_private_directory(root)?;
     for entry in fs::read_dir(root)? {
         let entry = entry?;
-        if entry.file_type()?.is_dir() {
+        let file_type = entry.file_type()?;
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::FileTypeExt;
+            if file_type.is_symlink_dir() {
+                // Windows removes directory symlinks and junctions through
+                // the directory API, which leaves their targets untouched.
+                fs::remove_dir(entry.path())?;
+                continue;
+            }
+        }
+        if file_type.is_dir() {
             fs::remove_dir_all(entry.path())?;
         } else {
             // Removing the link itself prevents following worker-created links.
@@ -176,10 +184,8 @@ fn reset_and_clear<E: std::error::Error + 'static>(
             .strip_prefix(root)
             .is_ok_and(|relative| !relative.as_os_str().is_empty())
         {
-            fs::DirBuilder::new()
-                .recursive(true)
-                .mode(0o700)
-                .create(path)?;
+            fs::create_dir_all(path)?;
+            crate::platform_fs::set_private_directory(path)?;
         }
     }
     Ok(())

@@ -25,8 +25,10 @@ the timer. Separate lifecycle callbacks are useful when you need precise
 preparation boundaries.
 
 In-worker `implementation_time_ns`, when present, measures the solve callback.
-It supplements the primary executor-observed time. CPU and peak-memory values
-may be partial or unavailable; missing values are not zero.
+It supplements the primary executor-observed time. Linux CPU and peak-memory
+measurements cover the implementation process, so their evidence is partial.
+These measurements are unavailable on macOS and Windows; missing values are
+not zero. Wall time is available on all three platforms.
 
 ## Name an execution policy
 

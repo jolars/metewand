@@ -1,6 +1,6 @@
 use std::{ffi::OsString, path::PathBuf};
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 use std::{io, io::Write as _};
 
 use crate::output::{CommandError, CommandResult, OutputFormat};
@@ -140,7 +140,7 @@ pub fn command(
     )
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn execute(
     manifest: &std::path::Path,
     output_directory: &std::path::Path,
@@ -177,7 +177,7 @@ fn execute(
     Ok(CommandResult::Run(Box::new(report)))
 }
 
-#[cfg(not(unix))]
+#[cfg(not(any(unix, windows)))]
 fn execute(
     _: &std::path::Path,
     _: &std::path::Path,

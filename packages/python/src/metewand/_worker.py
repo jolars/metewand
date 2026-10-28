@@ -499,6 +499,12 @@ def _serve(worker, role, reader, writer, semantics=False, fresh_sequence=False, 
 
 
 def _serve_fds(worker, role, read_fd, write_fd, semantics=False, fresh_sequence=False, initialize=None):
+    if os.name == "nt" and read_fd is None and write_fd is None:
+        with ExitStack() as stack:
+            reader = stack.enter_context(_windows_protocol_stream("READ", "rb"))
+            writer = stack.enter_context(_windows_protocol_stream("WRITE", "wb"))
+            _serve(worker, role, reader, writer, semantics=semantics, fresh_sequence=fresh_sequence, initialize=initialize)
+        return
     if read_fd is None:
         read_fd = int(os.environ["METEWAND_PROTOCOL_READ_FD"])
     if write_fd is None:
@@ -509,6 +515,47 @@ def _serve_fds(worker, role, read_fd, write_fd, semantics=False, fresh_sequence=
         reader = stack.enter_context(os.fdopen(os.dup(read_fd), "rb"))
         writer = stack.enter_context(os.fdopen(os.dup(write_fd), "wb"))
         _serve(worker, role, reader, writer, semantics=semantics, fresh_sequence=fresh_sequence, initialize=initialize)
+
+
+def _windows_protocol_stream(direction, mode):
+    import ctypes
+    from ctypes import wintypes
+    import msvcrt
+
+    supplied = os.environ[f"METEWAND_PROTOCOL_{direction}_HANDLE"]
+    if not supplied.isascii() or not supplied.isdecimal():
+        raise ValueError("Protocol handles must be unsigned decimal integers.")
+    handle = int(supplied)
+    if not 0 < handle < (1 << (ctypes.sizeof(ctypes.c_void_p) * 8)) - 1:
+        raise ValueError("Invalid protocol handle.")
+    other = "WRITE" if direction == "READ" else "READ"
+    if handle == int(os.environ[f"METEWAND_PROTOCOL_{other}_HANDLE"]):
+        raise ValueError("The protocol requires separate read and write handles.")
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel.GetCurrentProcess.restype = wintypes.HANDLE
+    kernel.DuplicateHandle.argtypes = [
+        wintypes.HANDLE, wintypes.HANDLE, wintypes.HANDLE,
+        ctypes.POINTER(wintypes.HANDLE), wintypes.DWORD, wintypes.BOOL, wintypes.DWORD,
+    ]
+    kernel.DuplicateHandle.restype = wintypes.BOOL
+    kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel.CloseHandle.restype = wintypes.BOOL
+    os.set_handle_inheritable(handle, False)
+    duplicate = wintypes.HANDLE()
+    process = kernel.GetCurrentProcess()
+    if not kernel.DuplicateHandle(process, handle, process, ctypes.byref(duplicate), 0, False, 2):
+        raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        flags = os.O_BINARY | os.O_NOINHERIT | (os.O_RDONLY if mode == "rb" else os.O_WRONLY)
+        descriptor = msvcrt.open_osfhandle(duplicate.value, flags)
+    except BaseException:
+        kernel.CloseHandle(duplicate)
+        raise
+    try:
+        return os.fdopen(descriptor, mode)
+    except BaseException:
+        os.close(descriptor)
+        raise
 
 
 def serve_implementation(implementation, *, fresh_sequence=False, read_fd=None, write_fd=None):

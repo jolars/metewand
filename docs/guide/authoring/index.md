@@ -29,8 +29,8 @@ gradient update and one coordinate sweep do different amounts of work.
 ## Create the manifest
 
 ```sh
-metewand init /tmp/least-squares --empty
-cd /tmp/least-squares
+metewand init least-squares --empty
+cd least-squares
 ```
 
 Replace `metewand.yaml` with:

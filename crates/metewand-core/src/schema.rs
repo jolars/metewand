@@ -57,10 +57,15 @@ impl SchemaDeclaration {
             // A virtual sibling keeps relative references rooted at the owning
             // document without inserting schema files into the repository.
             let filename = self.path.file_name().expect("inline schema has a key");
-            self.path = owner
+            let path = owner
                 .parent()
                 .unwrap_or_else(|| Path::new(""))
                 .join(filename);
+            self.path = PathBuf::from(
+                path.to_str()
+                    .expect("schema keys are UTF-8")
+                    .replace(std::path::MAIN_SEPARATOR, "/"),
+            );
         }
     }
 }
@@ -618,6 +623,35 @@ fn repository_uri(path: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use crate::public_schemas::{PUBLIC_SCHEMAS, public_schema_catalog};
+
+    #[test]
+    fn inline_schema_keys_resolve_sibling_references_in_nested_contracts() {
+        use super::*;
+        let mut declaration: SchemaDeclaration =
+            serde_json::from_value(serde_json::json!({"$ref": "neighbor.json"})).unwrap();
+        declaration.set_owner(Path::new("nested/contract.json"));
+        let key = declaration.as_path().to_owned();
+        assert!(key.to_str().unwrap().starts_with("nested/"));
+        let catalog = SchemaCatalog::try_new([
+            (
+                key.clone(),
+                declaration.inline_document().unwrap().as_json().clone(),
+            ),
+            (
+                PathBuf::from("nested/neighbor.json"),
+                serde_json::json!({
+                    "$schema": DRAFT_2020_12_DIALECT, "type": "integer",
+                }),
+            ),
+        ])
+        .unwrap();
+        catalog.validate(&key, &serde_json::json!(17)).unwrap();
+        assert!(
+            catalog
+                .validate(&key, &serde_json::json!("invalid"))
+                .is_err()
+        );
+    }
 
     #[test]
     fn public_catalogs_share_compiled_validators_across_threads() {

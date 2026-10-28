@@ -299,6 +299,13 @@ fn collect_descendants(
     relative_directory: &Path,
     paths: &mut Vec<PathBuf>,
 ) -> Result<(), SourceBundleError> {
+    #[cfg(windows)]
+    crate::platform_fs::validate_directory_names(absolute_directory).map_err(|source| {
+        SourceBundleError::PathAccess {
+            path: relative_directory.to_path_buf(),
+            source,
+        }
+    })?;
     let mut entries = fs::read_dir(absolute_directory)
         .map_err(|source| SourceBundleError::PathAccess {
             path: relative_directory.to_path_buf(),
@@ -320,7 +327,22 @@ fn collect_descendants(
                 source,
             })?;
         paths.push(relative_path.clone());
-        if file_type.is_dir() {
+        #[cfg(windows)]
+        let directory = {
+            use std::os::windows::fs::MetadataExt;
+            file_type.is_dir()
+                && fs::symlink_metadata(entry.path())
+                    .map_err(|source| SourceBundleError::PathAccess {
+                        path: relative_path.clone(),
+                        source,
+                    })?
+                    .file_attributes()
+                    & windows_sys::Win32::Storage::FileSystem::FILE_ATTRIBUTE_REPARSE_POINT
+                    == 0
+        };
+        #[cfg(not(windows))]
+        let directory = file_type.is_dir();
+        if directory {
             collect_descendants(&entry.path(), &relative_path, paths)?;
         }
     }
@@ -361,6 +383,15 @@ fn ensure_contained(
     relative_path: &Path,
     is_symlink: bool,
 ) -> Result<(), SourceBundleError> {
+    #[cfg(windows)]
+    if !relative_path.as_os_str().is_empty() {
+        crate::platform_fs::relative_path(relative_path).map_err(|source| {
+            SourceBundleError::PathAccess {
+                path: relative_path.to_path_buf(),
+                source,
+            }
+        })?;
+    }
     let resolved = fs::canonicalize(repository_root.join(relative_path)).map_err(|source| {
         if is_symlink {
             SourceBundleError::SymlinkResolution {
@@ -384,10 +415,12 @@ fn ensure_contained(
     }
 }
 
-fn utf8_path(path: &Path) -> Result<&str, SourceBundleError> {
-    path.to_str().ok_or_else(|| SourceBundleError::NonUtf8Path {
-        path: path.to_path_buf(),
-    })
+fn utf8_path(path: &Path) -> Result<String, SourceBundleError> {
+    path.to_str()
+        .map(|text| text.replace(std::path::MAIN_SEPARATOR, "/"))
+        .ok_or_else(|| SourceBundleError::NonUtf8Path {
+            path: path.to_path_buf(),
+        })
 }
 
 /// A failure to establish a deterministic, repository-contained source bundle.

@@ -205,12 +205,12 @@ impl RunStore {
             Err(error) if error.kind() == io::ErrorKind::AlreadyExists => (),
             Err(error) => return Err(error.into()),
         }
-        if !fs::symlink_metadata(&objects)?.is_dir() {
+        if !crate::platform_fs::is_real_directory(&fs::symlink_metadata(&objects)?) {
             return Err(RunStoreError::UnsafePath(objects));
         }
         // Synchronize even an existing parent: another creator may not yet have
         // completed its own parent synchronization.
-        crate::durability::sync_all(&File::open(&root)?)?;
+        crate::platform_fs::complete_namespace_change(&root)?;
         let directory = tempfile::Builder::new()
             .prefix(".staging-")
             .tempdir_in(&objects)?;
@@ -223,14 +223,14 @@ impl RunStore {
         crate::durability::sync_all(&lock)?;
         let object = directory.path().join("object");
         fs::create_dir(&object)?;
-        crate::durability::sync_all(&File::open(directory.path())?)?;
-        crate::durability::sync_all(&File::open(&objects)?)?;
-        let relative = directory
-            .path()
-            .strip_prefix(&root)
-            .expect("stage is inside store")
-            .to_str()
-            .expect("generated staging path is UTF-8");
+        crate::platform_fs::complete_namespace_change(directory.path())?;
+        crate::platform_fs::complete_namespace_change(&objects)?;
+        let relative = crate::platform_fs::relative_path(
+            directory
+                .path()
+                .strip_prefix(&root)
+                .expect("stage is inside store"),
+        )?;
         let lease_id = format!("staging:{relative}");
         let tx = self
             .connection
@@ -407,12 +407,14 @@ fn coordination_snapshot(
 }
 
 impl Stage {
-    fn cleanup(&self) {
+    fn cleanup(self) {
         // Cleanup cannot revoke a committed receipt. Unremoved released staging
         // directories carry no accepted identity and can be removed by recovery.
+        drop(self._lock);
         if fs::remove_dir_all(&self.directory).is_ok() {
-            let _ = File::open(self.directory.parent().expect("stage has a parent"))
-                .and_then(|parent| crate::durability::sync_all(&parent));
+            let _ = crate::platform_fs::complete_namespace_change(
+                self.directory.parent().expect("stage has a parent"),
+            );
         }
     }
 }

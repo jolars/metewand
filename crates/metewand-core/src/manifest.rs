@@ -871,12 +871,18 @@ impl<'de> Deserialize<'de> for Name {
 
 /// A normalized-looking repository-relative path awaiting repository checks.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub struct RepositoryPath(PathBuf);
+pub struct RepositoryPath(String);
 
 impl RepositoryPath {
     /// Returns the path.
     #[must_use]
     pub fn as_path(&self) -> &Path {
+        Path::new(&self.0)
+    }
+
+    /// Returns the logical path without native separator conversion.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
         &self.0
     }
 }
@@ -894,7 +900,7 @@ impl<'de> Deserialize<'de> for RepositoryPath {
     {
         let value = String::deserialize(deserializer)?;
         if valid_repository_path(&value) {
-            Ok(Self(PathBuf::from(value)))
+            Ok(Self(value))
         } else {
             Err(de::Error::custom(format_args!(
                 "path {value:?} must be a normalized, relative repository path"
@@ -905,12 +911,18 @@ impl<'de> Deserialize<'de> for RepositoryPath {
 
 /// A repository path that may name the repository root as `.`.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct RepositoryRootPath(PathBuf);
+pub struct RepositoryRootPath(String);
 
 impl RepositoryRootPath {
     /// Returns the path.
     #[must_use]
     pub fn as_path(&self) -> &Path {
+        Path::new(&self.0)
+    }
+
+    /// Returns the logical path without native separator conversion.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
         &self.0
     }
 }
@@ -928,7 +940,7 @@ impl<'de> Deserialize<'de> for RepositoryRootPath {
     {
         let value = String::deserialize(deserializer)?;
         if value == "." || valid_repository_path(&value) {
-            Ok(Self(PathBuf::from(value)))
+            Ok(Self(value))
         } else {
             Err(de::Error::custom(format_args!(
                 "path {value:?} must be `.` or a normalized, relative repository path"

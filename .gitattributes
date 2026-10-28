@@ -1,0 +1,2 @@
+# Source and fixture hashes must not depend on Git's checkout line endings.
+* text=auto eol=lf

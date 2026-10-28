@@ -1,22 +1,26 @@
-#![cfg(unix)]
-
 use std::{
     env,
     fs::File,
     io::{BufRead, BufReader, BufWriter, Write},
-    os::fd::FromRawFd,
     process::Command,
     str::FromStr,
-    sync::atomic::{AtomicBool, Ordering},
     thread,
     time::{Duration, Instant},
+};
+
+#[cfg(windows)]
+use std::os::windows::io::FromRawHandle;
+#[cfg(unix)]
+use std::{
+    os::fd::FromRawFd,
+    sync::atomic::{AtomicBool, Ordering},
 };
 
 use metewand_protocol::{
     Capability, HandshakeError, WorkerFailureCode, WorkerIdentity, WorkerRole,
 };
 use metewand_runtime::{
-    worker_process::{PosixWorkerProcess, WorkerLogLimits},
+    worker_process::{WorkerLogLimits, WorkerProcess},
     worker_session::{PhaseTimeouts, WorkerPhase, WorkerSession, WorkerSessionError},
 };
 use serde_json::{Value, json};
@@ -34,6 +38,8 @@ fn fixture_worker() {
         Ok("evaluator") => run_evaluator_fixture(),
         Ok("failure") => run_failure_fixture(),
         Ok("timeout") => run_timeout_fixture(),
+        Ok("blocked-prepare") => run_blocked_prepare_fixture(),
+        #[cfg(unix)]
         Ok("interrupt-timeout") => run_interrupt_timeout_fixture(),
         Ok("shared-deadline") => run_shared_deadline_fixture(),
         Ok("hello-timeout") => run_hello_timeout_fixture(),
@@ -295,13 +301,14 @@ fn a_zero_operational_limit_is_not_a_scientific_timeout() {
 }
 
 #[test]
+#[cfg(unix)]
 fn scientific_and_operational_timeouts_interrupt_before_forcing_exit() {
     for scientific in [false, true] {
         let root = tempfile::tempdir().unwrap();
         let marker = root.path().join("interrupted");
         let mut command = fixture_command("interrupt-timeout");
         command.env("METEWAND_INTERRUPT_MARKER", &marker);
-        let process = PosixWorkerProcess::spawn(command, WorkerLogLimits::new(1024, 1024)).unwrap();
+        let process = WorkerProcess::spawn(command, WorkerLogLimits::new(1024, 1024)).unwrap();
         let mut limits = timeouts();
         if !scientific {
             limits.execute = Duration::from_millis(40);
@@ -435,8 +442,8 @@ fn connect(mode: &str, role: WorkerRole, capabilities: &[Capability]) -> WorkerS
     .expect("fixture handshake must succeed")
 }
 
-fn spawn_fixture(mode: &str) -> PosixWorkerProcess {
-    PosixWorkerProcess::spawn(fixture_command(mode), WorkerLogLimits::new(1024, 1024))
+fn spawn_fixture(mode: &str) -> WorkerProcess {
+    WorkerProcess::spawn(fixture_command(mode), WorkerLogLimits::new(1024, 1024))
         .expect("fixture worker must spawn")
 }
 
@@ -587,12 +594,15 @@ fn run_shared_deadline_fixture() {
     );
 }
 
+#[cfg(unix)]
 static INTERRUPTED: AtomicBool = AtomicBool::new(false);
 
+#[cfg(unix)]
 extern "C" fn record_interrupt(_: libc::c_int) {
     INTERRUPTED.store(true, Ordering::Relaxed);
 }
 
+#[cfg(unix)]
 fn run_interrupt_timeout_fixture() {
     // SAFETY: The handler only stores to a lock-free atomic and lives for the
     // process lifetime. This fixture runs in its own child process.
@@ -686,6 +696,7 @@ fn accept_shutdown(reader: &mut impl BufRead, writer: &mut impl Write, id: &str)
     write_message(writer, &json!({"id": id, "ok": true}));
 }
 
+#[cfg(unix)]
 fn protocol_streams() -> (BufReader<File>, BufWriter<File>) {
     let read_fd = protocol_fd("METEWAND_PROTOCOL_READ_FD");
     let write_fd = protocol_fd("METEWAND_PROTOCOL_WRITE_FD");
@@ -714,6 +725,7 @@ fn write_message(writer: &mut impl Write, message: &Value) {
     writer.flush().expect("protocol response must flush");
 }
 
+#[cfg(unix)]
 fn protocol_fd(name: &str) -> i32 {
     env::var(name)
         .unwrap_or_else(|_| panic!("{name} must be set"))
@@ -722,6 +734,7 @@ fn protocol_fd(name: &str) -> i32 {
 }
 
 #[test]
+#[cfg(unix)]
 fn escaped_descendant_cannot_block_protocol_timeout_or_a_full_request_pipe() {
     for fill_request_pipe in [false, true] {
         let mut command = Command::new("python3");
@@ -753,7 +766,7 @@ if os.environ['FILL_REQUEST_PIPE'] == '1':
 os._exit(0)
 "#,
         ]);
-        let worker = PosixWorkerProcess::spawn(command, WorkerLogLimits::new(32, 32)).unwrap();
+        let worker = WorkerProcess::spawn(command, WorkerLogLimits::new(32, 32)).unwrap();
         let started = Instant::now();
         let mut deadlines = timeouts();
         deadlines.hello = Duration::from_millis(100);
@@ -837,4 +850,61 @@ fn run_applicability_fixture() {
         "code":"unsupported_intercept", "reason":"Only zero intercepts are supported."}),
     );
     accept_shutdown(&mut reader, &mut writer, "2");
+}
+
+#[cfg(windows)]
+fn protocol_streams() -> (BufReader<File>, BufWriter<File>) {
+    let handle = |name| env::var(name).unwrap().parse::<usize>().unwrap() as *mut _;
+    // SAFETY: The fixture takes ownership of each inherited endpoint once.
+    let read = unsafe { File::from_raw_handle(handle("METEWAND_PROTOCOL_READ_HANDLE")) };
+    // SAFETY: The write endpoint is distinct from the read endpoint.
+    let write = unsafe { File::from_raw_handle(handle("METEWAND_PROTOCOL_WRITE_HANDLE")) };
+    (BufReader::new(read), BufWriter::new(write))
+}
+
+fn run_blocked_prepare_fixture() {
+    let (mut reader, mut writer) = protocol_streams();
+    accept_hello(
+        &mut reader,
+        &mut writer,
+        "implementation",
+        json!(["one_shot"]),
+    );
+    thread::sleep(Duration::from_secs(5));
+}
+
+#[test]
+fn preparation_deadline_cancels_a_full_request_pipe() {
+    let mut limits = timeouts();
+    limits.prepare = Duration::from_millis(40);
+    let mut session = WorkerSession::connect(
+        spawn_fixture("blocked-prepare"),
+        WorkerRole::Implementation,
+        worker_identity(),
+        &[Capability::OneShot],
+        limits,
+    )
+    .unwrap();
+    let start = Instant::now();
+    let error = session
+        .prepare(
+            "/dataset",
+            "contract",
+            json!({"large": "x".repeat(256 * 1024)}),
+            json!({}),
+            1,
+        )
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        WorkerSessionError::Timeout {
+            phase: WorkerPhase::Prepare,
+            ..
+        }
+    ));
+    assert!(start.elapsed() < Duration::from_secs(2));
+    assert!(matches!(
+        session.reset(),
+        Err(WorkerSessionError::SessionUnusable)
+    ));
 }

@@ -67,7 +67,7 @@ impl ContractDeclaration {
     #[must_use]
     pub fn declaration_value(&self) -> Value {
         match self {
-            Self::Reference(path) => json!(path.as_path()),
+            Self::Reference(path) => json!(path.as_str()),
             Self::Inline(contract) => contract.declaration_value(),
         }
     }
@@ -502,7 +502,7 @@ impl ReferenceInput {
     }
     pub fn declaration_value(&self) -> Value {
         match self {
-            Self::Path(path) => json!(path.as_path()),
+            Self::Path(path) => json!(path.as_str()),
             Self::Inline(value) => value.as_json().clone(),
         }
     }
