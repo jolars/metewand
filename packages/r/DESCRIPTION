@@ -20,4 +20,3 @@ Imports:
     jsonlite,
     utils
 Encoding: UTF-8
-NeedsCompilation: no
