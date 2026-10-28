@@ -45,7 +45,7 @@ json_array <- function(values) I(unname(values))
   } else if (is.logical(value) || is.numeric(value)) {
     if (
       anyNA(value) ||
-        any(!is.finite(value)) ||
+        !all(is.finite(value)) ||
         (is.numeric(value) &&
           any(value == trunc(value) & abs(value) > 9007199254740991))
     ) {
@@ -59,7 +59,7 @@ json_array <- function(values) I(unname(values))
   }
   attributes <- names(attributes(value))
   if (
-    any(!attributes %in% c("names", "class")) ||
+    !all(attributes %in% c("names", "class")) ||
       (!is.list(value) && !is.null(names(value)))
   ) {
     stop(
@@ -128,23 +128,25 @@ json_array <- function(values) I(unname(values))
 
 #' Read and Write Ordinary JSON
 #'
-#' Small JSON utilities backed by jsonlite. The CLI owns canonical
-#' serialization and artifact validation.
+#' Small JSON utilities backed by jsonlite. The CLI owns canonical serialization
+#' and artifact validation.
 #'
 #' @param path A file path.
 #' @param value A JSON-compatible R value.
 #' @param values A named list for an object, or values to represent as an array.
 #' @details
-#' Named lists represent objects and unnamed lists represent arrays.
-#' Atomic vectors of length one become scalars. Use `json_array()` to preserve an
-#' array with one element, and `json_object()` for an empty object. `NULL` represents
+#' Named lists represent objects and unnamed lists represent arrays. Atomic
+#' vectors of length one become scalars. Use `json_array()` to preserve an array
+#' with one element, and `json_object()` for an empty object. `NULL` represents
 #' JSON null. Reading never simplifies arrays or objects into vectors or frames.
 #' Numbers are written with 17 significant digits to preserve binary64 values.
-#' Missing values, nonfinite numbers, unsafe integers, duplicate keys, unsupported
-#' classes, and invalid Unicode are rejected. R cannot represent embedded NUL
-#' strings; these are unsupported rather than silently truncated.
-#' @returns `read_json()` returns the parsed value; `write_json()` returns invisibly.
-#' `json_object()` returns a named list and `json_array()` returns an `AsIs` value.
+#' Missing values, nonfinite numbers, unsafe integers, duplicate keys,
+#' unsupported classes, and invalid Unicode are rejected. R cannot represent
+#' embedded NUL strings; these are unsupported rather than silently truncated.
+#' @returns
+#' `read_json()` returns the parsed value; `write_json()` returns invisibly.
+#' `json_object()` returns a named list and `json_array()` returns an `AsIs`
+#' value.
 #' @examples
 #' path <- tempfile()
 #' write_json(path, list(answer = 6, values = json_array(1)))
@@ -189,9 +191,11 @@ dataset <- function(data = NULL, files = list()) {
 #' Describe Scientific Outputs
 #'
 #' Construct callback values for binding API version 1. The CLI validates
-#' scientific data, hashes completed files, and writes canonical artifact envelopes.
+#' scientific data, hashes completed files, and writes canonical artifact
+#' envelopes.
 #'
-#' @param data A named list of scientific data. `NULL` omits `data.json` for a dataset.
+#' @param data A named list of scientific data. `NULL` omits `data.json` for a
+#'   dataset.
 #' @param files A list of artifact declarations for completed files.
 #' @param path A normalized file path relative to the assigned output directory.
 #' @param media_type The file's media type.
@@ -203,10 +207,10 @@ dataset <- function(data = NULL, files = list()) {
 #' @param message A nonempty failure message.
 #' @param details Optional named list of diagnostic details.
 #' @details
-#' Write files beneath `context$output_dir` and close them before returning.
-#' The CLI rejects missing, duplicate, escaping, and undeclared files. Dataset and
-#' result callbacks may return a plain named list when they produce only JSON data.
-#' Use `stop(worker_error(...))` to report a structured callback failure.
+#' Write files beneath `context$output_dir` and close them before returning. The
+#' CLI rejects missing, duplicate, escaping, and undeclared files. Dataset and
+#' result callbacks may return a plain named list when they produce only JSON
+#' data. Use `stop(worker_error(...))` to report a structured callback failure.
 #'
 #' These constructors work without the CLI and perform no filesystem operations.
 #' @returns An R object describing the output or a structured error condition.
@@ -272,8 +276,8 @@ worker_error <- function(code, message, details = NULL) {
 
 #' Register Stable Scientific Callbacks
 #'
-#' Delegate binding API version 1 callbacks to a CLI-supplied adapter.
-#' The package contains no worker protocol implementation.
+#' Delegate binding API version 1 callbacks to a CLI-supplied adapter. The
+#' package contains no worker protocol implementation.
 #'
 #' @param ... Named implementation callbacks described below.
 #' @param materialize Function of context returning a dataset or named list.
@@ -292,15 +296,16 @@ worker_error <- function(code, message, details = NULL) {
 #' preparation. Unsupported optional callbacks fail in the CLI adapter, allowing
 #' future callbacks without a package release.
 #'
-#' Context supplies `parameters`, `problem_parameters`, `seed`, `semantics`, assigned
-#' input and output directories, and `observation_control` where applicable. Additional
-#' optional fields may appear without changing callback signatures. Neither seeds
-#' nor random generators are set automatically.
+#' Context supplies `parameters`, `problem_parameters`, `seed`, `semantics`,
+#' assigned input and output directories, and `observation_control` where
+#' applicable. Additional optional fields may appear without changing callback
+#' signatures. Neither seeds nor random generators are set automatically.
 #'
 #' Select `protocol-transport: socket` for lifecycle workers. Ordinary function
 #' launches select managed transport automatically. Standard output and standard
-#' error remain log channels. The CLI owns timing, protocol negotiation, artifact
-#' finalization, and publication. R diagnostic solve time is unavailable.
+#' error remain log channels. The CLI owns timing, protocol negotiation,
+#' artifact finalization, and publication. R diagnostic solve time is
+#' unavailable.
 #'
 #' Serving requires a Metewand CLI that supports binding API version 1; package
 #' and CLI release numbers need not match.
@@ -323,26 +328,28 @@ serve_evaluator <- function(evaluate) {
 
 #' Serve an Ordinary Benchmark Function
 #'
-#' Load a manifest-selected function inside a worker process and adapt
-#' it to the CLI-owned dataset, implementation, or evaluator lifecycle.
+#' Load a manifest-selected function inside a worker process and adapt it to the
+#' CLI-owned dataset, implementation, or evaluator lifecycle.
 #'
-#' @param role One of `dataset_materializer`, `implementation`, or `problem_evaluator`.
-#'   When `NULL`, read role, file, and name from the three trailing command arguments.
+#' @param role One of `dataset_materializer`, `implementation`, or
+#'   `problem_evaluator`. When `NULL`, read role, file, and name from the three
+#'   trailing command arguments.
 #' @param file The selected source file, sourced during the worker handshake.
 #' @param name The name of the function defined in that file.
 #' @details
 #' Dataset functions take `context`; implementation functions take `data` and
-#' `context`; evaluator functions take `data`, `result`, and `context`. Context is a list
-#' containing `parameters`, `problem_parameters`, `seed`, and `semantics`. Seeds are
-#' available for generation and solving; scientific rules are available for
-#' evaluation. Unavailable objects are empty JSON objects and unavailable seeds
-#' are `NULL`. Callbacks return named lists or explicit output values. The CLI writes `data.json`,
-#' dataset inventories, and standard result and metric envelopes.
+#' `context`; evaluator functions take `data`, `result`, and `context`. Context
+#' is a list containing `parameters`, `problem_parameters`, `seed`, and
+#' `semantics`. Seeds are available for generation and solving; scientific rules
+#' are available for evaluation. Unavailable objects are empty JSON objects and
+#' unavailable seeds are `NULL`. Callbacks return named lists or explicit output
+#' values. The CLI writes `data.json`, dataset inventories, and standard result
+#' and metric envelopes.
 #'
-#' Without validity or completion rules, plain metric objects receive the verdict
-#' `not_required`. Declared rules require an explicit evaluation object. Completion
-#' verdicts require completion rules. Use lifecycle workers for profiles, custom
-#' artifacts, and separate preparation.
+#' Without validity or completion rules, plain metric objects receive the
+#' verdict `not_required`. Declared rules require an explicit evaluation object.
+#' Completion verdicts require completion rules. Use lifecycle workers for
+#' profiles, custom artifacts, and separate preparation.
 #' @returns Returns invisibly after shutdown or a rejected handshake.
 #' @rdname functions
 #' @export
