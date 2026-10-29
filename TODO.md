@@ -276,38 +276,11 @@ in every language is not a release prerequisite.
   hashes during builds, and distinguish that evidence from post-run host
   observations.
 
-The [adopter qualification](examples/adopters) runs Basin and Gomez, native
-clustlasso PG and hybrid trajectories, and the separate Python/R package track.
-All three comparisons retain a completed prefix and an interrupted attempt
-through recovery, explicit retry, inspection, and both exports. Profile tests
-compare durable evidence with JSONL and CSV, alongside the foundation suite. The
-[release overhead example](examples/overhead) retains all 198 repetitions,
-scoped diagnostics, and executable-bound [build
-evidence](CONTRIBUTING.md#build-evidence). These pilots need no additional
-scientific budget types.
-
-- [ ] Provide a useful default comparison summary and a table for analysis with
-  methods, effective settings, repetition indices, evaluator metrics,
-  durations, timing scopes, and failure reasons. Keep individual repetitions
-  and failed attempts visible. Make routine execution, inspection, and
-  export usable without a benchmark-specific driver or knowledge of internal
-  record formats.
-- [ ] Document runnable commands and measured scopes beside the examples.
-  Confirm that adapters reuse the adopters' scientific code and that authors
-  do not need separate schema files for mechanical declarations.
-
-The MVP provides development-environment and observed-control guarantees. Local
-exploratory use can begin during these slices. New retained comparisons must
-declare their actual timings and controls; historical measurements keep their
-original interpretations.
-
 ## After the local MVP
 
 Choose these by demonstrated adopter need rather than requiring another complete
 gate before improving a useful workflow.
 
-- [ ] Add the Julia package and extend shared conformance coverage when a Julia
-  benchmark is ready to adopt it.
 - [ ] Add portable result archive creation, offline verification, and import.
   This is separate from the result snapshots required by profile modes.
 - [ ] Complete full intercept-strategy and SLOPE study ports if still useful.
