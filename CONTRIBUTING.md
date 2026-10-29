@@ -1,7 +1,7 @@
 # Contributing
 
 This is the contributor guide for Metewand. [DESIGN.md](DESIGN.md) describes the
-general model, [TODO.md](TODO.md) tracks the active roadmap, and
+general model, [TODO.md](TODO.md) lists remaining work by area, and
 [AGENTS.md](AGENTS.md) gives repository instructions. User workflows belong in
 the [guide](docs/guide/overview.md).
 

@@ -5,10 +5,10 @@ can combine Python packages, R packages, and native executables while using the
 same datasets, scientific criteria, and execution policies.
 
 This document describes the general design. The [contributor
-guide](https://github.com/jolars/metewand/blob/main/CONTRIBUTING.md) cover
+guide](https://github.com/jolars/metewand/blob/main/CONTRIBUTING.md) covers
 implementation contracts and verification; the
-[roadmap](https://github.com/jolars/metewand/blob/main/TODO.md) tracks what is
-implemented and what comes next.
+[TODO list](https://github.com/jolars/metewand/blob/main/TODO.md) groups remaining
+work by area.
 
 ## Scope
 

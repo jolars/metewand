@@ -4,8 +4,8 @@ This file is the operational repository guide for AI agents. Read the relevant
 parts of `DESIGN.md` and `CONTRIBUTING.md` before changing architecture or
 public behavior. `DESIGN.md` defines the general model; `CONTRIBUTING.md`
 records implementation contracts and verification. Types, schemas, package help,
-and fixtures specify individual interfaces. `TODO.md` defines the active MVP
-work and acceptance criteria.
+and fixtures specify individual interfaces. `TODO.md` lists remaining work by
+area.
 
 ## Project priorities
 
@@ -20,13 +20,11 @@ Preserve these properties throughout the implementation:
 - Commands are noninteractive and read-only unless mutation is explicitly
   authorized.
 
-Prioritize useful local benchmarks in Basin and clustlasso-cd. Follow the active
-roadmap, adapting the next small step to what those integrations need.
-Fresh-sequence and buffered instrumented profiles belong in the MVP; streaming
-profiles, the Julia package, portable result archives, and environment
-provisioning follow it. Complete each behavior with focused tests and enough
-documentation to use it. A feature does not need every package callback or a
-separate reference page before an adopter can use it.
+Prioritize useful local benchmarks in Basin and clustlasso-cd. Choose the next
+small step from the remaining work to meet those integrations' needs. Complete
+each behavior with focused tests and enough documentation to use it. A feature
+does not need every package callback or a separate reference page before an
+adopter can use it.
 
 ## Architecture and dependency direction
 

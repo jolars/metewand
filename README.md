@@ -72,14 +72,14 @@ parameter matrices, fresh sequences, and buffered profiles.
 ## Project status and development
 
 Metewand is under active development. The current runner executes trusted local
-code and records development-environment evidence. Locked environments,
-isolation, streaming profiles, the Julia package, and portable archives are later
-work. The crates and packages are not yet published to registries.
+code and supports locked Nix and uv environments, streaming profiles, and
+portable result archives. Isolated execution and the Julia package remain
+planned. The crates and packages are not yet published to registries.
 
 [DESIGN.md](DESIGN.md) describes the general model.
 [CONTRIBUTING.md](CONTRIBUTING.md) covers contributor setup, implementation
 contracts, verification, releases, and website development.
-[TODO.md](TODO.md) tracks the active roadmap.
+[TODO.md](TODO.md) lists remaining work by area.
 
 ## Citation
 

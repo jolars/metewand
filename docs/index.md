@@ -60,5 +60,5 @@ Metewand is under active development. The current runtime supports trusted
 local benchmarks, including one-shot runs, fresh sequences, and buffered
 profiles. See [running and analyzing comparisons](guide/authoring/running.md)
 for the current controls and the
-[roadmap](https://github.com/jolars/metewand/blob/main/TODO.md) for planned
+[TODO list](https://github.com/jolars/metewand/blob/main/TODO.md) for planned
 capabilities.
