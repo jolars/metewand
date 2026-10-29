@@ -76,7 +76,7 @@ code and supports locked Nix and uv environments, streaming profiles, and
 portable result archives. Isolated execution and the Julia package remain
 planned. The crates and packages are not yet published to registries.
 
-[DESIGN.md](DESIGN.md) describes the general model.
+The [design](docs/design.md) describes the general model.
 [CONTRIBUTING.md](CONTRIBUTING.md) covers contributor setup, implementation
 contracts, verification, releases, and website development.
 [TODO.md](TODO.md) lists remaining work by area.

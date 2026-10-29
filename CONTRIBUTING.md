@@ -1,7 +1,7 @@
 # Contributing
 
-This is the contributor guide for Metewand. [DESIGN.md](DESIGN.md) describes the
-general model, [TODO.md](TODO.md) lists remaining work by area, and
+This is the contributor guide for Metewand. The [design](docs/design.md)
+describes the general model, [TODO.md](TODO.md) lists remaining work by area, and
 [AGENTS.md](AGENTS.md) gives repository instructions. User workflows belong in
 the [guide](docs/guide/overview.md).
 
@@ -379,7 +379,7 @@ checkers.
 ## Execution and profiles
 
 Keep the three timing envelopes, validity, completion, and applicability defined
-in [DESIGN.md](DESIGN.md) separate in records and reports. Shared dataset
+in the [design](docs/design.md) separate in records and reports. Shared dataset
 construction and independent evaluation stay outside the primary interval.
 Continuous cold and prepare-and-execute timing includes integrity and durable
 coordination between preparation and execution; provenance labels that overhead.
@@ -747,11 +747,10 @@ npm --prefix docs run dev
 ```
 
 `docs/index.md` is the homepage. `docs/guide/` contains the overview, getting
-started, and multipart authoring guide. `docs/design.md` includes the root
-`DESIGN.md` so the general design has one source. `.vitepress/config.ts` defines
-navigation, search, and metadata. Keep local page links relative with `.md`
-extensions; link to schemas, fixtures, source, and runnable examples on GitHub.
-The build rejects missing page links.
+started, and multipart authoring guide. `docs/design.md` describes the general
+design. `.vitepress/config.ts` defines navigation, search, and metadata. Keep
+local page links relative with `.md` extensions; link to schemas, fixtures,
+source, and runnable examples on GitHub. The build rejects missing page links.
 
 Edit branding originals in `assets/`. Development and build commands copy them
 to the ignored `docs/public/brand/` directory. Favicons and `site.webmanifest`

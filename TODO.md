@@ -3,7 +3,7 @@
 Remaining work is grouped by area. Prioritize useful benchmarks in Basin and
 clustlasso-cd.
 
-[DESIGN.md](DESIGN.md) defines the general model.
+The [design](docs/design.md) defines the general model.
 [CONTRIBUTING.md](CONTRIBUTING.md) records implementation contracts and
 verification, and [AGENTS.md](AGENTS.md) gives repository instructions.
 
@@ -45,7 +45,7 @@ reject unreturned buffers.
   and offline verification.
 - [ ] Add Julia `Pkg` and Conda environment resolution.
 
-See [Reproducibility model](DESIGN.md#reproducibility-model) for environment
+See [Reproducibility model](docs/design.md#reproducibility-model) for environment
 guarantees and the existing Nix and uv backends.
 
 ## Execution and isolation
@@ -60,7 +60,7 @@ guarantees and the existing Nix and uv backends.
 - [ ] Add SLURM and remote execution.
 
 Publication-archive claims require the enforced controls described in the
-[reproducibility model](DESIGN.md#reproducibility-model).
+[reproducibility model](docs/design.md#reproducibility-model).
 
 ## Results and analysis
 

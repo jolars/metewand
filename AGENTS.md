@@ -1,8 +1,8 @@
 # AGENTS.md
 
 This file is the operational repository guide for AI agents. Read the relevant
-parts of `DESIGN.md` and `CONTRIBUTING.md` before changing architecture or
-public behavior. `DESIGN.md` defines the general model; `CONTRIBUTING.md`
+parts of `docs/design.md` and `CONTRIBUTING.md` before changing architecture or
+public behavior. `docs/design.md` defines the general model; `CONTRIBUTING.md`
 records implementation contracts and verification. Types, schemas, package help,
 and fixtures specify individual interfaces. `TODO.md` lists remaining work by
 area.
@@ -57,8 +57,8 @@ concerns out of core and protocol.
   `packages/julia`.
 - User documentation belongs in `docs/`; `README.md` remains the concise entry
   point. The VitePress site lives in `docs/`, with the overview, getting
-  started, and multipart authoring guide in `docs/guide/`. `DESIGN.md` keeps the
-  general design; `CONTRIBUTING.md` consolidates contributor notes,
+  started, and multipart authoring guide in `docs/guide/`. `docs/design.md`
+  describes the general design; `CONTRIBUTING.md` consolidates contributor notes,
   implementation contracts, verification, and website development. Keep detailed
   interfaces in their authoritative types, schemas, package help, and fixtures
   rather than adding a reference page for each implementation step.
