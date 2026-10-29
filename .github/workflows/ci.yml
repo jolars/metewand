@@ -97,6 +97,10 @@ jobs:
           tool: nextest
       - uses: Swatinem/rust-cache@v2
       - run: cargo nextest run --workspace --all-targets --locked --profile ci
+      - name: Install uv for locked Python integration tests
+        run: python -m pip install uv==0.13.1
+      - name: Test locked Python preparation and offline execution
+        run: cargo test -p metewand-cli --test locked_uv --locked -- --ignored
       - name: Run the native R starter workflow
         run: |
           python - <<'PY'
@@ -135,6 +139,10 @@ jobs:
         with:
           install_url: https://releases.nixos.org/nix/nix-2.34.9/install
       - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+      - run: python -m pip install uv==0.13.1
       - run: cargo test -p metewand-cli --test locked_nix --locked -- --ignored
 
   versionary:

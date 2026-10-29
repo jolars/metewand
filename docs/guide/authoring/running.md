@@ -109,11 +109,90 @@ prevent Nix garbage collection.
 
 Locked environments remain trusted local processes with the existing execution
 controls. They do not establish archival isolation. Dataset acquisition and
-worker network access retain their existing behavior. `uv`, `renv`, and OCI
-environments are not yet supported by the lock command.
+worker network access retain their existing behavior. `renv` and OCI environments are not yet supported by the lock command.
 
 The [locked Nix example](https://github.com/jolars/metewand/tree/main/examples/locked-nix)
 provides a pinned flake and runnable comparison.
+
+## Lock uv worker environments
+
+Select a project or workspace root with an author-owned `uv.lock`:
+
+```yaml
+environments:
+  python:
+    kind: uv
+    project: .
+    lockfile: uv.lock
+    groups: [benchmark]
+    extras: []
+```
+
+Set the materializer, implementation, and evaluator workers' `environment` to
+`python`, and use `runner: python`, function workers, or a command program such
+as `python3`. Installed console entry points are also available. Metewand keeps
+virtual-environment context and resolves programs within the prepared environment.
+Python binding workers also select `protocol-transport: socket`; ordinary function
+workers select their adapter automatically.
+
+```sh
+uv lock
+metewand lock
+metewand lock --check
+metewand run --locked --output-dir ../results
+```
+
+Install uv and a compatible Python interpreter before preparation. Project Python
+requirements and `.python-version` select an installed interpreter; Metewand
+disables automatic Python downloads. `groups` and `extras` are optional lists.
+Omitting them installs base dependencies only, with uv's default groups disabled.
+Selections are sorted and deduplicated before hashing. Static checking and
+planning do not invoke uv or import benchmark code.
+
+`metewand lock` syncs a separate environment from captured sources with
+`--locked`, `--no-editable`, and copied package files. It preserves the native
+lock and the author's `.venv`. Project configuration is captured; ambient uv
+configuration and Python search paths are excluded. Local dependencies and
+workspace members must remain inside captured repository sources. The selected
+project or workspace root must contain its declared `uv.lock` and `pyproject.toml`.
+Git snapshots use tracked working-tree files, so stage new inputs before locking.
+Generated `.venv` directories for declared uv projects are excluded from snapshots.
+Keep outputs outside captured sources, as with Nix environments.
+
+Prepared generations live in persistent per-user data storage:
+
+- Linux: `$XDG_DATA_HOME/metewand`, or `~/.local/share/metewand`.
+- macOS: `~/Library/Application Support/metewand`.
+- Windows: `%LOCALAPPDATA%/metewand`.
+
+Override the root with an absolute `METEWAND_DATA_DIR` outside captured sources.
+Use the same root for preparation and locked execution. Prepared generations
+retain their installation paths and are not portable virtual environments.
+Preparation reuses verified generations and never overwrites an older one.
+
+For uv-only benchmarks, `lock --check` and `run --locked` work offline without uv
+or Nix installed. They verify source content, the interpreter and standard
+library, installed files and symlink targets, platform, and worker launches.
+Missing, changed, or added installed files cause preflight failure before run
+output is created. Verification does not fetch, build, sync, or repair anything.
+Run `metewand lock` explicitly to prepare missing state or rebuild changed local
+sources, including source-only edits that leave package metadata unchanged.
+Mixed Nix and uv benchmarks verify each backend with its own requirements.
+
+New Metewand locks use version 2, with backend-specific evidence. Version-1 Nix
+locks remain readable and retain their original identities. uv identities
+normalize generated metadata and launcher paths; different built package content
+still defines different resolved evidence. Raw inventories verify exact installed
+bytes independently of these normalized identities. Workers use a private
+bytecode cache prefix, so ordinary host bytecode cache changes do not invalidate
+the locked runtime.
+
+The evidence covers the prepared Python runtime and packages. It does not bind
+every external native library or establish a reproducible build toolchain.
+Installed native extensions are verified as files, and preparation records uv
+and build settings. Workers retain the trusted local executor's reported network
+and filesystem controls. See the [locked uv
+example](https://github.com/jolars/metewand/tree/main/examples/locked-uv).
 
 ## Keep the run outside source bundles
 

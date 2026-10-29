@@ -1,0 +1,30 @@
+version = 1
+revision = 5
+requires-python = ">=3.11"
+
+[[package]]
+name = "metewand-example-arithmetic"
+version = "1.0.0"
+source = { directory = "arithmetic" }
+
+[[package]]
+name = "metewand-locked-example"
+version = "0.1.0"
+source = { virtual = "." }
+
+[package.optional-dependencies]
+checked = [
+    { name = "metewand-example-arithmetic" },
+]
+
+[package.dev-dependencies]
+benchmark = [
+    { name = "metewand-example-arithmetic" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "metewand-example-arithmetic", marker = "extra == 'checked'", directory = "arithmetic" }]
+provides-extras = ["checked"]
+
+[package.metadata.requires-dev]
+benchmark = [{ name = "metewand-example-arithmetic", directory = "arithmetic" }]

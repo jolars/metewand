@@ -4,6 +4,7 @@
     pkgs.cargo-nextest
     pkgs.nodejs_24
     pkgs.python3
+    pkgs.uv
     (pkgs.rWrapper.override {
       packages = with pkgs.rPackages; [
         jsonlite

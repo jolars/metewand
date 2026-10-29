@@ -188,8 +188,14 @@ impl ResolvedWorker {
     ) -> metewand_core::lockfile::LockedWorker {
         metewand_core::lockfile::LockedWorker {
             environment: environment.to_string(),
-            program: self.executable.to_string_lossy().into_owned(),
-            executable_sha256: self.executable_digest.clone(),
+            program: self.provenance["locked_program"]["program"]
+                .as_str()
+                .map(str::to_owned)
+                .unwrap_or_else(|| self.executable.to_string_lossy().into_owned()),
+            executable_sha256: self.provenance["locked_program"]["sha256"]
+                .as_str()
+                .map(str::to_owned)
+                .unwrap_or_else(|| self.executable_digest.clone()),
             launch: self.provenance["launch"].clone(),
         }
     }
@@ -1237,7 +1243,7 @@ pub(crate) fn resolve_worker_with_lock(
         )
     {
         return Err(unsupported(format!(
-            "environment `{environment}` requires provisioning; Gate 1 supports `kind: \"local\"`"
+            "environment `{environment}` requires preparation with metewand lock and execution with run --locked"
         )));
     }
     if transport == Some(ProtocolTransport::Stdio) {
@@ -1289,7 +1295,7 @@ pub(crate) fn resolve_worker_with_lock(
         let bytes = fs::read(&executable)?;
         if locked_environment.is_some() && !bytes.starts_with(b"#!") {
             return Err(RunError::Unsupported(
-                "locked native executables must come from a realized Nix output; source executables require a locked shebang interpreter".into(),
+                "locked native executables must come from a prepared environment; source executables require a locked shebang interpreter".into(),
             ));
         }
         if bytes.starts_with(b"#!") {
@@ -1330,7 +1336,7 @@ pub(crate) fn resolve_worker_with_lock(
     let environment_record = identify_record(ResolvedEnvironmentRecord {
         definition: repository.planning_catalog.environment_definitions[environment],
         fingerprint: canonical(if let Some(environment) = locked_environment {
-            json!({"class": "locked", "backend": "nix", "evidence": environment})
+            environment.fingerprint()
         } else {
             json!({"class": "development", "os": env::consts::OS, "architecture": env::consts::ARCH, "program_sha256": executable_digest, "dependency_closure": null})
         })?,
@@ -1408,21 +1414,54 @@ pub(crate) fn resolve_worker_with_lock(
     } else {
         format!("sha256:{executable_digest}")
     };
+    let uv_environment = locked_environment.and_then(|environment| match environment {
+        metewand_core::lockfile::LockedEnvironment::Uv(environment) => Some(environment),
+        _ => None,
+    });
+    let normalized_program = if let Some(environment) = uv_environment {
+        if source_executable {
+            normalized_program
+        } else {
+            crate::locked_uv::program_identity(environment, &executable)?.0
+        }
+    } else {
+        normalized_program
+    };
     let locked_search_path = if let Some(environment) = locked_environment {
         let mut paths = vec![executable.parent().expect("executable parent").to_owned()];
-        paths.extend(environment.outputs.iter().map(|p| Path::new(p).join("bin")));
+        if let Some(environment) = environment.nix() {
+            paths.extend(environment.outputs.iter().map(|p| Path::new(p).join("bin")));
+        }
         paths.dedup();
         Some(
             env::join_paths(paths)
-                .map_err(|_| unsupported("invalid Nix search path"))?
+                .map_err(|_| unsupported("invalid locked search path"))?
                 .into_string()
-                .map_err(|_| unsupported("Nix paths must be UTF-8"))?,
+                .map_err(|_| unsupported("locked paths must be UTF-8"))?,
         )
     } else {
         None
     };
+    if uv_environment.is_some() {
+        variables.insert(
+            "PYTHONPYCACHEPREFIX".into(),
+            "{worker}/cache/python-bytecode".into(),
+        );
+    }
     if let Some(path) = &locked_search_path {
-        variables.insert("PATH".into(), path.clone());
+        variables.insert(
+            "PATH".into(),
+            if uv_environment.is_some() {
+                if cfg!(windows) {
+                    "{environment}/Scripts"
+                } else {
+                    "{environment}/bin"
+                }
+                .to_owned()
+            } else {
+                path.clone()
+            },
+        );
     }
     let normalized_launch = identify_record(ResolvedLaunchRecord {
         environment: environment_record.id,
@@ -1466,6 +1505,18 @@ pub(crate) fn resolve_worker_with_lock(
         return Err(RunError::ChangedInput);
     }
     let mut provenance = json!({"environment": record_document(&environment_record.record)?, "launch": record_document(&normalized_launch.record)?, "worker": record_document(&record)?, "executable": executable_evidence, "undeclared_file_access": "unsupported"});
+    if let Some(environment) = uv_environment {
+        let (program, digest) = if source_executable {
+            (
+                normalized_launch.record.program.clone(),
+                executable_digest.clone(),
+            )
+        } else {
+            crate::locked_uv::program_identity(environment, &executable)?
+        };
+        provenance["locked_program"] = json!({"program":program,"sha256":digest});
+        provenance["uv_preparation"] = json!({"generation":environment.preparation,"receipt_sha256":environment.receipt_sha256});
+    }
     if let Some(lock) = locked {
         provenance["lockfile_sha256"] = json!(lock.digest);
     }

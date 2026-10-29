@@ -319,3 +319,81 @@ fn real_nix_materializers_and_profile_workers() {
         ));
     }
 }
+
+#[test]
+#[ignore = "requires Nix and uv with installed Python"]
+fn mixed_nix_and_uv_workers_share_the_locked_graph() {
+    let root = repository();
+    let data = TempDir::new().unwrap();
+    let example = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/locked-nix");
+    for name in ["flake.nix", "flake.lock"] {
+        fs::copy(example.join(name), root.path().join(name)).unwrap();
+    }
+    fs::write(root.path().join("pyproject.toml"), "[project]\nname='mixed-example'\nversion='1.0.0'\nrequires-python='>=3.11'\ndependencies=[]\n[tool.uv]\npackage=false\n").unwrap();
+    let native = Command::new("uv")
+        .args(["lock", "--offline", "--no-python-downloads"])
+        .current_dir(root.path())
+        .output()
+        .unwrap();
+    assert!(
+        native.status.success(),
+        "{}",
+        String::from_utf8_lossy(&native.stderr)
+    );
+    let system = String::from_utf8(
+        Command::new("nix")
+            .args([
+                "eval",
+                "--raw",
+                "--impure",
+                "--expr",
+                "builtins.currentSystem",
+            ])
+            .output()
+            .unwrap()
+            .stdout,
+    )
+    .unwrap();
+    let manifest = root.path().join("metewand.yaml");
+    let text = fs::read_to_string(&manifest).unwrap()
+        .replace("kind: \"local\"", &format!("kind: nix\n    flake: .\n    installable: '.#python'\n    system: {system}\n    output-kind: package\n    output: out"))
+        .replace("environments:\n", "environments:\n  uv:\n    kind: uv\n    project: .\n    lockfile: uv.lock\n");
+    let (prefix, implementations) = text.split_once("implementations:").unwrap();
+    fs::write(
+        &manifest,
+        format!(
+            "{prefix}implementations:{}",
+            implementations.replacen("environment: \"local\"", "environment: uv", 1)
+        ),
+    )
+    .unwrap();
+    let run = |args: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_metewand"))
+            .env("METEWAND_DATA_DIR", data.path())
+            .current_dir(root.path())
+            .args(["--output", "json"])
+            .args(args)
+            .output()
+            .unwrap()
+    };
+    let planned = success(run(&["plan"]));
+    assert_eq!(success(run(&["lock"]))["environments"], 2);
+    success(run(&["lock", "--check"]));
+    assert_eq!(success(run(&["plan"])), planned);
+    let output = data.path().join("run");
+    success(run(&[
+        "run",
+        "--locked",
+        "--output-dir",
+        output.to_str().unwrap(),
+    ]));
+    let lock = metewand_core::lockfile::Lockfile::parse(
+        &fs::read(root.path().join("metewand.lock")).unwrap(),
+    )
+    .unwrap();
+    assert!(lock.environments["local"].nix().is_some());
+    assert!(matches!(
+        lock.environments["uv"],
+        metewand_core::lockfile::LockedEnvironment::Uv(_)
+    ));
+}

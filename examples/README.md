@@ -15,6 +15,7 @@ they do not provide container isolation or a locked publication environment.
 | Streaming profiles | [Cooperative Python and Rust trajectories](streaming-profile) | Python 3.11+, staged package; optional Rust worker | Thirteen evaluated checkpoints from three attempts |
 | Adopter qualification | [Basin and clustlasso-cd](adopters) | Adopter checkouts, Rust, Python, and CMake; prepared Python/R package runtime for the package track | Native comparisons and profiles, recovered interruption, and faithful exports |
 | Release overhead | [Controlled native worker](overhead) | Rust 1.98.0 | 198 repetitions across three timing scopes and two result sizes |
+| Locked Python | [Prepared uv environments](locked-uv) | uv and installed Python 3.11+ | Two answers of 8 with offline environment verification |
 | Python-only | [Python package](python-package) | Python 3.11+, staged in-tree package | Two answers of 8 |
 | R-only | [R package](r-package) | R, jsonlite, installed in-tree package | Two answers of 8 |
 | Native Rust | [Rust helpers](rust-worker) | Rust 1.98.0, compiled worker | Two answers of 8 |

@@ -202,7 +202,7 @@ release numbers are unnecessary. It is separate from public compatibility versio
   | Worker environment provenance                                 | 1 on Unix, 2 on Windows                                        |
   | Exports and build evidence                                    | 1                                                              |
   | Portable result archives                                     | 1                                                              |
-  | Prepared environment lockfiles                               | 1                                                              |
+  | Prepared environment lockfiles                               | 2; version 1 Nix remains readable                                                              |
   | SQLite layout                                                 | 1 for one-shot, 2 for buffered profiles, 3 for fresh sequences and streaming |
 
 The binding API compatibility constant lives with the runtime adapters.
@@ -314,8 +314,8 @@ identities use stable path templates and content hashes; provenance records
 allocated paths. The local environment does not establish a dependency closure
 or isolation from undeclared host files.
 
-`metewand lock` prepares the complete plan's Nix worker graph. Its version-1
-lockfile binds content snapshots, native locks, source NARs, realized outputs,
+`metewand lock` prepares the complete plan's worker graph. Nix evidence binds
+content snapshots, native locks, source NARs, realized outputs,
 runtime closure hashes and references, and normalized launches. Root snapshots
 exclude `metewand.lock` to avoid self-reference. Git snapshots use tracked
 working-tree contents; non-Git snapshots include the repository tree. Keep
@@ -332,10 +332,22 @@ trusted local executor and its reported control limitations. Existing
 development identities, execution versions, and SQLite layouts remain unchanged.
 
 The normal suite tests closure verification through an injectable Nix command
-boundary. With Nix available, run the package/app integration test explicitly:
+boundary. With Nix and uv available, run the Nix and mixed-backend integration tests explicitly:
 
 ```sh
 cargo test -p metewand-cli --test locked_nix --locked -- --ignored
+```
+
+uv preparation shares worker discovery and lock publication with Nix. The uv
+command boundary is injectable for focused tests. Prepared generations live
+outside source snapshots, use non-editable installs and copied package files,
+and retain separate raw integrity receipts and normalized identity evidence.
+Verification reads installed files without invoking uv or importing packages.
+New locks use version 2; the version-1 Nix serializer and fingerprint remain
+unchanged. Install uv to run the offline package integration cases explicitly:
+
+```sh
+cargo test -p metewand-cli --test locked_uv --locked -- --ignored
 ```
 
 Unix workers use umask `0077` and retain worker-environment provenance version 1.

@@ -391,11 +391,29 @@ fn with_parameter_grids(mut value: Value, grids: &ParameterAxes) -> Value {
 fn environment(environment: &EnvironmentDefinition) -> Value {
     match environment {
         EnvironmentDefinition::Local {} => object([("kind", json!("local"))]),
-        EnvironmentDefinition::Uv { project, lockfile } => object([
-            ("kind", json!("uv")),
-            ("project", repository_root_path(project)),
-            ("lockfile", repository_path(lockfile)),
-        ]),
+        EnvironmentDefinition::Uv {
+            project,
+            lockfile,
+            groups,
+            extras,
+        } => {
+            let mut value = object([
+                ("kind", json!("uv")),
+                ("project", repository_root_path(project)),
+                ("lockfile", repository_path(lockfile)),
+            ]);
+            for (key, selection) in [("groups", groups), ("extras", extras)] {
+                if !selection.is_empty() {
+                    value[key] = json!(
+                        selection
+                            .iter()
+                            .map(|name| name.as_str())
+                            .collect::<Vec<_>>()
+                    );
+                }
+            }
+            value
+        }
         EnvironmentDefinition::Renv { project, lockfile } => object([
             ("kind", json!("renv")),
             ("project", repository_root_path(project)),

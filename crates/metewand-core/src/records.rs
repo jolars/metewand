@@ -6,7 +6,7 @@
 
 use std::{
     cmp::Ordering,
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     fmt,
     hash::{Hash, Hasher},
     marker::PhantomData,
@@ -244,6 +244,10 @@ pub enum EnvironmentDefinitionKind {
         project: RepositoryRootPath,
         /// Repository-relative uv lockfile.
         lockfile: RepositoryPath,
+        /// Explicit dependency group selection.
+        groups: BTreeSet<Name>,
+        /// Explicit optional dependency selection.
+        extras: BTreeSet<Name>,
     },
     /// An R environment described by an renv project and lockfile.
     Renv {

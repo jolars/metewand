@@ -15,6 +15,7 @@ example's README for its working directory and dependencies.
 | [R package](https://github.com/jolars/metewand/tree/main/examples/r-package) | Use the same worker roles and lifecycle in R. |
 | [Native Rust](https://github.com/jolars/metewand/tree/main/examples/rust-worker) | Run a native implementation and evaluator with standard artifacts. |
 | [Locked Nix](https://github.com/jolars/metewand/tree/main/examples/locked-nix) | Prepare exact software outputs and verify locked worker launches. |
+| [Locked uv](https://github.com/jolars/metewand/tree/main/examples/locked-uv) | Prepare Python workers with local dependencies and verify their installed content offline. |
 | [Generated dataset](https://github.com/jolars/metewand/tree/main/examples/generated-dataset) | Materialize datasets and write custom artifacts. |
 | [Fresh sequences](https://github.com/jolars/metewand/tree/main/examples/fresh-sequence) | Compare black-box solvers over clean runs with independent targets. |
 | [Buffered profiles](https://github.com/jolars/metewand/tree/main/examples/buffered-profile) | Instrument a trajectory and evaluate selected snapshots. |

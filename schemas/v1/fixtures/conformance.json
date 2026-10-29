@@ -3,7 +3,7 @@
   "valid": [
     {
       "name": "prepared Nix environment and exact worker launch",
-      "schema": "lockfile",
+      "schema": "lockfile-v1",
       "instance": {
         "environments": {
           "python": {
@@ -2135,12 +2135,115 @@
           }
         ]
       }
+    },
+    {
+      "name": "version-2 Nix lock retains backend evidence",
+      "schema": "lockfile",
+      "instance": {
+        "environments": {
+          "python": {
+            "backend": "nix",
+            "evidence": {
+              "app_program": null,
+              "closure": {
+                "/nix/store/00000000000000000000000000000000-python": {
+                  "nar_hash": "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+                  "references": []
+                }
+              },
+              "definition": "mw1-environment-definition-0000000000000000000000000000000000000000000000000000000000000000",
+              "native_lock_sha256": null,
+              "outputs": [
+                "/nix/store/00000000000000000000000000000000-python"
+              ],
+              "source_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+              "sources": {
+                "/nix/store/11111111111111111111111111111111-source": {
+                  "nar_hash": "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+                  "references": []
+                }
+              },
+              "system": "x86_64-linux"
+            }
+          }
+        },
+        "schema_version": 2,
+        "source": {
+          "files": {
+            "flake.nix": {
+              "executable": false,
+              "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+            }
+          },
+          "git": true
+        },
+        "workers": {
+          "mw1-worker-definition-0000000000000000000000000000000000000000000000000000000000000000": {
+            "environment": "python",
+            "executable_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+            "launch": {
+              "args": [],
+              "environment": "mw1-resolved-environment-0000000000000000000000000000000000000000000000000000000000000000",
+              "environment_variables": {
+                "PATH": "/nix/store/00000000000000000000000000000000-python/bin"
+              },
+              "program": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+              "version": 1,
+              "working_directory": "private_run_directory"
+            },
+            "program": "/nix/store/00000000000000000000000000000000-python/bin/python3"
+          }
+        }
+      }
+    },
+    {
+      "name": "uv prepared runtime and package evidence",
+      "schema": "lockfile",
+      "instance": {
+        "schema_version": 2,
+        "source": {
+          "git": false,
+          "files": {}
+        },
+        "workers": {},
+        "environments": {
+          "python": {
+            "backend": "uv",
+            "evidence": {
+              "definition": "mw1-environment-definition-0000000000000000000000000000000000000000000000000000000000000000",
+              "system": "linux-x86_64",
+              "source_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+              "native_lock_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+              "preparation": "0000000000000000000000000000000000000000000000000000000000000000/generation-fixture",
+              "receipt_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+              "fingerprint": {
+                "python": {
+                  "implementation": "cpython",
+                  "version": "3.14.0",
+                  "abi": "cpython-314-x86_64-linux-gnu",
+                  "platform": "linux-x86_64",
+                  "executable_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+                  "runtime_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+                },
+                "packages_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+                "distributions": {
+                  "example": "1.0.0"
+                },
+                "groups": [
+                  "benchmark"
+                ],
+                "extras": []
+              }
+            }
+          }
+        }
+      }
     }
   ],
   "invalid": [
     {
       "name": "lockfile rejects unsupported versions",
-      "schema": "lockfile",
+      "schema": "lockfile-v1",
       "instance": {
         "environments": {
           "python": {
@@ -4952,6 +5055,66 @@
           },
           "lockfiles": {
             "Cargo.lock": "3333333333333333333333333333333333333333333333333333333333333333"
+          }
+        }
+      }
+    },
+    {
+      "name": "unknown lock backend",
+      "schema": "lockfile",
+      "instance": {
+        "environments": {
+          "python": {
+            "backend": "ambient",
+            "evidence": {
+              "app_program": null,
+              "closure": {
+                "/nix/store/00000000000000000000000000000000-python": {
+                  "nar_hash": "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+                  "references": []
+                }
+              },
+              "definition": "mw1-environment-definition-0000000000000000000000000000000000000000000000000000000000000000",
+              "native_lock_sha256": null,
+              "outputs": [
+                "/nix/store/00000000000000000000000000000000-python"
+              ],
+              "source_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+              "sources": {
+                "/nix/store/11111111111111111111111111111111-source": {
+                  "nar_hash": "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+                  "references": []
+                }
+              },
+              "system": "x86_64-linux"
+            }
+          }
+        },
+        "schema_version": 2,
+        "source": {
+          "files": {
+            "flake.nix": {
+              "executable": false,
+              "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+            }
+          },
+          "git": true
+        },
+        "workers": {
+          "mw1-worker-definition-0000000000000000000000000000000000000000000000000000000000000000": {
+            "environment": "python",
+            "executable_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+            "launch": {
+              "args": [],
+              "environment": "mw1-resolved-environment-0000000000000000000000000000000000000000000000000000000000000000",
+              "environment_variables": {
+                "PATH": "/nix/store/00000000000000000000000000000000-python/bin"
+              },
+              "program": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+              "version": 1,
+              "working_directory": "private_run_directory"
+            },
+            "program": "/nix/store/00000000000000000000000000000000-python/bin/python3"
           }
         }
       }

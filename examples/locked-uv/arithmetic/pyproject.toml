@@ -1,0 +1,9 @@
+[project]
+name = "metewand-example-arithmetic"
+version = "1.0.0"
+requires-python = ">=3.11"
+
+[build-system]
+requires = []
+build-backend = "backend"
+backend-path = ["."]

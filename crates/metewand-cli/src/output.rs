@@ -1524,7 +1524,7 @@ impl CommandError {
     #[cfg(any(unix, windows))]
     pub fn locking(error: &metewand_runtime::lockfile::LockError) -> Self {
         Self { exit_code: if error.code == "lockfile_io" { EXIT_IO } else { EXIT_INPUT_UNAVAILABLE },
-            diagnostic: Box::new(Diagnostic::new(error.code, error.to_string()).with_remediation("Inspect the sources and native flake lockfiles, then run `metewand lock` to prepare the exact environment before `run --locked`.")) }
+            diagnostic: Box::new(Diagnostic::new(error.code, error.to_string()).with_remediation("Inspect the sources and native dependency lockfiles, then run `metewand lock` to prepare the exact environment before `run --locked`.")) }
     }
 
     #[cfg(any(unix, windows))]

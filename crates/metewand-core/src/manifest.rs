@@ -328,6 +328,12 @@ pub enum EnvironmentDefinition {
         project: RepositoryRootPath,
         /// uv lockfile.
         lockfile: RepositoryPath,
+        /// Dependency groups explicitly selected for installation.
+        #[serde(default)]
+        groups: BTreeSet<Name>,
+        /// Optional dependencies explicitly selected for installation.
+        #[serde(default)]
+        extras: BTreeSet<Name>,
     },
     /// An R environment resolved from an renv project and lockfile.
     Renv {

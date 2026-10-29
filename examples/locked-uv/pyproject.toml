@@ -1,0 +1,17 @@
+[project]
+name = "metewand-locked-example"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+checked = ["metewand-example-arithmetic"]
+
+[dependency-groups]
+benchmark = ["metewand-example-arithmetic"]
+
+[tool.uv]
+package = false
+
+[tool.uv.sources]
+metewand-example-arithmetic = { path = "arithmetic" }

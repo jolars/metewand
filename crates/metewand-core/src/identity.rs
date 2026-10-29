@@ -469,11 +469,29 @@ impl IdentityRecord for EnvironmentDefinitionRecord {
     fn identity_fields(&self) -> Map<String, Value> {
         let definition = match &self.kind {
             EnvironmentDefinitionKind::Local => object([("kind", json!("local"))]),
-            EnvironmentDefinitionKind::Uv { project, lockfile } => object([
-                ("kind", json!("uv")),
-                ("project", path(project.as_path())),
-                ("lockfile", path(lockfile.as_path())),
-            ]),
+            EnvironmentDefinitionKind::Uv {
+                project,
+                lockfile,
+                groups,
+                extras,
+            } => {
+                let mut value = object([
+                    ("kind", json!("uv")),
+                    ("project", path(project.as_path())),
+                    ("lockfile", path(lockfile.as_path())),
+                ]);
+                for (key, selection) in [("groups", groups), ("extras", extras)] {
+                    if !selection.is_empty() {
+                        value[key] = json!(
+                            selection
+                                .iter()
+                                .map(|name| name.as_str())
+                                .collect::<Vec<_>>()
+                        );
+                    }
+                }
+                value
+            }
             EnvironmentDefinitionKind::Renv { project, lockfile } => object([
                 ("kind", json!("renv")),
                 ("project", path(project.as_path())),

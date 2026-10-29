@@ -598,7 +598,14 @@ fn environment_record(
 ) -> EnvironmentDefinitionRecord {
     let kind = match definition {
         EnvironmentDefinition::Local {} => EnvironmentDefinitionKind::Local,
-        EnvironmentDefinition::Uv { project, lockfile } => EnvironmentDefinitionKind::Uv {
+        EnvironmentDefinition::Uv {
+            project,
+            lockfile,
+            groups,
+            extras,
+        } => EnvironmentDefinitionKind::Uv {
+            groups: groups.clone(),
+            extras: extras.clone(),
             project: project.clone(),
             lockfile: lockfile.clone(),
         },

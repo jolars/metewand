@@ -1,0 +1,229 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "metewand://schemas/v2/lockfile.schema.json",
+  "x-metewand-compatibility-version": 2,
+  "title": "Prepared environment lockfile",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": 2
+    },
+    "source": {
+      "$ref": "#/$defs/source"
+    },
+    "environments": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/environment"
+      }
+    },
+    "workers": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/worker"
+      },
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^mw1-worker-definition-[0-9a-f]{64}$"
+      }
+    }
+  },
+  "required": [
+    "schema_version",
+    "source",
+    "environments",
+    "workers"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "source": {
+      "$ref": "metewand://schemas/v1/lockfile.schema.json#/$defs/source"
+    },
+    "environment": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "backend": {
+              "const": "nix"
+            },
+            "evidence": {
+              "$ref": "metewand://schemas/v1/lockfile.schema.json#/$defs/environment"
+            }
+          },
+          "required": [
+            "backend",
+            "evidence"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "backend": {
+              "const": "uv"
+            },
+            "evidence": {
+              "$ref": "#/$defs/uv"
+            }
+          },
+          "required": [
+            "backend",
+            "evidence"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "worker": {
+      "type": "object",
+      "properties": {
+        "environment": {
+          "type": "string",
+          "minLength": 1
+        },
+        "program": {
+          "type": "string",
+          "minLength": 1
+        },
+        "executable_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "launch": {
+          "$ref": "#/$defs/launch"
+        }
+      },
+      "required": [
+        "environment",
+        "program",
+        "executable_sha256",
+        "launch"
+      ],
+      "additionalProperties": false
+    },
+    "launch": {
+      "$ref": "metewand://schemas/v1/lockfile.schema.json#/$defs/launch"
+    },
+    "uv": {
+      "type": "object",
+      "properties": {
+        "definition": {
+          "type": "string",
+          "pattern": "^mw1-environment-definition-[0-9a-f]{64}$"
+        },
+        "system": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "native_lock_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "fingerprint": {
+          "$ref": "#/$defs/uv_fingerprint"
+        },
+        "preparation": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}/generation-[A-Za-z0-9]+$"
+        },
+        "receipt_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "definition",
+        "system",
+        "source_sha256",
+        "native_lock_sha256",
+        "fingerprint",
+        "preparation",
+        "receipt_sha256"
+      ],
+      "additionalProperties": false
+    },
+    "uv_fingerprint": {
+      "type": "object",
+      "properties": {
+        "python": {
+          "type": "object",
+          "properties": {
+            "implementation": {
+              "type": "string",
+              "minLength": 1
+            },
+            "version": {
+              "type": "string",
+              "minLength": 1
+            },
+            "abi": {
+              "type": "string",
+              "minLength": 1
+            },
+            "platform": {
+              "type": "string",
+              "minLength": 1
+            },
+            "executable_sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "runtime_sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          },
+          "required": [
+            "implementation",
+            "version",
+            "abi",
+            "platform",
+            "executable_sha256",
+            "runtime_sha256"
+          ],
+          "additionalProperties": false
+        },
+        "packages_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "distributions": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "groups": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "extras": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "python",
+        "packages_sha256",
+        "distributions",
+        "groups",
+        "extras"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

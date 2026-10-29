@@ -303,7 +303,9 @@
           "properties": {
             "kind": { "type": "string", "const": "uv" },
             "project": { "$ref": "common.schema.json#/$defs/repository_root_path" },
-            "lockfile": { "$ref": "common.schema.json#/$defs/repository_path" }
+            "lockfile": { "$ref": "common.schema.json#/$defs/repository_path" },
+            "groups": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/name" } },
+            "extras": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/name" } }
           },
           "required": ["kind", "project", "lockfile"],
           "additionalProperties": false

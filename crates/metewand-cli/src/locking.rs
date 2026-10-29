@@ -2,7 +2,7 @@ use std::{ffi::OsString, path::PathBuf};
 
 use crate::output::{CommandError, CommandResult};
 
-const HELP: &str = "Usage: metewand [--output FORMAT] lock [--manifest PATH] [--check]\n\nPrepare all planned Nix environments and atomically create or refresh metewand.lock beside the manifest. Native flake locks must already be complete. --check verifies existing sources, closures, and launches without fetching, building, or updating the lockfile. Run prepared benchmarks with run --locked.\n";
+const HELP: &str = "Usage: metewand [--output FORMAT] lock [--manifest PATH] [--check]\n\nPrepare all planned Nix and uv environments and atomically create or refresh metewand.lock beside the manifest. Native dependency locks must already be complete. uv environments use installed Python interpreters and persistent user data storage (override with METEWAND_DATA_DIR). --check verifies existing sources, closures, and launches without fetching, building, or updating the lockfile. Run prepared benchmarks with run --locked.\n";
 
 pub fn command(arguments: &[OsString]) -> Result<CommandResult, CommandError> {
     if arguments == ["--help"] || arguments == ["-h"] {
@@ -47,8 +47,8 @@ pub fn command(arguments: &[OsString]) -> Result<CommandResult, CommandError> {
     {
         let _ = (manifest, check);
         Err(CommandError::unsupported(
-            "Nix locking requires a supported Nix host",
-            "Use Linux or macOS with Nix installed.",
+            "Locked execution requires a supported host",
+            "Use Linux, macOS, or Windows.",
         ))
     }
 }

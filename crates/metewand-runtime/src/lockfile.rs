@@ -1,4 +1,4 @@
-//! Nix preparation is explicit; locked execution only inspects prepared paths.
+//! Environment preparation is explicit; locked execution only inspects prepared paths.
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -12,8 +12,8 @@ use std::{
 use metewand_core::{
     canonical::CanonicalValue,
     lockfile::{
-        LOCKFILE_VERSION, LockedEnvironment, LockedSource, LockedWorker, Lockfile, SourceEntry,
-        StorePath,
+        LOCKFILE_VERSION, LockedEnvironment, LockedNixEnvironment, LockedSource, LockedWorker,
+        Lockfile, SourceEntry, StorePath,
     },
     manifest::{DatasetDefinition, EnvironmentDefinition, Name, NixOutputKind, WorkerDefinition},
     planning::LogicalPlan,
@@ -32,7 +32,7 @@ pub struct LockError {
     message: String,
 }
 
-fn error(code: &'static str, message: impl ToString) -> LockError {
+pub(crate) fn error(code: &'static str, message: impl ToString) -> LockError {
     LockError {
         code,
         message: message.to_string(),
@@ -192,12 +192,12 @@ fn workers<'a>(
     for worker in workers.values() {
         if !matches!(
             repository.manifest.environments[environment_name(worker)],
-            EnvironmentDefinition::Nix { .. }
+            EnvironmentDefinition::Nix { .. } | EnvironmentDefinition::Uv { .. }
         ) {
             return Err(error(
                 "unsupported_locked_environment",
                 format!(
-                    "worker environment `{}` must use kind: nix for locked execution",
+                    "worker environment `{}` must use kind: nix or kind: uv for locked execution",
                     environment_name(worker)
                 ),
             ));
@@ -206,7 +206,47 @@ fn workers<'a>(
     Ok(workers)
 }
 
+#[cfg(test)]
 fn source_files(root: &Path) -> Result<LockedSource, LockError> {
+    source_files_excluding(root, &BTreeSet::new())
+}
+
+fn exclusions(repository: &CheckedRepository, version: u32) -> BTreeSet<PathBuf> {
+    if version == 1 {
+        return BTreeSet::new();
+    }
+    repository
+        .manifest
+        .environments
+        .values()
+        .filter_map(|environment| {
+            if let EnvironmentDefinition::Uv { project, .. } = environment {
+                Some(
+                    project
+                        .as_path()
+                        .join(".venv")
+                        .components()
+                        .filter(|c| !matches!(c, std::path::Component::CurDir))
+                        .collect(),
+                )
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+fn captured_sources(
+    repository: &CheckedRepository,
+    version: u32,
+) -> Result<LockedSource, LockError> {
+    source_files_excluding(&repository.root, &exclusions(repository, version))
+}
+
+fn source_files_excluding(
+    root: &Path,
+    excluded: &BTreeSet<PathBuf>,
+) -> Result<LockedSource, LockError> {
     let tracked = Command::new("git")
         .current_dir(root)
         .args(["ls-files", "--cached", "-z", "--", "."])
@@ -221,7 +261,7 @@ fn source_files(root: &Path) -> Result<LockedSource, LockError> {
             .filter(|s| !s.is_empty())
         {
             let file = std::str::from_utf8(file).map_err(|e| error("invalid_lock_source", e))?;
-            if file == "metewand.lock" {
+            if file == "metewand.lock" || excluded.iter().any(|p| Path::new(file).starts_with(p)) {
                 continue;
             }
             if fs::symlink_metadata(root.join(file))?.is_dir() {
@@ -242,23 +282,25 @@ fn source_files(root: &Path) -> Result<LockedSource, LockError> {
             root: &Path,
             directory: &Path,
             paths: &mut BTreeSet<PathBuf>,
+            excluded: &BTreeSet<PathBuf>,
         ) -> Result<(), LockError> {
             for entry in fs::read_dir(directory)? {
                 let path = entry?.path();
                 let relative = path.strip_prefix(root).expect("source descendant");
-                if relative == Path::new("metewand.lock")
+                if excluded.iter().any(|p| relative.starts_with(p))
+                    || relative == Path::new("metewand.lock")
                     || path.file_name().is_some_and(|n| n == ".git")
                 {
                     continue;
                 }
                 paths.insert(relative.to_owned());
                 if fs::symlink_metadata(&path)?.is_dir() {
-                    visit(root, &path, paths)?;
+                    visit(root, &path, paths, excluded)?;
                 }
             }
             Ok(())
         }
-        visit(root, root, &mut paths)?;
+        visit(root, root, &mut paths, excluded)?;
     }
     let mut files = BTreeMap::new();
     for relative in paths {
@@ -289,7 +331,7 @@ fn source_files(root: &Path) -> Result<LockedSource, LockError> {
     Ok(LockedSource { git, files })
 }
 
-fn is_executable(metadata: &fs::Metadata) -> bool {
+pub(crate) fn is_executable(metadata: &fs::Metadata) -> bool {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -302,7 +344,11 @@ fn is_executable(metadata: &fs::Metadata) -> bool {
     }
 }
 
-fn snapshot(root: &Path, source: &LockedSource) -> Result<TempDir, LockError> {
+fn snapshot(
+    root: &Path,
+    source: &LockedSource,
+    excluded: &BTreeSet<PathBuf>,
+) -> Result<TempDir, LockError> {
     let directory = TempDir::new()?;
     for (relative, entry) in &source.files {
         let path = directory.path().join(relative);
@@ -324,13 +370,13 @@ fn snapshot(root: &Path, source: &LockedSource) -> Result<TempDir, LockError> {
             fs::create_dir_all(&path)?;
         }
     }
-    if source_files(root)? != *source {
+    if source_files_excluding(root, excluded)? != *source {
         return Err(error(
             "lockfile_outdated",
             "sources changed while preparing the lockfile",
         ));
     }
-    if source_files(directory.path())?.files != source.files {
+    if source_files_excluding(directory.path(), excluded)?.files != source.files {
         return Err(error(
             "lockfile_outdated",
             "staged source contents differ from their recorded hashes",
@@ -503,7 +549,7 @@ fn prepare_environment(
     source_sha256: &str,
     roots: &Path,
     nix: &dyn NixBackend,
-) -> Result<LockedEnvironment, LockError> {
+) -> Result<LockedNixEnvironment, LockError> {
     let EnvironmentDefinition::Nix {
         flake,
         installable,
@@ -590,7 +636,7 @@ fn prepare_environment(
     let source_roots = roots.join("sources");
     fs::create_dir_all(&source_roots)?;
     pin(nix, &source_paths.iter().cloned().collect(), &source_roots)?;
-    let mut result = LockedEnvironment {
+    let mut result = LockedNixEnvironment {
         definition: repository.planning_catalog.environment_definitions[name].to_string(),
         system: system.clone(),
         source_sha256: source_sha256.to_owned(),
@@ -750,15 +796,19 @@ impl VerifiedLock {
             .values()
             .map(|worker| environment_name(worker).to_string())
             .collect();
-        let paths = names
+        let paths: BTreeSet<String> = names
             .iter()
             .flat_map(|name| {
                 let e = &verified.lock.environments[name];
-                e.outputs.iter().chain(e.sources.keys())
+                e.nix()
+                    .into_iter()
+                    .flat_map(|e| e.outputs.iter().chain(e.sources.keys()))
             })
             .cloned()
             .collect();
-        pin(&Nix, &paths, roots.path())?;
+        if !paths.is_empty() {
+            pin(&Nix, &paths, roots.path())?;
+        }
         verified._roots = Some(roots);
         Ok(verified)
     }
@@ -807,24 +857,34 @@ fn load(
     }
     let bytes = fs::read(&path).map_err(|e| error("lockfile_unavailable", e))?;
     let lock = Lockfile::parse(&bytes).map_err(|e| error("invalid_lockfile", e))?;
-    if source_files(&repository.root)? != lock.source {
+    if captured_sources(repository, lock.schema_version)? != lock.source {
         return Err(error(
             "lockfile_outdated",
             "repository source contents differ from metewand.lock",
         ));
     }
     let selected = workers(repository, plan)?;
-    let system = text(invoke(
-        nix,
-        &[
-            "eval",
-            "--offline",
-            "--raw",
-            "--impure",
-            "--expr",
-            "builtins.currentSystem",
-        ],
-    )?)?;
+    let has_nix = selected.values().any(|worker| {
+        matches!(
+            repository.manifest.environments[environment_name(worker)],
+            EnvironmentDefinition::Nix { .. }
+        )
+    });
+    let system = if has_nix {
+        Some(text(invoke(
+            nix,
+            &[
+                "eval",
+                "--offline",
+                "--raw",
+                "--impure",
+                "--expr",
+                "builtins.currentSystem",
+            ],
+        )?)?)
+    } else {
+        None
+    };
     let mut environments = BTreeSet::new();
     for (id, worker) in &selected {
         let name = environment_name(worker);
@@ -832,33 +892,55 @@ fn load(
             .environments
             .get(name.as_str())
             .ok_or_else(|| error("lockfile_outdated", format!("missing environment {name}")))?;
-        if entry.definition != repository.planning_catalog.environment_definitions[name].to_string()
+        if entry.definition()
+            != repository.planning_catalog.environment_definitions[name].to_string()
             || !lock.workers.contains_key(id)
-            || entry.source_sha256 != source_digest(&lock.source)?
+            || entry.source_sha256() != source_digest(&lock.source)?
         {
             return Err(error(
                 "lockfile_outdated",
                 "environment or worker definition differs from metewand.lock",
             ));
         }
-        if entry.system != system {
+        if !matches!(
+            (&repository.manifest.environments[name], entry),
+            (EnvironmentDefinition::Nix { .. }, LockedEnvironment::Nix(_))
+                | (EnvironmentDefinition::Uv { .. }, LockedEnvironment::Uv(_))
+        ) {
+            return Err(error(
+                "lockfile_outdated",
+                "locked environment backend differs from the manifest; run metewand lock",
+            ));
+        }
+        let expected_system = match entry {
+            LockedEnvironment::Nix(_) => system.as_deref().unwrap_or(""),
+            LockedEnvironment::Uv(_) => &crate::locked_uv::system(),
+        };
+        if entry.system() != expected_system {
             return Err(error(
                 "locked_system_mismatch",
                 format!(
-                    "environment {name} requires {}, host is {system}",
-                    entry.system
+                    "environment {name} requires {}, host is {expected_system}",
+                    entry.system()
                 ),
             ));
+        }
+        if let LockedEnvironment::Uv(entry) = entry {
+            crate::locked_uv::verify(entry)?;
         }
         environments.insert(name);
     }
     let mut paths = BTreeMap::new();
     for name in environments {
         let entry = &lock.environments[name.as_str()];
-        paths.extend(entry.sources.clone());
-        paths.extend(entry.closure.clone());
+        if let Some(entry) = entry.nix() {
+            paths.extend(entry.sources.clone());
+            paths.extend(entry.closure.clone());
+        }
     }
-    verify_paths(nix, &paths)?;
+    if !paths.is_empty() {
+        verify_paths(nix, &paths)?;
+    }
     let digest = sha256(&lock.to_bytes().map_err(|e| error("invalid_lockfile", e))?);
     Ok(VerifiedLock {
         lock,
@@ -867,7 +949,7 @@ fn load(
     })
 }
 
-/// Creates or refreshes all reachable Nix environments; checking never prepares them.
+/// Creates or refreshes all reachable environments; checking never prepares them.
 pub fn lock_repository(
     repository: &CheckedRepository,
     plan: &LogicalPlan,
@@ -889,40 +971,55 @@ fn lock_with(
         return report(&path, "verified", &verified.lock);
     }
     let selected = workers(repository, plan)?;
-    let source = source_files(&repository.root)?;
-    let directory = snapshot(&repository.root, &source)?;
-    let snapshot_path = text(invoke(
-        nix,
-        &[
-            "store",
-            "add",
-            "--name",
-            "source",
-            directory
-                .path()
-                .to_str()
-                .ok_or_else(|| error("invalid_lock_source", "source path must be UTF-8"))?,
-        ],
-    )?)?;
-    let roots = TempDir::new()?;
-    let snapshot_root = roots.path().join("snapshot");
-    fs::create_dir_all(&snapshot_root)?;
-    pin(
-        nix,
-        &BTreeSet::from([snapshot_path.clone()]),
-        &snapshot_root,
+    let source = captured_sources(repository, LOCKFILE_VERSION)?;
+    let directory = snapshot(
+        &repository.root,
+        &source,
+        &exclusions(repository, LOCKFILE_VERSION),
     )?;
-    let system = text(invoke(
-        nix,
-        &[
-            "eval",
-            "--offline",
-            "--raw",
-            "--impure",
-            "--expr",
-            "builtins.currentSystem",
-        ],
-    )?)?;
+    let roots = TempDir::new()?;
+    let has_nix = selected.values().any(|worker| {
+        matches!(
+            repository.manifest.environments[environment_name(worker)],
+            EnvironmentDefinition::Nix { .. }
+        )
+    });
+    let snapshot_path = if has_nix {
+        let path = text(invoke(
+            nix,
+            &[
+                "store",
+                "add",
+                "--name",
+                "source",
+                directory
+                    .path()
+                    .to_str()
+                    .ok_or_else(|| error("invalid_lock_source", "source path must be UTF-8"))?,
+            ],
+        )?)?;
+        let snapshot_root = roots.path().join("snapshot");
+        fs::create_dir_all(&snapshot_root)?;
+        pin(nix, &BTreeSet::from([path.clone()]), &snapshot_root)?;
+        path
+    } else {
+        String::new()
+    };
+    let system = if has_nix {
+        text(invoke(
+            nix,
+            &[
+                "eval",
+                "--offline",
+                "--raw",
+                "--impure",
+                "--expr",
+                "builtins.currentSystem",
+            ],
+        )?)?
+    } else {
+        String::new()
+    };
     let mut environments = BTreeMap::new();
     let digest = source_digest(&source)?;
     for worker in selected.values() {
@@ -944,14 +1041,20 @@ fn lock_with(
         fs::create_dir_all(&environment_roots)?;
         environments.insert(
             name.to_string(),
-            prepare_environment(
-                repository,
-                name,
-                &snapshot_path,
-                &digest,
-                &environment_roots,
-                nix,
-            )?,
+            match &repository.manifest.environments[name] {
+                EnvironmentDefinition::Nix { .. } => LockedEnvironment::Nix(prepare_environment(
+                    repository,
+                    name,
+                    &snapshot_path,
+                    &digest,
+                    &environment_roots,
+                    nix,
+                )?),
+                EnvironmentDefinition::Uv { .. } => LockedEnvironment::Uv(
+                    crate::locked_uv::prepare(repository, name, directory.path(), &digest)?,
+                ),
+                _ => unreachable!("checked locked backend"),
+            },
         );
     }
     let mut verified = VerifiedLock {
@@ -965,7 +1068,7 @@ fn lock_with(
         _roots: None,
     };
     verified.lock.workers = resolve_workers(repository, plan, &verified)?;
-    if source_files(&repository.root)? != verified.lock.source {
+    if captured_sources(repository, LOCKFILE_VERSION)? != verified.lock.source {
         return Err(error(
             "lockfile_outdated",
             "sources changed during environment preparation",
@@ -1046,6 +1149,12 @@ pub(crate) fn locked_program(
     environment: &LockedEnvironment,
     program: &str,
 ) -> Result<PathBuf, LockError> {
+    let environment = match environment {
+        LockedEnvironment::Uv(environment) => {
+            return crate::locked_uv::program(environment, program);
+        }
+        LockedEnvironment::Nix(environment) => environment,
+    };
     let path = if let Some(app) = &environment.app_program {
         if Path::new(program).file_name() != Path::new(app).file_name() {
             return Err(error(
@@ -1221,7 +1330,7 @@ mod tests {
         );
         let source = source_files(root.path()).unwrap();
         assert_eq!(source.files.len(), 1);
-        let staged = snapshot(root.path(), &source).unwrap();
+        let staged = snapshot(root.path(), &source, &BTreeSet::new()).unwrap();
         assert_eq!(
             fs::read(staged.path().join("flake.nix")).unwrap(),
             b"uncommitted edits"
@@ -1243,7 +1352,7 @@ mod tests {
         for mode in [0o610, 0o711] {
             fs::set_permissions(&worker, fs::Permissions::from_mode(mode)).unwrap();
             let source = source_files(root.path()).unwrap();
-            let staged = snapshot(root.path(), &source).unwrap();
+            let staged = snapshot(root.path(), &source, &BTreeSet::new()).unwrap();
             modes.push(
                 fs::metadata(staged.path().join("worker"))
                     .unwrap()

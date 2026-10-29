@@ -217,8 +217,18 @@ logical identities and binds the concrete environment into resolved identities.
 
 Local flakes use content snapshots, including edits to tracked files, with the
 Metewand lockfile excluded. Locked execution still runs trusted local code and
-does not enforce network or filesystem isolation. Native `uv` and `renv`
-resolution will follow adopter needs; Nix remains optional for development runs.
+does not enforce network or filesystem isolation.
+
+### uv environments
+
+Native uv environments prepare non-editable Python packages from an
+existing `uv.lock` into persistent user data storage. Locked execution verifies
+the interpreter, standard library, installed packages, and worker launches
+offline without invoking uv. Local dependencies use captured source content.
+The evidence does not establish the host native-library closure or an isolated
+build toolchain. Version-2 locks distinguish backend evidence while preserving
+version-1 Nix records and identities. Native `renv` resolution will follow
+adopter needs; Nix remains optional.
 
 Isolated archival execution will add digest-pinned environments and enforced
 resource, network, and input controls. These stronger guarantees must be

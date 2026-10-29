@@ -20,11 +20,12 @@ const COMMON_PATH: &str = "schemas/v1/common.schema.json";
 const COMMON_SOURCE: &str = include_str!("../../../schemas/v1/common.schema.json");
 static CATALOG: Mutex<Option<SchemaCatalog>> = Mutex::new(None);
 
-/// A public version-1 schema entry point.
+/// A public versioned schema entry point.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum PublicSchema {
     /// Exact prepared environments and worker launches.
     Lockfile,
+    LockfileV1,
     ArchiveManifest,
     ArchiveEvidence,
     ArchiveOutput,
@@ -90,8 +91,9 @@ pub enum PublicSchema {
 }
 
 /// Every public schema entry point in stable presentation order.
-pub const PUBLIC_SCHEMAS: [PublicSchema; 35] = [
+pub const PUBLIC_SCHEMAS: [PublicSchema; 36] = [
     PublicSchema::Lockfile,
+    PublicSchema::LockfileV1,
     PublicSchema::ArchiveManifest,
     PublicSchema::ArchiveEvidence,
     PublicSchema::ArchiveOutput,
@@ -134,6 +136,7 @@ impl PublicSchema {
     pub const fn slug(self) -> &'static str {
         match self {
             Self::Lockfile => "lockfile",
+            Self::LockfileV1 => "lockfile-v1",
             Self::ArchiveManifest => "archive-manifest",
             Self::ArchiveEvidence => "archive-evidence",
             Self::ArchiveOutput => "archive-output",
@@ -183,7 +186,8 @@ impl PublicSchema {
     #[must_use]
     pub fn repository_path(self) -> &'static Path {
         Path::new(match self {
-            Self::Lockfile => "schemas/v1/lockfile.schema.json",
+            Self::Lockfile => "schemas/v2/lockfile.schema.json",
+            Self::LockfileV1 => "schemas/v1/lockfile.schema.json",
             Self::ArchiveManifest => "schemas/v1/archive-manifest.schema.json",
             Self::ArchiveEvidence => "schemas/v1/archive-evidence.schema.json",
             Self::ArchiveOutput => "schemas/v1/archive-output.schema.json",
@@ -229,7 +233,8 @@ impl PublicSchema {
     #[must_use]
     pub const fn id(self) -> &'static str {
         match self {
-            Self::Lockfile => "metewand://schemas/v1/lockfile.schema.json",
+            Self::Lockfile => "metewand://schemas/v2/lockfile.schema.json",
+            Self::LockfileV1 => "metewand://schemas/v1/lockfile.schema.json",
             Self::ArchiveManifest => "metewand://schemas/v1/archive-manifest.schema.json",
             Self::ArchiveEvidence => "metewand://schemas/v1/archive-evidence.schema.json",
             Self::ArchiveOutput => "metewand://schemas/v1/archive-output.schema.json",
@@ -285,7 +290,8 @@ impl PublicSchema {
     #[must_use]
     pub const fn source(self) -> &'static str {
         match self {
-            Self::Lockfile => include_str!("../../../schemas/v1/lockfile.schema.json"),
+            Self::Lockfile => include_str!("../../../schemas/v2/lockfile.schema.json"),
+            Self::LockfileV1 => include_str!("../../../schemas/v1/lockfile.schema.json"),
             Self::ArchiveManifest => {
                 include_str!("../../../schemas/v1/archive-manifest.schema.json")
             }
@@ -380,7 +386,7 @@ pub fn public_schema_resources() -> impl Iterator<Item = (&'static Path, &'stati
     )
 }
 
-/// Returns a shared offline catalog containing every version-1 public schema.
+/// Returns a shared offline catalog containing every public schema.
 ///
 /// The embedded documents cannot change during a process's lifetime. Compile
 /// them once and return inexpensive clones sharing the immutable validators.

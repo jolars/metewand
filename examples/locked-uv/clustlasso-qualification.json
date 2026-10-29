@@ -1,0 +1,124 @@
+{
+  "benchmark_source_sha256": "18cd8fde4f34f2dd3983f6ee345cc8816876822cad0c01185827dce70e560116",
+  "checks": {
+    "native_and_metewand_locks_unchanged": true,
+    "native_extension_tampering_rejected": true,
+    "offline_without_uv_or_nix": true,
+    "partial_run_accepted": 1,
+    "post_run_environment_verified": true,
+    "restored_environment_verified": true,
+    "resume_accepted": 3,
+    "tamper_output_not_created": true
+  },
+  "cli_sha256": "16f00176c6c5a917f62e4ec099a1849eefa75da544a3b7ccc5cc9160d2d0a276",
+  "environment": {
+    "distributions": {
+      "clustlasso-cd": "0.1.0",
+      "contourpy": "1.4.0",
+      "cycler": "0.12.1",
+      "datamonger": "0.1.0",
+      "fonttools": "4.67.0",
+      "kiwisolver": "1.5.1",
+      "matplotlib": "3.11.2",
+      "numpy": "2.5.4",
+      "packaging": "26.3",
+      "pandas": "3.0.6",
+      "pillow": "13.0.0",
+      "platformdirs": "4.13.4",
+      "portalocker": "4.4.1",
+      "pyparsing": "3.3.3",
+      "python-dateutil": "2.9.0.post0",
+      "rdata": "1.1.0",
+      "scipy": "1.18.1",
+      "six": "1.17.0",
+      "spams-bin": "2.6.14",
+      "typing_extensions": "4.16.0",
+      "xarray": "2026.9.0"
+    },
+    "extras": [],
+    "groups": [
+      "benchmark"
+    ],
+    "packages_sha256": "033eff0965577738db3cd16f90b5b07dc8bec3f6790b9e3edeb65995e2f468dc",
+    "python": {
+      "abi": "cpython-313-x86_64-linux-gnu",
+      "executable_sha256": "00e1d159ad29aa5e3d66d543aa92eb51155b94564e98df978de105804fd7c18f",
+      "implementation": "cpython",
+      "platform": "linux-x86_64",
+      "runtime_sha256": "d26b12a0c18ebba33fe3b1b2d86a2cdde007a4d1d2a68526b3fab223e7c46d7e",
+      "version": "3.13.15"
+    }
+  },
+  "export": {
+    "files": {
+      "results.jsonl": "b6aecf64dcdc93a57ae0766c6c84c4fd424c87c48a788f5eb03b9107af85154d"
+    },
+    "records": 10,
+    "rows": 18
+  },
+  "lockfile_sha256": "c547e10e6f8378655d649a081041904ea8a1daf5e387f73f6dbbfa87b93e415f",
+  "lockfile_version": 2,
+  "native_extension_sha256": "fed1ef3ae31d1f2f2eadf984451dfd368e0183bf131d8924bfa150cd97e1fffe",
+  "native_lock_sha256": "0442cef660296431599b6a8b4173042e7784a440f97092a49502763ef6f80ab0",
+  "observations": [
+    {
+      "implementation": "hybrid",
+      "measurement_index": 0,
+      "metrics": {
+        "coefficient_error": 0,
+        "epsilon_g": 5.258951169277057e-17,
+        "relative_objective_error": 1.8657032973044988e-16
+      },
+      "observation_id": "mw1-observation-b87cabf00f23b609732d4221c53adceffd5f8b6081c6b9155aeaf22a71dd851f"
+    },
+    {
+      "implementation": "hybrid",
+      "measurement_index": 1,
+      "metrics": {
+        "coefficient_error": 0,
+        "epsilon_g": 5.258951169277057e-17,
+        "relative_objective_error": 1.8657032973044988e-16
+      },
+      "observation_id": "mw1-observation-b7aad36ef60ceab9a11164fedda8b04cb923d3bbfa703d0ba825229e33bc9423"
+    },
+    {
+      "implementation": "pg",
+      "measurement_index": 0,
+      "metrics": {
+        "coefficient_error": 8.830871589537992e-10,
+        "epsilon_g": 9.295658979400095e-11,
+        "relative_objective_error": 1.8657032973044988e-16
+      },
+      "observation_id": "mw1-observation-3f9f4233facfe8df899ccd8bd78e508387347ccc2f46613f5b55f3507427fbf9"
+    },
+    {
+      "implementation": "pg",
+      "measurement_index": 1,
+      "metrics": {
+        "coefficient_error": 8.830871589537992e-10,
+        "epsilon_g": 9.295658979400095e-11,
+        "relative_objective_error": 1.8657032973044988e-16
+      },
+      "observation_id": "mw1-observation-6199407ea889e8426aef8ee44f7afed8d1121c36d0bc833036614e8b58c2a6a3"
+    }
+  ],
+  "purpose": "Qualify native uv preparation, offline execution, independent evaluation, resume, export, and installed-file verification.",
+  "qualified_at": "2026-10-29T19:56:41.659796+00:00",
+  "schema_version": 1,
+  "stage_script_sha256": "b36869e18c184cf558b25b273f21f3c3d8cb2848f5160293d3558e8db70d236c",
+  "summary": {
+    "accepted_attempts": 4,
+    "active_attempts": 0,
+    "active_slots": 0,
+    "attempt_slots": 4,
+    "censored_attempts": 0,
+    "failed_attempts": 0,
+    "pending_slots": 0,
+    "recovery_required_slots": 0,
+    "retry_required_slots": 0,
+    "satisfied_slots": 4,
+    "selected_observations": 4,
+    "superseded_attempts": 0
+  },
+  "system": "linux-x86_64"
+}
