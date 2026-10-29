@@ -1,5 +1,8 @@
 # Metewand
 
+[![Software
+DOI](https://img.shields.io/badge/Software_DOI-10.5281%2Fzenodo.23699794-blue)](https://doi.org/10.5281/zenodo.23699794)
+
 Metewand runs reproducible computational benchmarks across languages. It executes
 methods as separate processes, evaluates answers independently, and retains
 settings, timings, metrics, failures, and provenance.
@@ -78,6 +81,15 @@ work. The crates and packages are not yet published to registries.
 [CONTRIBUTING.md](CONTRIBUTING.md) covers contributor setup, implementation
 contracts, verification, releases, and website development.
 [TODO.md](TODO.md) tracks the active roadmap.
+
+## Citation
+
+If you use Metewand in your research, please cite the release you used. Select
+that release in the [Zenodo archive](https://doi.org/10.5281/zenodo.23699794)
+and export its citation. To cite Metewand generally, use the concept DOI
+`10.5281/zenodo.23699794`.
+
+Machine-readable metadata is available in [CITATION.cff](CITATION.cff).
 
 ## License
 

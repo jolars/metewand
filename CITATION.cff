@@ -1,0 +1,16 @@
+cff-version: 1.2.0
+message: If you use this software, please cite the release you used. Use the concept
+  DOI to cite the project as a whole.
+type: software
+title: 'Metewand: Reproducible computational benchmarks across languages'
+authors:
+  - family-names: Larsson
+    given-names: Johan
+    affiliation: University of Copenhagen
+    orcid: https://orcid.org/0000-0002-4029-5945
+doi: 10.5281/zenodo.23699794
+url: https://metewand.org
+repository-code: https://github.com/jolars/metewand
+license:
+  - Apache-2.0
+  - MIT
