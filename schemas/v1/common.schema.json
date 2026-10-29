@@ -245,7 +245,7 @@
           "type": "string",
           "minLength": 1
         },
-        "details": { "type": "object" },
+        "details": { "type": ["object", "null"] },
         "source_span": { "$ref": "#/$defs/source_span" },
         "affected_ids": {
           "type": "array",

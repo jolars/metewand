@@ -69,6 +69,11 @@ impl RunStore {
     }
 
     fn open_version(root: &Path, check: &Check<'_>, layout: u32) -> Result<Self, RunStoreError> {
+        if crate::archive::is_collection(root) {
+            return Err(RunStoreError::InvalidAttempt(
+                "archive collections are read-only",
+            ));
+        }
         if !root.is_absolute()
             || !crate::platform_fs::is_real_directory(&fs::symlink_metadata(root)?)
         {

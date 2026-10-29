@@ -34,7 +34,13 @@ const TRANSCRIPT_DOMAIN: &[u8] = b"metewand-local-tree\0";
 /// cannot be inspected or read, a path or link target is not UTF-8, an entry has
 /// an unsupported type, or a file changes size while it is being read.
 pub fn hash_local_tree(root: impl AsRef<Path>) -> Result<ContentDigest, LocalTreeHashError> {
-    let supplied_root = root.as_ref();
+    hash_tree(root.as_ref(), &|_, metadata| is_executable(metadata))
+}
+
+pub(crate) fn hash_tree(
+    supplied_root: &Path,
+    executable: &impl Fn(&str, &Metadata) -> bool,
+) -> Result<ContentDigest, LocalTreeHashError> {
     let root = fs::canonicalize(supplied_root).map_err(|source| LocalTreeHashError::Root {
         path: supplied_root.to_path_buf(),
         source,
@@ -52,7 +58,7 @@ pub fn hash_local_tree(root: impl AsRef<Path>) -> Result<ContentDigest, LocalTre
     hasher.update(LOCAL_TREE_HASH_VERSION.to_be_bytes());
     hasher.update((entries.len() as u64).to_be_bytes());
     for entry in entries {
-        hash_entry(&root, &entry, &mut hasher)?;
+        hash_entry(&root, &entry, &mut hasher, executable)?;
     }
 
     Ok(ContentDigest::new(hasher.finalize().into()))
@@ -167,6 +173,7 @@ fn hash_entry(
     root: &Path,
     entry: &TreeEntry,
     hasher: &mut Sha256,
+    executable: &impl Fn(&str, &Metadata) -> bool,
 ) -> Result<(), LocalTreeHashError> {
     let path = Path::new(&entry.path);
     let absolute = root.join(path);
@@ -187,7 +194,7 @@ fn hash_entry(
         EntryKind::Directory => hasher.update(b"d"),
         EntryKind::File => {
             hasher.update(b"f");
-            hasher.update([u8::from(is_executable(&metadata))]);
+            hasher.update([u8::from(executable(&entry.path, &metadata))]);
             hash_file(&absolute, path, metadata.len(), hasher)?;
         }
         EntryKind::Symlink => {

@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "metewand://schemas/v1/archive-output.schema.json",
+  "x-metewand-compatibility-version": 1,
+  "title": "Result archive operation receipt",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "kind": {
+      "const": "result"
+    },
+    "data": {
+      "type": "object",
+      "properties": {
+        "command": {
+          "const": "archive"
+        },
+        "schema_version": {
+          "const": 1
+        },
+        "operation": {
+          "enum": [
+            "create",
+            "verify",
+            "import"
+          ]
+        },
+        "archive_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "destination": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "manifest_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "files": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "size_bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "records": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "command",
+        "schema_version",
+        "operation",
+        "archive_path",
+        "destination",
+        "manifest_sha256",
+        "files",
+        "size_bytes",
+        "records"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "schema_version",
+    "kind",
+    "data"
+  ],
+  "additionalProperties": false
+}

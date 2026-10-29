@@ -4,7 +4,7 @@ use metewand_core::export::ExportFormat;
 
 use crate::output::{CommandError, CommandResult};
 
-const HELP: &str = "Usage: metewand [--output FORMAT] export --output-dir PATH [--format jsonl|csv] [--destination PATH] [--id ID ...] [--rebuild-index]\n\nExport all attempts, applicability decisions, and observations to a new directory containing results.jsonl or results.csv and export.json. --destination explicitly authorizes creating that directory; existing paths are never replaced. --rebuild-index explicitly replaces only the run's rebuildable index.jsonl with the complete verified projection, regardless of --id filters. Supply --destination, --rebuild-index, or both. Reads never use an existing index, launch workers, or recover the store.\n";
+const HELP: &str = "Usage: metewand [--output FORMAT] export --output-dir PATH [--format jsonl|csv] [--destination PATH] [--id ID ...] [--rebuild-index]\n\nExport all attempts, applicability decisions, and observations from a run or imported archive collection to a new directory containing results.jsonl or results.csv and export.json. --destination explicitly authorizes creating that directory; existing paths are never replaced. --rebuild-index explicitly replaces only a writable run's rebuildable index.jsonl with the complete verified projection, regardless of --id filters. Imported collections require a destination outside the collection and reject --rebuild-index. Supply --destination, --rebuild-index, or both. Reads never use an existing index, launch workers, or recover the store.\n";
 
 pub fn command(arguments: &[OsString]) -> Result<CommandResult, CommandError> {
     if arguments == ["-h"] || arguments == ["--help"] {

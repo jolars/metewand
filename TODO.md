@@ -2,8 +2,8 @@
 
 The next milestone is a comparative local MVP that can run useful benchmarks in
 `../basin` and `~/research/clustlasso-cd`. Keep one-shot execution, fresh
-sequences, buffered instrumented profiles, and streaming profiles. Defer the
-Julia package and portable result archives.
+sequences, buffered instrumented profiles, and streaming profiles. Portable result
+archives preserve completed local evidence; the Julia package remains deferred.
 
 [DESIGN.md](DESIGN.md) defines semantics. [AGENTS.md](AGENTS.md) defines
 development and verification rules. Build the smallest usable step in the active
@@ -281,8 +281,11 @@ in every language is not a release prerequisite.
 Choose these by demonstrated adopter need rather than requiring another complete
 gate before improving a useful workflow.
 
-- [ ] Add portable result archive creation, offline verification, and import.
-  This is separate from the result snapshots required by profile modes.
+- [x] Create deterministic whole-run result archives, verify them offline, and
+  import read-only collections for inspection and export. Require terminal
+  started attempts, retain pending work and failed history, and package only
+  persisted records and registered artifacts. Preserve profile snapshots and
+  traces within the archive; source and input acquisition remain separate.
 - [ ] Complete full intercept-strategy and SLOPE study ports if still useful.
 - [ ] Extend export formats and provenance packaging when an analysis needs more
   than the existing JSONL and CSV tables and lineage receipt.

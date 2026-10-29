@@ -2,8 +2,8 @@ use std::{ffi::OsString, path::PathBuf};
 
 use crate::output::{CommandError, CommandResult};
 
-const STATUS_HELP: &str = "Usage: metewand [--output FORMAT] status [--manifest PATH] [--output-dir PATH]\n\nInspect measured slots, immutable retry history, selected observations, and failure diagnostics without running workers or recovering a store. Without --output-dir, inspect ./metewand.yaml. With --output-dir, inspect committed run history independently of repository inputs; add --manifest to compare it with the current logical plan.\n";
-const EXPLAIN_HELP: &str = "Usage: metewand [--output FORMAT] explain <id> [--manifest PATH] [--output-dir PATH]\n\nExplain an exact stable definition, configuration, run, slot, attempt, observation, artifact, applicability, or diagnostic ID. Inspect ./metewand.yaml by default, or committed history with --output-dir. Add --manifest to inspect both. Lookup never downloads inputs, launches workers, initializes a store, or performs recovery.\n";
+const STATUS_HELP: &str = "Usage: metewand [--output FORMAT] status [--manifest PATH] [--output-dir PATH]\n\nInspect measured slots, immutable retry history, selected observations, and failure diagnostics without running workers or recovering a store. Without --output-dir, inspect ./metewand.yaml. With --output-dir, inspect committed run history or an imported archive collection independently of repository inputs; add --manifest to compare it with the current logical plan.\n";
+const EXPLAIN_HELP: &str = "Usage: metewand [--output FORMAT] explain <id> [--manifest PATH] [--output-dir PATH]\n\nExplain an exact stable definition, configuration, run, slot, attempt, observation, artifact, applicability, or diagnostic ID. Inspect ./metewand.yaml by default, or committed history and imported archive collections with --output-dir. Add --manifest to inspect both. Lookup never downloads inputs, launches workers, initializes a store, or performs recovery.\n";
 
 pub fn command(
     command: &'static str,

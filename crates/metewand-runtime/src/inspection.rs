@@ -22,10 +22,10 @@ use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 use crate::{
-    local_tree::hash_local_tree,
+    evidence::EvidenceSnapshot,
     publication::{PublicationError, verify_finalized_directory},
     repository::CheckedRepository,
-    run_store::{RunStoreError, reader::StoreSnapshot},
+    run_store::RunStoreError,
 };
 
 /// An in-memory inspection view. It never initializes, recovers, or writes a run.
@@ -242,7 +242,14 @@ impl Inspection {
     /// Reads committed coordination and verifies every registered artifact.
     /// No acceptance is inferred from orphan directories or staging contents.
     pub fn add_store(&mut self, root: &Path) -> Result<(), InspectionError> {
-        let snapshot = StoreSnapshot::read(root)?;
+        let snapshot = EvidenceSnapshot::read(root)?;
+        self.add_snapshot(&snapshot)
+    }
+
+    pub(crate) fn add_snapshot(
+        &mut self,
+        snapshot: &EvidenceSnapshot,
+    ) -> Result<(), InspectionError> {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map_err(io::Error::other)?
@@ -250,7 +257,15 @@ impl Inspection {
         self.output_directory = Some(snapshot.root.to_string_lossy().into_owned());
         for (&kind, rows) in &snapshot.tables {
             if kind.starts_with("fresh-")
-                || matches!(kind, "event" | "attempt-artifact" | "observation-artifact")
+                || matches!(
+                    kind,
+                    "event"
+                        | "attempt-artifact"
+                        | "observation-artifact"
+                        | "slot-membership"
+                        | "attempt-transition"
+                        | "observation-selection"
+                )
             {
                 continue;
             }
@@ -258,13 +273,15 @@ impl Inspection {
                 let id = string(row, "id")?;
                 let mut record = InspectionRecord::new(id.clone(), kind, row.clone());
                 if kind == "stored-artifact" {
-                    record.paths.push(string(row, "path")?);
+                    record
+                        .paths
+                        .push(snapshot.reported_path(&string(row, "path")?));
                 }
                 self.records.insert(id, record);
             }
         }
         for artifact in &snapshot.tables["stored-artifact"] {
-            self.read_artifact(&snapshot.root, artifact)?;
+            self.read_artifact(snapshot, artifact)?;
         }
         if let Some(progress) = snapshot.tables.get("fresh-sequence") {
             self.fresh_sequences = progress
@@ -452,13 +469,19 @@ impl Inspection {
         Ok(())
     }
 
-    fn read_artifact(&mut self, root: &Path, artifact: &Value) -> Result<(), InspectionError> {
+    fn read_artifact(
+        &mut self,
+        snapshot: &EvidenceSnapshot,
+        artifact: &Value,
+    ) -> Result<(), InspectionError> {
+        let root = &snapshot.data_root;
         let id = string(artifact, "id")?;
         let relative = string(artifact, "path")?;
         let path = confined(root, &relative)?;
         if artifact["storage_kind"] == "directory" {
             verify_finalized_directory(&path)?;
-            if hex(hash_local_tree(&path)
+            if hex(snapshot
+                .tree_hash(&relative)
                 .map_err(PublicationError::from)?
                 .bytes())
                 != artifact["sha256"]
@@ -495,7 +518,9 @@ impl Inspection {
                     continue;
                 };
                 record.record["document"] = document.clone();
-                record.paths.push(format!("{relative}/{file}"));
+                record
+                    .paths
+                    .push(snapshot.reported_path(&format!("{relative}/{file}")));
                 record.relate([id.clone()]);
                 self.read_provenance(&document)?;
                 if kind == "observation" {
@@ -516,9 +541,12 @@ impl Inspection {
                         content.record["document"] = optional_document(&manifest)?.ok_or(
                             InspectionError::Invalid("missing result or metrics document"),
                         )?;
-                        content
-                            .paths
-                            .push(format!("{relative}/{}", string(reference, "path")?));
+                        content.paths.push(
+                            snapshot.reported_path(&format!(
+                                "{relative}/{}",
+                                string(reference, "path")?
+                            )),
+                        );
                         content.relate([id.clone(), subject_id.clone()]);
                         if let Some(existing) = self.records.get_mut(&content_id) {
                             existing.paths.extend(content.paths);
@@ -546,7 +574,9 @@ impl Inspection {
                 return Err(InspectionError::CorruptArtifact(id));
             }
             record.record["outcome"] = outcome;
-            record.paths.push(format!("{relative}/outcome.json"));
+            record
+                .paths
+                .push(snapshot.reported_path(&format!("{relative}/outcome.json")));
             record.relate([id]);
         }
         Ok(())
@@ -761,6 +791,8 @@ fn hex(bytes: &[u8]) -> String {
 
 #[derive(Debug, Error)]
 pub enum InspectionError {
+    #[error("invalid archive collection: {0}")]
+    Archive(String),
     #[error("identity `{0}` was not found in the selected plan or run store")]
     UnknownIdentity(String),
     #[error("invalid inspection evidence: {0}")]

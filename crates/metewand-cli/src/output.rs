@@ -2,6 +2,7 @@ use std::{collections::BTreeMap, fmt::Write as _, path::Path};
 
 use metewand_core::{
     PUBLIC_SCHEMA_VERSION,
+    archive::{ArchiveOperation, ArchiveReport},
     cache::{CacheReport, CacheTargetState},
     export::ExportReport,
     inspection::{Explanation, StatusReport},
@@ -68,6 +69,7 @@ pub enum CommandResult {
     Explain(Box<Explanation>),
     Export(Box<ExportReport>),
     Cache(Box<CacheReport>),
+    Archive(Box<ArchiveReport>),
 }
 
 impl CommandResult {
@@ -189,6 +191,25 @@ impl CommandResult {
             Self::Run(result) => render_run_report(result),
             Self::Status(result) => render_status(result),
             Self::Explain(result) => render_explanation(result),
+            Self::Archive(result) => {
+                let action = match result.operation {
+                    ArchiveOperation::Create => "Created",
+                    ArchiveOperation::Verify => "Verified",
+                    ArchiveOperation::Import => "Imported",
+                };
+                let mut output = format!(
+                    "{action} archive: {}\nEvidence: {} records, {} files, {} bytes.\nManifest SHA-256: {}\n",
+                    result.archive_path,
+                    result.records,
+                    result.files,
+                    result.size_bytes,
+                    result.manifest_sha256
+                );
+                if let Some(destination) = &result.destination {
+                    writeln!(output, "Destination: {destination}").expect("string write");
+                }
+                output
+            }
             Self::Cache(result) => {
                 let mut output = String::new();
                 for target in &result.targets {
@@ -293,6 +314,7 @@ impl Serialize for CommandResult {
             Self::Explain(result) => result.serialize(serializer),
             Self::Export(result) => result.serialize(serializer),
             Self::Cache(result) => result.serialize(serializer),
+            Self::Archive(result) => result.serialize(serializer),
         }
     }
 }
@@ -1362,6 +1384,23 @@ pub struct CommandError {
 
 impl CommandError {
     #[cfg(any(unix, windows))]
+    pub fn archive(error: &metewand_runtime::archive::ArchiveError) -> Self {
+        use metewand_runtime::archive::ArchiveError;
+        let (exit_code, code) = match error {
+            ArchiveError::Io(_) => (EXIT_IO, "archive_io_failed"),
+            ArchiveError::UnsupportedVersion => {
+                (EXIT_INPUT_UNAVAILABLE, "unsupported_archive_version")
+            }
+            ArchiveError::Unsettled => (EXIT_INPUT_UNAVAILABLE, "archive_unfinished_attempt"),
+            ArchiveError::Limit => (EXIT_INPUT_UNAVAILABLE, "archive_limit_exceeded"),
+            _ => (EXIT_INPUT_UNAVAILABLE, "invalid_archive_evidence"),
+        };
+        Self {
+            exit_code,
+            diagnostic: Box::new(Diagnostic::new(code, error.to_string())),
+        }
+    }
+    #[cfg(any(unix, windows))]
     pub fn cache(error: &metewand_runtime::artifact_store::ArtifactStoreError) -> Self {
         use metewand_runtime::artifact_store::ArtifactStoreError;
         let (exit_code, code) = match error {
@@ -1434,6 +1473,7 @@ impl CommandError {
             ExportError::UnsafeIndex | ExportError::InvalidDestination => {
                 (EXIT_USAGE, "invalid_export_destination")
             }
+            ExportError::ReadOnlyCollection => (EXIT_USAGE, "read_only_archive"),
             _ => (EXIT_INVALID_REPOSITORY, "invalid_export_evidence"),
         };
         Self { exit_code, diagnostic: Box::new(Diagnostic::new(code, error.to_string()).with_remediation("Select a verified run with `--output-dir PATH` and a new export directory with `--destination PATH`.")) }

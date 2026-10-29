@@ -63,6 +63,10 @@ impl StoreSnapshot {
         if version == super::FRESH_RUN_STORE_SCHEMA_VERSION {
             for (kind, sql) in [
                 (
+                    "fresh-policy",
+                    "SELECT json_object('resolved_run_id',resolved_run_id,'measurement_index',measurement_index,'policy',json(policy_json)) FROM fresh_sequences ORDER BY resolved_run_id,measurement_index",
+                ),
+                (
                     "fresh-member",
                     "SELECT json_object('slot_id',slot_id,'resolved_run_id',resolved_run_id,'measurement_index',measurement_index,'schedule_index',schedule_index,'control',json(control_json),'observation_slot_id',(SELECT observation_slot_id FROM attempt_observation_slots WHERE attempt_slot_id=fresh_members.slot_id)) FROM fresh_members ORDER BY slot_id",
                 ),
@@ -245,6 +249,18 @@ fn source_signature(path: &Path) -> Result<Option<[u64; 7]>, RunStoreError> {
 }
 
 const QUERIES: &[(&str, &str)] = &[
+    (
+        "slot-membership",
+        "SELECT json_object('attempt_slot_id',attempt_slot_id,'observation_slot_id',observation_slot_id,'resolved_run_id',resolved_run_id) FROM attempt_observation_slots ORDER BY attempt_slot_id,observation_slot_id",
+    ),
+    (
+        "attempt-transition",
+        "SELECT json_object('attempt_id',attempt_id,'revision',revision,'previous_revision',previous_revision,'from_state',from_state,'to_state',to_state,'occurred_at_ns',CAST(occurred_at_ns AS TEXT),'event_sequence',event_sequence) FROM attempt_transitions ORDER BY attempt_id,revision",
+    ),
+    (
+        "observation-selection",
+        "SELECT json_object('slot_id',slot_id,'observation_id',observation_id,'selected_at_ns',CAST(selected_at_ns AS TEXT)) FROM selected_observations ORDER BY slot_id",
+    ),
     (
         "applicability",
         "SELECT json_object('id', id, 'candidate_id', candidate_id, 'applicable', json(CASE applicable WHEN 1 THEN 'true' ELSE 'false' END), 'definition', json(record_json)) FROM applicability_decisions ORDER BY id",

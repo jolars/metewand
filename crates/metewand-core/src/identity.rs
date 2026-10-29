@@ -141,7 +141,7 @@ fn canonical_bytes(value: Value) -> Result<Vec<u8>, IdentityError> {
     Ok(CanonicalValue::try_from(value)?.to_canonical_bytes()?)
 }
 
-fn hash_identity<T: IdentityKind>(canonical: &[u8]) -> [u8; 32] {
+pub(crate) fn hash_identity<T: IdentityKind>(canonical: &[u8]) -> [u8; 32] {
     let mut hasher = Sha256::new();
     hasher.update(T::KIND.as_bytes());
     hasher.update([0]);

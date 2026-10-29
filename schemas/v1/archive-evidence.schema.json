@@ -1,0 +1,1026 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "metewand://schemas/v1/archive-evidence.schema.json",
+  "x-metewand-compatibility-version": 1,
+  "title": "Portable committed benchmark evidence",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "records": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "const": "applicability"
+              },
+              "record": {
+                "$ref": "#/$defs/ApplicabilityEvidence"
+              }
+            },
+            "required": [
+              "kind",
+              "record"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "const": "resolved-specification"
+              },
+              "record": {
+                "$ref": "#/$defs/ResolvedSpecificationEvidence"
+              }
+            },
+            "required": [
+              "kind",
+              "record"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "const": "resolved-attempt-slot"
+              },
+              "record": {
+                "$ref": "#/$defs/AttemptSlotEvidence"
+              }
+            },
+            "required": [
+              "kind",
+              "record"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "const": "resolved-observation-slot"
+              },
+              "record": {
+                "$ref": "#/$defs/ObservationSlotEvidence"
+              }
+            },
+            "required": [
+              "kind",
+              "record"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "const": "slot-membership"
+              },
+              "record": {
+                "$ref": "#/$defs/SlotMembershipEvidence"
+              }
+            },
+            "required": [
+              "kind",
+              "record"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "const": "attempt"
+              },
+              "record": {
+                "$ref": "#/$defs/AttemptEvidence"
+              }
+            },
+            "required": [
+              "kind",
+              "record"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "const": "attempt-transition"
+              },
+              "record": {
+                "$ref": "#/$defs/TransitionEvidence"
+              }
+            },
+            "required": [
+              "kind",
+              "record"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "const": "observation"
+              },
+              "record": {
+                "$ref": "#/$defs/ObservationEvidence"
+              }
+            },
+            "required": [
+              "kind",
+              "record"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "const": "observation-selection"
+              },
+              "record": {
+                "$ref": "#/$defs/SelectionEvidence"
+              }
+            },
+            "required": [
+              "kind",
+              "record"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "const": "stored-artifact"
+              },
+              "record": {
+                "$ref": "#/$defs/StoredArtifactEvidence"
+              }
+            },
+            "required": [
+              "kind",
+              "record"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "const": "attempt-artifact"
+              },
+              "record": {
+                "$ref": "#/$defs/AttemptArtifactEvidence"
+              }
+            },
+            "required": [
+              "kind",
+              "record"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "const": "observation-artifact"
+              },
+              "record": {
+                "$ref": "#/$defs/ObservationArtifactEvidence"
+              }
+            },
+            "required": [
+              "kind",
+              "record"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "const": "event"
+              },
+              "record": {
+                "$ref": "#/$defs/EventEvidence"
+              }
+            },
+            "required": [
+              "kind",
+              "record"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "const": "fresh-member"
+              },
+              "record": {
+                "$ref": "#/$defs/FreshMemberEvidence"
+              }
+            },
+            "required": [
+              "kind",
+              "record"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "const": "fresh-budget"
+              },
+              "record": {
+                "$ref": "#/$defs/FreshBudgetEvidence"
+              }
+            },
+            "required": [
+              "kind",
+              "record"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "const": "fresh-disposition"
+              },
+              "record": {
+                "$ref": "#/$defs/FreshDispositionEvidence"
+              }
+            },
+            "required": [
+              "kind",
+              "record"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "const": "fresh-policy"
+              },
+              "record": {
+                "$ref": "#/$defs/FreshPolicyEvidence"
+              }
+            },
+            "required": [
+              "kind",
+              "record"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "const": "fresh-sequence"
+              },
+              "record": {
+                "$ref": "#/$defs/FreshSequenceProgress"
+              }
+            },
+            "required": [
+              "kind",
+              "record"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      }
+    }
+  },
+  "required": [
+    "schema_version",
+    "records"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "ApplicabilityEvidence": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "candidate_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "applicable": {
+          "type": "boolean"
+        },
+        "definition": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "id",
+        "candidate_id",
+        "applicable",
+        "definition"
+      ],
+      "additionalProperties": false
+    },
+    "ResolvedSpecificationEvidence": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "logical_specification_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "candidate_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "applicability_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "definition": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "id",
+        "logical_specification_id",
+        "candidate_id",
+        "applicability_id",
+        "definition"
+      ],
+      "additionalProperties": false
+    },
+    "AttemptSlotEvidence": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "logical_slot_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "resolved_run_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "role": {
+          "enum": [
+            "measurement",
+            "warmup"
+          ]
+        },
+        "kind": {
+          "enum": [
+            "one_shot",
+            "buffered",
+            "fresh_observation",
+            "stream"
+          ]
+        },
+        "definition": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "id",
+        "logical_slot_id",
+        "resolved_run_id",
+        "role",
+        "kind",
+        "definition"
+      ],
+      "additionalProperties": false
+    },
+    "ObservationSlotEvidence": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "logical_slot_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "resolved_run_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "definition": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "id",
+        "logical_slot_id",
+        "resolved_run_id",
+        "definition"
+      ],
+      "additionalProperties": false
+    },
+    "SlotMembershipEvidence": {
+      "type": "object",
+      "properties": {
+        "attempt_slot_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "observation_slot_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "resolved_run_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "attempt_slot_id",
+        "observation_slot_id",
+        "resolved_run_id"
+      ],
+      "additionalProperties": false
+    },
+    "AttemptEvidence": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "slot_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "retry_index": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "state": {
+          "enum": [
+            "accepted",
+            "failed",
+            "censored",
+            "superseded"
+          ]
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "started_at_ns": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)$"
+        },
+        "updated_at_ns": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)$"
+        },
+        "finished_at_ns": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "failure_code": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "artifact_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lease_expires_at_ns": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "slot_id",
+        "retry_index",
+        "state",
+        "revision",
+        "started_at_ns",
+        "updated_at_ns",
+        "finished_at_ns",
+        "failure_code",
+        "artifact_id",
+        "lease_expires_at_ns"
+      ],
+      "additionalProperties": false
+    },
+    "TransitionEvidence": {
+      "type": "object",
+      "properties": {
+        "attempt_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "previous_revision": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "from_state": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "to_state": {
+          "type": "string",
+          "minLength": 1
+        },
+        "occurred_at_ns": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)$"
+        },
+        "event_sequence": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "attempt_id",
+        "revision",
+        "previous_revision",
+        "from_state",
+        "to_state",
+        "occurred_at_ns",
+        "event_sequence"
+      ],
+      "additionalProperties": false
+    },
+    "ObservationEvidence": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "slot_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "attempt_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "attempt_slot_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "artifact_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "valid": {
+          "const": true
+        },
+        "completion": {
+          "enum": [
+            "reached",
+            "not_reached",
+            "not_required"
+          ]
+        },
+        "selected": {
+          "type": "boolean"
+        },
+        "definition": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "id",
+        "slot_id",
+        "attempt_id",
+        "attempt_slot_id",
+        "artifact_id",
+        "valid",
+        "completion",
+        "selected",
+        "definition"
+      ],
+      "additionalProperties": false
+    },
+    "SelectionEvidence": {
+      "type": "object",
+      "properties": {
+        "slot_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "observation_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "selected_at_ns": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)$"
+        }
+      },
+      "required": [
+        "slot_id",
+        "observation_id",
+        "selected_at_ns"
+      ],
+      "additionalProperties": false
+    },
+    "StoredArtifactEvidence": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "enum": [
+            "attempt",
+            "observation",
+            "result",
+            "metrics",
+            "dataset",
+            "source",
+            "environment",
+            "other"
+          ]
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "storage_kind": {
+          "enum": [
+            "file",
+            "directory"
+          ]
+        },
+        "manifest_sha256": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "verified_at_ns": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)$"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "path",
+        "sha256",
+        "storage_kind",
+        "manifest_sha256",
+        "verified_at_ns"
+      ],
+      "additionalProperties": false
+    },
+    "AttemptArtifactEvidence": {
+      "type": "object",
+      "properties": {
+        "attempt_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "role": {
+          "type": "string",
+          "minLength": 1
+        },
+        "artifact_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "attempt_id",
+        "role",
+        "artifact_id"
+      ],
+      "additionalProperties": false
+    },
+    "ObservationArtifactEvidence": {
+      "type": "object",
+      "properties": {
+        "observation_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "role": {
+          "type": "string",
+          "minLength": 1
+        },
+        "artifact_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "observation_id",
+        "role",
+        "artifact_id"
+      ],
+      "additionalProperties": false
+    },
+    "EventEvidence": {
+      "type": "object",
+      "properties": {
+        "sequence": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "attempt_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "occurred_at_ns": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)$"
+        },
+        "kind": {
+          "type": "string",
+          "minLength": 1
+        },
+        "payload": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "sequence",
+        "attempt_id",
+        "occurred_at_ns",
+        "kind",
+        "payload"
+      ],
+      "additionalProperties": false
+    },
+    "FreshMemberEvidence": {
+      "type": "object",
+      "properties": {
+        "slot_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "resolved_run_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "measurement_index": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "schedule_index": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "control": {
+          "type": "object"
+        },
+        "observation_slot_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "slot_id",
+        "resolved_run_id",
+        "measurement_index",
+        "schedule_index",
+        "control",
+        "observation_slot_id"
+      ],
+      "additionalProperties": false
+    },
+    "FreshBudgetEvidence": {
+      "type": "object",
+      "properties": {
+        "attempt_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reserved_ns": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "charged_ns": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "attempt_id",
+        "reserved_ns",
+        "charged_ns"
+      ],
+      "additionalProperties": false
+    },
+    "FreshDispositionEvidence": {
+      "type": "object",
+      "properties": {
+        "slot_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "causing_attempt_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "slot_id",
+        "reason",
+        "causing_attempt_id"
+      ],
+      "additionalProperties": false
+    },
+    "FreshPolicyEvidence": {
+      "type": "object",
+      "properties": {
+        "resolved_run_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "measurement_index": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "policy": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "resolved_run_id",
+        "measurement_index",
+        "policy"
+      ],
+      "additionalProperties": false
+    },
+    "FreshSequenceProgress": {
+      "type": "object",
+      "properties": {
+        "resolved_specification_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "logical_specification_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "measurement_index": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "scheduled_points": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "accepted_points": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "consumed_time_ns": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "conservative_time_ns": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "status": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "resolved_specification_id",
+        "logical_specification_id",
+        "measurement_index",
+        "scheduled_points",
+        "accepted_points",
+        "consumed_time_ns",
+        "conservative_time_ns",
+        "status",
+        "reason"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

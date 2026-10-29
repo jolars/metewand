@@ -13,6 +13,9 @@ mod fault_injection;
 #[cfg(any(unix, windows))]
 pub(crate) mod platform_fs;
 
+/// Portable result archive creation, verification, and read-only import.
+#[cfg(any(unix, windows))]
+pub mod archive;
 #[cfg(any(unix, windows))]
 pub mod artifact_store;
 pub mod authoring;
@@ -23,6 +26,8 @@ pub mod build_evidence;
 pub mod datamonger;
 #[cfg(any(unix, windows))]
 pub mod dataset_materialization;
+#[cfg(any(unix, windows))]
+mod evidence;
 #[cfg(any(unix, windows))]
 pub mod export;
 #[cfg(any(unix, windows))]

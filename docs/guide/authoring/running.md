@@ -135,4 +135,39 @@ durations. A matching compatibility key does not establish equal hardware or
 scientific comparability. Choose aggregation and statistical summaries in your
 analysis tools.
 
+## Share stored results
+
+Create an archive after every started attempt has finished. Failed attempts and
+pending slots may remain. Creation reads committed evidence and leaves the run
+unchanged; it does not recover interrupted attempts.
+
+```sh
+metewand archive create --output-dir results --destination results.tar.gz
+metewand archive verify --archive results.tar.gz
+metewand archive import --archive results.tar.gz --destination imported
+metewand status --output-dir imported
+metewand export --output-dir imported --format csv --destination shared-tables
+```
+
+The archive retains stored records, results, evaluator metrics, profile snapshots
+and traces, failure history, and available provenance. It preserves external
+source and dataset identities without fetching their bytes. Verification works
+offline and checks the evidence's consistency and integrity without running
+benchmark code. It does not rerun the scientific evaluation or establish who
+produced the evidence.
+
+An imported collection supports `status`, `explain`, and `export` without the
+original checkout, cache, or run directory. It is read-only: resume, recovery,
+and `--rebuild-index` are unavailable. Export tables to a new directory outside
+the collection. Archive and import destinations must be new paths with existing
+parents; put the archive outside its source run or collection.
+
+Verify an imported collection again with `metewand archive verify --archive
+imported`. Verification and import allow up to one million files and 1 TiB of
+expanded payload by default, including metadata. Set `--max-entries N` and
+`--max-bytes N` to choose different limits. The target filesystem must support the
+stored filenames; import reports unsupported names or collisions without changing
+them. Matching archive contents preserve the recorded execution guarantees and
+timing scopes.
+
 The next part covers [other languages, artifacts, and profiles](extending.md).

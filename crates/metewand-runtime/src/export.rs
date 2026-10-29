@@ -20,19 +20,28 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 
-use crate::inspection::{Inspection, InspectionError};
+use crate::{
+    evidence::EvidenceSnapshot,
+    inspection::{Inspection, InspectionError},
+};
 
 /// A deterministic projection of one committed snapshot and its verified artifacts.
 pub struct ResultSet {
     root: PathBuf,
+    read_only: bool,
     pub records: Vec<ExportRecord>,
 }
 
 impl ResultSet {
     /// Reads authoritative evidence directly, ignoring any existing index.
     pub fn read(root: &Path) -> Result<Self, ExportError> {
+        let snapshot = EvidenceSnapshot::read(root)?;
+        Self::from_snapshot(&snapshot)
+    }
+
+    pub(crate) fn from_snapshot(snapshot: &EvidenceSnapshot) -> Result<Self, ExportError> {
         let mut inspection = Inspection::default();
-        inspection.add_store(root)?;
+        inspection.add_snapshot(snapshot)?;
         let graph = inspection.into_records();
         let mut records = Vec::new();
         for source in graph.values().filter(|record| {
@@ -60,7 +69,7 @@ impl ResultSet {
             let Some(trace) = manifest["trace"].as_str() else {
                 continue;
             };
-            let directory = safe_profile_path(root, directory)?;
+            let directory = safe_profile_path(&snapshot.data_root, directory)?;
             let path = safe_profile_path(&directory, trace)?;
             for (index, line) in fs::read(path)?
                 .split(|b| *b == b'\n')
@@ -100,7 +109,8 @@ impl ResultSet {
                 ))
         });
         Ok(Self {
-            root: fs::canonicalize(root)?,
+            root: snapshot.root.clone(),
+            read_only: snapshot.files.is_some(),
             records,
         })
     }
@@ -119,6 +129,9 @@ impl ResultSet {
     }
 
     fn index_target(&self) -> Result<PathBuf, ExportError> {
+        if self.read_only {
+            return Err(ExportError::ReadOnlyCollection);
+        }
         let target = self.root.join("index.jsonl");
         match fs::symlink_metadata(&target) {
             Ok(metadata) if !metadata.is_file() => return Err(ExportError::UnsafeIndex),
@@ -209,6 +222,9 @@ impl ResultSet {
                 .unwrap_or(Path::new("."));
             let parent = fs::canonicalize(parent)?;
             let target = parent.join(filename);
+            if self.read_only && target.starts_with(&self.root) {
+                return Err(ExportError::ReadOnlyCollection);
+            }
             manifest
                 .files
                 .insert(format.filename().into(), hex(&Sha256::digest(&data)));
@@ -660,6 +676,10 @@ fn csv(rows: &[TidyRow]) -> Result<Vec<u8>, ExportError> {
 
 #[derive(Debug, Error)]
 pub enum ExportError {
+    #[error(
+        "archive collections are read-only; export to a new destination without --rebuild-index"
+    )]
+    ReadOnlyCollection,
     #[error(transparent)]
     Inspection(#[from] InspectionError),
     #[error(transparent)]

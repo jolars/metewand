@@ -23,6 +23,9 @@ static CATALOG: Mutex<Option<SchemaCatalog>> = Mutex::new(None);
 /// A public version-1 schema entry point.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum PublicSchema {
+    ArchiveManifest,
+    ArchiveEvidence,
+    ArchiveOutput,
     /// Build-time inputs bound to an executable hash.
     BuildEvidence,
     ProfileObservationPolicy,
@@ -85,7 +88,10 @@ pub enum PublicSchema {
 }
 
 /// Every public schema entry point in stable presentation order.
-pub const PUBLIC_SCHEMAS: [PublicSchema; 31] = [
+pub const PUBLIC_SCHEMAS: [PublicSchema; 34] = [
+    PublicSchema::ArchiveManifest,
+    PublicSchema::ArchiveEvidence,
+    PublicSchema::ArchiveOutput,
     PublicSchema::BuildEvidence,
     PublicSchema::ProfileObservationPolicy,
     PublicSchema::BufferedManifest,
@@ -124,6 +130,9 @@ impl PublicSchema {
     #[must_use]
     pub const fn slug(self) -> &'static str {
         match self {
+            Self::ArchiveManifest => "archive-manifest",
+            Self::ArchiveEvidence => "archive-evidence",
+            Self::ArchiveOutput => "archive-output",
             Self::BuildEvidence => "build-evidence",
             Self::ProfileObservationPolicy => "profile-observation-policy",
             Self::BufferedManifest => "buffered-manifest",
@@ -170,6 +179,9 @@ impl PublicSchema {
     #[must_use]
     pub fn repository_path(self) -> &'static Path {
         Path::new(match self {
+            Self::ArchiveManifest => "schemas/v1/archive-manifest.schema.json",
+            Self::ArchiveEvidence => "schemas/v1/archive-evidence.schema.json",
+            Self::ArchiveOutput => "schemas/v1/archive-output.schema.json",
             Self::BuildEvidence => "schemas/v1/build-evidence.schema.json",
             Self::ProfileObservationPolicy => "schemas/v1/profile-observation-policy.schema.json",
             Self::BufferedManifest => "schemas/v1/buffered-manifest.schema.json",
@@ -212,6 +224,9 @@ impl PublicSchema {
     #[must_use]
     pub const fn id(self) -> &'static str {
         match self {
+            Self::ArchiveManifest => "metewand://schemas/v1/archive-manifest.schema.json",
+            Self::ArchiveEvidence => "metewand://schemas/v1/archive-evidence.schema.json",
+            Self::ArchiveOutput => "metewand://schemas/v1/archive-output.schema.json",
             Self::BuildEvidence => "metewand://schemas/v1/build-evidence.schema.json",
             Self::ProfileObservationPolicy => {
                 "metewand://schemas/v1/profile-observation-policy.schema.json"
@@ -264,6 +279,13 @@ impl PublicSchema {
     #[must_use]
     pub const fn source(self) -> &'static str {
         match self {
+            Self::ArchiveManifest => {
+                include_str!("../../../schemas/v1/archive-manifest.schema.json")
+            }
+            Self::ArchiveEvidence => {
+                include_str!("../../../schemas/v1/archive-evidence.schema.json")
+            }
+            Self::ArchiveOutput => include_str!("../../../schemas/v1/archive-output.schema.json"),
             Self::BuildEvidence => include_str!("../../../schemas/v1/build-evidence.schema.json"),
             Self::ProfileObservationPolicy => {
                 include_str!("../../../schemas/v1/profile-observation-policy.schema.json")

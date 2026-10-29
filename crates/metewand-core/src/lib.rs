@@ -1,6 +1,7 @@
 //! Core domain types, planning, scheduling, and run records for Metewand.
 
 pub mod applicability;
+pub mod archive;
 pub mod cache;
 pub mod canonical;
 pub mod comparison;

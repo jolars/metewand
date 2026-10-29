@@ -1,6 +1,81 @@
 {
   "version": 1,
   "valid": [
+    {
+      "name": "failed profile attempt with unavailable diagnostic details",
+      "schema": "attempt",
+      "instance": {
+        "schema_version": 1,
+        "id": "mw1-attempt-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "slot_id": "mw1-attempt-slot-2222222222222222222222222222222222222222222222222222222222222222",
+        "retry_index": 1,
+        "outcome": {
+          "kind": "failed",
+          "reason": "The trajectory failed after checkpoint publication.",
+          "diagnostic": {
+            "code": "worker_failed",
+            "message": "The trajectory failed after checkpoint publication.",
+            "details": null
+          }
+        },
+        "observations": [
+          "mw1-observation-cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        ],
+        "started_at": "2026-09-05T10:00:00Z",
+        "finished_at": "2026-09-05T10:00:01Z",
+        "provenance": {
+          "tool_version": "0.1.0",
+          "wire_protocol_version": 1,
+          "execution_semantics_version": 1,
+          "data": {
+            "machine": "fixture"
+          }
+        }
+      }
+    },
+    {
+      "name": "archive-manifest version 1",
+      "schema": "archive-manifest",
+      "instance": {
+        "schema_version": 1,
+        "tool_version": "0.2.0",
+        "files": [
+          {
+            "path": "evidence.json",
+            "sha256": "16bf24d404b6914dd084140cfc2ff9adc145ed6a3db2fe852f20b47f5bab0d6c",
+            "size_bytes": 33,
+            "executable": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "archive-evidence version 1",
+      "schema": "archive-evidence",
+      "instance": {
+        "schema_version": 1,
+        "records": []
+      }
+    },
+    {
+      "name": "archive-output version 1",
+      "schema": "archive-output",
+      "instance": {
+        "schema_version": 1,
+        "kind": "result",
+        "data": {
+          "command": "archive",
+          "schema_version": 1,
+          "operation": "verify",
+          "archive_path": "results.tar.gz",
+          "destination": null,
+          "manifest_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "files": 1,
+          "size_bytes": 33,
+          "records": 0
+        }
+      }
+    },
     {"name": "managed outputs declare scientific values without hashes", "schema": "managed-output-draft", "instance": {"schema_version": 1, "kind": "result", "data": {"answer": 8}, "files": []}},
     {
       "name": "native Windows worker environment records its private ACL policy",
@@ -2006,6 +2081,49 @@
     }
   ],
   "invalid": [
+    {
+      "name": "archive-manifest unsupported version",
+      "schema": "archive-manifest",
+      "instance": {
+        "schema_version": 2,
+        "tool_version": "0.2.0",
+        "files": [
+          {
+            "path": "evidence.json",
+            "sha256": "16bf24d404b6914dd084140cfc2ff9adc145ed6a3db2fe852f20b47f5bab0d6c",
+            "size_bytes": 33,
+            "executable": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "archive-evidence unsupported version",
+      "schema": "archive-evidence",
+      "instance": {
+        "schema_version": 2,
+        "records": []
+      }
+    },
+    {
+      "name": "archive-output unsupported version",
+      "schema": "archive-output",
+      "instance": {
+        "schema_version": 2,
+        "kind": "result",
+        "data": {
+          "command": "archive",
+          "schema_version": 1,
+          "operation": "verify",
+          "archive_path": "results.tar.gz",
+          "destination": null,
+          "manifest_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "files": 1,
+          "size_bytes": 33,
+          "records": 0
+        }
+      }
+    },
     {"name": "managed outputs reject unversioned drafts", "schema": "managed-output-draft", "instance": {"kind": "result", "data": {}, "files": []}},
     {"name": "evaluate-rejects-null-scientific-rules", "schema": "worker-protocol-message", "instance": {"id": "1", "method": "evaluate", "dataset_dir": "/dataset", "problem_contract_id": "mw1-problem-contract-example", "problem_parameters": {}, "problem_semantics": null, "result_dir": "/result", "metrics_path": "/metrics.json"}},
     {

@@ -238,3 +238,12 @@ Indexes and exports are rebuildable views, not acceptance authorities.
 Exports retain individual repetitions, failed attempts, scientific verdicts,
 timing scopes, compatibility evidence, and lineage. Statistical analysis and
 publication plotting belong downstream of the execution core.
+
+Portable result archives preserve a whole committed snapshot after every started
+attempt is terminal. They package versioned records and registered artifacts,
+including profile snapshots and traces. Offline verification checks identities,
+coordination relationships, inventories, and hashes. Imported collections support
+inspection and export without the original run directory or checkout. They remain
+read-only and retain the original execution guarantees. Archives preserve the
+recorded provenance of external sources and data without gathering their bytes or
+provisioning an environment for another execution.

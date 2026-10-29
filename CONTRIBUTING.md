@@ -201,6 +201,7 @@ release numbers are unnecessary. It is separate from public compatibility versio
   | Measurement provenance                                        | 3 for streaming, 2 for other deliveries; versions 1 and 2 remain readable |
   | Worker environment provenance                                 | 1 on Unix, 2 on Windows                                        |
   | Exports and build evidence                                    | 1                                                              |
+  | Portable result archives                                     | 1                                                              |
   | SQLite layout                                                 | 1 for one-shot, 2 for buffered profiles, 3 for fresh sequences and streaming |
 
 The binding API compatibility constant lives with the runtime adapters.
@@ -519,6 +520,43 @@ classification binds the particular record rather than establishing
 compatibility with unrelated records. Matching classes do not establish
 scientific comparability or equal hardware. The export manifest records lineage
 and the exact table hash; it is not a portable result archive.
+
+### Portable result archives
+
+`archive create` reads one committed snapshot whose started attempts are all
+terminal. It retains pending slots, applicability decisions, immutable attempt
+and transition history, observations and selections, artifact relationships,
+and fresh-sequence policies and accounting. It copies only registered artifacts.
+It does not recover the source, gather external source or input bytes, or include
+SQLite coordination files, indexes, staging directories, or orphan files.
+
+The version-1 archive is a gzip-compressed tar file containing `archive.json`,
+canonical `evidence.json`, and payloads beneath `data/`. The public schemas and
+core archive types define those boundaries independently of SQLite layouts.
+The manifest inventories every other file by normalized path, SHA-256, size,
+and original executable bit. The original bit remains evidence even on hosts
+that cannot represent it. Artifact verification uses it without changing the
+version-1 local-tree transcript. Canonical records, ordered members, fixed tar
+headers, and fixed gzip metadata make repeated creation deterministic for the
+same evidence and writer version.
+
+`archive verify` accepts either an archive file or an imported collection.
+Verification checks supported versions, canonical identities, attempt history,
+selection relationships, fresh accounting, and exact artifact inventories and
+hashes. It does not establish producer authenticity or rerun scientific
+evaluation. Extraction rejects links, special entries, explicit directory members,
+duplicate or unsafe paths, trailing payloads, and exceeded limits. Verification
+and import default to one million file entries and 1 TiB of expanded payload,
+including metadata; `--max-entries` and `--max-bytes` override those limits.
+Paths that the target filesystem cannot represent fail without renaming evidence.
+
+Creation and import use private staging and atomic publication without replacement.
+Their destinations need existing parents. Archive files must be outside their
+source run or collection. Import publishes a collection only after verification
+and synchronization. The shared reader supplies the same inspection and export
+projections for SQLite runs and collections. Collections reject run-store
+initialization and index rebuilding; table exports must use a new destination
+outside the collection. No SQLite layout or scientific identity version changes.
 
 ## Verification
 

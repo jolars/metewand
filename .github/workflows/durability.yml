@@ -14,6 +14,9 @@ on:
       - crates/metewand-runtime/Cargo.toml
       - crates/metewand-runtime/src/artifact_store.rs
       - crates/metewand-runtime/src/artifact_store/**
+      - crates/metewand-runtime/src/archive.rs
+      - crates/metewand-runtime/src/archive/**
+      - crates/metewand-runtime/src/evidence.rs
       - crates/metewand-runtime/src/durability.rs
       - crates/metewand-runtime/src/fault_injection.rs
       - crates/metewand-runtime/src/local_tree.rs
