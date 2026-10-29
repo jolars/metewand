@@ -6,6 +6,8 @@ use serde::{Deserialize, Serialize};
 
 /// Compatibility version of diagnostic measurement provenance.
 pub const MEASUREMENTS_VERSION: u32 = 2;
+/// Pause-aware streaming measurements, with explicit CPU coverage.
+pub const STREAMING_MEASUREMENTS_VERSION: u32 = 3;
 
 /// An executor-observed quantity in the unit named by its containing field.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -38,6 +40,8 @@ pub enum PartialReason {
     Interrupted,
     /// Descendants are not included in the observed process usage.
     ProcessOnly,
+    /// Sampling can miss short-lived or detached descendants.
+    SampledProcessTree,
 }
 
 /// Stable reasons for missing measurements.
@@ -97,7 +101,7 @@ impl Measurement {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AccountingScope {
-    /// The continuous implementation prepare/execute envelope.
+    /// The selected implementation preparation and execution intervals.
     PrepareAndExecute,
     /// The implementation execute exchange, excluding preparation.
     ExecuteOnly,
@@ -114,6 +118,12 @@ pub enum AccountingScope {
 pub struct ExecutionMeasurements {
     /// Compatibility version of this provenance payload.
     pub version: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub elapsed_wall_time_ns: Option<Measurement>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub paused_time_ns: Option<Measurement>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cpu_accounting: Option<String>,
     /// Shared dataset generation or transformation request, excluding launch.
     pub materialization_time_ns: Measurement,
     /// Implementation launch through completed hello negotiation.
@@ -124,7 +134,7 @@ pub struct ExecutionMeasurements {
     pub prepare_time_ns: Measurement,
     /// Complete execute exchange, including result writing and serialization.
     pub execute_request_time_ns: Measurement,
-    /// Continuous orchestrator-observed selected timing scope.
+    /// Executor-observed selected timing scope, excluding streaming pauses.
     pub timed_wall_time_ns: Measurement,
     /// Independent evaluate exchange, excluding metric validation.
     pub evaluation_time_ns: Measurement,
@@ -143,6 +153,9 @@ impl Default for ExecutionMeasurements {
         let not_started = Measurement::unavailable(MissingReason::NotStarted);
         Self {
             version: MEASUREMENTS_VERSION,
+            elapsed_wall_time_ns: None,
+            paused_time_ns: None,
+            cpu_accounting: None,
             materialization_time_ns: Measurement::unavailable(MissingReason::ProvidedDataset),
             worker_startup_time_ns: not_started,
             evaluator_startup_time_ns: not_started,

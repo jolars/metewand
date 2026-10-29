@@ -305,12 +305,10 @@ fn handshake_and_request_shapes_are_strict() {
     )
     .unwrap();
     let replies = responses(&output);
-    for index in [1, 2] {
+    for index in [1, 2, 3] {
         assert_eq!(replies[index]["error"]["code"], "invalid_request");
     }
-    for index in [3, 4] {
-        assert_eq!(replies[index]["error"]["code"], "unsupported_operation");
-    }
+    assert_eq!(replies[4]["error"]["code"], "unsupported_operation");
 }
 
 #[test]

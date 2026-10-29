@@ -212,9 +212,48 @@
               "schedule"
             ],
             "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "delivery": {
+                "const": "streaming_profile"
+              },
+              "measurement-basis": {
+                "const": "executor_observed"
+              },
+              "check-schedule": {
+                "type": "object",
+                "properties": {
+                  "every": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991
+                  },
+                  "start": {
+                    "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
+                  }
+                },
+                "required": [
+                  "every"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "delivery",
+              "measurement-basis",
+              "check-schedule"
+            ],
+            "additionalProperties": false
           }
         ]
       }
+    },
+    "max-checkpoint-bytes": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
     }
   },
   "required": [
@@ -542,6 +581,31 @@
           "max-trace-points",
           "max-buffer-bytes",
           "terminal-reserve-bytes"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "implementations": {
+            "additionalProperties": {
+              "not": {
+                "properties": {
+                  "delivery": {
+                    "const": "streaming_profile"
+                  }
+                },
+                "required": [
+                  "delivery"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "else": {
+        "required": [
+          "max-checkpoint-bytes"
         ]
       }
     }

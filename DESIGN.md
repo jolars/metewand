@@ -137,9 +137,15 @@ snapshots independently. Local provisional metrics help decide what to capture
 but do not replace trusted metrics. A named instrumented scope defines the
 clock's meaning, and exports keep that coordinate separate from wall time.
 
+Streaming profiles pause one trajectory at bounded checkpoints. The runner
+independently evaluates and durably publishes each snapshot before replying
+`continue` or `stop`. Executor-observed active time includes checkpoint
+serialization and excludes validation, evaluation, and publication pauses.
+Elapsed wall time and evaluation time remain separate evidence.
+
 Retries never splice trajectories together. Partial evidence can remain
-inspectable without satisfying the observation policy. Streaming delivery and
-checkpoint-state restoration are later work.
+inspectable without satisfying the observation policy. A streaming retry starts
+from clean state; it does not restore implementation state from a snapshot.
 
 ## Planning and identity
 

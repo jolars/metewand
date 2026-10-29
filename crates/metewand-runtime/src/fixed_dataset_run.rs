@@ -1,7 +1,9 @@
 //! Private execution of resolved fixed datasets.
 
 mod buffered;
-pub(crate) use buffered::{BufferedEvent, run_buffered};
+mod streaming;
+pub(crate) use buffered::run_buffered;
+pub(crate) use streaming::run_streaming;
 
 use std::{
     fs,
@@ -94,6 +96,16 @@ impl TimingEnvelope {
         self.finished = true;
         Ok(finished.duration_since(self.started.expect("the envelope starts before execution")))
     }
+}
+
+pub(crate) enum ProfileEvent<'a> {
+    Phase(crate::run_store::AttemptPhase),
+    Buffer {
+        directory: &'a Path,
+        manifest: &'a metewand_core::profile::BufferedManifest,
+    },
+    Observation(&'a mut FixedDatasetResult),
+    Stopped(metewand_core::profile::StopReason),
 }
 
 /// Fully resolved inputs for one fixed-dataset, one-shot measurement.
@@ -222,6 +234,7 @@ pub enum FixedDatasetRunOutcome {
 /// Technical failure classes retained before an attempt can be published.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum FixedDatasetFailureKind {
+    InvalidStream,
     InvalidBuffer,
     MetricDisagreement,
     ResourceLimit,
@@ -252,6 +265,7 @@ impl FixedDatasetFailureKind {
     #[must_use]
     pub const fn code(self) -> &'static str {
         match self {
+            Self::InvalidStream => "invalid_stream",
             Self::InvalidBuffer => "invalid_buffer",
             Self::MetricDisagreement => "metric_disagreement",
             Self::ResourceLimit => "resource_limit",
@@ -771,6 +785,8 @@ fn path_string(path: &Path) -> Result<String, FixedDatasetRunError> {
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum FixedDatasetRunError {
+    #[error("invalid streaming profile: {0}")]
+    InvalidStream(String),
     #[error("invalid buffered profile: {0}")]
     InvalidBuffer(String),
     #[error("provisional metrics disagree with independent evaluation: {0}")]
@@ -876,6 +892,7 @@ impl FixedDatasetRunError {
     #[must_use]
     pub fn failure_kind(&self) -> FixedDatasetFailureKind {
         match self {
+            Self::InvalidStream(_) => FixedDatasetFailureKind::InvalidStream,
             Self::InvalidBuffer(_) => FixedDatasetFailureKind::InvalidBuffer,
             Self::MetricDisagreement(_) => FixedDatasetFailureKind::MetricDisagreement,
             Self::DatasetMutation { .. } => FixedDatasetFailureKind::DatasetMutation,
@@ -916,7 +933,8 @@ fn classify_session(source: &WorkerSessionError, implementation: bool) -> FixedD
         } => FixedDatasetFailureKind::ControlEnforcementLost,
         WorkerSessionError::Timeout { .. } => FixedDatasetFailureKind::PhaseTimeout,
         WorkerSessionError::ScientificTimeout { .. } => FixedDatasetFailureKind::ScientificTimeout,
-        WorkerSessionError::ObservationControlMismatch
+        WorkerSessionError::StreamProtocol { .. }
+        | WorkerSessionError::ObservationControlMismatch
         | WorkerSessionError::ProtocolRead { .. }
         | WorkerSessionError::Response { .. }
         | WorkerSessionError::Handshake { .. }

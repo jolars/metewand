@@ -79,6 +79,7 @@ _FIELDS = {
     },
     "execute": {"result_dir": "string"},
     "execute_buffered": {"result_root": "string", "profile": "object"},
+    "execute_stream": {"result_root": "string", "profile": "object"},
     "reset": {},
     "evaluate": {
         "dataset_dir": "string",
@@ -95,6 +96,7 @@ _METHODS = {
         "prepare",
         "execute",
         "execute_buffered",
+        "execute_stream",
         "reset",
         "shutdown",
     },
@@ -182,7 +184,8 @@ def _completed_manifest(directory, manifest):
 
 
 class _Dispatcher:
-    def __init__(self, worker, role, metadata):
+    def __init__(self, worker, role, metadata, exchange=None):
+        self.exchange = exchange
         self.worker = worker
         self.role = role
         self.ready = False
@@ -235,6 +238,8 @@ class _Dispatcher:
                     capabilities.append("one_shot")
                 if "execute_buffered" in self.worker.binding_callbacks:
                     capabilities.append("buffered_profile")
+                if "execute_stream" in self.worker.binding_callbacks:
+                    capabilities.append("streaming_profile")
                 if self.applicability:
                     capabilities.append("applicability")
                 if self.fresh_sequence:
@@ -317,6 +322,16 @@ class _Dispatcher:
             if control is not None:
                 response["observation_control"] = control
             return response
+        elif method == "execute_stream":
+            if "execute_stream" not in self.worker.binding_callbacks:
+                raise WorkerError("unsupported_operation", "Streaming execution is not implemented.")
+            if not self.prepared:
+                raise WorkerError("invalid_request", "Streaming execution requires preparation.")
+            self.prepared = False
+            from ._streaming import StreamingContext
+            stream = StreamingContext(request["profile"], Path(request["result_root"]), request["id"], self.exchange)
+            self.worker.execute_stream(stream)
+            return {"checkpoint_count": stream.count}
         elif method == "execute_buffered":
             if "execute_buffered" not in self.worker.binding_callbacks:
                 raise WorkerError(
@@ -395,7 +410,11 @@ def _encode_failure(request_id, error):
 
 
 def _serve(worker, role, reader, writer, *, metadata, initialize=None):
-    dispatcher = _Dispatcher(worker, role, metadata)
+    def exchange(checkpoint):
+        writer.write(_encode_response(checkpoint))
+        writer.flush()
+        return _read_frame(reader)
+    dispatcher = _Dispatcher(worker, role, metadata, exchange)
     while True:
         request = _read_frame(reader)
         # Check the envelope before attempting to build any failure response.

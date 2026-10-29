@@ -449,12 +449,12 @@ pub(super) fn commit_terminal_in(
 ) -> Result<TerminalAttempt, RunStoreError> {
     if matches!(outcome, TerminalOutcome::Accepted) {
         let buffered: bool = tx.query_row(
-            "SELECT kind IN ('buffered','fresh_observation') FROM attempt_slots WHERE id=?1",
+            "SELECT kind IN ('buffered','fresh_observation','stream') FROM attempt_slots WHERE id=?1",
             [attempt.slot().to_string()],
             |r| r.get(0),
         )?;
         if buffered {
-            tx.execute("INSERT INTO selected_observations SELECT slot_id,id,1,?2 FROM observations WHERE producing_attempt_id=?1 AND valid=1",params![attempt.id().to_string(),timestamp(now_ns)?])?;
+            tx.execute("INSERT INTO selected_observations SELECT slot_id,id,1,?2 FROM observations WHERE producing_attempt_id=?1 AND valid=1 ON CONFLICT(slot_id) DO NOTHING",params![attempt.id().to_string(),timestamp(now_ns)?])?;
         }
     }
     let now = timestamp(now_ns)?.max(timestamp(attempt.updated_at_ns)?);
@@ -705,7 +705,7 @@ pub(super) fn validate_acceptance(
     if total == 0 {
         return Err(invalid("measurement requires observation slots"));
     }
-    if kind == "buffered" || kind == "fresh_observation" {
+    if kind == "buffered" || kind == "fresh_observation" || kind == "stream" {
         let produced: i64 = tx.query_row(
             "SELECT count(*) FROM observations WHERE producing_attempt_id=?1 AND valid=1",
             [attempt.id().to_string()],

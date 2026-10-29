@@ -291,10 +291,10 @@ impl AttemptExecution {
         Ok((prepared.observation, published.artifact.relative_path))
     }
 
-    pub fn publish_buffered(&mut self, record: &mut RunAttemptRecord) -> Result<String, RunError> {
+    pub fn publish_profile(&mut self, record: &mut RunAttemptRecord) -> Result<String, RunError> {
         use metewand_core::records::ProfileAttemptStatus;
-        let RunAttemptOutcome::Buffered { status, .. } = &mut record.outcome else {
-            return Err(RunError::Unsupported("expected buffered outcome".into()));
+        let RunAttemptOutcome::Profile { status, .. } = &mut record.outcome else {
+            return Err(RunError::Unsupported("expected profile outcome".into()));
         };
         if *status == ProfileAttemptStatus::Accepted {
             let mut owned = self.owned.lock().expect("lease owner lock");
@@ -369,7 +369,7 @@ impl Drop for AttemptExecution {
 
 fn terminal(outcome: &RunAttemptOutcome) -> Result<TerminalOutcome, RunError> {
     Ok(match outcome {
-        RunAttemptOutcome::Buffered {
+        RunAttemptOutcome::Profile {
             status,
             reason,
             diagnostic,
@@ -383,7 +383,7 @@ fn terminal(outcome: &RunAttemptOutcome) -> Result<TerminalOutcome, RunError> {
             metewand_core::records::ProfileAttemptStatus::Failed => TerminalOutcome::Failed {
                 code: diagnostic
                     .as_ref()
-                    .map_or("buffered_failure", |d| d.code.as_str())
+                    .map_or("profile_failure", |d| d.code.as_str())
                     .to_owned(),
                 details: CanonicalValue::try_from(serde_json::json!({"message":reason}))?,
             },

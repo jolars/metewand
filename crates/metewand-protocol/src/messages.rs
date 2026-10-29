@@ -8,6 +8,11 @@ use thiserror::Error;
 
 use crate::{WIRE_PROTOCOL_VERSION, framing::MAX_LINE_BYTES};
 
+mod streaming;
+pub use streaming::{
+    ExecuteStreamRequest, ExecuteStreamResponse, StreamAction, StreamCheckpoint, StreamDecision,
+};
+
 const RESOLVED_WORKER_PREFIX: &str = "mw1-resolved-worker-";
 const MAX_SAFE_INTEGER: u64 = (1_u64 << 53) - 1;
 
@@ -1710,6 +1715,7 @@ pub fn validate_hello_response(
                 | Capability::BufferedProfile
                 | Capability::FreshSequence
                 | Capability::ManagedOutputs
+                | Capability::StreamingProfile
         )
     }) {
         return Err(HandshakeError::ReservedCapability {

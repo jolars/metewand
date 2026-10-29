@@ -61,7 +61,7 @@ pub fn observation_document(
 ///
 /// Rejects unsupported timestamps and values outside canonical JSON.
 pub fn attempt_document(record: &RunAttemptRecord) -> Result<CanonicalValue, RunDocumentError> {
-    if let RunAttemptOutcome::Buffered {
+    if let RunAttemptOutcome::Profile {
         status,
         observations,
         reason,
@@ -75,7 +75,7 @@ pub fn attempt_document(record: &RunAttemptRecord) -> Result<CanonicalValue, Run
         )?);
     }
     let (outcome, observation) = match &record.outcome {
-        RunAttemptOutcome::Buffered { .. } => unreachable!("handled buffered outcome"),
+        RunAttemptOutcome::Profile { .. } => unreachable!("handled buffered outcome"),
         RunAttemptOutcome::Censored {
             reason,
             observation,

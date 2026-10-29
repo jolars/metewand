@@ -116,6 +116,7 @@ impl Inspection {
                         "implementation": provenance["execution"]["implementation_parameters"]})
                 };
                 rows.push(metewand_core::comparison::ComparisonRow {
+                    profile: document.get("profile").cloned(),
                     candidate_id,
                     attempt_id: attempt.id.clone(),
                     observation_id: observation.map(|o| o.id.clone()),

@@ -1,8 +1,9 @@
 use metewand_protocol::{
     Acknowledgement, EvaluateRequest, EvaluateResponse, ExecuteRequest, ExecuteResponse,
-    HelloRequest, HelloResponse, MaterializeRequest, MaterializeResponse, PrepareRequest,
-    ResetRequest, ShutdownRequest, WireMessage, WorkerFailure, WorkerFailureResponse,
-    decode_message, encode_message, framing::FrameReader,
+    ExecuteStreamRequest, ExecuteStreamResponse, HelloRequest, HelloResponse, MaterializeRequest,
+    MaterializeResponse, PrepareRequest, ResetRequest, ShutdownRequest, StreamCheckpoint,
+    StreamDecision, WireMessage, WorkerFailure, WorkerFailureResponse, decode_message,
+    encode_message, framing::FrameReader,
 };
 use serde_json::Value;
 
@@ -140,6 +141,10 @@ fn version_one_messages_preserve_the_gate3_compatibility_boundary() {
             "hello-response" => decode_message::<HelloResponse>(message).is_ok(),
             "execute-request" => decode_message::<ExecuteRequest>(message).is_ok(),
             "execute-response" => decode_message::<ExecuteResponse>(message).is_ok(),
+            "execute-stream-request" => decode_message::<ExecuteStreamRequest>(message).is_ok(),
+            "execute-stream-response" => decode_message::<ExecuteStreamResponse>(message).is_ok(),
+            "stream-checkpoint" => decode_message::<StreamCheckpoint>(message).is_ok(),
+            "stream-decision" => decode_message::<StreamDecision>(message).is_ok(),
             kind => panic!("uncovered compatibility message: {kind}"),
         };
         assert_eq!(accepted, valid, "{}", vector["name"]);
@@ -148,6 +153,10 @@ fn version_one_messages_preserve_the_gate3_compatibility_boundary() {
                 "hello-response" => round_trip::<HelloResponse>(frame),
                 "execute-request" => round_trip::<ExecuteRequest>(frame),
                 "execute-response" => round_trip::<ExecuteResponse>(frame),
+                "execute-stream-request" => round_trip::<ExecuteStreamRequest>(frame),
+                "execute-stream-response" => round_trip::<ExecuteStreamResponse>(frame),
+                "stream-checkpoint" => round_trip::<StreamCheckpoint>(frame),
+                "stream-decision" => round_trip::<StreamDecision>(frame),
                 kind => panic!("uncovered compatibility message: {kind}"),
             }
         }

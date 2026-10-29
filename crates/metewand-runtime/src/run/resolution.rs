@@ -71,6 +71,7 @@ pub(super) struct ResolvedBatch {
 
 pub(super) struct ResolvedCandidate {
     pub profile: Option<metewand_core::profile::SelectedBufferedProfile>,
+    pub streaming_profile: Option<metewand_core::profile::SelectedStreamingProfile>,
     pub fresh_profile: Option<metewand_core::profile::ProfilePolicy>,
     pub experiment: String,
     pub logical_selection_ids: Vec<String>,
@@ -735,6 +736,15 @@ fn resolve_candidate(
         }
         _ => None,
     });
+    let streaming_profile = binding.and_then(|(policy, binding)| match binding {
+        metewand_core::profile::ProfileBinding::Streaming(binding) => {
+            Some(metewand_core::profile::SelectedStreamingProfile {
+                policy: policy.clone(),
+                check_schedule: binding.check_schedule.clone(),
+            })
+        }
+        _ => None,
+    });
     let fresh_profile = binding.and_then(|(policy, binding)| {
         matches!(binding, metewand_core::profile::ProfileBinding::Fresh(_)).then(|| policy.clone())
     });
@@ -813,7 +823,12 @@ fn resolve_candidate(
                         .specification
                         .record
                         .implementation_repetition,
-                    measurement_index: logical_observation.record.measurement_index,
+                    measurement_index: streaming_profile.as_ref().map_or(
+                        logical_observation.record.measurement_index,
+                        |profile| {
+                            profile.measurement_index(logical_observation.record.measurement_index)
+                        },
+                    ),
                 },
                 scheduling_priority: slot.record.scheduling_priority,
             };
@@ -826,7 +841,7 @@ fn resolve_candidate(
                 logical_slot: observation_slot,
                 specification: resolved.id,
             })?;
-            let provenance = canonical(json!({
+            let mut provenance = canonical(json!({
                 "comparison": comparison,
                 "applicability": applicability.record,
                 "controls": metewand_core::controls::local_control_report(&policy),
@@ -872,7 +887,21 @@ fn resolve_candidate(
                 "cpu_model": null, "selected_cores": null, "memory": null, "kernel": null,
                 "language_runtime": null, "blas": null, "thread_settings": null,
             }))?;
-            let bound = profile.as_ref().map_or(1, |p| p.policy.max_observations);
+            if let Some(streaming) = &streaming_profile {
+                let mut value = provenance.as_json().clone();
+                value["streaming_profile"] =
+                    serde_json::to_value(streaming).expect("selected stream");
+                provenance = canonical(value)?;
+            }
+            let bound = profile
+                .as_ref()
+                .map(|p| p.policy.max_observations)
+                .or_else(|| {
+                    streaming_profile
+                        .as_ref()
+                        .map(|p| p.policy.max_observations)
+                })
+                .unwrap_or(1);
             let observation_slots = specification
                 .observation_slots
                 .iter()
@@ -929,6 +958,8 @@ fn resolve_candidate(
     let reuse_key = crate::worker_reuse::WorkerReuseKey {
         selected_capabilities: vec![if fresh_profile.is_some() {
             metewand_protocol::Capability::FreshSequence
+        } else if streaming_profile.is_some() {
+            metewand_protocol::Capability::StreamingProfile
         } else if profile.is_some() {
             metewand_protocol::Capability::BufferedProfile
         } else {
@@ -942,6 +973,7 @@ fn resolve_candidate(
     Ok(ResolvedCandidate {
         profile,
         fresh_profile,
+        streaming_profile,
         experiment: experiment.name.to_string(),
         applicability,
         logical_selection_ids: std::iter::once(candidate.candidate.id.to_string())

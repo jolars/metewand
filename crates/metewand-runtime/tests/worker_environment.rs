@@ -78,34 +78,56 @@ fn fixture_worker() {
     let mut request = String::new();
     let mut read = BufReader::new(read);
     read.read_line(&mut request).unwrap();
-    if mode == "managed-output" {
+    if matches!(mode.as_str(), "managed-output" | "stream-managed-output") {
+        let streaming = mode == "stream-managed-output";
         let hello: serde_json::Value = serde_json::from_str(&request).unwrap();
         writeln!(
             write,
             "{}",
             json!({"id": hello["id"], "ok": true, "protocol": 1,
-                "worker_id": hello["worker_id"], "sdk": null,
-                "capabilities": ["one_shot", "managed_outputs"]})
+            "worker_id": hello["worker_id"], "sdk": null,
+            "capabilities": if streaming {
+                json!(["streaming_profile", "managed_outputs"])
+            } else {
+                json!(["one_shot", "managed_outputs"])
+            }})
         )
         .unwrap();
         request.clear();
         read.read_line(&mut request).unwrap();
         let execute: serde_json::Value = serde_json::from_str(&request).unwrap();
-        assert_eq!(execute["method"], "execute");
-        let output = std::path::Path::new(execute["result_dir"].as_str().unwrap());
+        assert_eq!(
+            execute["method"],
+            if streaming {
+                "execute_stream"
+            } else {
+                "execute"
+            }
+        );
+        let output = if streaming {
+            let directory = std::path::Path::new(execute["result_root"].as_str().unwrap())
+                .join("checkpoints/0");
+            fs::create_dir_all(&directory).unwrap();
+            directory
+        } else {
+            execute["result_dir"].as_str().unwrap().into()
+        };
         fs::write(
             output.join("draft.json"),
             br#"{"schema_version":1,"kind":"result","data":{},"files":[]}"#,
         )
         .unwrap();
-        std::os::unix::fs::symlink("draft.json", output.join(&secret)).unwrap();
-        writeln!(
-            write,
-            "{}",
+        let response = if streaming {
+            fs::write(output.join(format!("{secret}\\artifact")), b"data").unwrap();
+            json!({"id": execute["id"], "event": "checkpoint", "sequence": 0,
+                "check_index": 0, "work": {}, "terminal": false,
+                "draft": "checkpoints/0/draft.json"})
+        } else {
+            std::os::unix::fs::symlink("draft.json", output.join(&secret)).unwrap();
             json!({"id": execute["id"], "ok": true, "draft": "draft.json",
                 "implementation_time_ns": null, "statistics": {}})
-        )
-        .unwrap();
+        };
+        writeln!(write, "{}", response).unwrap();
         return;
     }
     if mode == "malformed" {
@@ -396,6 +418,64 @@ fn managed_output_finalization_errors_redact_secret_filenames() {
             format!("{error:?}"),
             format!("{source:?}"),
         ] {
+            assert!(!diagnostic.contains(secret), "{diagnostic}");
+            assert!(diagnostic.contains("[REDACTED]"), "{diagnostic}");
+        }
+        assert!(matches!(
+            session.reset(),
+            Err(WorkerSessionError::SessionUnusable)
+        ));
+        assert_eq!(fs::read_dir(root.path()).unwrap().count(), 0);
+    }
+}
+
+#[test]
+fn streaming_managed_output_finalization_errors_redact_secret_filenames() {
+    use metewand_protocol::Capability;
+
+    let root = tempfile::tempdir().unwrap();
+    for secret in ["artifact-secret", "secret-with-quote-\"-and-unicode-å"] {
+        let output = tempfile::tempdir().unwrap();
+        let mut launch = launch("stream-managed-output");
+        launch
+            .environment_variables
+            .insert("TOKEN".into(), SECRET_TEMPLATE.into());
+        let secrets =
+            WorkerSecrets::new(BTreeMap::from([("TOKEN".into(), secret.into())])).unwrap();
+        let process = LocalProcessExecutor::new(Duration::ZERO)
+            .spawn_with_secrets(
+                &launch,
+                root.path(),
+                WorkerLogLimits::new(1024, 1024),
+                ExecutorRequirements::default(),
+                &secrets,
+            )
+            .unwrap();
+        let mut session = WorkerSession::connect(
+            process,
+            WorkerRole::Implementation,
+            "mw1-resolved-worker-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+                .parse()
+                .unwrap(),
+            &[Capability::StreamingProfile, Capability::ManagedOutputs],
+            PhaseTimeouts::default(),
+        )
+        .unwrap();
+        let error = session
+            .start_stream(
+                output.path().to_str().unwrap().into(),
+                json!({"policy": {"max-observations": 1, "max-checkpoint-bytes": 4096}}),
+            )
+            .err()
+            .expect("expected a managed output finalization error");
+        let WorkerSessionError::StreamProtocol { message } = &error else {
+            panic!("expected a streaming protocol error: {error:?}");
+        };
+        assert_eq!(
+            message,
+            "output path `[REDACTED]\\artifact` must be normalized, relative UTF-8 without backslashes"
+        );
+        for diagnostic in [error.to_string(), format!("{error:?}")] {
             assert!(!diagnostic.contains(secret), "{diagnostic}");
             assert!(diagnostic.contains("[REDACTED]"), "{diagnostic}");
         }

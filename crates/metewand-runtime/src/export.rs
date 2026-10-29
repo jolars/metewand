@@ -342,6 +342,16 @@ fn project(
     } else {
         selected_profile.map(|p|json!({"delivery":"buffered_profile","measurement_basis":"instrumented","instrumented_scope":p["instrumented_scope"],"clock":"monotonic_ns","scope":p["scope"]}))
     };
+    let profile_class = if document["profile"]["delivery"] == "streaming_profile"
+        || provenance["data"]["profile"]["buffer"]["delivery"] == "streaming_profile"
+        || context.get("streaming_profile").is_some()
+    {
+        Some(
+            json!({"delivery":"streaming_profile","measurement_basis":"executor_observed","clock":"active_wall_time","excluded_phases":["checkpoint_validation","evaluation","publication","stop_acknowledgment"]}),
+        )
+    } else {
+        profile_class
+    };
     let mut compatibility = CompatibilityClass {
         profile: profile_class,
         execution_semantics_version: provenance["execution_semantics_version"]
@@ -363,7 +373,13 @@ fn project(
         measurements_version: measurements["version"]
             .as_u64()
             .and_then(|n| n.try_into().ok()),
-        accounting: json!({"cpu_time_scope": measurements["cpu_time_scope"], "peak_rss_scope": measurements["peak_rss_scope"], "cpu_time": coverage(&measurements["cpu_time_ns"]), "peak_rss": coverage(&measurements["peak_rss_bytes"])}),
+        accounting: {
+            let mut accounting = json!({"cpu_time_scope": measurements["cpu_time_scope"], "peak_rss_scope": measurements["peak_rss_scope"], "cpu_time": coverage(&measurements["cpu_time_ns"]), "peak_rss": coverage(&measurements["peak_rss_bytes"])});
+            if let Some(source) = measurements.get("cpu_accounting") {
+                accounting["cpu_accounting"] = source.clone();
+            }
+            accounting
+        },
         unclassified_record: None,
     };
     if compatibility.execution_semantics_version.is_none()
@@ -583,6 +599,9 @@ fn csv(rows: &[TidyRow]) -> Result<Vec<u8>, ExportError> {
         "metric_unit",
         "metric_direction",
         "instrumented_time_ns",
+        "active_time_ns",
+        "elapsed_wall_time_ns",
+        "checkpoint_sequence",
         "instrumented_total_time_ns",
         "provisional_metric_name",
         "provisional_metric_value",

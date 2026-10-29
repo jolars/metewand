@@ -126,6 +126,11 @@ class _Callbacks:
         self.context.observer = trace
         _invoke(self.binding_callbacks["execute_buffered"], self.state, self.context)
 
+    def execute_stream(self, stream):
+        self.context.budget = None
+        self.context.stream = stream
+        _invoke(self.binding_callbacks["execute_stream"], self.state, self.context)
+
 
 def _evaluation(value, semantics=None):
     if isinstance(value, binding.Evaluation):
@@ -212,6 +217,7 @@ def serve_bindings(*, api_version, role, callbacks, metadata):
             "shutdown",
             "check_applicability",
             "execute_buffered",
+            "execute_stream",
         }
         if role == "implementation"
         else {"materialize"}
@@ -224,10 +230,10 @@ def serve_bindings(*, api_version, role, callbacks, metadata):
         raise TypeError("Unsupported or noncallable worker callback.")
     if role == "implementation":
         if "prepare" not in callbacks or not (
-            {"execute", "execute_buffered"} & set(callbacks)
+            {"execute", "execute_buffered", "execute_stream"} & set(callbacks)
         ):
             raise TypeError(
-                "Implementations require prepare and execute or execute_buffered callbacks."
+                "Implementations require prepare and an execution callback."
             )
         worker = _Callbacks(callbacks)
     elif role == "dataset_materializer":

@@ -1,19 +1,10 @@
 use super::*;
 use metewand_core::{
+    profile::SelectedBufferedProfile,
     profile::{BufferedDelivery, InstrumentedBasis},
-    profile::{BufferedManifest, SelectedBufferedProfile},
     records::BufferedObservationRecord,
 };
 use serde_json::json;
-
-pub(crate) enum BufferedEvent<'a> {
-    Phase(crate::run_store::AttemptPhase),
-    Buffer {
-        directory: &'a Path,
-        manifest: &'a BufferedManifest,
-    },
-    Observation(&'a mut FixedDatasetResult),
-}
 
 pub(crate) fn run_buffered(
     request: FixedDatasetRun<'_>,
@@ -21,7 +12,7 @@ pub(crate) fn run_buffered(
     view: &DatasetView,
     measurements: &mut ExecutionMeasurements,
     session: Option<&mut WorkerSession>,
-    event: &mut dyn FnMut(BufferedEvent<'_>) -> Result<(), FixedDatasetRunError>,
+    event: &mut dyn FnMut(ProfileEvent<'_>) -> Result<(), FixedDatasetRunError>,
 ) -> Result<(), FixedDatasetRunError> {
     let mut timing = TimingEnvelope::new(request.timing)?;
     let integrity = DatasetIntegrity {
@@ -55,7 +46,7 @@ fn run_workers(
     measurements: &mut ExecutionMeasurements,
     timing: &mut TimingEnvelope,
     session: Option<&mut WorkerSession>,
-    event: &mut dyn FnMut(BufferedEvent<'_>) -> Result<(), FixedDatasetRunError>,
+    event: &mut dyn FnMut(ProfileEvent<'_>) -> Result<(), FixedDatasetRunError>,
 ) -> Result<(), FixedDatasetRunError> {
     measurements.cpu_time_scope = match request.timing.scope {
         TimingScope::ColdEndToEnd => AccountingScope::WorkerLifetimeThroughExecute,
@@ -104,7 +95,7 @@ fn run_workers(
             .expect("a fresh execution owns its session"),
     };
 
-    event(BufferedEvent::Phase(
+    event(ProfileEvent::Phase(
         crate::run_store::AttemptPhase::Preparing,
     ))?;
     let mut baseline = None;
@@ -132,7 +123,7 @@ fn run_workers(
         }
         prepared
     })?;
-    event(BufferedEvent::Phase(
+    event(ProfileEvent::Phase(
         crate::run_store::AttemptPhase::Executing,
     ))?;
     let (executed, timed_wall_time) = integrity.operation("implementation execute", || {
@@ -170,7 +161,7 @@ fn run_workers(
     })?;
     implementation.set_scientific_deadline(None);
 
-    event(BufferedEvent::Phase(
+    event(ProfileEvent::Phase(
         crate::run_store::AttemptPhase::Validating,
     ))?;
     let (manifest, trace) = crate::buffered::validate_buffer(
@@ -209,7 +200,7 @@ fn run_workers(
             .validate_execution_result(&directory, &response, request.result_schema)
             .map_err(|source| FixedDatasetRunError::InvalidResult { source })?;
     }
-    event(BufferedEvent::Buffer {
+    event(ProfileEvent::Buffer {
         directory: frozen.path(),
         manifest: &manifest,
     })?;
@@ -263,7 +254,7 @@ fn run_workers(
         "controls": metewand_core::controls::default_local_control_report(),
     });
 
-    event(BufferedEvent::Phase(
+    event(ProfileEvent::Phase(
         crate::run_store::AttemptPhase::Evaluating,
     ))?;
     let implementation_output = implementation.log_snapshot();
@@ -386,7 +377,7 @@ fn run_workers(
             result_output,
             metrics_output,
         };
-        event(BufferedEvent::Observation(&mut result))?;
+        event(ProfileEvent::Observation(&mut result))?;
         for (name, tolerance) in &profile.scope.metric_agreement {
             let local = point
                 .provisional_metrics

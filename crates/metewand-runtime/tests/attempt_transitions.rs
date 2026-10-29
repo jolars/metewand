@@ -771,7 +771,7 @@ fn acceptance_requires_selected_complete_valid_observations_from_this_one_shot()
 }
 
 #[test]
-fn stream_can_reuse_selected_checkpoint_but_one_shot_retry_cannot() {
+fn retries_cannot_accept_another_attempts_selected_checkpoints() {
     for kind in ["stream", "one_shot", "fresh_observation"] {
         let (_root, mut store, db) = setup_slot(kind, "measurement");
         add_measurement(&db);
@@ -821,7 +821,7 @@ fn stream_can_reuse_selected_checkpoint_but_one_shot_retry_cannot() {
             .attempt;
         let result =
             store.commit_finalization(&next, TerminalOutcome::Accepted, artifact("next"), &[], 23);
-        assert_eq!(result.is_ok(), kind == "stream", "{kind}");
+        assert!(result.is_err(), "{kind}");
         assert_eq!(count(&db, "observations"), 1);
         assert_eq!(count(&db, "selected_observations"), 1);
         assert_eq!(

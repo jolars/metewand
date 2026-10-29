@@ -4,7 +4,23 @@
     { "version": 1, "cpu_time_scope": "prepare_and_execute" },
     { "version": 2, "cpu_time_scope": "prepare_and_execute" },
     { "version": 2, "cpu_time_scope": "execute_only" },
-    { "version": 2, "cpu_time_scope": "worker_lifetime_through_execute" }
+    { "version": 2, "cpu_time_scope": "worker_lifetime_through_execute" },
+    {
+      "version": 3,
+      "cpu_time_scope": "execute_only",
+      "cpu_accounting": "linux_proc_process_group_sampled",
+      "cpu_time_ns": {"status": "partial", "value": 1000, "reason": "sampled_process_tree"},
+      "elapsed_wall_time_ns": {"status": "complete", "value": 12000},
+      "paused_time_ns": {"status": "complete", "value": 2000}
+    },
+    {
+      "version": 3,
+      "cpu_time_scope": "worker_lifetime_through_execute",
+      "cpu_accounting": "windows_job_object",
+      "cpu_time_ns": {"status": "complete", "value": 1000},
+      "elapsed_wall_time_ns": {"status": "complete", "value": 12000},
+      "paused_time_ns": {"status": "complete", "value": 2000}
+    }
   ],
   "invalid": [
     { "version": 1, "cpu_time_scope": "execute_only" },

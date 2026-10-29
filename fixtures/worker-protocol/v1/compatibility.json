@@ -44,13 +44,13 @@
       "frame": "{\"id\":\"1\",\"method\":\"check_applicability\",\"result_dir\":\"/result\"}\n"
     },
     {
-      "name": "execute rejects unimplemented execute_stream",
+      "name": "execute requests cannot use the streaming method",
       "message_type": "execute-request",
       "valid": false,
       "frame": "{\"id\":\"1\",\"method\":\"execute_stream\",\"result_dir\":\"/result\"}\n"
     },
     {
-      "name": "execute rejects unimplemented execute_buffered",
+      "name": "execute requests cannot use the buffered method",
       "message_type": "execute-request",
       "valid": false,
       "frame": "{\"id\":\"1\",\"method\":\"execute_buffered\",\"result_dir\":\"/result\"}\n"
@@ -72,6 +72,54 @@
       "message_type": "execute-response",
       "valid": false,
       "frame": "{\"id\":\"1\",\"implementation_time_ns\":null,\"ok\":true,\"result\":{\"manifest\":\"result.json\"},\"statistics\":{},\"trace\":{\"manifest\":\"trace.json\"}}\n"
+    },
+    {
+      "name": "streaming execution is negotiated under version 1",
+      "message_type": "execute-stream-request",
+      "valid": true,
+      "frame": "{\"id\":\"1\",\"method\":\"execute_stream\",\"profile\":{\"check_schedule\":{\"every\":1,\"start\":0},\"policy\":{\"max-active-time\":\"1 s\",\"max-checkpoint-bytes\":4096,\"max-observations\":2}},\"result_root\":\"/result\"}\n"
+    },
+    {
+      "name": "checkpoint names a completed snapshot",
+      "message_type": "stream-checkpoint",
+      "valid": true,
+      "frame": "{\"check_index\":1,\"event\":\"checkpoint\",\"id\":\"1\",\"manifest\":\"checkpoints/0/result.json\",\"sequence\":0,\"terminal\":false,\"work\":{\"updates\":1}}\n"
+    },
+    {
+      "name": "checkpoint can negotiate managed result finalization",
+      "message_type": "stream-checkpoint",
+      "valid": true,
+      "frame": "{\"check_index\":1,\"draft\":\"checkpoints/0/.metewand-output.json\",\"event\":\"checkpoint\",\"id\":\"1\",\"sequence\":0,\"terminal\":false,\"work\":{\"updates\":1}}\n"
+    },
+    {
+      "name": "checkpoint cannot name both a draft and a manifest",
+      "message_type": "stream-checkpoint",
+      "valid": false,
+      "frame": "{\"check_index\":1,\"draft\":\"checkpoints/0/.metewand-output.json\",\"event\":\"checkpoint\",\"id\":\"1\",\"manifest\":\"checkpoints/0/result.json\",\"sequence\":0,\"terminal\":false,\"work\":{\"updates\":1}}\n"
+    },
+    {
+      "name": "checkpoint requires a snapshot",
+      "message_type": "stream-checkpoint",
+      "valid": false,
+      "frame": "{\"check_index\":1,\"event\":\"checkpoint\",\"id\":\"1\",\"sequence\":0,\"terminal\":false,\"work\":{\"updates\":1}}\n"
+    },
+    {
+      "name": "continue correlates the checkpoint sequence",
+      "message_type": "stream-decision",
+      "valid": true,
+      "frame": "{\"action\":\"continue\",\"id\":\"1\",\"method\":\"stream_decision\",\"sequence\":0}\n"
+    },
+    {
+      "name": "stop retains its policy reason",
+      "message_type": "stream-decision",
+      "valid": true,
+      "frame": "{\"action\":\"stop\",\"id\":\"1\",\"method\":\"stream_decision\",\"reason\":\"fixed_count\",\"sequence\":1}\n"
+    },
+    {
+      "name": "terminal streaming response confirms checkpoint count",
+      "message_type": "execute-stream-response",
+      "valid": true,
+      "frame": "{\"checkpoint_count\":2,\"id\":\"1\",\"ok\":true}\n"
     }
   ]
 }

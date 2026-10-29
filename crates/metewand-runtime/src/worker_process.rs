@@ -629,6 +629,24 @@ impl WorkerProcess {
         self.child.lock().expect("worker child lock poisoned").id()
     }
 
+    pub(crate) fn tree_source(&self) -> crate::resource_accounting::TreeSource {
+        #[cfg(target_os = "linux")]
+        {
+            crate::resource_accounting::TreeSource::Linux(self.id())
+        }
+        #[cfg(windows)]
+        {
+            self.group
+                .accounting_handle()
+                .map(crate::resource_accounting::TreeSource::Windows)
+                .unwrap_or(crate::resource_accounting::TreeSource::Unavailable)
+        }
+        #[cfg(not(any(target_os = "linux", windows)))]
+        {
+            crate::resource_accounting::TreeSource::Unavailable
+        }
+    }
+
     /// Checks whether the worker has exited without blocking.
     ///
     /// # Errors

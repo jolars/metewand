@@ -3,6 +3,7 @@
   "extensions": [
     {
       "name": "manifest streaming-profile selection",
+      "valid": true,
       "template": "complete one-shot benchmark manifest",
       "pointer": "/implementations/native",
       "field": "capabilities",

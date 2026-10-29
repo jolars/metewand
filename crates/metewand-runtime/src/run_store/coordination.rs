@@ -73,6 +73,24 @@ impl RunStore {
         )
     }
 
+    pub fn register_streaming(
+        &mut self,
+        candidate: RecordId<LogicalCandidateRecord>,
+        run: &IdentifiedRecord<ResolvedOneShotSpecificationRecord>,
+        attempt: &IdentifiedRecord<ResolvedAttemptSlotRecord>,
+        observations: &[IdentifiedRecord<ResolvedObservationSlotRecord>],
+    ) -> Result<(), RunStoreError> {
+        let version: u32 = self
+            .connection
+            .pragma_query_value(None, "user_version", |r| r.get(0))?;
+        if version != super::FRESH_RUN_STORE_SCHEMA_VERSION {
+            return Err(invalid(
+                "streaming profiles require a version-3 output directory",
+            ));
+        }
+        self.register_execution(candidate, run, attempt, observations, "stream")
+    }
+
     pub fn register_buffered(
         &mut self,
         candidate: RecordId<LogicalCandidateRecord>,
@@ -319,7 +337,42 @@ impl RunStore {
             }
             tx.execute("INSERT INTO selected_observations VALUES (?1, ?2, 1, ?3) ON CONFLICT(slot_id) DO NOTHING", params![observation.record.slot.to_string(), observation.id.to_string(), now])?;
         }
+        if let Some(metewand_core::records::ProfileObservationRecord::Streaming(profile)) =
+            &observation.record.profile
+        {
+            let kind: String = tx.query_row(
+                "SELECT kind FROM attempt_slots WHERE id=?1",
+                [attempt.slot().to_string()],
+                |r| r.get(0),
+            )?;
+            let count: i64 = tx.query_row(
+                "SELECT count(*) FROM events WHERE attempt_id=?1 AND kind='stream_checkpoint'",
+                [attempt.id().to_string()],
+                |r| r.get(0),
+            )?;
+            if kind != "stream" || select || count as u64 != profile.checkpoint_sequence {
+                return Err(invalid(
+                    "streaming checkpoint must commit once, in sequence, without selection",
+                ));
+            }
+            let payload = metewand_core::canonical::CanonicalValue::try_from(
+                json!({"observation_id":observation.id,"checkpoint":profile}),
+            )?
+            .to_canonical_bytes()?;
+            #[cfg(test)]
+            crate::fault_injection::hit("stream.checkpoint.before_commit");
+            tx.execute("INSERT INTO events(attempt_id,occurred_at_ns,kind,payload_json) VALUES (?1,?2,'stream_checkpoint',?3)", params![attempt.id().to_string(), now, String::from_utf8(payload).expect("canonical UTF-8")])?;
+        }
         tx.commit()?;
+        #[cfg(test)]
+        if matches!(
+            observation.record.profile,
+            Some(metewand_core::records::ProfileObservationRecord::Streaming(
+                _
+            ))
+        ) {
+            crate::fault_injection::hit("stream.checkpoint.after_commit");
+        }
         Ok(())
     }
 }

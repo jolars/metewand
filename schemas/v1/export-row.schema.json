@@ -10,6 +10,9 @@
     {
       "type": "object",
       "properties": {
+        "active_time_ns": {"$ref": "common.schema.json#/$defs/safe_nonnegative_integer"},
+        "elapsed_wall_time_ns": {"$ref": "common.schema.json#/$defs/safe_nonnegative_integer"},
+        "checkpoint_sequence": {"$ref": "common.schema.json#/$defs/safe_nonnegative_integer"},
         "metric_name": {
           "anyOf": [
             {

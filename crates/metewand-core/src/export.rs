@@ -77,6 +77,12 @@ pub struct ExportRecord {
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct TidyRow {
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub active_time_ns: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub elapsed_wall_time_ns: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub checkpoint_sequence: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub instrumented_time_ns: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub instrumented_total_time_ns: Option<u64>,
@@ -159,6 +165,9 @@ impl ExportRecord {
                     .and_then(|name| profile.and_then(|p| p["provisional_metrics"].pointer(name)))
                     .cloned();
                 TidyRow {
+                    active_time_ns: profile.and_then(|p| p["active_time_ns"].as_u64()),
+                    elapsed_wall_time_ns: profile.and_then(|p| p["elapsed_wall_time_ns"].as_u64()),
+                    checkpoint_sequence: profile.and_then(|p| p["checkpoint_sequence"].as_u64()),
                     instrumented_time_ns: profile.and_then(|p| p["instrumented_time_ns"].as_u64()),
                     instrumented_total_time_ns: profile
                         .and_then(|p| p["instrumented_total_time_ns"].as_u64()),

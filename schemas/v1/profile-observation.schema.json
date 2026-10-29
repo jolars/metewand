@@ -83,6 +83,92 @@
         "observation_control"
       ],
       "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "delivery": {
+          "const": "streaming_profile"
+        },
+        "measurement_basis": {
+          "const": "executor_observed"
+        },
+        "checkpoint_sequence": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "check_index": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "work": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "terminal": {
+          "type": "boolean"
+        },
+        "thresholds": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          }
+        },
+        "active_time_ns": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "elapsed_wall_time_ns": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "evaluation_time_ns": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "decision": {
+          "enum": [
+            "continue",
+            "stop"
+          ]
+        },
+        "stop_reason": {
+          "enum": [
+            null,
+            "target_reached",
+            "fixed_count",
+            "trace_limit",
+            "observation_limit",
+            "byte_limit",
+            "active_time_limit",
+            "implementation_stopped"
+          ]
+        }
+      },
+      "required": [
+        "delivery",
+        "measurement_basis",
+        "checkpoint_sequence",
+        "check_index",
+        "work",
+        "terminal",
+        "thresholds",
+        "active_time_ns",
+        "elapsed_wall_time_ns",
+        "evaluation_time_ns",
+        "decision",
+        "stop_reason"
+      ],
+      "additionalProperties": false
     }
   ]
 }

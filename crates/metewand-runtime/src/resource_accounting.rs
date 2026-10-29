@@ -2,6 +2,29 @@
 
 use metewand_core::measurements::{Measurement, MissingReason, PartialReason};
 
+mod tree;
+pub(crate) use tree::{TreeMonitor, TreeSource};
+
+pub(crate) fn streaming_controls(
+    policy: &metewand_core::records::ExecutionPolicyRecord,
+    source: Option<&str>,
+) -> Vec<metewand_core::controls::ControlRecord> {
+    use metewand_core::controls::{ControlStatus, local_control_report};
+    let mut controls = local_control_report(policy);
+    if let Some(control) = controls
+        .iter_mut()
+        .find(|c| c.name == "process_tree_accounting")
+    {
+        control.status = match source {
+            Some("linux_proc_process_group_sampled") => ControlStatus::BestEffort,
+            Some("windows_job_object") => ControlStatus::Enforced,
+            _ => ControlStatus::Unsupported,
+        };
+        control.scope = "selected_active_intervals";
+    }
+    controls
+}
+
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct ProcessUsage {
     cpu_time_ns: Option<u64>,

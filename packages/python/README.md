@@ -63,6 +63,12 @@ and optional `observation_control`. Optional fields can be added without
 changing signatures. Path fields are `pathlib.Path` values. The CLI never sets
 scientific random generators automatically.
 
+Cooperative solvers can register `execute_stream(state, context)` and use
+`context.stream.checkpoint(progress, snapshot)` to pause for an independently
+evaluated decision. The CLI supplies this helper within binding API 1. See the
+[streaming example](../../examples/streaming-profile) for bounded policies,
+result snapshots, stopping, and clean-state retries.
+
 Optional `result(output, context)` converts solver output after diagnostic solve
 timing. `statistics(output, context)` returns diagnostics. `reset(state,
 context)` releases slot state, and `shutdown(state, context)` releases resources.

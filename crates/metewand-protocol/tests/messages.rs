@@ -622,7 +622,7 @@ fn handshake_validation_checks_request_worker_and_selected_capabilities() {
 }
 
 #[test]
-fn later_subprotocol_capabilities_can_be_reported_but_not_selected() {
+fn reported_capabilities_are_selected_explicitly() {
     let request = HelloRequest::new(
         RequestId::from_str("0").expect("request ID must be valid"),
         WorkerRole::Implementation,
@@ -649,13 +649,12 @@ fn later_subprotocol_capabilities_can_be_reported_but_not_selected() {
             .selected_capabilities(),
         &[Capability::FreshSequence]
     );
-    {
-        let reserved = Capability::StreamingProfile;
-        assert!(matches!(
-            validate_hello_response(&request, &response, &[reserved]),
-            Err(HandshakeError::ReservedCapability { capability }) if capability == reserved
-        ));
-    }
+    assert_eq!(
+        validate_hello_response(&request, &response, &[Capability::StreamingProfile])
+            .unwrap()
+            .selected_capabilities(),
+        &[Capability::StreamingProfile]
+    );
 }
 
 #[test]

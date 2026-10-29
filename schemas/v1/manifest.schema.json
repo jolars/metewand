@@ -251,11 +251,12 @@
         "parameter-defaults": { "type": "object" },
         "capabilities": {
           "type": "array",
-          "items": {"enum": ["one_shot", "applicability", "buffered_profile", "fresh_sequence"]},
+          "items": {"enum": ["one_shot", "applicability", "buffered_profile", "fresh_sequence", "streaming_profile"]},
           "contains": {"enum": [
             "one_shot",
             "buffered_profile",
-            "fresh_sequence"
+            "fresh_sequence",
+            "streaming_profile"
           ]},
           "uniqueItems": true
         }

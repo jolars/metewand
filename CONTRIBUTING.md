@@ -198,10 +198,10 @@ release numbers are unnecessary. It is separate from public compatibility versio
   | Language binding API                                        | 1                                                              |
   | Seed derivation and scheduling policy                         | 1                                                              |
   | Execution semantics                                           | 2                                                              |
-  | Measurement provenance                                        | 2, with version-1 evidence still readable                      |
+  | Measurement provenance                                        | 3 for streaming, 2 for other deliveries; versions 1 and 2 remain readable |
   | Worker environment provenance                                 | 1 on Unix, 2 on Windows                                        |
   | Exports and build evidence                                    | 1                                                              |
-  | SQLite layout                                                 | 1 for one-shot, 2 for buffered profiles, 3 for fresh sequences |
+  | SQLite layout                                                 | 1 for one-shot, 2 for buffered profiles, 3 for fresh sequences and streaming |
 
 The binding API compatibility constant lives with the runtime adapters.
 The constants live with their authoritative types in core, protocol, and
@@ -266,7 +266,7 @@ and `worker_sdk` module retain their API names for compatibility.
 Implementations prepare and execute, with optional reset and shutdown hooks.
 Materializers and evaluators serve separate roles. Evaluators that negotiate
 `problem_semantics` receive the resolved scientific rules. Applicability, fresh
-sequences, and buffered execution require their respective capabilities;
+sequences, buffered execution, and streaming require their respective capabilities;
 one-shot messages retain their supported shapes.
 
 Worker failures use `invalid_request`, `unsupported_operation`,
@@ -353,6 +353,14 @@ RSS covers its lifetime through execution, even for execute-only timing.
 CPU and peak-RSS evidence is unavailable on macOS and Windows. Historical
 unavailable fields remain unavailable.
 
+Streaming measurements use provenance version 3 and retain active, elapsed,
+paused, and evaluation time separately. Linux streaming CPU includes sampled
+process-group members and remains partial because short-lived or detached
+children may be missed. Windows streaming CPU uses Job Object totals, including
+terminated children. macOS streaming CPU and non-Linux peak RSS remain
+unavailable. Accounting excludes checkpoint pauses, and its source and coverage
+remain explicit. Other delivery modes retain their version-2 accounting.
+
 Fresh sequences reserve cumulative time per repetition, commit stopping
 decisions with accepted points, and retain skipped slot dispositions. Resume
 preserves accepted points and budget evidence. Unknown interrupted time retains
@@ -363,6 +371,30 @@ and active time. Retain local metrics as provisional evidence and independently
 evaluate snapshots. Named instrumented scopes must be authorized by the problem.
 Partial observations do not satisfy a retry, and acceptance selects observations
 from one producing attempt. Never splice trajectories across retries.
+
+Streaming profiles negotiate `streaming_profile` within wire protocol 1. One
+`execute_stream` request remains pending through contiguous checkpoint and
+decision sequences. Each snapshot uses a distinct contained directory, and its
+manifest and files must fit `max-checkpoint-bytes`. A scheduled checkpoint or
+explicit terminal checkpoint consumes one observation. Trusted evaluator metrics
+determine threshold crossings and stopping; provisional worker metrics do not.
+
+Pause the active clock after checkpoint serialization and managed-output
+finalization. Validate and freeze the snapshot, independently evaluate it, and
+commit the observation and decision in one fenced transaction after artifact
+publication. Only then send the decision. Resume active wall and process-tree
+CPU accounting before `continue`; exclude the final `stop` acknowledgment and
+bound it with the shutdown deadline. The execution-policy timeout and profile
+active bound apply to cumulative active intervals, while execute deadlines bound
+individual exchanges and evaluation retains its own deadline. Cooperative
+adapters must quiesce all solver work while waiting.
+
+Streaming reuses layout 3 without migrating historical stores. Committed
+checkpoints survive later failure, but a saved `stop` decision does not prove
+worker acknowledgment or terminal success. Successful finalization selects one
+attempt's trajectory atomically. Resume skips accepted streams; an explicit
+retry starts a new clean trajectory. The capability extension and distinct
+delivery identity preserve existing identity vectors and execution semantics.
 
 ## Build evidence
 
@@ -429,8 +461,8 @@ recovery. Directories alone never prove acceptance.
 Recovery verifies claims and published outcomes, preserves accepted selections,
 and records interrupted work without manufacturing success. Repeating recovery
 is idempotent. Retries allocate distinct indices and attempt IDs. Buffered
-acceptance selects one trajectory atomically; fresh acceptance also settles its
-budget and stopping effect.
+and streaming acceptance select one trajectory atomically; fresh acceptance also
+settles its budget and stopping effect.
 
 Inspection copies a stable database and WAL to private storage and reads a
 committed snapshot. It never opens the original through a mutating initializer,

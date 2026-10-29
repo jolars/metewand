@@ -62,6 +62,10 @@ fn claim(store: &mut RunStore, attempt: &OwnedAttempt) -> OwnedAttempt {
 }
 
 fn seed(store: &RunStore, measurement: bool) {
+    seed_kind(store, measurement, false);
+}
+
+fn seed_kind(store: &RunStore, measurement: bool, streaming: bool) {
     store
         .connection
         .execute_batch(
@@ -82,7 +86,9 @@ fn seed(store: &RunStore, measurement: bool) {
                 (
                     slot(index).to_string(),
                     if measurement { "measurement" } else { "warmup" },
-                    if buffered {
+                    if streaming {
+                        "stream"
+                    } else if buffered {
                         "buffered"
                     } else if version == 3 {
                         "fresh_observation"
@@ -93,7 +99,7 @@ fn seed(store: &RunStore, measurement: bool) {
             )
             .unwrap();
     }
-    if version == 3 {
+    if version == 3 && !streaming {
         let policy=json!({"metric":"gap","direction":"at_most","threshold":0,"max-observations":2,"max-active-time":"1 ms"}).to_string();
         store
             .connection
@@ -159,7 +165,21 @@ fn observe(store: &mut RunStore, attempt: &OwnedAttempt, now: u64) -> String {
         )
         .unwrap();
     }
+    let streaming: bool = tx
+        .query_row(
+            "SELECT kind='stream' FROM attempt_slots WHERE id=?1",
+            [attempt.slot().to_string()],
+            |r| r.get(0),
+        )
+        .unwrap();
+    if streaming {
+        crate::fault_injection::hit("stream.checkpoint.before_commit");
+        tx.execute("INSERT INTO events(attempt_id,occurred_at_ns,kind,payload_json) VALUES (?1,?2,'stream_checkpoint',?3)",params![attempt.id().to_string(),now as i64,json!({"observation_id":id,"sequence":0,"decision":"stop","reason":"fixed_count"}).to_string()]).unwrap();
+    }
     tx.commit().unwrap();
+    if streaming {
+        crate::fault_injection::hit("stream.checkpoint.after_commit");
+    }
     artifact.id
 }
 
@@ -167,7 +187,7 @@ fn prepare(root: &Path, scenario: &str) {
     if scenario.starts_with("initialize") {
         return;
     }
-    let mut store = if scenario.starts_with("fresh-") {
+    let mut store = if scenario.starts_with("fresh-") || scenario.starts_with("stream-") {
         RunStore::open_fresh(root)
     } else if scenario.starts_with("buffered-") {
         RunStore::open_buffered(root)
@@ -175,7 +195,11 @@ fn prepare(root: &Path, scenario: &str) {
         RunStore::open(root)
     }
     .unwrap();
-    seed(&store, !scenario.starts_with("concurrent"));
+    seed_kind(
+        &store,
+        !scenario.starts_with("concurrent"),
+        scenario.starts_with("stream-"),
+    );
     if !scenario.starts_with("recover-") {
         return;
     }
@@ -225,9 +249,11 @@ fn prepare(root: &Path, scenario: &str) {
 
 fn publish(store: &mut RunStore, scenario: &str) {
     let fresh = scenario.starts_with("fresh-");
+    let streaming = scenario.starts_with("stream-");
     let scenario = scenario
         .strip_prefix("buffered-")
         .or_else(|| scenario.strip_prefix("fresh-"))
+        .or_else(|| scenario.strip_prefix("stream-"))
         .unwrap_or(scenario);
     let mut attempt = reserve(store);
     if fresh {
@@ -258,6 +284,11 @@ fn publish(store: &mut RunStore, scenario: &str) {
         .publish_artifact(&attempt, ArtifactKind::Dataset, payload, || 21)
         .unwrap();
     let observation = observe(store, &attempt, 22);
+    if streaming {
+        // Recovery must not infer delivery or acknowledgment from the saved decision.
+        crate::fault_injection::hit("stream.decision.before_send");
+        crate::fault_injection::hit("stream.decision.after_receive");
+    }
     if fresh {
         store
             .record_fresh_time(
@@ -549,7 +580,9 @@ fn audit(root: &Path, scenario: &str) {
         "observations",
         "selected_observations",
     ];
-    if super::fresh::supported(&store.connection).unwrap() {
+    if super::fresh::supported(&store.connection).unwrap()
+        && count(&store.connection, "fresh_sequences") > 0
+    {
         tables.extend([
             "fresh_sequences",
             "fresh_members",
@@ -769,6 +802,9 @@ fn every_durability_boundary_survives_process_death_and_resume() {
         "fresh-failed",
         "buffered-accepted",
         "buffered-censored",
+        "stream-accepted",
+        "stream-censored",
+        "stream-failed",
         "accepted",
         "censored",
         "superseded",
@@ -1079,4 +1115,33 @@ fn fresh_time_reservation_refunds_only_on_terminal_commit() {
     assert_eq!(progress.consumed_time_ns, 1_000_000);
     assert_eq!(progress.conservative_time_ns, 999_975);
     assert!(store.recover(|| 201).unwrap().terminals.is_empty());
+}
+
+#[test]
+fn streaming_publication_and_decisions_survive_process_death_without_splicing() {
+    let fixture = tempfile::tempdir().unwrap();
+    prepare(fixture.path(), "stream-accepted");
+    let baseline = tempfile::tempdir().unwrap();
+    copy_fixture(fixture.path(), baseline.path());
+    let (output, boundaries) = run(baseline.path(), "stream-accepted", 0);
+    assert!(output.status.success(), "{output:?}");
+    for boundary in [
+        "stream.checkpoint.before_commit",
+        "stream.checkpoint.after_commit",
+        "stream.decision.before_send",
+        "stream.decision.after_receive",
+        "finalization.outcome.after",
+        "finalization.projection.before",
+        "finalization.after",
+    ] {
+        let target = boundaries.iter().position(|p| p == boundary).unwrap() + 1;
+        let root = tempfile::tempdir().unwrap();
+        copy_fixture(fixture.path(), root.path());
+        let (output, _) = run(root.path(), "stream-accepted", target);
+        assert_eq!(output.status.code(), Some(86), "{boundary}: {output:?}");
+        audit(root.path(), "stream-accepted");
+        let store = RunStore::open(root.path()).unwrap();
+        let producers:i64 = store.connection.query_row("SELECT count(DISTINCT o.producing_attempt_id) FROM selected_observations s JOIN observations o ON o.id=s.observation_id",[],|r|r.get(0)).unwrap();
+        assert_eq!(producers, 1);
+    }
 }

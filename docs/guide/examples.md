@@ -17,6 +17,7 @@ example's README for its working directory and dependencies.
 | [Generated dataset](https://github.com/jolars/metewand/tree/main/examples/generated-dataset) | Materialize datasets and write custom artifacts. |
 | [Fresh sequences](https://github.com/jolars/metewand/tree/main/examples/fresh-sequence) | Compare black-box solvers over clean runs with independent targets. |
 | [Buffered profiles](https://github.com/jolars/metewand/tree/main/examples/buffered-profile) | Instrument a trajectory and evaluate selected snapshots. |
+| [Streaming profiles](https://github.com/jolars/metewand/tree/main/examples/streaming-profile) | Pause at checkpoints for independent evaluation and durable stopping decisions. |
 
 The [full example collection](https://github.com/jolars/metewand/tree/main/examples)
 also includes dataset-free problems, raw protocol workers, real-package

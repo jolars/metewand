@@ -663,6 +663,7 @@ fn implementation_capability(capability: ImplementationCapability) -> &'static s
         ImplementationCapability::Applicability => "applicability",
         ImplementationCapability::FreshSequence => "fresh_sequence",
         ImplementationCapability::BufferedProfile => "buffered_profile",
+        ImplementationCapability::StreamingProfile => "streaming_profile",
     }
 }
 

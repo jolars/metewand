@@ -1793,6 +1793,14 @@ fn render_run_report(report: &RunReport) -> String {
         }
         for observation in &attempt.observations {
             match &observation.profile {
+                metewand_core::records::ProfileObservationRecord::Streaming(profile) => writeln!(
+                    output,
+                    "  checkpoint {}: active {} ns, elapsed {} ns; evaluator metrics {}",
+                    profile.checkpoint_sequence,
+                    profile.active_time_ns,
+                    profile.elapsed_wall_time_ns,
+                    observation.metrics
+                ),
                 metewand_core::records::ProfileObservationRecord::Buffered(profile) => writeln!(
                     output,
                     "  observation {}: instrumented {} ns, scope {}; evaluator metrics {}",
@@ -2027,6 +2035,7 @@ fn implementation_capability(capability: ImplementationCapability) -> &'static s
         ImplementationCapability::Applicability => "applicability",
         ImplementationCapability::BufferedProfile => "buffered_profile",
         ImplementationCapability::FreshSequence => "fresh_sequence",
+        ImplementationCapability::StreamingProfile => "streaming_profile",
     }
 }
 

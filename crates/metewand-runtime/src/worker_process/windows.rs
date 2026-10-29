@@ -343,6 +343,9 @@ pub(super) fn abort_spawn(child: &mut Child) {
 pub(super) struct ProcessGroup(OwnedHandle);
 
 impl ProcessGroup {
+    pub(super) fn accounting_handle(&self) -> Option<OwnedHandle> {
+        self.0.try_clone().ok()
+    }
     fn new() -> io::Result<Self> {
         let job = owned(unsafe { CreateJobObjectW(null(), null()) })?;
         let mut limits: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = unsafe { zeroed() };

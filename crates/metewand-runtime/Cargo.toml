@@ -60,5 +60,9 @@ name = "buffered-worker"
 path = "../../examples/buffered-profile/main.rs"
 
 [[example]]
+name = "streaming-worker"
+path = "../../examples/streaming-profile/main.rs"
+
+[[example]]
 name = "overhead-worker"
 path = "../../examples/overhead/main.rs"

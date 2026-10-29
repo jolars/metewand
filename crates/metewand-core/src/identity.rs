@@ -414,6 +414,7 @@ fn implementation_capability(value: ImplementationCapability) -> &'static str {
         ImplementationCapability::Applicability => "applicability",
         ImplementationCapability::FreshSequence => "fresh_sequence",
         ImplementationCapability::BufferedProfile => "buffered_profile",
+        ImplementationCapability::StreamingProfile => "streaming_profile",
     }
 }
 

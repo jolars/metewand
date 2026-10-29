@@ -8,6 +8,8 @@ use crate::run_output::RunDiagnostic;
 /// One observation, or an attempt that produced no observation.
 #[derive(Clone, Debug, Serialize)]
 pub struct ComparisonRow {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub profile: Option<Value>,
     pub candidate_id: String,
     pub attempt_id: String,
     pub observation_id: Option<String>,

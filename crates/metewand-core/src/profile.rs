@@ -39,6 +39,12 @@ pub struct ProfilePolicy {
         skip_serializing_if = "is_zero",
         deserialize_with = "positive_bound"
     )]
+    pub max_checkpoint_bytes: u64,
+    #[serde(
+        default,
+        skip_serializing_if = "is_zero",
+        deserialize_with = "positive_bound"
+    )]
     pub max_trace_points: u64,
     #[serde(
         default,
@@ -327,23 +333,27 @@ pub struct BufferFile {
 pub enum ProfileBinding {
     Buffered(BufferedBinding),
     Fresh(FreshBinding),
+    Streaming(StreamingBinding),
 }
 
 impl ProfileBinding {
-    pub fn schema(&self) -> &SchemaDeclaration {
+    pub fn schema(&self) -> Option<&SchemaDeclaration> {
         match self {
-            Self::Buffered(b) => &b.instrumentation_schema,
-            Self::Fresh(b) => &b.control_schema,
+            Self::Buffered(b) => Some(&b.instrumentation_schema),
+            Self::Fresh(b) => Some(&b.control_schema),
+            Self::Streaming(_) => None,
         }
     }
-    pub fn schema_mut(&mut self) -> &mut SchemaDeclaration {
+    pub fn schema_mut(&mut self) -> Option<&mut SchemaDeclaration> {
         match self {
-            Self::Buffered(b) => &mut b.instrumentation_schema,
-            Self::Fresh(b) => &mut b.control_schema,
+            Self::Buffered(b) => Some(&mut b.instrumentation_schema),
+            Self::Fresh(b) => Some(&mut b.control_schema),
+            Self::Streaming(_) => None,
         }
     }
     pub fn declaration_value(&self) -> Value {
         match self {
+            Self::Streaming(b) => serde_json::to_value(b).expect("stream binding"),
             Self::Buffered(b) => serde_json::json!({
                 "delivery":b.delivery,"measurement-basis":b.measurement_basis,"instrumented-scope":b.instrumented_scope,
                 "instrumentation-schema":b.instrumentation_schema.declaration_value(),"instrumentation":b.instrumentation,"check-schedule":b.check_schedule
@@ -355,6 +365,16 @@ impl ProfileBinding {
     }
     pub fn validate(&self, policy: &ProfilePolicy) -> Result<(), String> {
         match self {
+            Self::Streaming(b) => {
+                if policy.max_checkpoint_bytes == 0
+                    || policy.max_checkpoint_bytes > MAX_SAFE_INTEGER
+                {
+                    return Err(
+                        "streaming profiles require a positive safe max-checkpoint-bytes".into(),
+                    );
+                }
+                b.check_schedule.validate()?;
+            }
             Self::Buffered(b) => {
                 policy.validate_buffered()?;
                 if b.instrumented_scope.is_empty()
@@ -378,6 +398,64 @@ impl ProfileBinding {
             }
         }
         Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct StreamingBinding {
+    pub delivery: StreamingDelivery,
+    pub measurement_basis: ExecutorBasis,
+    pub check_schedule: CheckSchedule,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum StreamingDelivery {
+    StreamingProfile,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct SelectedStreamingProfile {
+    pub policy: ProfilePolicy,
+    pub check_schedule: CheckSchedule,
+}
+
+impl SelectedStreamingProfile {
+    /// Maps a planned checkpoint slot to its measurement repetition.
+    pub fn measurement_index(&self, slot_index: u64) -> u64 {
+        slot_index / self.policy.max_observations
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct StreamingObservationRecord {
+    pub delivery: StreamingDelivery,
+    pub measurement_basis: ExecutorBasis,
+    pub checkpoint_sequence: u64,
+    pub check_index: u64,
+    pub work: BTreeMap<String, u64>,
+    pub terminal: bool,
+    pub thresholds: Vec<f64>,
+    pub active_time_ns: u64,
+    pub elapsed_wall_time_ns: u64,
+    pub evaluation_time_ns: u64,
+    pub decision: String,
+    pub stop_reason: Option<StopReason>,
+}
+
+impl CheckSchedule {
+    pub fn validate(&self) -> Result<(), String> {
+        if self.every == 0 || self.every > MAX_SAFE_INTEGER || self.start > MAX_SAFE_INTEGER {
+            return Err("check schedules require a positive safe interval and safe start".into());
+        }
+        Ok(())
+    }
+
+    pub fn includes(&self, index: u64) -> bool {
+        index >= self.start && (index - self.start).is_multiple_of(self.every)
     }
 }
 

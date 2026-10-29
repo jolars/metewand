@@ -325,7 +325,7 @@
             "reason": {
               "enum": [
                 "interrupted",
-                "process_only"
+                "process_only", "sampled_process_tree"
               ]
             }
           },
@@ -365,8 +365,11 @@
       "type": "object",
       "properties": {
         "version": {
-          "enum": [1, 2]
+          "enum": [1, 2, 3]
         },
+        "elapsed_wall_time_ns": {"$ref": "#/$defs/measurement"},
+        "paused_time_ns": {"$ref": "#/$defs/measurement"},
+        "cpu_accounting": {"enum": ["linux_proc_process_group_sampled", "windows_job_object", "unavailable"]},
         "materialization_time_ns": {
           "$ref": "#/$defs/measurement"
         },
@@ -419,13 +422,15 @@
         {
           "if": { "properties": { "version": { "const": 1 } } },
           "then": { "properties": { "cpu_time_scope": { "const": "prepare_and_execute" } } }
-        }
+        },
+        {"if": {"properties": {"version": {"const": 3}}}, "then": {"required": ["elapsed_wall_time_ns", "paused_time_ns", "cpu_accounting"]}}
       ],
       "additionalProperties": false
     },
     "comparison_row": {
       "type": "object",
       "properties": {
+        "profile": {"$ref": "profile-observation.schema.json"},
         "candidate_id": {
           "type": "string"
         },

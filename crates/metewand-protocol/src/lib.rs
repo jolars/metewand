@@ -7,13 +7,14 @@ pub use messages::{
     Acknowledgement, ApplicabilityOutcome, Capability, CheckApplicabilityRequest,
     CheckApplicabilityResponse, EvaluateRequest, EvaluateResponse, EvaluationVerdict,
     ExecuteBufferedRequest, ExecuteBufferedResponse, ExecuteRequest, ExecuteResponse,
-    HandshakeError, HelloRequest, HelloResponse, ManagedOutputResponse, MaterializeRequest,
-    MaterializeResponse, MessageDecodeError, MessageEncodeError, MetadataError, NegotiatedSession,
-    OperationResponse, OperationResponseDecodeError, PrepareRequest, RequestId, RequestTracker,
-    RequestTrackerError, ResetRequest, SdkMetadata, ShutdownRequest, WireMessage, WireResponse,
-    WorkerFailure, WorkerFailureCode, WorkerFailureResponse, WorkerIdentity, WorkerRole,
-    decode_message, decode_operation_response, encode_message, negotiate_protocol,
-    validate_hello_response,
+    ExecuteStreamRequest, ExecuteStreamResponse, HandshakeError, HelloRequest, HelloResponse,
+    ManagedOutputResponse, MaterializeRequest, MaterializeResponse, MessageDecodeError,
+    MessageEncodeError, MetadataError, NegotiatedSession, OperationResponse,
+    OperationResponseDecodeError, PrepareRequest, RequestId, RequestTracker, RequestTrackerError,
+    ResetRequest, SdkMetadata, ShutdownRequest, StreamAction, StreamCheckpoint, StreamDecision,
+    WireMessage, WireResponse, WorkerFailure, WorkerFailureCode, WorkerFailureResponse,
+    WorkerIdentity, WorkerRole, decode_message, decode_operation_response, encode_message,
+    negotiate_protocol, validate_hello_response,
 };
 
 /// Version of the JSON-Lines worker protocol.

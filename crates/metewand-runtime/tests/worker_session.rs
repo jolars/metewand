@@ -16,9 +16,7 @@ use std::{
     sync::atomic::{AtomicBool, Ordering},
 };
 
-use metewand_protocol::{
-    Capability, HandshakeError, WorkerFailureCode, WorkerIdentity, WorkerRole,
-};
+use metewand_protocol::{Capability, WorkerFailureCode, WorkerIdentity, WorkerRole};
 use metewand_runtime::{
     worker_process::{WorkerLogLimits, WorkerProcess},
     worker_session::{PhaseTimeouts, WorkerPhase, WorkerSession, WorkerSessionError},
@@ -46,6 +44,7 @@ fn fixture_worker() {
         Ok("hello-timeout") => run_hello_timeout_fixture(),
         Ok("shutdown-timeout") => run_shutdown_timeout_fixture(),
         Ok("reserved") => run_reserved_fixture(),
+        Ok(mode) if mode.starts_with("stream-") => run_stream_fixture(mode),
         _ => {}
     }
 }
@@ -434,24 +433,21 @@ fn shutdown_timeout_includes_process_exit_after_acknowledgement() {
 }
 
 #[test]
-fn keeps_later_subprotocol_capabilities_reserved_during_connect() {
-    let error = WorkerSession::connect(
+fn negotiates_streaming_without_beginning_an_execution() {
+    let session = WorkerSession::connect(
         spawn_fixture("reserved"),
         WorkerRole::Implementation,
         worker_identity(),
         &[Capability::StreamingProfile],
         timeouts(),
     )
-    .expect_err("the streaming subprotocol is not implemented yet");
-
-    assert!(matches!(
-        error,
-        WorkerSessionError::Handshake {
-            source: HandshakeError::ReservedCapability {
-                capability: Capability::StreamingProfile,
-            },
-        }
-    ));
+    .unwrap();
+    assert!(
+        session
+            .negotiated()
+            .selected_capabilities()
+            .contains(&Capability::StreamingProfile)
+    );
 }
 
 #[test]
@@ -735,6 +731,207 @@ fn run_reserved_fixture() {
         "implementation",
         json!(["streaming_profile"]),
     );
+}
+
+fn run_stream_fixture(mode: &str) {
+    let (mut reader, mut writer) = protocol_streams();
+    let managed = mode == "stream-managed";
+    accept_hello(
+        &mut reader,
+        &mut writer,
+        "implementation",
+        if managed {
+            json!(["streaming_profile", "managed_outputs"])
+        } else {
+            json!(["streaming_profile"])
+        },
+    );
+    let prepare = read_message(&mut reader);
+    write_message(&mut writer, &json!({"id":prepare["id"],"ok":true}));
+    let request = read_message(&mut reader);
+    assert_eq!(request["method"], "execute_stream");
+    let root = std::path::Path::new(request["result_root"].as_str().unwrap());
+    for sequence in 0..2 {
+        let directory = root.join("checkpoints").join(sequence.to_string());
+        std::fs::create_dir_all(&directory).unwrap();
+        if managed {
+            std::fs::write(
+                directory.join("draft.json"),
+                br#"{"data":{"x":1},"files":[],"kind":"result","schema_version":1}"#,
+            )
+            .unwrap();
+        } else {
+            std::fs::write(directory.join("result.json"), b"{}").unwrap();
+        }
+        let mut checkpoint = json!({"id":if mode == "stream-wrong-id" { json!("wrong") } else {request["id"].clone()},"event":"checkpoint",
+            "sequence":if mode == "stream-duplicate" {0} else {sequence},"check_index":sequence,"work":{},"terminal":false,
+            "manifest":if mode == "stream-escape" {"../outside/result.json".to_owned()} else {format!("checkpoints/{sequence}/result.json")} });
+        if managed {
+            checkpoint.as_object_mut().unwrap().remove("manifest");
+            checkpoint["draft"] = json!(format!("checkpoints/{sequence}/draft.json"));
+        }
+        write_message(&mut writer, &checkpoint);
+        if matches!(mode, "stream-wrong-id" | "stream-escape")
+            || sequence == 1 && !matches!(mode, "stream-valid" | "stream-managed")
+        {
+            return;
+        }
+        let decision = read_message(&mut reader);
+        assert_eq!(decision["method"], "stream_decision");
+        if decision["action"] == "stop" && mode != "stream-after-stop" {
+            write_message(
+                &mut writer,
+                &json!({"id":request["id"],"ok":true,"checkpoint_count":if mode=="stream-count" {99} else {sequence+1}}),
+            );
+            if matches!(mode, "stream-valid" | "stream-managed") {
+                accept_shutdown(&mut reader, &mut writer, "3");
+            }
+            return;
+        }
+    }
+}
+
+#[test]
+fn streaming_keeps_one_request_pending_through_correlated_decisions() {
+    use metewand_protocol::StreamAction;
+    use metewand_runtime::worker_session::StreamMessage;
+    let root = tempfile::tempdir().unwrap();
+    let mut session = connect(
+        "stream-valid",
+        WorkerRole::Implementation,
+        &[Capability::StreamingProfile],
+    );
+    session
+        .prepare("/data", "contract", json!({}), json!({}), 1)
+        .unwrap();
+    let profile = json!({"policy":{"max-observations":2,"max-checkpoint-bytes":4096}});
+    assert!(matches!(
+        session
+            .start_stream(root.path().to_str().unwrap().into(), profile)
+            .unwrap(),
+        StreamMessage::Checkpoint(_)
+    ));
+    assert!(matches!(
+        session.reset(),
+        Err(WorkerSessionError::Request {
+            source: metewand_protocol::RequestTrackerError::RequestAlreadyPending { .. },
+            ..
+        })
+    ));
+    assert!(matches!(
+        session.decide_stream(StreamAction::Continue, None).unwrap(),
+        StreamMessage::Checkpoint(_)
+    ));
+    assert!(matches!(
+        session
+            .decide_stream(StreamAction::Stop, Some("fixed_count".into()))
+            .unwrap(),
+        StreamMessage::Finished(_)
+    ));
+    assert!(session.shutdown().unwrap().status.success());
+}
+
+#[test]
+fn streaming_returns_finalized_checkpoints_before_snapshot_validation() {
+    use metewand_protocol::StreamAction;
+    use metewand_runtime::worker_session::StreamMessage;
+
+    for (mode, bytes) in [("stream-valid", 1), ("stream-managed", 46)] {
+        let root = tempfile::tempdir().unwrap();
+        let capabilities = if mode == "stream-managed" {
+            vec![Capability::StreamingProfile, Capability::ManagedOutputs]
+        } else {
+            vec![Capability::StreamingProfile]
+        };
+        let mut session = connect(mode, WorkerRole::Implementation, &capabilities);
+        session
+            .prepare("/data", "contract", json!({}), json!({}), 1)
+            .unwrap();
+        let mut message = session
+            .start_stream(
+                root.path().to_str().unwrap().into(),
+                json!({"policy":{"max-observations":2,"max-checkpoint-bytes":bytes}}),
+            )
+            .unwrap();
+        for sequence in 0..2 {
+            let StreamMessage::Checkpoint(checkpoint) = message else {
+                panic!("expected checkpoint {sequence} from {mode}");
+            };
+            let path = root.path().join(checkpoint.manifest.unwrap());
+            if mode == "stream-managed" {
+                assert_eq!(
+                    std::fs::read(&path).unwrap(),
+                    br#"{"data":{"x":1},"files":[],"schema_version":1}"#
+                );
+                assert!(!path.with_file_name("draft.json").exists());
+            } else {
+                assert!(path.metadata().unwrap().len() > bytes);
+            }
+            message = session
+                .decide_stream(
+                    if sequence == 0 {
+                        StreamAction::Continue
+                    } else {
+                        StreamAction::Stop
+                    },
+                    (sequence == 1).then(|| "fixed_count".into()),
+                )
+                .unwrap();
+        }
+        assert!(matches!(message, StreamMessage::Finished(_)));
+        assert!(session.shutdown().unwrap().status.success());
+    }
+}
+
+#[test]
+fn streaming_rejects_bad_sequences_paths_counts_and_continuation_after_stop() {
+    use metewand_protocol::StreamAction;
+    for mode in [
+        "stream-wrong-id",
+        "stream-escape",
+        "stream-duplicate",
+        "stream-count",
+        "stream-after-stop",
+    ] {
+        let root = tempfile::tempdir().unwrap();
+        let mut session = connect(
+            mode,
+            WorkerRole::Implementation,
+            &[Capability::StreamingProfile],
+        );
+        session
+            .prepare("/data", "contract", json!({}), json!({}), 1)
+            .unwrap();
+        let started = session.start_stream(
+            root.path().to_str().unwrap().into(),
+            json!({"policy":{"max-observations":2,"max-checkpoint-bytes":4096}}),
+        );
+        let result = if matches!(mode, "stream-wrong-id" | "stream-escape") {
+            started
+        } else {
+            started.unwrap();
+            session.decide_stream(
+                if mode == "stream-duplicate" {
+                    StreamAction::Continue
+                } else {
+                    StreamAction::Stop
+                },
+                if mode == "stream-duplicate" {
+                    None
+                } else {
+                    Some("fixed_count".into())
+                },
+            )
+        };
+        assert!(
+            matches!(result, Err(WorkerSessionError::StreamProtocol { .. })),
+            "{mode}"
+        );
+        assert!(
+            matches!(session.reset(), Err(WorkerSessionError::SessionUnusable)),
+            "{mode}"
+        );
+    }
 }
 
 fn accept_hello(

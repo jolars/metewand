@@ -141,6 +141,18 @@ pub trait Implementation {
     fn supports_buffered_profile(&self) -> bool {
         false
     }
+    fn supports_streaming_profile(&self) -> bool {
+        false
+    }
+    fn execute_stream(
+        &mut self,
+        _stream: &mut crate::streaming::StreamingContext<'_>,
+    ) -> WorkerResult<()> {
+        Err(failure(
+            WorkerFailureCode::UnsupportedOperation,
+            "Streaming execution is not implemented.",
+        ))
+    }
     fn execute_buffered(
         &mut self,
         _trace: &mut crate::buffered::BufferedTrace,
@@ -280,7 +292,7 @@ pub fn serve_dataset_materializer_on(
         [],
         reader,
         writer,
-        |request| match request["method"].as_str().unwrap_or_default() {
+        |request, _, _| match request["method"].as_str().unwrap_or_default() {
             "materialize" => {
                 let request: MaterializeRequest = decode(request)?;
                 let manifest = worker(&request)?;
@@ -327,6 +339,9 @@ fn implementation_on(
     if worker.supports_buffered_profile() {
         capabilities.push(Capability::BufferedProfile);
     }
+    if worker.supports_streaming_profile() {
+        capabilities.push(Capability::StreamingProfile);
+    }
     if worker.supports_applicability() {
         capabilities.push(Capability::Applicability);
     }
@@ -335,7 +350,41 @@ fn implementation_on(
         capabilities,
         reader,
         writer,
-        |request| match request["method"].as_str().unwrap_or_default() {
+        |request, reader, writer| match request["method"].as_str().unwrap_or_default() {
+            "execute_stream" => {
+                let request: metewand_protocol::ExecuteStreamRequest = decode(request)?;
+                if !prepared || !worker.supports_streaming_profile() {
+                    return Err(failure(
+                        WorkerFailureCode::InvalidRequest,
+                        "Streaming execution requires preparation and streaming_profile support.",
+                    ));
+                }
+                prepared = false;
+                let profile = serde_json::from_value(request.profile)
+                    .map_err(|e| WorkerError::operation_failed(e.to_string()))?;
+                let mut exchange = |checkpoint: &metewand_protocol::StreamCheckpoint| {
+                    writer.write_all(&response(checkpoint)?)?;
+                    writer.flush()?;
+                    let frame = reader
+                        .read_frame()
+                        .map_err(|e| WorkerError::operation_failed(e.to_string()))?
+                        .ok_or_else(|| {
+                            WorkerError::operation_failed("stream decision pipe closed")
+                        })?;
+                    decode::<metewand_protocol::StreamDecision>(frame)
+                };
+                let mut stream = crate::streaming::StreamingContext::new(
+                    profile,
+                    request.result_root.into(),
+                    request.id.clone(),
+                    &mut exchange,
+                )?;
+                worker.execute_stream(&mut stream)?;
+                response(&metewand_protocol::ExecuteStreamResponse::new(
+                    request.id,
+                    stream.count(),
+                ))
+            }
             "check_applicability" => {
                 let request: CheckApplicabilityRequest = decode(request)?;
                 response(&worker.check_applicability(&request)?)
@@ -434,7 +483,7 @@ pub fn serve_evaluator_on(
         [Capability::ProblemSemantics],
         reader,
         writer,
-        |request| match request["method"].as_str().unwrap_or_default() {
+        |request, _, _| match request["method"].as_str().unwrap_or_default() {
             "evaluate" => {
                 let request: EvaluateRequest = decode(request)?;
                 if request.problem_semantics().is_none() {
@@ -468,12 +517,12 @@ pub fn serve_evaluator_on(
     )
 }
 
-fn serve_on(
+fn serve_on<R: Read, W: Write>(
     role: WorkerRole,
     capabilities: impl AsRef<[Capability]>,
-    reader: impl Read,
-    mut writer: impl Write,
-    mut dispatch: impl FnMut(Value) -> WorkerResult<Vec<u8>>,
+    reader: R,
+    mut writer: W,
+    mut dispatch: impl FnMut(Value, &mut FrameReader<R>, &mut W) -> WorkerResult<Vec<u8>>,
 ) -> Result<(), ServeError> {
     let mut reader = FrameReader::new(reader);
     let mut ready = false;
@@ -500,7 +549,10 @@ fn serve_on(
                 "Expected an operation after negotiation.",
             ))
         } else {
-            catch_unwind(AssertUnwindSafe(|| dispatch(request))).unwrap_or_else(|payload| {
+            catch_unwind(AssertUnwindSafe(|| {
+                dispatch(request, &mut reader, &mut writer)
+            }))
+            .unwrap_or_else(|payload| {
                 let text = payload
                     .downcast_ref::<String>()
                     .map(String::as_str)

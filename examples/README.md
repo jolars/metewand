@@ -12,6 +12,7 @@ they do not provide container isolation or a locked publication environment.
 | Raw command | [Fixed dataset](fixed-dataset) | Python 3, standard library only | One answer of 8 |
 | Fresh sequences | [Black-box Python and R solvers](fresh-sequence) | Python, R, and staged packages | Fixed counts and independently evaluated targets |
 | Buffered profiles | [Local observers and native traces](buffered-profile) | Python 3.11+, staged package; optional Rust worker | Fifteen evaluated snapshots from five attempts |
+| Streaming profiles | [Cooperative Python and Rust trajectories](streaming-profile) | Python 3.11+, staged package; optional Rust worker | Thirteen evaluated checkpoints from three attempts |
 | Adopter qualification | [Basin and clustlasso-cd](adopters) | Adopter checkouts, Rust, Python, and CMake; prepared Python/R package runtime for the package track | Native comparisons and profiles, recovered interruption, and faithful exports |
 | Release overhead | [Controlled native worker](overhead) | Rust 1.98.0 | 198 repetitions across three timing scopes and two result sizes |
 | Python-only | [Python package](python-package) | Python 3.11+, staged in-tree package | Two answers of 8 |

@@ -424,7 +424,13 @@ fn plan_candidate(
     {
         let binding = &profile.implementations[&expanded.implementation.definition];
         let mut value = serde_json::json!({"policy": profile.policy, "binding": profile.declaration_value()["implementations"][expanded.implementation.definition.as_str()],
-            "instrumentation_schema": catalog.schema_identities.get(binding.schema().as_path())});
+            "instrumentation_schema": binding.schema().and_then(|schema| catalog.schema_identities.get(schema.as_path()))});
+        if matches!(binding, crate::profile::ProfileBinding::Streaming(_)) {
+            value
+                .as_object_mut()
+                .expect("profile object")
+                .remove("instrumentation_schema");
+        }
         if matches!(binding, crate::profile::ProfileBinding::Fresh(_)) {
             let schema = value
                 .as_object_mut()

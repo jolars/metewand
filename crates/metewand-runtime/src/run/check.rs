@@ -147,6 +147,9 @@ pub fn check_repository_workers(
                     Capability::FreshSequence
                 }
                 metewand_core::manifest::ImplementationCapability::OneShot => Capability::OneShot,
+                metewand_core::manifest::ImplementationCapability::StreamingProfile => {
+                    Capability::StreamingProfile
+                }
                 metewand_core::manifest::ImplementationCapability::BufferedProfile => {
                     Capability::BufferedProfile
                 }

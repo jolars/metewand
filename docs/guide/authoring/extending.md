@@ -116,11 +116,18 @@ corresponding capability.
 | --- | --- | --- |
 | Fresh sequence | You can rerun a solver from clean state at a finite schedule of iteration limits or tolerances. | Executor-observed time for each independent point. |
 | Buffered profile | You can instrument one trajectory and capture bounded local measurements and result snapshots. | An instrumented clock with a problem-authorized scope, plus executor time. |
+| Streaming profile | Your solver can pause for independent evaluation at bounded checkpoints. | Executor-observed active time, excluding checkpoint pauses, plus elapsed and evaluation time. |
 
 Fresh sequences work with black-box solvers and stop according to independent
 evaluation and configured limits. Buffered profiles retain provisional local
 trace values and independently evaluated snapshots separately. Instrumented
 time and wall time remain different measurements.
+
+Streaming profiles publish each evaluated checkpoint before the worker receives
+`continue` or `stop`. Their active clock includes snapshot serialization and
+excludes validation, evaluation, and durable publication. Checkpoints remain
+available after a later failure. A clean-state retry preserves that evidence
+and selects a successful curve from one producing attempt.
 
 The [fresh-sequence example](https://github.com/jolars/metewand/tree/main/examples/fresh-sequence)
 contains Python and R adapters, explicit and geometric schedules, repetitions,
@@ -129,6 +136,13 @@ and resume commands. The
 contains Python and native Rust workers, bounded traces, selected snapshots,
 and exports. Start from these complete manifests rather than adding profile
 fields to a function worker.
+
+The [streaming-profile example](https://github.com/jolars/metewand/tree/main/examples/streaming-profile)
+contains Python and native Rust checkpoint helpers, evaluator-controlled
+stopping, active-time coordinates, and partial-curve exports. Python registers
+`execute_stream(state, context)` and uses `context.stream.checkpoint(...)` to
+block for a decision. Stop all solver work at that barrier, including work in
+child processes or background threads.
 
 Find further integrations in [examples](../examples.md), or read the
 [design](../../design.md) for the underlying model.

@@ -1,4 +1,4 @@
-//! Typed one-shot worker exchanges with phase-specific deadlines.
+//! Typed worker exchanges and cooperative profiles with phase-specific deadlines.
 
 use std::{
     io::{self, Write},
@@ -27,6 +27,9 @@ use crate::{
     worker_environment::WorkerEnvironmentProvenance,
     worker_process::{ProtocolIo, WorkerProcess, WorkerProcessError, WorkerProcessOutput},
 };
+
+mod streaming;
+pub use streaming::StreamMessage;
 
 /// Fully resolved operational deadline for every Gate-1 worker phase.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -115,6 +118,7 @@ impl std::fmt::Display for WorkerPhase {
 /// One negotiated worker process that executes serial typed requests.
 #[derive(Debug)]
 pub struct WorkerSession {
+    stream: Option<streaming::StreamState>,
     redactor: Redactor,
     role: WorkerRole,
     negotiated: Option<NegotiatedSession>,
@@ -130,8 +134,7 @@ pub struct WorkerSession {
 impl WorkerSession {
     /// Starts protocol I/O and establishes a negotiated worker session.
     ///
-    /// Selected fresh-sequence and streaming-profile
-    /// capabilities remain reserved until their subprotocols are implemented.
+    /// Profile exchanges require their negotiated delivery capability.
     ///
     /// # Errors
     ///
@@ -176,6 +179,7 @@ impl WorkerSession {
             }
         };
         let mut session = Self {
+            stream: None,
             redactor: process.redactor(),
             role,
             negotiated: None,
@@ -264,6 +268,12 @@ impl WorkerSession {
         self.process.as_ref().map_or_else(
             crate::resource_accounting::ProcessUsage::default,
             |process| crate::resource_accounting::ProcessUsage::observe(process.id()),
+        )
+    }
+    pub(crate) fn tree_source(&self) -> crate::resource_accounting::TreeSource {
+        self.process.as_ref().map_or(
+            crate::resource_accounting::TreeSource::Unavailable,
+            WorkerProcess::tree_source,
         )
     }
 
@@ -846,6 +856,8 @@ fn run_protocol_io(
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum WorkerSessionError {
+    #[error("invalid streaming exchange: {message}")]
+    StreamProtocol { message: String },
     /// A negotiated managed output draft could not be finalized.
     #[error("managed output finalization failed: {source}")]
     ManagedOutput {

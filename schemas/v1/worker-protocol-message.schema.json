@@ -4,6 +4,154 @@
   "x-metewand-compatibility-version": 1,
   "title": "Metewand version 1 worker protocol message",
   "$defs": {
+    "execute_stream_request": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/request_id"
+        },
+        "method": {
+          "const": "execute_stream"
+        },
+        "result_root": {
+          "$ref": "#/$defs/path"
+        },
+        "profile": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "id",
+        "method",
+        "result_root",
+        "profile"
+      ],
+      "additionalProperties": false
+    },
+    "stream_checkpoint": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/request_id"
+        },
+        "event": {
+          "const": "checkpoint"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "check_index": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "work": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "terminal": {
+          "type": "boolean"
+        },
+        "manifest": {
+          "$ref": "#/$defs/path"
+        },
+        "draft": {
+          "$ref": "#/$defs/path"
+        }
+      },
+      "required": [
+        "id",
+        "event",
+        "sequence",
+        "check_index",
+        "work",
+        "terminal"
+      ],
+      "additionalProperties": false,
+      "oneOf": [
+        {
+          "required": [
+            "manifest"
+          ],
+          "not": {
+            "required": [
+              "draft"
+            ]
+          }
+        },
+        {
+          "required": [
+            "draft"
+          ],
+          "not": {
+            "required": [
+              "manifest"
+            ]
+          }
+        }
+      ]
+    },
+    "stream_decision": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/request_id"
+        },
+        "method": {
+          "const": "stream_decision"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "action": {
+          "enum": [
+            "continue",
+            "stop"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "id",
+        "method",
+        "sequence",
+        "action"
+      ],
+      "additionalProperties": false
+    },
+    "execute_stream_response": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/request_id"
+        },
+        "ok": {
+          "const": true
+        },
+        "checkpoint_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "id",
+        "ok",
+        "checkpoint_count"
+      ],
+      "additionalProperties": false
+    },
     "request_id": {
       "type": "string",
       "minLength": 1
@@ -488,6 +636,10 @@
     },
     {"$ref": "#/$defs/managed_execute_response"},
     {"$ref": "#/$defs/managed_materialize_response"},
-    {"$ref": "#/$defs/managed_evaluate_response"}
+    {"$ref": "#/$defs/managed_evaluate_response"},
+    {"$ref": "#/$defs/execute_stream_request"},
+    {"$ref": "#/$defs/stream_checkpoint"},
+    {"$ref": "#/$defs/stream_decision"},
+    {"$ref": "#/$defs/execute_stream_response"}
   ]
 }

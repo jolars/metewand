@@ -716,6 +716,7 @@ pub struct RunObservationRecord {
 pub enum ProfileObservationRecord {
     Buffered(BufferedObservationRecord),
     Fresh(crate::profile::FreshObservationRecord),
+    Streaming(crate::profile::StreamingObservationRecord),
 }
 impl From<BufferedObservationRecord> for ProfileObservationRecord {
     fn from(value: BufferedObservationRecord) -> Self {
@@ -766,7 +767,7 @@ pub enum RunAttemptOutcome {
         reason: String,
         observation: Option<RecordId<RunObservationRecord>>,
     },
-    Buffered {
+    Profile {
         status: ProfileAttemptStatus,
         observations: Vec<RecordId<RunObservationRecord>>,
         reason: String,

@@ -1,0 +1,62 @@
+version: 1
+name: streaming-profile
+problems:
+  square:
+    contract: problem.yaml
+    evaluator:
+      runner: python
+      protocol-transport: socket
+      entrypoint: evaluator.py
+      sources: [evaluator.py, "metewand/*.py"]
+implementations:
+  halving:
+    runner: command
+    program: ./native-worker
+    sources: [native-worker]
+    problem-contracts: [square]
+    capabilities: [streaming_profile]
+    parameters:
+      maximum_updates: {type: integer, minimum: 0, maximum: 1000, default: 20}
+experiments:
+  - name: target
+    problem: square
+    implementations: [halving]
+    execution-policy: local
+    observation-policy: accuracy
+    measurement-repetitions: 2
+    seed: 7
+  - name: fixed
+    problem: square
+    implementations: [halving]
+    execution-policy: local
+    observation-policy: three_checks
+    seed: 8
+execution-policies:
+  local:
+    timing-scope: prepare_and_execute
+    primary-time: timed_wall_time
+    worker-reuse: true
+    warmup-runs: 1
+    timeout: 5 s
+observation-policies:
+  accuracy:
+    kind: profile
+    metric: gap
+    direction: at_most
+    threshold: 0.01
+    record-thresholds: [0.5, 0.05, 0.01]
+    max-observations: 8
+    max-checkpoint-bytes: 65536
+    max-active-time: 2 s
+    implementations:
+      halving: &stream
+        delivery: streaming_profile
+        measurement-basis: executor_observed
+        check-schedule: {every: 1}
+  three_checks:
+    kind: profile
+    max-observations: 3
+    max-checkpoint-bytes: 65536
+    max-active-time: 2 s
+    implementations:
+      halving: *stream

@@ -11,6 +11,10 @@ pub const BINDING_API_VERSION: u32 = 1;
 
 const PYTHON: &[(&str, &str)] = &[
     (
+        "_streaming.py",
+        include_str!("../adapters/python/metewand_adapter/_streaming.py"),
+    ),
+    (
         "__init__.py",
         include_str!("../adapters/python/metewand_adapter/__init__.py"),
     ),

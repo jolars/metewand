@@ -186,8 +186,10 @@ fn measurement_scope_versions_preserve_existing_records() {
         for vector in vectors[kind].as_array().unwrap() {
             let mut instance = template.clone();
             let measured = &mut instance["provenance"]["data"]["measurements"];
-            measured["version"] = vector["version"].clone();
-            measured["cpu_time_scope"] = vector["cpu_time_scope"].clone();
+            measured
+                .as_object_mut()
+                .unwrap()
+                .extend(vector.as_object().unwrap().clone());
             assert_eq!(
                 catalog
                     .validate(PublicSchema::Observation.repository_path(), &instance)
@@ -207,6 +209,8 @@ struct Gate3Extensions {
 
 #[derive(Deserialize)]
 struct Gate3Extension {
+    #[serde(default)]
+    valid: bool,
     name: String,
     template: String,
     pointer: String,
@@ -257,16 +261,18 @@ fn gate3_extensions_require_new_contracts_in_both_schemas_and_typed_parsers() {
             .as_object_mut()
             .unwrap()
             .insert(vector.field, vector.value);
-        assert!(
+        assert_eq!(
             catalog
                 .validate(schema.repository_path(), &instance)
-                .is_err(),
-            "schema accepted {}",
+                .is_ok(),
+            vector.valid,
+            "schema disagreed for {}",
             vector.name
         );
-        assert!(
-            !typed_document_is_valid(schema, &instance),
-            "typed parser accepted {}",
+        assert_eq!(
+            typed_document_is_valid(schema, &instance),
+            vector.valid,
+            "typed parser disagreed for {}",
             vector.name
         );
     }

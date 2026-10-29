@@ -2,8 +2,8 @@
 
 The next milestone is a comparative local MVP that can run useful benchmarks in
 `../basin` and `~/research/clustlasso-cd`. Keep one-shot execution, fresh
-sequences, and buffered instrumented profiles. Defer streaming profiles, the
-Julia package, and portable result archives.
+sequences, buffered instrumented profiles, and streaming profiles. Defer the
+Julia package and portable result archives.
 
 [DESIGN.md](DESIGN.md) defines semantics. [AGENTS.md](AGENTS.md) defines
 development and verification rules. Build the smallest usable step in the active
@@ -289,18 +289,18 @@ gate before improving a useful workflow.
 
 ### Streaming profiles
 
-- [ ] Add one active `execute_stream` request with bounded checkpoint and
+- [x] Add one active `execute_stream` request with bounded checkpoint and
   decision exchanges. Validate sequence, count, paths, and stopping
   behavior.
-- [ ] Pause at each checkpoint, independently evaluate and durably publish the
+- [x] Pause at each checkpoint, independently evaluate and durably publish the
   result, then reply `continue` or `stop` from evaluator metrics and policy
   bounds.
-- [ ] Include checkpoint serialization in active wall and process-tree CPU time;
+- [x] Include checkpoint serialization in active wall and process-tree CPU time;
   exclude evaluation pauses and retain elapsed and evaluation time
   separately.
-- [ ] Preserve published observations after later timeout or failure. Retry from
+- [x] Preserve published observations after later timeout or failure. Retry from
   clean state without claiming implementation-state restoration.
-- [ ] Exercise a cooperative adapter and Python helper. Test interruption at
+- [x] Exercise a cooperative adapter and Python helper. Test interruption at
   publication and decision boundaries, continuation after stop,
   partial-curve exports, and resume selecting at most one observation per
   slot.

@@ -57,7 +57,9 @@ pub fn parse_manifest(source_path: &Path, source: &str) -> Result<Manifest, Mani
     for policy in manifest.observation_policies.values_mut() {
         if let Some(profile) = &mut policy.profile {
             for binding in profile.implementations.values_mut() {
-                binding.schema_mut().set_owner(source_path);
+                if let Some(schema) = binding.schema_mut() {
+                    schema.set_owner(source_path);
+                }
             }
         }
     }
@@ -814,6 +816,8 @@ pub enum ImplementationCapability {
     Applicability,
     /// Produces a bounded local trace and selected snapshots.
     BufferedProfile,
+    /// Exchanges independently evaluated checkpoints during one trajectory.
+    StreamingProfile,
 }
 
 /// A pinned remote input to a dataset materializer.
@@ -1353,8 +1357,11 @@ impl<'de> Deserialize<'de> for ImplementationDefinition {
                 .contains(&ImplementationCapability::BufferedProfile)
             || raw
                 .capabilities
+                .contains(&ImplementationCapability::StreamingProfile)
+            || raw
+                .capabilities
                 .contains(&ImplementationCapability::FreshSequence))
-            || raw.capabilities.len() > 4
+            || raw.capabilities.len() > 5
             || raw
                 .capabilities
                 .iter()

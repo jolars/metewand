@@ -50,6 +50,8 @@ pub mod source_acquisition;
 pub mod source_bundle;
 pub mod source_resolution;
 #[cfg(any(unix, windows))]
+pub mod streaming;
+#[cfg(any(unix, windows))]
 pub mod worker_environment;
 pub mod worker_output;
 #[cfg(any(unix, windows))]

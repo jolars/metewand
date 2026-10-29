@@ -178,6 +178,7 @@ fn validate_compatibility(
                     )));
                 }
                 match binding {
+                    crate::profile::ProfileBinding::Streaming(_) => {}
                     crate::profile::ProfileBinding::Fresh(binding) => {
                         if let Some(schemas) = schemas {
                             for control in binding
@@ -240,6 +241,13 @@ fn validate_compatibility(
                 }
             }
             let required_capability = if observation_policy.profile.as_ref().is_some_and(|p| {
+                matches!(
+                    p.implementations.get(implementation),
+                    Some(crate::profile::ProfileBinding::Streaming(_))
+                )
+            }) {
+                ImplementationCapability::StreamingProfile
+            } else if observation_policy.profile.as_ref().is_some_and(|p| {
                 matches!(
                     p.implementations.get(implementation),
                     Some(crate::profile::ProfileBinding::Fresh(_))

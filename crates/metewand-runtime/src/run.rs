@@ -1,8 +1,8 @@
 //! Manifest-driven execution of the trusted local Gate-1 vertical path.
 
 mod attempt;
-mod buffered;
 mod check;
+mod profile;
 
 pub use check::{
     ReferenceCaseCheck, WorkerCheck, WorkerCheckError, WorkerCheckReport, check_repository_workers,
@@ -190,7 +190,7 @@ pub fn run_repository_with_options(
             if resolved
                 .candidates
                 .iter()
-                .any(|c| c.fresh_profile.is_some())
+                .any(|c| c.fresh_profile.is_some() || c.streaming_profile.is_some())
             {
                 RunStore::open_fresh(&output_directory)?
             } else if resolved.candidates.iter().any(|c| c.profile.is_some()) {
@@ -254,7 +254,14 @@ pub fn run_repository_with_options(
                 .artifact
                 .add_root(&format!("run:{}", output_directory.display()))?;
         }
-        if resolved.candidates[candidate].profile.is_some() {
+        if resolved.candidates[candidate].streaming_profile.is_some() {
+            store.register_streaming(
+                slot.candidate,
+                &slot.specification,
+                &slot.attempt_slot,
+                &slot.observation_slots,
+            )?;
+        } else if resolved.candidates[candidate].profile.is_some() {
             store.register_buffered(
                 slot.candidate,
                 &slot.specification,
@@ -507,8 +514,8 @@ fn execute(
     worker: &mut crate::worker_reuse::ReusableWorker,
     execution: &mut AttemptExecution,
 ) -> Result<RunAttemptOutput, RunError> {
-    if candidate.profile.is_some() {
-        return buffered::execute(
+    if candidate.profile.is_some() || candidate.streaming_profile.is_some() {
+        return profile::execute(
             repository,
             candidate,
             measurement,
@@ -801,7 +808,7 @@ fn execute(
         },
     )?;
     let (status, diagnostic) = match &published.attempt.record.outcome {
-        RunAttemptOutcome::Buffered { .. } => unreachable!("single-result publisher"),
+        RunAttemptOutcome::Profile { .. } => unreachable!("single-result publisher"),
         RunAttemptOutcome::Censored { .. } => unreachable!("complete result publication"),
         RunAttemptOutcome::Accepted { .. } => (RunAttemptStatus::Accepted, None),
         RunAttemptOutcome::Superseded { .. } => (RunAttemptStatus::Superseded, None),

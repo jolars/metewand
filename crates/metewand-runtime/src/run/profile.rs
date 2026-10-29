@@ -1,5 +1,5 @@
 use super::*;
-use crate::fixed_dataset_run::{BufferedEvent, run_buffered};
+use crate::fixed_dataset_run::{ProfileEvent, run_buffered, run_streaming};
 use metewand_core::{
     records::{CompletionStatus, ProfileAttemptStatus},
     run_output::ProfileObservationOutput,
@@ -14,7 +14,18 @@ pub(super) fn execute(
     worker: &mut crate::worker_reuse::ReusableWorker,
     execution: &mut AttemptExecution,
 ) -> Result<RunAttemptOutput, RunError> {
-    let profile = candidate.profile.as_ref().expect("buffered candidate");
+    let policy = candidate
+        .profile
+        .as_ref()
+        .map(|p| &p.policy)
+        .or_else(|| candidate.streaming_profile.as_ref().map(|p| &p.policy))
+        .expect("profile candidate");
+    let profile_value = if let Some(profile) = &candidate.profile {
+        serde_json::to_value(profile)
+    } else {
+        serde_json::to_value(&candidate.streaming_profile)
+    }
+    .expect("selected profile");
     execution.advance(AttemptPhase::Materializing)?;
     let started_at = SystemTime::now();
     let mut measurements = ExecutionMeasurements {
@@ -92,10 +103,17 @@ pub(super) fn execute(
         RunError::Store(error) => FixedDatasetRunError::Coordination(error),
         error => FixedDatasetRunError::PrivateDirectory(io::Error::other(error.to_string())),
     };
-    let mut event = |event: BufferedEvent<'_>| -> Result<(), FixedDatasetRunError> {
+    let mut event = |event: ProfileEvent<'_>| -> Result<(), FixedDatasetRunError> {
         match event {
-            BufferedEvent::Phase(phase) => execution.advance(phase)?,
-            BufferedEvent::Buffer {
+            ProfileEvent::Phase(phase) => execution.advance(phase)?,
+            ProfileEvent::Stopped(reason) => {
+                stop_reason = serde_json::to_value(reason)
+                    .expect("reason")
+                    .as_str()
+                    .expect("text")
+                    .into();
+            }
+            ProfileEvent::Buffer {
                 directory,
                 manifest,
             } => {
@@ -110,10 +128,16 @@ pub(super) fn execute(
                     .into();
                 buffer_evidence = json!({"artifact":artifact,"manifest":manifest});
             }
-            BufferedEvent::Observation(result) => {
-                result.execution_provenance["controls"] = json!(
-                    metewand_core::controls::local_control_report(&candidate.reuse_key.policy)
-                );
+            ProfileEvent::Observation(result) => {
+                result.execution_provenance["controls"] =
+                    json!(if candidate.streaming_profile.is_some() {
+                        crate::resource_accounting::streaming_controls(
+                            &candidate.reuse_key.policy,
+                            result.measurements.cpu_accounting.as_deref(),
+                        )
+                    } else {
+                        metewand_core::controls::local_control_report(&candidate.reuse_key.policy)
+                    });
                 let ordinal = observations.len();
                 let (published, directory) = execution
                     .publish_profile_observation(
@@ -133,7 +157,7 @@ pub(super) fn execute(
                     observation_directory: directory,
                     result: result.result.as_json().clone(),
                     metrics: result.metrics.as_json().clone(),
-                    profile: published.record.profile.expect("buffered observation"),
+                    profile: published.record.profile.expect("profile observation"),
                 });
             }
         }
@@ -159,7 +183,7 @@ pub(super) fn execute(
                             process,
                             metewand_protocol::WorkerRole::Implementation,
                             candidate.implementation.identity.clone(),
-                            &[metewand_protocol::Capability::BufferedProfile],
+                            &candidate.reuse_key.selected_capabilities,
                             candidate.timeouts,
                         )
                         .map_err(|source| FixedDatasetRunError::Implementation { source })
@@ -172,9 +196,9 @@ pub(super) fn execute(
                 },
                 |session, index| {
                     let mut times = ExecutionMeasurements::default();
-                    let result = run_buffered(
+                    let result = run_profile(
                         request(),
-                        profile,
+                        candidate,
                         &view,
                         &mut times,
                         Some(session),
@@ -193,9 +217,9 @@ pub(super) fn execute(
                     result
                 },
                 |session| {
-                    run_buffered(
+                    run_profile(
                         request(),
-                        profile,
+                        candidate,
                         &view,
                         &mut measurements,
                         Some(session),
@@ -216,9 +240,9 @@ pub(super) fn execute(
                 }
             })
     } else {
-        run_buffered(
+        run_profile(
             request(),
-            profile,
+            candidate,
             &view,
             &mut measurements,
             None,
@@ -230,6 +254,19 @@ pub(super) fn execute(
         Err(error) => Err(FixedDatasetRunError::InvalidBuffer(error.to_string())),
     };
     let (status, reason, diagnostic) = match result {
+        Err(error)
+            if candidate.streaming_profile.is_some()
+                && error.failure_kind()
+                    == crate::fixed_dataset_run::FixedDatasetFailureKind::ScientificTimeout =>
+        {
+            worker.discard();
+            (
+                ProfileAttemptStatus::Censored,
+                "active_time_limit".into(),
+                None,
+            )
+        }
+
         Err(error) => {
             worker.discard();
             let code = error.failure_kind().code().to_owned();
@@ -245,10 +282,11 @@ pub(super) fn execute(
             )
         }
         Ok(())
-            if observations.len() == expected_snapshots
+            if (candidate.streaming_profile.is_some()
+                || observations.len() == expected_snapshots)
                 && (target_reached
-                    || (profile.policy.metric.is_none()
-                        && observations.len() as u64 == profile.policy.max_observations)) =>
+                    || (policy.metric.is_none()
+                        && observations.len() as u64 == policy.max_observations)) =>
         {
             (ProfileAttemptStatus::Accepted, stop_reason, None)
         }
@@ -262,18 +300,21 @@ pub(super) fn execute(
             None,
         ),
     };
+    if let Some(stream) = &candidate.streaming_profile {
+        buffer_evidence = json!({"delivery":"streaming_profile","policy":stream.policy});
+    }
     let provenance = ProvenanceRecord {
         tool_version: env!("CARGO_PKG_VERSION").into(),
         wire_protocol_version: metewand_protocol::WIRE_PROTOCOL_VERSION,
         execution_semantics_version: EXECUTION_SEMANTICS_VERSION,
         data: canonical(
-            json!({"context":measurement.provenance.as_json(),"measurements":measurements,"storage":crate::platform_fs::storage_evidence(),"profile":{"selected":profile,"buffer":buffer_evidence,"worker_reuse":candidate.reuse_key.policy.worker_reuse,"worker_startup_time_ns":startup.get(),"warmups":warmups}}),
+            json!({"context":measurement.provenance.as_json(),"measurements":measurements,"storage":crate::platform_fs::storage_evidence(),"profile":{"selected":profile_value,"buffer":buffer_evidence,"worker_reuse":candidate.reuse_key.policy.worker_reuse,"worker_startup_time_ns":startup.get(),"warmups":warmups}}),
         )?,
     };
     let mut record = RunAttemptRecord {
         slot: measurement.attempt_slot.id,
         retry_index,
-        outcome: RunAttemptOutcome::Buffered {
+        outcome: RunAttemptOutcome::Profile {
             status,
             observations: observations.iter().map(|o| o.observation_id).collect(),
             reason: reason.clone(),
@@ -283,9 +324,9 @@ pub(super) fn execute(
         finished_at: SystemTime::now(),
         provenance,
     };
-    let attempt_directory = execution.publish_buffered(&mut record)?;
+    let attempt_directory = execution.publish_profile(&mut record)?;
     let attempt = metewand_core::identity::identify_record(record)?;
-    let RunAttemptOutcome::Buffered { status, .. } = attempt.record.outcome else {
+    let RunAttemptOutcome::Profile { status, .. } = attempt.record.outcome else {
         unreachable!()
     };
     let status = match status {
@@ -317,4 +358,26 @@ pub(super) fn execute(
                 })
             }),
     })
+}
+
+fn run_profile(
+    request: FixedDatasetRun<'_>,
+    candidate: &ResolvedCandidate,
+    view: &crate::artifact_store::DatasetView,
+    measurements: &mut ExecutionMeasurements,
+    session: Option<&mut crate::worker_session::WorkerSession>,
+    event: &mut dyn FnMut(ProfileEvent<'_>) -> Result<(), FixedDatasetRunError>,
+) -> Result<(), FixedDatasetRunError> {
+    if let Some(profile) = &candidate.streaming_profile {
+        run_streaming(request, profile, view, measurements, session, event)
+    } else {
+        run_buffered(
+            request,
+            candidate.profile.as_ref().expect("buffered profile"),
+            view,
+            measurements,
+            session,
+            event,
+        )
+    }
 }
