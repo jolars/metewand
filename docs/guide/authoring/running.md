@@ -58,7 +58,62 @@ repeats its warm-ups. Cold timing is incompatible with reuse or warm-ups.
 
 Current runs execute trusted local code. Resource requests are best effort,
 and the local backend reports CPU, thread, and memory enforcement as unsupported.
-It does not provide network isolation or a complete locked software environment.
+It does not provide network isolation. Ordinary local environments record
+development evidence; Nix environments can bind the software closure explicitly.
+
+## Lock Nix worker environments
+
+Declare a Nix environment for every worker used by the plan:
+
+```yaml
+environments:
+  python:
+    kind: nix
+    flake: .
+    installable: '.#python'
+    system: x86_64-linux
+    output-kind: package
+    output: out
+```
+
+Set each worker's `environment` to `python`. The flake must expose
+`packages.x86_64-linux.python`, whose selected output provides the worker
+program, such as `bin/python3`. Package programs resolve within that output.
+App environments use `output-kind: app`, an app name as `output`, and the
+matching installable. Their workers must name the app's executable.
+Repository scripts use their locked shebang interpreter. Native executables
+must come from a realized Nix output.
+
+```sh
+metewand lock
+metewand lock --check
+metewand run --locked --output-dir ../results
+```
+
+Preparation may fetch sources and build outputs. Native flake locks must already
+be complete; Metewand does not update them. Check in `metewand.lock` with the
+benchmark. Root and nested flakes use snapshots of tracked working-tree files,
+including uncommitted edits. Stage new source files before locking. The snapshot
+excludes `metewand.lock` and Git metadata, so local flakes cannot depend on
+`self.rev`. Outside Git, the snapshot includes the whole repository tree, and
+run and cache directories must be outside it. Source links, special files, and Git submodules
+are unsupported. Worker source bundles must exclude `metewand.lock`.
+
+`lock --check` and `run --locked` verify sources, launch settings, executable
+hashes, and the contents and references of the complete runtime closure. They
+fail if required paths are missing or changed. Run `metewand lock` again to
+prepare missing outputs or refresh changed source evidence. This does not
+update native dependencies; use Nix's own tools for that. Locked runs keep
+temporary GC roots while executing, but the lockfile does not permanently
+prevent Nix garbage collection.
+
+Locked environments remain trusted local processes with the existing execution
+controls. They do not establish archival isolation. Dataset acquisition and
+worker network access retain their existing behavior. `uv`, `renv`, and OCI
+environments are not yet supported by the lock command.
+
+The [locked Nix example](https://github.com/jolars/metewand/tree/main/examples/locked-nix)
+provides a pinned flake and runnable comparison.
 
 ## Keep the run outside source bundles
 

@@ -126,10 +126,21 @@ jobs:
                   invoke("export", "--output-dir", run, "--format", format, "--destination", str(project / format))
           PY
 
+  nix-lock:
+    name: locked Nix package and app
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: cachix/install-nix-action@v31
+        with:
+          install_url: https://releases.nixos.org/nix/nix-2.34.9/install
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test -p metewand-cli --test locked_nix --locked -- --ignored
+
   versionary:
     name: versionary
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [fmt, clippy, test, python-package, r-package]
+    needs: [fmt, clippy, test, nix-lock, python-package, r-package]
     runs-on: ubuntu-latest
     permissions:
       contents: write

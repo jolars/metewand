@@ -107,7 +107,7 @@ pub(super) struct ResolvedMeasurement {
     pub provenance: CanonicalValue,
 }
 
-pub(super) struct ResolvedWorker {
+pub(crate) struct ResolvedWorker {
     pub launch: ResolvedLaunchRecord,
     pub identity: WorkerIdentity,
     record: ResolvedWorkerRecord,
@@ -182,6 +182,18 @@ impl Snapshot {
 }
 
 impl ResolvedWorker {
+    pub(crate) fn lock_record(
+        &self,
+        environment: &metewand_core::manifest::Name,
+    ) -> metewand_core::lockfile::LockedWorker {
+        metewand_core::lockfile::LockedWorker {
+            environment: environment.to_string(),
+            program: self.executable.to_string_lossy().into_owned(),
+            executable_sha256: self.executable_digest.clone(),
+            launch: self.provenance["launch"].clone(),
+        }
+    }
+
     pub fn verify(&self) -> Result<(), RunError> {
         if let Some(sources) = &self.sources {
             sources.verify()?;
@@ -194,6 +206,12 @@ impl ResolvedWorker {
 }
 
 impl ResolvedCandidate {
+    pub(super) fn environment_class(&self) -> &str {
+        self.implementation.provenance["environment"]["fingerprint"]["class"]
+            .as_str()
+            .expect("resolved environment class")
+    }
+
     pub fn verify(&self) -> Result<(), RunError> {
         self.dataset.verify()?;
         self.implementation.verify()?;
@@ -246,6 +264,7 @@ pub(super) fn resolve(
     plan: &LogicalPlan,
     output: &Path,
     cache_directory: Option<&Path>,
+    locked: Option<&crate::lockfile::VerifiedLock>,
 ) -> Result<ResolvedRun, RunError> {
     for experiment in &plan.experiments {
         let policy = &experiment.execution_policy.record;
@@ -291,7 +310,13 @@ pub(super) fn resolve(
     let private_root = Builder::new().prefix("metewand-run-").tempdir()?;
     let executor = identify_record(ExecutorDefinitionRecord {
         kind: serde_json::from_value(json!("trusted_local")).expect("static valid name"),
-        configuration: canonical(executor_configuration())?,
+        configuration: canonical({
+            let mut configuration = executor_configuration();
+            if locked.is_some() {
+                configuration["environment_class"] = json!("locked");
+            }
+            configuration
+        })?,
     })?;
     // Resolve every launch and fixed dataset before any acquisition or worker runs.
     let mut prepared = Vec::new();
@@ -311,17 +336,19 @@ pub(super) fn resolve(
                 .find(|(_, id)| **id == candidate.problem_configuration.record.definition)
                 .expect("checked problem")
                 .0;
-            let implementation = resolve_worker(
+            let implementation = resolve_worker_with_lock(
                 repository,
                 &repository.manifest.implementations[implementation_name].worker,
                 private_root.path(),
+                locked,
             )?;
-            let evaluator = resolve_worker(
+            let evaluator = resolve_worker_with_lock(
                 repository,
                 &repository.manifest.problems[problem_name].evaluator,
                 private_root.path(),
+                locked,
             )?;
-            let dataset = prepare_dataset(repository, candidate, private_root.path())?;
+            let dataset = prepare_dataset(repository, candidate, private_root.path(), locked)?;
             for sources in implementation
                 .sources
                 .iter()
@@ -576,6 +603,7 @@ fn prepare_dataset<'a>(
     repository: &'a CheckedRepository,
     candidate: &LogicalCandidatePlan,
     private_root: &Path,
+    locked: Option<&crate::lockfile::VerifiedLock>,
 ) -> Result<DatasetPlan<'a>, RunError> {
     let catalog = &repository.planning_catalog;
     let dataset_definition = catalog
@@ -615,7 +643,12 @@ fn prepare_dataset<'a>(
                             ));
                         }
                     }
-                    let worker = resolve_worker(repository, &definition.worker, private_root)?;
+                    let worker = resolve_worker_with_lock(
+                        repository,
+                        &definition.worker,
+                        private_root,
+                        locked,
+                    )?;
                     return Ok(DatasetPlan::Generated(definition, Box::new(worker)));
                 }
             };
@@ -1151,6 +1184,15 @@ pub(super) fn resolve_worker(
     worker: &WorkerDefinition,
     private_root: &Path,
 ) -> Result<ResolvedWorker, RunError> {
+    resolve_worker_with_lock(repository, worker, private_root, None)
+}
+
+pub(crate) fn resolve_worker_with_lock(
+    repository: &CheckedRepository,
+    worker: &WorkerDefinition,
+    private_root: &Path,
+    locked: Option<&crate::lockfile::VerifiedLock>,
+) -> Result<ResolvedWorker, RunError> {
     let (program, arguments, patterns, environment, transport) = match worker {
         WorkerDefinition::Command(worker) => (
             worker.program.clone(),
@@ -1188,10 +1230,12 @@ pub(super) fn resolve_worker(
             )
         }
     };
-    if !matches!(
-        repository.manifest.environments[environment],
-        EnvironmentDefinition::Local {}
-    ) {
+    if locked.is_none()
+        && !matches!(
+            repository.manifest.environments[environment],
+            EnvironmentDefinition::Local {}
+        )
+    {
         return Err(unsupported(format!(
             "environment `{environment}` requires provisioning; Gate 1 supports `kind: \"local\"`"
         )));
@@ -1204,7 +1248,25 @@ pub(super) fn resolve_worker(
     let sources = patterns
         .map(|patterns| snapshot(repository, patterns, private_root))
         .transpose()?;
-    let original_executable = find_program(&repository.root, &program)?;
+    let locked_environment = locked
+        .map(|lock| lock.environment(environment))
+        .transpose()?;
+    let find_executable = |name: &str| -> Result<PathBuf, RunError> {
+        if let Some(environment) = locked_environment {
+            Ok(crate::lockfile::locked_program(environment, name)?)
+        } else {
+            find_program(&repository.root, name)
+        }
+    };
+    let source_program = !Path::new(&program).is_absolute()
+        && Path::new(&program).components().count() > 1
+        && repository.root.join(&program).is_file()
+        && patterns.is_some();
+    let original_executable = if source_program {
+        find_program(&repository.root, &program)?
+    } else {
+        find_executable(&program)?
+    };
     let mut arguments = arguments;
     let mut executable = original_executable.clone();
     // Windows virtual environments copy their interpreters. Moving a PATH-selected
@@ -1225,6 +1287,11 @@ pub(super) fn resolve_worker(
             ));
         }
         let bytes = fs::read(&executable)?;
+        if locked_environment.is_some() && !bytes.starts_with(b"#!") {
+            return Err(RunError::Unsupported(
+                "locked native executables must come from a realized Nix output; source executables require a locked shebang interpreter".into(),
+            ));
+        }
         if bytes.starts_with(b"#!") {
             let line = std::str::from_utf8(
                 bytes
@@ -1243,7 +1310,14 @@ pub(super) fn resolve_worker(
                     ));
                 }
             };
-            executable = find_program(&repository.root, interpreter)?;
+            executable = find_executable(if locked_environment.is_some() {
+                Path::new(interpreter)
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .ok_or_else(|| unsupported("invalid shebang interpreter"))?
+            } else {
+                interpreter
+            })?;
             if fs::canonicalize(&executable)?.starts_with(&repository.root) {
                 return Err(unsupported(
                     "a shebang interpreter must come from the local environment",
@@ -1255,9 +1329,11 @@ pub(super) fn resolve_worker(
     let executable_digest = file_digest(&executable)?;
     let environment_record = identify_record(ResolvedEnvironmentRecord {
         definition: repository.planning_catalog.environment_definitions[environment],
-        fingerprint: canonical(
-            json!({"class": "development", "os": env::consts::OS, "architecture": env::consts::ARCH, "program_sha256": executable_digest, "dependency_closure": null}),
-        )?,
+        fingerprint: canonical(if let Some(environment) = locked_environment {
+            json!({"class": "locked", "backend": "nix", "evidence": environment})
+        } else {
+            json!({"class": "development", "os": env::consts::OS, "architecture": env::consts::ARCH, "program_sha256": executable_digest, "dependency_closure": null})
+        })?,
     })?;
     let mut normalized_arguments = Vec::new();
     let mut actual_arguments = Vec::new();
@@ -1332,6 +1408,22 @@ pub(super) fn resolve_worker(
     } else {
         format!("sha256:{executable_digest}")
     };
+    let locked_search_path = if let Some(environment) = locked_environment {
+        let mut paths = vec![executable.parent().expect("executable parent").to_owned()];
+        paths.extend(environment.outputs.iter().map(|p| Path::new(p).join("bin")));
+        paths.dedup();
+        Some(
+            env::join_paths(paths)
+                .map_err(|_| unsupported("invalid Nix search path"))?
+                .into_string()
+                .map_err(|_| unsupported("Nix paths must be UTF-8"))?,
+        )
+    } else {
+        None
+    };
+    if let Some(path) = &locked_search_path {
+        variables.insert("PATH".into(), path.clone());
+    }
     let normalized_launch = identify_record(ResolvedLaunchRecord {
         environment: environment_record.id,
         program: normalized_program,
@@ -1352,7 +1444,11 @@ pub(super) fn resolve_worker(
         .to_string()
         .parse()
         .expect("typed resolved worker ID");
-    let program_directory = worker_search_path(executable.parent(), source_executable)?;
+    let program_directory = if let Some(path) = locked_search_path {
+        path
+    } else {
+        worker_search_path(executable.parent(), source_executable)?
+    };
     variables.insert("PATH".to_owned(), program_directory);
     let launch = ResolvedLaunchRecord {
         environment: environment_record.id,
@@ -1369,8 +1465,11 @@ pub(super) fn resolve_worker(
     if executable_evidence["executable_sha256"] != executable_digest {
         return Err(RunError::ChangedInput);
     }
-    let provenance = json!({"environment": record_document(&environment_record.record)?, "launch": record_document(&normalized_launch.record)?, "worker": record_document(&record)?, "executable": executable_evidence, "undeclared_file_access": "unsupported"});
-    Ok(ResolvedWorker {
+    let mut provenance = json!({"environment": record_document(&environment_record.record)?, "launch": record_document(&normalized_launch.record)?, "worker": record_document(&record)?, "executable": executable_evidence, "undeclared_file_access": "unsupported"});
+    if let Some(lock) = locked {
+        provenance["lockfile_sha256"] = json!(lock.digest);
+    }
+    let resolved = ResolvedWorker {
         launch,
         identity,
         record,
@@ -1378,7 +1477,13 @@ pub(super) fn resolve_worker(
         executable,
         executable_digest,
         provenance,
-    })
+    };
+    if let Some(lock) = locked
+        && !lock.lock.workers.is_empty()
+    {
+        lock.verify_worker(repository, worker, &resolved.lock_record(environment))?;
+    }
+    Ok(resolved)
 }
 
 fn adapter_language(

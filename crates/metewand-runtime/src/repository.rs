@@ -626,6 +626,19 @@ fn environment_record(
     EnvironmentDefinitionRecord { name, kind }
 }
 
+pub(crate) fn worker_definition_id(
+    repository: &CheckedRepository,
+    worker: &WorkerDefinition,
+) -> Result<String, RepositoryCheckError> {
+    let record = worker_record(
+        &repository.root,
+        worker,
+        &repository.planning_catalog.environment_definitions,
+        &mut SourceBundleCatalog::default(),
+    )?;
+    Ok(identify_record(record)?.id.to_string())
+}
+
 fn worker_record(
     root: &Path,
     definition: &WorkerDefinition,

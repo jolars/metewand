@@ -202,6 +202,7 @@ release numbers are unnecessary. It is separate from public compatibility versio
   | Worker environment provenance                                 | 1 on Unix, 2 on Windows                                        |
   | Exports and build evidence                                    | 1                                                              |
   | Portable result archives                                     | 1                                                              |
+  | Prepared environment lockfiles                               | 1                                                              |
   | SQLite layout                                                 | 1 for one-shot, 2 for buffered profiles, 3 for fresh sequences and streaming |
 
 The binding API compatibility constant lives with the runtime adapters.
@@ -312,6 +313,30 @@ Do not inherit ambient language search paths. Resolved launch
 identities use stable path templates and content hashes; provenance records
 allocated paths. The local environment does not establish a dependency closure
 or isolation from undeclared host files.
+
+`metewand lock` prepares the complete plan's Nix worker graph. Its version-1
+lockfile binds content snapshots, native locks, source NARs, realized outputs,
+runtime closure hashes and references, and normalized launches. Root snapshots
+exclude `metewand.lock` to avoid self-reference. Git snapshots use tracked
+working-tree contents; non-Git snapshots include the repository tree. Keep
+outputs outside captured sources. Local flakes receive content snapshots rather
+than Git revision metadata. Native dependency locks remain author-owned.
+
+Locked preflight checks actual NAR contents in addition to database hashes.
+It never repairs, fetches, or builds missing paths. Temporary GC roots protect
+prepared paths for the invocation. All launched worker roles use the same
+resolver, with no ambient host executable fallback. Lock evidence contributes
+to resolved environment identities; the whole lockfile digest is provenance,
+so unrelated entries do not define worker identity. Locked runs retain the
+trusted local executor and its reported control limitations. Existing
+development identities, execution versions, and SQLite layouts remain unchanged.
+
+The normal suite tests closure verification through an injectable Nix command
+boundary. With Nix available, run the package/app integration test explicitly:
+
+```sh
+cargo test -p metewand-cli --test locked_nix --locked -- --ignored
+```
 
 Unix workers use umask `0077` and retain worker-environment provenance version 1.
 Windows records version 2 with observed ACL evidence, required Windows system

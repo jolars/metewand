@@ -7,7 +7,7 @@ mod profile;
 pub use check::{
     ReferenceCaseCheck, WorkerCheck, WorkerCheckError, WorkerCheckReport, check_repository_workers,
 };
-mod resolution;
+pub(crate) mod resolution;
 mod selection;
 
 use crate::run_store::{AttemptPhase, RunStore};
@@ -138,11 +138,25 @@ pub fn run_repository_with_options(
             }
         })
         .transpose()?;
+    let locked = options
+        .locked
+        .then(|| crate::lockfile::VerifiedLock::load(repository, &plan))
+        .transpose()?;
+    if let Some(lock) = &locked
+        && !lock.lock.source.git
+        && (output_directory.starts_with(&repository.root)
+            || cache_directory
+                .as_ref()
+                .is_some_and(|p| p.starts_with(&repository.root)))
+    {
+        return Err(RunError::Unsupported("non-Git locked repositories require output and cache directories outside captured sources".into()));
+    }
     let mut resolved = resolution::resolve(
         repository,
         &plan,
         &output_directory,
         cache_directory.as_deref(),
+        locked.as_ref(),
     )?;
     for candidate in &resolved.candidates {
         candidate.validate_destination(&output_directory)?;
@@ -792,6 +806,7 @@ fn execute(
             })
             .expect("fresh observation evidence");
     }
+    result.execution_provenance["environment_class"] = json!(candidate.environment_class());
     result.execution_provenance["controls"] = json!(metewand_core::controls::local_control_report(
         &candidate.reuse_key.policy
     ));
@@ -965,6 +980,9 @@ fn destination(path: &Path, resume: bool) -> Result<PathBuf, RunError> {
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum RunError {
+    /// Prepared environment evidence is missing, stale, or inconsistent.
+    #[error(transparent)]
+    Lock(#[from] crate::lockfile::LockError),
     /// Applicability worker launch failed before measured execution.
     #[error(transparent)]
     ApplicabilityLaunch(#[from] crate::local_worker::LocalWorkerLaunchError),

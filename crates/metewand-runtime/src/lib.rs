@@ -40,6 +40,8 @@ pub mod local_tree;
 #[cfg(any(unix, windows))]
 pub mod local_worker;
 #[cfg(any(unix, windows))]
+pub mod lockfile;
+#[cfg(any(unix, windows))]
 mod managed_output;
 #[cfg(any(unix, windows))]
 pub mod publication;

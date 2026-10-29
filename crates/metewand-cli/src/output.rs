@@ -56,6 +56,8 @@ impl OutputFormat {
 
 #[derive(Debug)]
 pub enum CommandResult {
+    #[cfg(any(unix, windows))]
+    Lock(metewand_runtime::lockfile::LockReport),
     Init(InitReport),
     Scaffold(ScaffoldReport),
     Help(HelpResult),
@@ -191,6 +193,15 @@ impl CommandResult {
             Self::Run(result) => render_run_report(result),
             Self::Status(result) => render_status(result),
             Self::Explain(result) => render_explanation(result),
+            #[cfg(any(unix, windows))]
+            Self::Lock(result) => format!(
+                "{} lockfile: {}\n{} environments, {} workers.\nSHA-256: {}\n",
+                result.operation,
+                result.lockfile,
+                result.environments,
+                result.workers,
+                result.sha256
+            ),
             Self::Archive(result) => {
                 let action = match result.operation {
                     ArchiveOperation::Create => "Created",
@@ -314,6 +325,8 @@ impl Serialize for CommandResult {
             Self::Explain(result) => result.serialize(serializer),
             Self::Export(result) => result.serialize(serializer),
             Self::Cache(result) => result.serialize(serializer),
+            #[cfg(any(unix, windows))]
+            Self::Lock(result) => result.serialize(serializer),
             Self::Archive(result) => result.serialize(serializer),
         }
     }
@@ -1509,8 +1522,17 @@ impl CommandError {
     }
 
     #[cfg(any(unix, windows))]
+    pub fn locking(error: &metewand_runtime::lockfile::LockError) -> Self {
+        Self { exit_code: if error.code == "lockfile_io" { EXIT_IO } else { EXIT_INPUT_UNAVAILABLE },
+            diagnostic: Box::new(Diagnostic::new(error.code, error.to_string()).with_remediation("Inspect the sources and native flake lockfiles, then run `metewand lock` to prepare the exact environment before `run --locked`.")) }
+    }
+
+    #[cfg(any(unix, windows))]
     pub fn execution(error: &metewand_runtime::run::RunError) -> Self {
         use metewand_runtime::run::RunError;
+        if let RunError::Lock(source) = error {
+            return Self::locking(source);
+        }
         if let RunError::Selection(message) = error {
             return Self::usage("invalid_run_selection", message);
         }

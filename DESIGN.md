@@ -208,10 +208,17 @@ across machines.
 
 ### Nix environments
 
-Locked environment resolution is planned, starting with Nix. It will bind
-verified lockfiles, realized outputs, closures, and executable paths while
-preserving logical identities. Python and R workflows may use native tools such
-as `uv` and `renv`; Nix remains optional.
+`metewand lock` prepares Nix package or app environments and records their
+sources, native lockfiles, realized outputs, runtime closures, and worker
+launches in `metewand.lock`. `run --locked` verifies that evidence against the
+local store before launching workers. Missing outputs require explicit
+preparation; locked runs do not fetch or build software. Resolution preserves
+logical identities and binds the concrete environment into resolved identities.
+
+Local flakes use content snapshots, including edits to tracked files, with the
+Metewand lockfile excluded. Locked execution still runs trusted local code and
+does not enforce network or filesystem isolation. Native `uv` and `renv`
+resolution will follow adopter needs; Nix remains optional for development runs.
 
 Isolated archival execution will add digest-pinned environments and enforced
 resource, network, and input controls. These stronger guarantees must be

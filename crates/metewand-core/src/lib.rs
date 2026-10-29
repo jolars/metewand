@@ -11,6 +11,7 @@ pub mod export;
 mod field_declaration;
 pub mod identity;
 pub mod inspection;
+pub mod lockfile;
 pub mod manifest;
 pub mod manifest_hash;
 pub mod materialization;
@@ -64,5 +65,6 @@ mod tests {
         assert_eq!(EXECUTION_SEMANTICS_VERSION, 2);
         assert_eq!(crate::export::EXPORT_SCHEMA_VERSION, 1);
         assert_eq!(crate::cache::CACHE_MAINTENANCE_VERSION, 1);
+        assert_eq!(crate::lockfile::LOCKFILE_VERSION, 1);
     }
 }

@@ -129,6 +129,8 @@ pub(super) fn execute(
                 buffer_evidence = json!({"artifact":artifact,"manifest":manifest});
             }
             ProfileEvent::Observation(result) => {
+                result.execution_provenance["environment_class"] =
+                    json!(candidate.environment_class());
                 result.execution_provenance["controls"] =
                     json!(if candidate.streaming_profile.is_some() {
                         crate::resource_accounting::streaming_controls(

@@ -23,6 +23,8 @@ static CATALOG: Mutex<Option<SchemaCatalog>> = Mutex::new(None);
 /// A public version-1 schema entry point.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum PublicSchema {
+    /// Exact prepared environments and worker launches.
+    Lockfile,
     ArchiveManifest,
     ArchiveEvidence,
     ArchiveOutput,
@@ -88,7 +90,8 @@ pub enum PublicSchema {
 }
 
 /// Every public schema entry point in stable presentation order.
-pub const PUBLIC_SCHEMAS: [PublicSchema; 34] = [
+pub const PUBLIC_SCHEMAS: [PublicSchema; 35] = [
+    PublicSchema::Lockfile,
     PublicSchema::ArchiveManifest,
     PublicSchema::ArchiveEvidence,
     PublicSchema::ArchiveOutput,
@@ -130,6 +133,7 @@ impl PublicSchema {
     #[must_use]
     pub const fn slug(self) -> &'static str {
         match self {
+            Self::Lockfile => "lockfile",
             Self::ArchiveManifest => "archive-manifest",
             Self::ArchiveEvidence => "archive-evidence",
             Self::ArchiveOutput => "archive-output",
@@ -179,6 +183,7 @@ impl PublicSchema {
     #[must_use]
     pub fn repository_path(self) -> &'static Path {
         Path::new(match self {
+            Self::Lockfile => "schemas/v1/lockfile.schema.json",
             Self::ArchiveManifest => "schemas/v1/archive-manifest.schema.json",
             Self::ArchiveEvidence => "schemas/v1/archive-evidence.schema.json",
             Self::ArchiveOutput => "schemas/v1/archive-output.schema.json",
@@ -224,6 +229,7 @@ impl PublicSchema {
     #[must_use]
     pub const fn id(self) -> &'static str {
         match self {
+            Self::Lockfile => "metewand://schemas/v1/lockfile.schema.json",
             Self::ArchiveManifest => "metewand://schemas/v1/archive-manifest.schema.json",
             Self::ArchiveEvidence => "metewand://schemas/v1/archive-evidence.schema.json",
             Self::ArchiveOutput => "metewand://schemas/v1/archive-output.schema.json",
@@ -279,6 +285,7 @@ impl PublicSchema {
     #[must_use]
     pub const fn source(self) -> &'static str {
         match self {
+            Self::Lockfile => include_str!("../../../schemas/v1/lockfile.schema.json"),
             Self::ArchiveManifest => {
                 include_str!("../../../schemas/v1/archive-manifest.schema.json")
             }

@@ -192,9 +192,80 @@
           }
         }
       }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "result"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "command": {
+                "const": "lock"
+              }
+            },
+            "required": [
+              "command"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "data"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "$ref": "#/$defs/lock_result"
+          }
+        }
+      }
     }
   ],
   "$defs": {
+    "lock_result": {
+      "type": "object",
+      "properties": {
+        "command": {
+          "const": "lock"
+        },
+        "operation": {
+          "enum": [
+            "created",
+            "updated",
+            "unchanged",
+            "verified"
+          ]
+        },
+        "lockfile": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "environments": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "workers": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "command",
+        "operation",
+        "lockfile",
+        "sha256",
+        "environments",
+        "workers"
+      ],
+      "additionalProperties": false
+    },
     "worker_check_result": {
       "type": "object",
       "properties": {

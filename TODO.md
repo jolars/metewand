@@ -310,13 +310,13 @@ gate before improving a useful workflow.
 
 ### Gate 4: locked environments
 
-- [ ] Add `metewand.lock` and `run --locked`, preserving logical identities
+- [x] Add `metewand.lock` and `run --locked`, preserving logical identities
   while binding resolved environments and exact worker launches.
-- [ ] Implement Nix package and app resolution first, with verified sources,
+- [x] Implement Nix package and app resolution first, with verified sources,
   lockfiles, realized outputs, closures, and executable paths.
 - [ ] Add `uv` and `renv` resolution as adopters need them, including local
   dependencies and offline verification. Keep Nix optional.
-- [ ] Test transitive mismatches and distinguish locked guarantees from
+- [x] Test transitive mismatches and distinguish locked guarantees from
   development environments.
 
 See [Reproducibility model](DESIGN.md#reproducibility-model) and [Nix

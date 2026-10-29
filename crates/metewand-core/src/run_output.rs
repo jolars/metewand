@@ -11,6 +11,8 @@ use crate::records::{
 /// Invocation controls that do not alter scientific slot identities.
 #[derive(Clone, Debug, Default)]
 pub struct RunOptions {
+    /// Verify prepared Nix environments against `metewand.lock`.
+    pub locked: bool,
     /// Union of stable IDs to execute; an empty list selects the complete plan.
     pub selected_ids: Vec<String>,
     /// Maximum new attempts allocated by this invocation, including retries.

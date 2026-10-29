@@ -1,0 +1,246 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "metewand://schemas/v1/lockfile.schema.json",
+  "x-metewand-compatibility-version": 1,
+  "title": "Prepared environment lockfile",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "source": {
+      "$ref": "#/$defs/source"
+    },
+    "environments": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/environment"
+      }
+    },
+    "workers": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/worker"
+      },
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^mw1-worker-definition-[0-9a-f]{64}$"
+      }
+    }
+  },
+  "required": [
+    "schema_version",
+    "source",
+    "environments",
+    "workers"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "source": {
+      "type": "object",
+      "properties": {
+        "git": {
+          "type": "boolean"
+        },
+        "files": {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "common.schema.json#/$defs/repository_path"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/source_entry"
+          }
+        }
+      },
+      "required": [
+        "git",
+        "files"
+      ],
+      "additionalProperties": false
+    },
+    "source_entry": {
+      "type": "object",
+      "properties": {
+        "sha256": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "executable": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "sha256",
+        "executable"
+      ],
+      "additionalProperties": false
+    },
+    "store_path": {
+      "type": "object",
+      "properties": {
+        "nar_hash": {
+          "type": "string",
+          "pattern": "^sha256-[A-Za-z0-9+/]+={0,2}$"
+        },
+        "references": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^/nix/store/[^/]+$"
+          },
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "nar_hash",
+        "references"
+      ],
+      "additionalProperties": false
+    },
+    "environment": {
+      "type": "object",
+      "properties": {
+        "definition": {
+          "type": "string",
+          "pattern": "^mw1-environment-definition-[0-9a-f]{64}$"
+        },
+        "system": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "native_lock_sha256": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "outputs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^/nix/store/[^/]+$"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "app_program": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sources": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/store_path"
+          }
+        },
+        "closure": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/store_path"
+          }
+        }
+      },
+      "required": [
+        "definition",
+        "system",
+        "source_sha256",
+        "native_lock_sha256",
+        "outputs",
+        "app_program",
+        "sources",
+        "closure"
+      ],
+      "additionalProperties": false
+    },
+    "worker": {
+      "type": "object",
+      "properties": {
+        "environment": {
+          "type": "string",
+          "minLength": 1
+        },
+        "program": {
+          "type": "string",
+          "pattern": "^/nix/store/"
+        },
+        "executable_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "launch": {
+          "$ref": "#/$defs/launch"
+        }
+      },
+      "required": [
+        "environment",
+        "program",
+        "executable_sha256",
+        "launch"
+      ],
+      "additionalProperties": false
+    },
+    "launch": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "environment": {
+          "type": "string",
+          "pattern": "^mw1-resolved-environment-[0-9a-f]{64}$"
+        },
+        "program": {
+          "type": "string",
+          "minLength": 1
+        },
+        "args": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "environment_variables": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "working_directory": {
+          "const": "private_run_directory"
+        }
+      },
+      "required": [
+        "version",
+        "environment",
+        "program",
+        "args",
+        "environment_variables",
+        "working_directory"
+      ],
+      "additionalProperties": false
+    }
+  }
+}
