@@ -314,13 +314,89 @@ gate before improving a useful workflow.
   while binding resolved environments and exact worker launches.
 - [x] Implement Nix package and app resolution first, with verified sources,
   lockfiles, realized outputs, closures, and executable paths.
-- [ ] Add `uv` and `renv` resolution as adopters need them, including local
-  dependencies and offline verification. Keep Nix optional.
+- [ ] Implement native `uv` resolution using the plan below. Keep Nix optional.
+- [ ] Add `renv` resolution as adopters need it, including local dependencies
+  and offline verification.
 - [x] Test transitive mismatches and distinguish locked guarantees from
   development environments.
 
 See [Reproducibility model](DESIGN.md#reproducibility-model) and [Nix
 environments](DESIGN.md#nix-environments).
+
+#### Native `uv` resolution
+
+Extend `metewand lock`, `lock --check`, and `run --locked` for Python projects
+with an author-owned `uv.lock`. Start with an already installed interpreter and
+repository-contained projects, workspace members, and local dependencies. Use
+the existing trusted local executor on Linux, macOS, and Windows.
+
+- [ ] Separate Nix preparation and verification from shared worker-graph and
+  lockfile handling in `metewand-runtime`. Define backend-specific evidence
+  in core and introduce a version-2 lockfile schema with Nix and uv variants.
+  Preserve version-1 Nix reading, canonical bytes, and resolved identities;
+  add focused compatibility fixtures for the changed boundary.
+- [ ] Reuse `kind: uv`, `project`, and `lockfile`. Require the native lock at
+  the selected project or workspace root. Add optional `groups` and `extras`
+  selections, with base dependencies as the default and uv's default groups
+  disabled. Normalize and hash selections deterministically, preserving
+  existing definition identities when the new fields are omitted. Keep
+  checking and planning free of uv invocation and benchmark imports.
+- [ ] Snapshot `pyproject.toml`, `uv.lock`, applicable `uv.toml` and
+  `.python-version` files, and the source and build inputs of the project
+  and its local dependencies. Preserve relative workspace and dependency
+  paths. Reject paths that escape captured sources with actionable
+  diagnostics. Rebuild local packages when their content changes, including
+  source-only edits that uv's timestamp-based cache checks can miss.
+- [ ] Have `metewand lock` prepare a separate managed environment with
+  `uv sync --locked --no-editable --no-default-groups` and the declared
+  selections. Honor project Python requirements, select an installed
+  interpreter, and disable automatic Python downloads. Use captured project
+  configuration and controlled environment variables, excluding ambient uv
+  configuration. Keep prepared environments outside source snapshots, copy
+  installed files independently of uv's cache, and leave author-owned
+  environments and native locks unchanged. Publish the Metewand lock only
+  after preparation and verification succeed; coordinate concurrent
+  preparation without replacing environments used by active runs.
+- [ ] Bind project and native-lock hashes, local source content, dependency
+  selections, interpreter implementation and runtime content, platform and
+  ABI, and installed distributions to each resolved environment. Retain
+  inventories that detect changed, missing, and added files, including
+  native extensions and symlink targets. Record uv and build provenance.
+  Separate raw integrity evidence from normalized identity inputs so cache
+  paths, generated absolute paths, and timestamps do not define identities.
+- [ ] Resolve materializers, implementations, evaluators, and reference checks
+  through the prepared interpreter and installed entry points. Preserve
+  virtual-environment context and support Unix `bin` and Windows `Scripts`
+  layouts. Bind exact launches, normalize their paths, and reject unavailable
+  programs without falling back to ambient executables. Keep unrelated lock
+  entries out of each worker's resolved identity.
+- [ ] Make `lock --check` and `run --locked` verify captured sources,
+  interpreter and installed content, platform, and launches offline.
+  Verification must work without uv or Nix installed and must never sync,
+  fetch, build, repair, or update prepared state. Report missing or changed
+  state before creating run output, with an explicit preparation command.
+- [ ] Start with focused failing tests at an injectable uv command boundary.
+  Cover stale or missing native locks, group and extra selection, source-only
+  local edits with unchanged timestamps, transitive package corruption,
+  injected packages, interpreter drift, unavailable programs, interrupted
+  preparation, and identity stability across checkout and cache locations.
+  Add a small real-uv integration case on supported platforms that prepares
+  all worker roles, runs and resumes offline without uv or Nix on `PATH`,
+  and detects tampering without changing either lockfile. Retain Nix
+  regression coverage, including mixed Nix and uv worker graphs.
+- [ ] Add a runnable `examples/locked-uv` benchmark and qualify a small
+  Python-only clustlasso-cd comparison with its native package and benchmark
+  dependencies. Document preparation, offline verification, local dependency
+  changes, and recovery from missing prepared state in the authoring guide.
+  Describe the verified Python runtime and package evidence alongside the
+  remaining host-library and build-tool limits; retain the local executor's
+  reported network and filesystem controls.
+
+Use uv's documented [locking and syncing
+semantics](https://docs.astral.sh/uv/concepts/projects/sync/) at preparation time.
+Its [local dependency cache
+heuristics](https://docs.astral.sh/uv/concepts/cache/#dynamic-metadata) do not
+replace Metewand's content verification.
 
 ### Gate 5: isolated archival execution
 
