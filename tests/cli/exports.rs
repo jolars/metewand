@@ -74,6 +74,129 @@ fn lines(path: &Path) -> Vec<Value> {
 }
 
 #[test]
+fn json_analysis_exports_observations_and_recorded_provenance_without_metric_pivoting() {
+    let root = repository();
+    let (code, run) = command(root.path(), &["run", "--output-dir", "run"]);
+    assert_eq!(code, 0, "{run}");
+    fs::remove_file(root.path().join("metewand.yaml")).unwrap();
+    let before = snapshot(&root.path().join("run"));
+    for destination in ["analysis", "again"] {
+        let (code, report) = command(
+            root.path(),
+            &[
+                "export",
+                "--output-dir",
+                "run",
+                "--format",
+                "json",
+                "--require-complete",
+                "--destination",
+                destination,
+            ],
+        );
+        assert_eq!(code, 0, "{report}");
+    }
+    let bytes = fs::read(root.path().join("analysis/results.json")).unwrap();
+    assert_eq!(
+        bytes,
+        fs::read(root.path().join("again/results.json")).unwrap()
+    );
+    let analysis: Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(analysis["schema_version"], 1);
+    assert_eq!(analysis["completeness"]["complete"], true);
+    let observations = analysis["observations"].as_array().unwrap();
+    assert_eq!(observations.len(), 1);
+    let observation = &observations[0];
+    assert_eq!(
+        observation["metrics"],
+        serde_json::json!({"absolute_error": 0})
+    );
+    assert_eq!(observation["implementation"], "reference");
+    assert_eq!(observation["selected"], true);
+    assert_eq!(observation["warmup"], false);
+    assert!(observation["timed_wall_time_ns"].as_u64().unwrap() > 0);
+    let metadata = &analysis["provenance"][observation["provenance_id"].as_str().unwrap()];
+    assert_eq!(metadata["host"]["phase"], "run_preflight");
+    assert!(metadata["runner"]["executable_sha256"].is_string());
+    assert_eq!(analysis["candidates"][0]["measurement_repetitions"], 1);
+    let catalog = public_schema_catalog().unwrap();
+    catalog
+        .validate(
+            PublicSchema::from_slug("analysis-snapshot")
+                .unwrap()
+                .repository_path(),
+            &analysis,
+        )
+        .unwrap();
+    assert_eq!(snapshot(&root.path().join("run")), before);
+}
+
+#[test]
+fn complete_export_rejects_missing_measurements_without_creating_files() {
+    let root = repository();
+    let manifest = root.path().join("metewand.yaml");
+    fs::write(
+        &manifest,
+        fs::read_to_string(&manifest)
+            .unwrap()
+            .replace("measurement-repetitions: 1", "measurement-repetitions: 2")
+            .replace(
+                "    seed: 7",
+                "    seed: 7\n    problem-parameters:\n      offset: { grid: [2, 3] }",
+            ),
+    )
+    .unwrap();
+    let (code, run) = command(
+        root.path(),
+        &["run", "--output-dir", "run", "--max-attempts", "1"],
+    );
+    assert_eq!(code, 0, "{run}");
+    let before = snapshot(&root.path().join("run"));
+    let (code, report) = command(
+        root.path(),
+        &[
+            "export",
+            "--output-dir",
+            "run",
+            "--format",
+            "json",
+            "--require-complete",
+            "--destination",
+            "analysis",
+            "--rebuild-index",
+        ],
+    );
+    assert_eq!(code, 5, "{report}");
+    assert_eq!(report["data"]["code"], "incomplete_results");
+    assert!(!root.path().join("analysis").exists());
+    assert_eq!(snapshot(&root.path().join("run")), before);
+    let (code, report) = command(
+        root.path(),
+        &[
+            "export",
+            "--output-dir",
+            "run",
+            "--format",
+            "json",
+            "--destination",
+            "partial",
+        ],
+    );
+    assert_eq!(code, 0, "{report}");
+    let analysis: Value =
+        serde_json::from_slice(&fs::read(root.path().join("partial/results.json")).unwrap())
+            .unwrap();
+    assert!(
+        analysis["candidates"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|candidate| candidate["observation_policy"].is_null()
+                && candidate["measurement_repetitions"].is_null())
+    );
+}
+
+#[test]
 fn exports_verified_history_without_the_repository_and_rebuilds_stale_indexes() {
     let root = repository();
     let (code, run) = command(root.path(), &["run", "--output-dir", "run"]);
@@ -230,6 +353,34 @@ fn failures_and_invalid_results_remain_visible_beside_successful_retries() {
         attempts
             .iter()
             .any(|r| r["outcome"] == "accepted" && r["retry_index"] == 1)
+    );
+    let (code, report) = command(
+        root.path(),
+        &[
+            "export",
+            "--output-dir",
+            "run",
+            "--destination",
+            "analysis",
+            "--format",
+            "json",
+            "--require-complete",
+        ],
+    );
+    assert_eq!(code, 0, "{report}");
+    let analysis: Value =
+        serde_json::from_slice(&fs::read(root.path().join("analysis/results.json")).unwrap())
+            .unwrap();
+    assert_eq!(analysis["completeness"]["complete"], true);
+    assert_eq!(analysis["attempts"].as_array().unwrap().len(), 2);
+    assert_eq!(
+        analysis["observations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|o| o["selected"] == true)
+            .count(),
+        1
     );
     let before = snapshot(root.path());
     for args in [

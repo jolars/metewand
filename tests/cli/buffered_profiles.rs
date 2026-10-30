@@ -130,6 +130,41 @@ fn buffered_modes_publish_independent_snapshots_and_diagnostic_traces() {
     );
     assert!(status.status.success(), "{status:?}");
     assert_eq!(data(&status)["summary"]["selected_observations"], 15);
+    let export = invoke(
+        stage.path(),
+        &[
+            "export",
+            "--output-dir",
+            "run",
+            "--destination",
+            "analysis",
+            "--format",
+            "json",
+            "--require-complete",
+            "--output",
+            "json",
+        ],
+    );
+    assert!(export.status.success(), "{export:?}");
+    let analysis = document(stage.path().join("analysis/results.json"));
+    assert_eq!(analysis["observations"].as_array().unwrap().len(), 15);
+    assert_eq!(analysis["profiles"].as_array().unwrap().len(), 5);
+    assert_eq!(
+        analysis["observations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|o| o["measurement_index"].as_u64().unwrap())
+            .collect::<std::collections::BTreeSet<_>>(),
+        [0, 1].into_iter().collect()
+    );
+    assert!(
+        analysis["observations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|o| o["instrumented_time_ns"].is_u64())
+    );
     let resume = invoke(
         stage.path(),
         &["run", "--output-dir", "run", "--resume", "--output", "json"],

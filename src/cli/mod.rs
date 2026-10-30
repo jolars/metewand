@@ -29,7 +29,7 @@ Usage:
   metewand [--output FORMAT] run [--manifest PATH] --output-dir PATH [--locked]
   metewand [--output FORMAT] status [--manifest PATH] [--output-dir PATH]
   metewand [--output FORMAT] explain <id> [--manifest PATH] [--output-dir PATH]
-  metewand [--output FORMAT] export --output-dir PATH --destination PATH [--format csv|jsonl]
+  metewand [--output FORMAT] export --output-dir PATH --destination PATH [--format json|jsonl|csv] [--require-complete]
   metewand [--output FORMAT] cache <operation> --cache-dir PATH [OPTIONS]
   metewand [--output FORMAT] archive <operation> [OPTIONS]
 

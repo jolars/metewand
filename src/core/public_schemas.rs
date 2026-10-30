@@ -50,6 +50,8 @@ pub enum PublicSchema {
     ExportRow,
     /// Export receipts and adjacent lineage manifests.
     ExportOutput,
+    /// Individual observations and recorded context for offline analysis.
+    AnalysisSnapshot,
     /// Exact cache verification, root, and garbage collection receipts.
     CacheOutput,
     /// Typed benchmark manifest.
@@ -91,7 +93,7 @@ pub enum PublicSchema {
 }
 
 /// Every public schema entry point in stable presentation order.
-pub const PUBLIC_SCHEMAS: [PublicSchema; 36] = [
+pub const PUBLIC_SCHEMAS: [PublicSchema; 37] = [
     PublicSchema::Lockfile,
     PublicSchema::LockfileV1,
     PublicSchema::ArchiveManifest,
@@ -108,6 +110,7 @@ pub const PUBLIC_SCHEMAS: [PublicSchema; 36] = [
     PublicSchema::ExportRecord,
     PublicSchema::ExportRow,
     PublicSchema::ExportOutput,
+    PublicSchema::AnalysisSnapshot,
     PublicSchema::CacheOutput,
     PublicSchema::Manifest,
     PublicSchema::ProblemContract,
@@ -155,6 +158,7 @@ impl PublicSchema {
             Self::ExportRecord => "export-record",
             Self::ExportRow => "export-row",
             Self::ExportOutput => "export-output",
+            Self::AnalysisSnapshot => "analysis-snapshot",
             Self::CacheOutput => "cache-output",
             Self::Manifest => "manifest",
             Self::ProblemContract => "problem-contract",
@@ -206,6 +210,7 @@ impl PublicSchema {
             Self::ExportRecord => "schemas/v1/export-record.schema.json",
             Self::ExportRow => "schemas/v1/export-row.schema.json",
             Self::ExportOutput => "schemas/v1/export-output.schema.json",
+            Self::AnalysisSnapshot => "schemas/v1/analysis-snapshot.schema.json",
             Self::CacheOutput => "schemas/v1/cache-output.schema.json",
             Self::Manifest => "schemas/v1/manifest.schema.json",
             Self::ProblemContract => "schemas/v1/problem-contract.schema.json",
@@ -255,6 +260,7 @@ impl PublicSchema {
             Self::ExportRecord => "metewand://schemas/v1/export-record.schema.json",
             Self::ExportRow => "metewand://schemas/v1/export-row.schema.json",
             Self::ExportOutput => "metewand://schemas/v1/export-output.schema.json",
+            Self::AnalysisSnapshot => "metewand://schemas/v1/analysis-snapshot.schema.json",
             Self::CacheOutput => "metewand://schemas/v1/cache-output.schema.json",
             Self::Manifest => "metewand://schemas/v1/manifest.schema.json",
             Self::ProblemContract => "metewand://schemas/v1/problem-contract.schema.json",
@@ -335,6 +341,7 @@ impl PublicSchema {
             Self::ExportRecord => include_str!("../../schemas/v1/export-record.schema.json"),
             Self::ExportRow => include_str!("../../schemas/v1/export-row.schema.json"),
             Self::ExportOutput => include_str!("../../schemas/v1/export-output.schema.json"),
+            Self::AnalysisSnapshot => include_str!("../../schemas/v1/analysis-snapshot.schema.json"),
             Self::CacheOutput => include_str!("../../schemas/v1/cache-output.schema.json"),
             Self::Manifest => include_str!("../../schemas/v1/manifest.schema.json"),
             Self::ProblemContract => {

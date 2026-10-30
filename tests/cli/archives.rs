@@ -217,6 +217,20 @@ fn archive_round_trip_preserves_evidence_without_the_repository() {
         &repo,
         &["export", "--output-dir", "run", "--destination", "original"],
     );
+    success(
+        &repo,
+        &[
+            "export",
+            "--output-dir",
+            "run",
+            "--destination",
+            "analysis",
+            "--format",
+            "json",
+            "--require-complete",
+        ],
+    );
+    let expected_analysis = fs::read(repo.join("analysis/results.json")).unwrap();
     fs::write(repo.join("run/index.jsonl"), "stale projection").unwrap();
     fs::write(repo.join("run/orphan"), "unregistered bytes").unwrap();
     for name in ["first.tar.gz", "second.tar.gz"] {
@@ -281,6 +295,23 @@ fn archive_round_trip_preserves_evidence_without_the_repository() {
     assert_eq!(
         expected,
         fs::read(root.path().join("tables/results.jsonl")).unwrap()
+    );
+    success(
+        root.path(),
+        &[
+            "export",
+            "--output-dir",
+            "imported",
+            "--destination",
+            "analysis",
+            "--format",
+            "json",
+            "--require-complete",
+        ],
+    );
+    assert_eq!(
+        expected_analysis,
+        fs::read(root.path().join("analysis/results.json")).unwrap()
     );
     assert!(!root.path().join("imported/run.sqlite3").exists());
     assert!(!root.path().join("imported/data/orphan").exists());

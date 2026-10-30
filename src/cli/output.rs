@@ -1481,6 +1481,7 @@ impl CommandError {
             return Self::inspection(error);
         }
         let (exit_code, code) = match error {
+            ExportError::IncompleteResults(_) => (EXIT_RUN_FAILED, "incomplete_results"),
             ExportError::UnknownIdentity(_) => (EXIT_INPUT_UNAVAILABLE, "export_id_not_found"),
             ExportError::Io(_) => (EXIT_IO, "export_write_failed"),
             ExportError::UnsafeIndex | ExportError::InvalidDestination => {

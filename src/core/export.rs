@@ -3,6 +3,8 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+pub mod analysis;
+
 /// Compatibility version of indexes, tidy rows, and export receipts.
 pub const EXPORT_SCHEMA_VERSION: u32 = 1;
 
@@ -109,6 +111,26 @@ pub struct TidyRow {
 }
 
 impl ExportRecord {
+    /// Preserves unavailable and partial accounting when projecting a quantity.
+    #[must_use]
+    pub fn measurement(&self, key: &str) -> (Option<u64>, String) {
+        if let Some(value) = self.timing[key].as_u64() {
+            return (Some(value), "complete".to_owned());
+        }
+        let measurement = self
+            .timing
+            .get(key)
+            .filter(|v| v.is_object())
+            .unwrap_or(&self.provenance["data"]["measurements"][key]);
+        (
+            measurement["value"].as_u64(),
+            measurement["status"]
+                .as_str()
+                .unwrap_or("unavailable")
+                .to_owned(),
+        )
+    }
+
     #[must_use]
     pub fn tidy_rows(&self) -> Vec<TidyRow> {
         let diagnostic = self.record_type == ExportRecordType::Trace;
@@ -137,28 +159,10 @@ impl ExportRecord {
                 // The metric coordinate carries the value; the immutable evidence
                 // still retains the complete original metrics envelope.
                 record.metrics = Value::Null;
-                let measurements = &self.provenance["data"]["measurements"];
-                let quantity = |key: &str| {
-                    if let Some(value) = self.timing[key].as_u64() {
-                        (Some(value), "complete".to_owned())
-                    } else {
-                        let measurement = self
-                            .timing
-                            .get(key)
-                            .filter(|v| v.is_object())
-                            .unwrap_or(&measurements[key]);
-                        (
-                            measurement["value"].as_u64(),
-                            measurement["status"]
-                                .as_str()
-                                .unwrap_or("unavailable")
-                                .to_owned(),
-                        )
-                    }
-                };
-                let (timed_wall_time_ns, timed_wall_time_status) = quantity("timed_wall_time_ns");
-                let (cpu_time_ns, cpu_time_status) = quantity("cpu_time_ns");
-                let (peak_rss_bytes, peak_rss_status) = quantity("peak_rss_bytes");
+                let (timed_wall_time_ns, timed_wall_time_status) =
+                    self.measurement("timed_wall_time_ns");
+                let (cpu_time_ns, cpu_time_status) = self.measurement("cpu_time_ns");
+                let (peak_rss_bytes, peak_rss_status) = self.measurement("peak_rss_bytes");
                 let profile = self.profile.as_ref();
                 let provisional = metric_name
                     .as_ref()
@@ -193,7 +197,7 @@ impl ExportRecord {
                     timed_wall_time_ns,
                     timed_wall_time_status,
                     implementation_time_ns: self.timing["implementation_time_ns"].as_u64(),
-                    evaluation_time_ns: quantity("evaluation_time_ns").0,
+                    evaluation_time_ns: self.measurement("evaluation_time_ns").0,
                     cpu_time_ns,
                     cpu_time_status,
                     peak_rss_bytes,
@@ -239,6 +243,7 @@ pub fn csv_cell(value: &str) -> String {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ExportFormat {
+    Json,
     Jsonl,
     Csv,
 }
@@ -247,6 +252,7 @@ impl ExportFormat {
     #[must_use]
     pub const fn filename(self) -> &'static str {
         match self {
+            Self::Json => "results.json",
             Self::Jsonl => "results.jsonl",
             Self::Csv => "results.csv",
         }

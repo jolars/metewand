@@ -1,0 +1,728 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "metewand://schemas/v1/analysis-snapshot.schema.json",
+  "x-metewand-compatibility-version": 1,
+  "title": "Metewand standalone analysis snapshot",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "candidates": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/candidate"
+      }
+    },
+    "observations": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/observation"
+      }
+    },
+    "attempts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/attempt"
+      }
+    },
+    "slots": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/slot"
+      }
+    },
+    "applicability": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/applicability"
+      }
+    },
+    "profiles": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/profile"
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "propertyNames": {
+        "$ref": "common.schema.json#/$defs/sha256"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/provenance"
+      }
+    },
+    "completeness": {
+      "$ref": "#/$defs/completeness"
+    },
+    "compatibility_classes": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "export-record.schema.json#/$defs/compatibility"
+      }
+    }
+  },
+  "required": [
+    "schema_version",
+    "candidates",
+    "observations",
+    "attempts",
+    "slots",
+    "applicability",
+    "profiles",
+    "provenance",
+    "completeness",
+    "compatibility_classes"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "candidate": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "experiment": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "implementation": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "dataset": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "problem": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "case": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "parameters": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "implementation_repetitions": {
+          "anyOf": [
+            {
+              "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "measurement_repetitions": {
+          "anyOf": [
+            {
+              "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "execution_policy": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "observation_policy": {
+          "type": [
+            "object",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "experiment",
+        "implementation",
+        "dataset",
+        "problem",
+        "case",
+        "parameters",
+        "implementation_repetitions",
+        "measurement_repetitions",
+        "execution_policy",
+        "observation_policy"
+      ],
+      "additionalProperties": false
+    },
+    "observation": {
+      "type": "object",
+      "properties": {
+        "profile": {
+          "$ref": "profile-observation.schema.json"
+        },
+        "candidate_id": {
+          "type": "string"
+        },
+        "attempt_id": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "observation_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "experiment": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "case": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "dataset": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "problem": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "implementation": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "completion": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "timing_scope": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "instrumented_scope": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "implementation_repetition": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "measurement_index": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "timed_wall_time_ns": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "instrumented_time_ns": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "retry_index": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "valid": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "selected": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "parameters": {
+          "type": "object"
+        },
+        "metrics": {},
+        "diagnostic": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "code",
+                "message"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "timed_wall_time_status": {
+          "enum": [
+            "complete",
+            "partial",
+            "unavailable"
+          ]
+        },
+        "warmup": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "implementation_time_ns": {
+          "anyOf": [
+            {
+              "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "evaluation_time_ns": {
+          "anyOf": [
+            {
+              "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "active_time_ns": {
+          "anyOf": [
+            {
+              "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "elapsed_wall_time_ns": {
+          "anyOf": [
+            {
+              "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "statistics": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "compatibility_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "provenance_id": {
+          "$ref": "common.schema.json#/$defs/sha256"
+        }
+      },
+      "required": [
+        "candidate_id",
+        "attempt_id",
+        "status",
+        "observation_id",
+        "experiment",
+        "case",
+        "dataset",
+        "problem",
+        "implementation",
+        "completion",
+        "timing_scope",
+        "instrumented_scope",
+        "implementation_repetition",
+        "measurement_index",
+        "timed_wall_time_ns",
+        "instrumented_time_ns",
+        "retry_index",
+        "valid",
+        "selected",
+        "parameters",
+        "metrics",
+        "diagnostic",
+        "timed_wall_time_status",
+        "warmup",
+        "implementation_time_ns",
+        "evaluation_time_ns",
+        "active_time_ns",
+        "elapsed_wall_time_ns",
+        "statistics",
+        "compatibility_id",
+        "provenance_id"
+      ],
+      "additionalProperties": false
+    },
+    "attempt": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "candidate_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "slot_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "retry_index": {
+          "anyOf": [
+            {
+              "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "state": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "failure_code": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "warmup": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "started_at_ns": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "finished_at_ns": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "candidate_id",
+        "slot_id",
+        "retry_index",
+        "state",
+        "failure_code",
+        "warmup",
+        "started_at_ns",
+        "finished_at_ns"
+      ],
+      "additionalProperties": false
+    },
+    "slot": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "candidate_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "resolved_specification_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "state": {
+          "enum": [
+            "satisfied",
+            "skipped_target_reached",
+            "pending",
+            "active",
+            "censored",
+            "retry_required"
+          ]
+        },
+        "selected_observation_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "required": [
+        "id",
+        "candidate_id",
+        "resolved_specification_id",
+        "state",
+        "selected_observation_ids"
+      ],
+      "additionalProperties": false
+    },
+    "applicability": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "candidate_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "applicable": {
+          "type": "boolean"
+        },
+        "evidence": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "id",
+        "candidate_id",
+        "applicable",
+        "evidence"
+      ],
+      "additionalProperties": false
+    },
+    "profile": {
+      "type": "object",
+      "properties": {
+        "candidate_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "resolved_specification_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "measurement_index": {
+          "anyOf": [
+            {
+              "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "delivery": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "progress": {
+          "type": [
+            "object",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "candidate_id",
+        "resolved_specification_id",
+        "measurement_index",
+        "delivery",
+        "status",
+        "reason",
+        "progress"
+      ],
+      "additionalProperties": false
+    },
+    "provenance": {
+      "type": "object",
+      "properties": {
+        "tool_version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "benchmark": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "manifest_hash": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "runner": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "host": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "repository": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "dataset": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "implementation": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "evaluator": {
+          "type": [
+            "object",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "tool_version",
+        "benchmark",
+        "manifest_hash",
+        "runner",
+        "host",
+        "repository",
+        "dataset",
+        "implementation",
+        "evaluator"
+      ],
+      "additionalProperties": false
+    },
+    "issue": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "candidate_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "slot_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "code",
+        "candidate_id",
+        "slot_id",
+        "message"
+      ],
+      "additionalProperties": false
+    },
+    "completeness": {
+      "type": "object",
+      "properties": {
+        "complete": {
+          "type": "boolean"
+        },
+        "issues": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/issue"
+          }
+        }
+      },
+      "required": [
+        "complete",
+        "issues"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

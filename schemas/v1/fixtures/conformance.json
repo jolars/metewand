@@ -2238,6 +2238,32 @@
           }
         }
       }
+    },
+    {
+      "name": "analysis snapshot preserves an empty recorded scope",
+      "schema": "analysis-snapshot",
+      "instance": {
+        "compatibility_classes": {},
+        "schema_version": 1,
+        "candidates": [],
+        "observations": [],
+        "attempts": [],
+        "slots": [],
+        "applicability": [],
+        "profiles": [],
+        "provenance": {},
+        "completeness": {
+          "complete": false,
+          "issues": [
+            {
+              "code": "no_measurements",
+              "candidate_id": null,
+              "slot_id": null,
+              "message": "No measured scope was recorded."
+            }
+          ]
+        }
+      }
     }
   ],
   "invalid": [
@@ -5116,6 +5142,32 @@
             },
             "program": "/nix/store/00000000000000000000000000000000-python/bin/python3"
           }
+        }
+      }
+    },
+    {
+      "name": "analysis snapshot rejects an unsupported version",
+      "schema": "analysis-snapshot",
+      "instance": {
+        "compatibility_classes": {},
+        "schema_version": 2,
+        "candidates": [],
+        "observations": [],
+        "attempts": [],
+        "slots": [],
+        "applicability": [],
+        "profiles": [],
+        "provenance": {},
+        "completeness": {
+          "complete": false,
+          "issues": [
+            {
+              "code": "no_measurements",
+              "candidate_id": null,
+              "slot_id": null,
+              "message": "No measured scope was recorded."
+            }
+          ]
         }
       }
     }

@@ -248,13 +248,43 @@ before retrying: unchanged deterministic code will often fail in the same way.
 ## Export for analysis
 
 ```sh
+metewand export --output-dir results --format json --require-complete --destination analysis
 metewand export --output-dir results --format csv --destination tables
 metewand export --output-dir results --destination jsonl-tables
 ```
 
-Each new destination contains `results.csv` or `results.jsonl` and `export.json`.
+Each new destination contains the selected results file and `export.json`.
 The latter records selected identities, compatibility evidence, and the table's
 hash. Exports read the stored evidence, not the original source checkout.
+
+For plotting or retaining a documentation snapshot, choose `--format json`. Its
+`results.json` contains one object per observation with a full `metrics`
+dictionary, method names, effective settings, repetition indices, profile
+controls, and separate timing coordinates. `implementation_time_ns` is the
+worker's fit timer; `timed_wall_time_ns` is the executor's timer. Profile clocks
+remain separate. The snapshot also includes attempts, registered slots,
+applicability, profile progress, and a `completeness` result.
+
+Each observation's `provenance_id` selects recorded evidence in the snapshot's
+`provenance` dictionary. It retains the dataset derivation and content hash,
+host observations, runner executable evidence, and worker environments. Git
+revision and dirty status describe the checkout at run preflight. Package
+versions and native library details can be returned by a worker's `statistics`
+callback and appear on each observation. Historical unavailable evidence remains
+unavailable; export does not inspect the exporting host or current checkout.
+
+`--require-complete` checks declared repetitions, registered measurements, and
+profile completion before writing any export or rebuilding an index. Successful
+retries and legitimate target-based skips satisfy it. Valid intermediate profile
+points remain present, including those marked `not_reached`. An unfinished or
+exhausted comparison returns `incomplete_results` with exit code 5. With `--id`,
+the check covers the registered measurement scope of the selected candidates.
+Excluded candidates remain visible and do not become successful measurements.
+
+To plot accepted measurements, select observations whose `selected` field is
+true and `warmup` field is false. Choose aggregation and figure-specific checks
+in your analysis code. Keep the full run directory or create an archive when you
+need result artifacts and complete coordination history.
 
 Tables contain one row per evaluator metric coordinate on an observation, plus
 rows for entities without metrics. For this problem, an observation can

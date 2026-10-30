@@ -143,7 +143,8 @@
           "propertyNames": {
             "enum": [
               "results.csv",
-              "results.jsonl"
+              "results.jsonl",
+              "results.json"
             ]
           },
           "additionalProperties": {

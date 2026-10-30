@@ -149,6 +149,35 @@ fn fresh_points_stop_on_independent_metrics_and_export_skipped_slots() {
     ));
     assert_eq!(status["summary"]["skipped_target_reached_slots"], 4);
     assert_eq!(status["summary"]["selected_observations"], 8);
+    let export = invoke(
+        stage.path(),
+        &[
+            "export",
+            "--output-dir",
+            "run",
+            "--destination",
+            "analysis",
+            "--format",
+            "json",
+            "--require-complete",
+            "--output",
+            "json",
+        ],
+    );
+    assert!(export.status.success(), "{export:?}");
+    let analysis: Value =
+        serde_json::from_slice(&fs::read(stage.path().join("analysis/results.json")).unwrap())
+            .unwrap();
+    assert_eq!(analysis["observations"].as_array().unwrap().len(), 8);
+    assert_eq!(analysis["profiles"].as_array().unwrap().len(), 3);
+    assert!(
+        analysis["observations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|o| o["completion"] == "not_reached")
+    );
+    assert_eq!(analysis["completeness"]["complete"], true);
     let skipped = status["slots"]
         .as_array()
         .unwrap()
@@ -290,6 +319,23 @@ fn active_time_bound_censors_and_resume_does_not_reset_it() {
     let (_, resume) = run(stage.path(), &["--resume", "--retry"]);
     assert!(resume["attempts"].as_array().unwrap().is_empty());
     assert_eq!(resume["fresh_sequences"][0]["consumed_time_ns"], 20_000_000);
+    let export = invoke(
+        stage.path(),
+        &[
+            "export",
+            "--output-dir",
+            "run",
+            "--destination",
+            "analysis",
+            "--format",
+            "json",
+            "--require-complete",
+            "--output",
+            "json",
+        ],
+    );
+    assert_eq!(export.status.code(), Some(5), "{export:?}");
+    assert!(!stage.path().join("analysis").exists());
 }
 
 #[test]

@@ -522,12 +522,14 @@ pub(super) fn resolve(
     }
     let runner = crate::runtime::build_evidence::executable_evidence(&env::current_exe()?)?;
     let host = crate::runtime::build_evidence::host_observation();
+    let checkout = crate::runtime::build_evidence::repository_observation(&repository.root);
     let mut slots = BTreeSet::new();
     for candidate in &mut candidates {
         for measurement in &mut candidate.measurements {
             let mut context = measurement.provenance.as_json().clone();
             context["runner"] = runner.clone();
             context["host_observation"] = host.clone();
+            context["repository"] = checkout.clone();
             measurement.provenance = canonical(context)?;
             if !slots.insert(measurement.attempt_slot.id) {
                 return Err(unsupported(
@@ -749,6 +751,19 @@ fn resolve_candidate(
         "parameters": {"dataset": candidate.dataset_configuration.record.parameters.as_json(),
             "problem": candidate.problem_configuration.record.parameters.as_json(),
             "implementation": candidate.implementation_configuration.record.parameters.as_json()}});
+    let declaration = repository
+        .manifest
+        .experiments
+        .iter()
+        .find(|e| e.name == experiment.name)
+        .expect("planned experiment declaration");
+    let analysis_settings = json!({
+        "benchmark": repository.manifest.name.as_str(),
+        "implementation_repetitions": declaration.implementation_repetitions,
+        "measurement_repetitions": declaration.measurement_repetitions,
+        "observation_policy": record_document(candidate.profile_policy.as_ref()
+            .map_or(&experiment.observation_policy.record, |p| &p.record))?,
+    });
 
     let definition = repository.manifest.observation_policies
         [&experiment.observation_policy.record.name]
@@ -882,6 +897,7 @@ fn resolve_candidate(
             })?;
             let mut provenance = canonical(json!({
                 "comparison": comparison,
+                "analysis": analysis_settings,
                 "applicability": applicability.record,
                 "controls": crate::core::controls::local_control_report(&policy),
                 "execution_policy": record_document(&policy)?,

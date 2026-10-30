@@ -96,3 +96,24 @@ pub(crate) fn host_observation() -> Value {
         "memory": read("/proc/meminfo").and_then(|s| s.lines().find(|line| line.starts_with("MemTotal:")).map(str::to_owned)),
     })
 }
+
+/// Records checkout state without turning Git availability into a run requirement.
+pub(crate) fn repository_observation(root: &Path) -> Value {
+    let git = |arguments: &[&str]| {
+        let output = std::process::Command::new("git")
+            .arg("-C")
+            .arg(root)
+            .args(arguments)
+            .output()
+            .ok()?;
+        output.status.success().then_some(output.stdout)
+    };
+    let Some(commit) =
+        git(&["rev-parse", "--verify", "HEAD"]).and_then(|bytes| String::from_utf8(bytes).ok())
+    else {
+        return json!({"status":"unavailable","reason":"git_revision_unavailable"});
+    };
+    let dirty =
+        git(&["status", "--porcelain=v1", "--untracked-files=all"]).map(|bytes| !bytes.is_empty());
+    json!({"status":"available","commit":commit.trim(),"dirty":dirty})
+}

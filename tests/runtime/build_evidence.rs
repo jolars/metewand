@@ -17,6 +17,35 @@ fn git(root: &Path, args: &[&str]) {
 }
 
 #[test]
+fn checkout_observations_record_git_state_without_requiring_git_repositories() {
+    use crate::runtime::build_evidence::repository_observation;
+    let root = tempfile::tempdir().unwrap();
+    assert_eq!(repository_observation(root.path())["status"], "unavailable");
+    git(root.path(), &["init", "-q"]);
+    fs::write(root.path().join("source.txt"), "initial").unwrap();
+    git(root.path(), &["add", "source.txt"]);
+    git(
+        root.path(),
+        &[
+            "-c",
+            "user.name=Run Test",
+            "-c",
+            "user.email=run@example.invalid",
+            "commit",
+            "-qm",
+            "initial",
+        ],
+    );
+    let clean = repository_observation(root.path());
+    assert_eq!(clean["dirty"], false);
+    assert_eq!(clean["commit"].as_str().unwrap().len(), 40);
+    fs::write(root.path().join("source.txt"), "changed").unwrap();
+    let dirty = repository_observation(root.path());
+    assert_eq!(dirty["commit"], clean["commit"]);
+    assert_eq!(dirty["dirty"], true);
+}
+
+#[test]
 fn build_receipts_capture_inputs_and_bind_the_exact_artifact() {
     let root = tempfile::tempdir().unwrap();
     git(root.path(), &["init", "-q"]);

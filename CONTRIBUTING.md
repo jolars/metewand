@@ -546,6 +546,21 @@ Export reads committed evidence and verified artifacts. A disposable
 replaces only that projection. Table destinations are new directories with
 `results.jsonl` or `results.csv` and a lineage manifest, `export.json`.
 
+`--format json` writes the version-1 analysis snapshot, `results.json`, and the
+same lineage manifest. It projects complete observation metric objects, shared
+recorded provenance, effective settings, timing coordinates, attempt outcomes,
+and registered measurement progress. Its receipt counts observation objects as
+rows. `--require-complete` validates the registered scope of selected candidates
+before any write, using accepted selections and profile progress rather than the
+absence of historical failures. It accepts target-based skips and successful
+retries while preserving intermediate observations and exclusions.
+
+Capture checkout revision and dirty status, host observations, runner evidence,
+and repetition settings during run preflight. Analysis exports use only recorded
+evidence; they must remain deterministic after the source checkout or producing
+executable disappears. These additions preserve canonical identity rules,
+execution semantics, and SQLite layouts. Existing tidy exports retain version 1.
+
 Tidy rows preserve attempts, observations, applicability, trace evidence, and
 fresh slot dispositions. Metric names are JSON pointers; entities without
 metrics remain present. CSV uses fixed columns, UTF-8, CRLF endings, and

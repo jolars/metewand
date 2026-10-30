@@ -20,6 +20,8 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 
+mod analysis;
+
 use crate::runtime::{
     evidence::EvidenceSnapshot,
     inspection::{Inspection, InspectionError},
@@ -30,6 +32,7 @@ pub struct ResultSet {
     root: PathBuf,
     read_only: bool,
     pub records: Vec<ExportRecord>,
+    analysis: crate::core::export::analysis::AnalysisSnapshot,
 }
 
 impl ResultSet {
@@ -42,6 +45,7 @@ impl ResultSet {
     pub(crate) fn from_snapshot(snapshot: &EvidenceSnapshot) -> Result<Self, ExportError> {
         let mut inspection = Inspection::default();
         inspection.add_snapshot(snapshot)?;
+        let comparisons = inspection.comparison_rows();
         let graph = inspection.into_records();
         let mut records = Vec::new();
         for source in graph.values().filter(|record| {
@@ -108,10 +112,12 @@ impl ResultSet {
                     &b.id,
                 ))
         });
+        let analysis = analysis::project(&records, comparisons, &graph, &snapshot.tables)?;
         Ok(Self {
             root: snapshot.root.clone(),
             read_only: snapshot.files.is_some(),
             records,
+            analysis,
         })
     }
 
@@ -197,7 +203,30 @@ impl ResultSet {
         ids: &[String],
         rebuild_index: bool,
     ) -> Result<ExportReport, ExportError> {
+        self.export_checked(destination, format, ids, rebuild_index, false)
+    }
+
+    pub fn export_checked(
+        &self,
+        destination: Option<&Path>,
+        format: ExportFormat,
+        ids: &[String],
+        rebuild_index: bool,
+        require_complete: bool,
+    ) -> Result<ExportReport, ExportError> {
         let records = self.select(ids)?;
+        let analysis = if ids.is_empty() {
+            self.analysis.clone()
+        } else {
+            analysis::select(&self.analysis, &records)
+        };
+        if require_complete && !analysis.completeness.complete {
+            let messages = analysis.completeness.issues.iter()
+                .map(|issue| issue.message.as_str()).collect::<BTreeSet<_>>();
+            return Err(ExportError::IncompleteResults(
+                messages.into_iter().collect::<Vec<_>>().join(" "),
+            ));
+        }
         if rebuild_index {
             self.index_target()?;
         }
@@ -206,6 +235,7 @@ impl ResultSet {
             .flat_map(ExportRecord::tidy_rows)
             .collect::<Vec<_>>();
         let data = match format {
+            ExportFormat::Json => canonical_bytes(&analysis)?,
             ExportFormat::Jsonl => json_lines(&rows)?,
             ExportFormat::Csv => csv(&rows)?,
         };
@@ -248,7 +278,11 @@ impl ResultSet {
             command: "export",
             schema_version: EXPORT_SCHEMA_VERSION,
             records: records.len(),
-            rows: rows.len(),
+            rows: if format == ExportFormat::Json {
+                analysis.observations.len()
+            } else {
+                rows.len()
+            },
             destination: destination_path,
             index_path,
             manifest,
@@ -676,6 +710,8 @@ fn csv(rows: &[TidyRow]) -> Result<Vec<u8>, ExportError> {
 
 #[derive(Debug, Error)]
 pub enum ExportError {
+    #[error("the selected comparison is incomplete: {0}")]
+    IncompleteResults(String),
     #[error(
         "archive collections are read-only; export to a new destination without --rebuild-index"
     )]

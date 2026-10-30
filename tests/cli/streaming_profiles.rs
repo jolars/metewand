@@ -284,6 +284,32 @@ fn python_and_native_streams_publish_evaluator_owned_curves_and_exports() {
             &["status", "--output-dir", "run", "--output", "json"],
         ));
         assert_eq!(status["summary"]["selected_observations"], 13, "{status}");
+        let export = invoke(
+            stage.path(),
+            &[
+                "export",
+                "--output-dir",
+                "run",
+                "--destination",
+                "analysis",
+                "--format",
+                "json",
+                "--require-complete",
+                "--output",
+                "json",
+            ],
+        );
+        assert!(export.status.success(), "{export:?}");
+        let analysis = document(stage.path().join("analysis/results.json"));
+        assert_eq!(analysis["observations"].as_array().unwrap().len(), 13);
+        assert_eq!(analysis["profiles"].as_array().unwrap().len(), 3);
+        assert!(
+            analysis["observations"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|o| o["active_time_ns"].is_u64() && o["elapsed_wall_time_ns"].is_u64())
+        );
         for format in ["jsonl", "csv"] {
             let output = invoke(
                 stage.path(),
