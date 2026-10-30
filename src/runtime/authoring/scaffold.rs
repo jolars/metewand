@@ -815,6 +815,7 @@ mod tests {
         assert_eq!(error.changed_paths[0].path, directory);
         assert!(directory.is_dir());
         assert_eq!(fs::read_to_string(conflict).unwrap(), "preserve\n");
+        drop(file);
         assert_eq!(fs::read_to_string(manifest).unwrap(), original);
     }
 
@@ -832,7 +833,13 @@ mod tests {
             } else {
                 "version: 1\nname: author edit\n"
             };
-            fs::write(&manifest, current).unwrap();
+            if replace {
+                fs::write(&manifest, current).unwrap();
+            } else {
+                file.rewind().unwrap();
+                file.set_len(0).unwrap();
+                file.write_all(current.as_bytes()).unwrap();
+            }
             let created = root.path().join("worker.sh");
             let paths = vec![
                 change(&created, CreatedPathKind::File, PathAction::Create),
@@ -852,6 +859,7 @@ mod tests {
             assert_eq!(error.path, manifest);
             assert_eq!(error.changed_paths.len(), 1);
             assert_eq!(error.changed_paths[0].path, created);
+            drop(file);
             assert_eq!(fs::read_to_string(manifest).unwrap(), current);
             assert_eq!(fs::read_to_string(created).unwrap(), "stub\n");
         }

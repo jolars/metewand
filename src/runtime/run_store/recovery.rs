@@ -205,6 +205,11 @@ impl RunStore {
                 continue;
             }
             let source = root.join(&stage.relative_path);
+            // Windows cannot move a directory containing an open lock file.
+            // Recovery owns the global exclusive lock, and acquiring this stage
+            // lock established that no original publisher still owns the stage.
+            #[cfg(windows)]
+            drop(stage._lock);
             if source.try_exists()? {
                 let quarantine = objects.join(".quarantine");
                 ensure_directory(&quarantine)?;

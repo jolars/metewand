@@ -122,7 +122,10 @@ fn empty_init_creates_only_a_versioned_manifest_that_checks_and_plans() {
     assert!(result.stderr.is_empty(), "{result:?}");
     assert_eq!(
         String::from_utf8(result.stdout.clone()).unwrap(),
-        "{\"schema_version\":1,\"kind\":\"result\",\"data\":{\"command\":\"init\",\"dry_run\":false,\"manifest\":\"./metewand.yaml\",\"paths\":[{\"path\":\"./metewand.yaml\",\"kind\":\"file\"}]}}\n"
+        "{\"schema_version\":1,\"kind\":\"result\",\"data\":{\"command\":\"init\",\"dry_run\":false,\"manifest\":\"./metewand.yaml\",\"paths\":[{\"path\":\"./metewand.yaml\",\"kind\":\"file\"}]}}\n".replace(
+            "\"./metewand.yaml\"",
+            &serde_json::to_string(&Path::new(".").join("metewand.yaml")).unwrap(),
+        )
     );
     envelope(&result, true);
     assert_eq!(fs::read_dir(root.path()).unwrap().count(), 1);
@@ -173,8 +176,8 @@ fn dry_run_reports_every_missing_path_without_creating_anything() {
         result["data"]["paths"],
         json!([
             {"path": "new", "kind": "directory"},
-            {"path": "new/nested benchmark", "kind": "directory"},
-            {"path": "new/nested benchmark/metewand.yaml", "kind": "file"}
+            {"path": Path::new("new").join("nested benchmark"), "kind": "directory"},
+            {"path": Path::new("new/nested benchmark").join("metewand.yaml"), "kind": "file"}
         ])
     );
     assert_eq!(
@@ -197,13 +200,19 @@ fn existing_directories_and_unrelated_files_are_preserved() {
     assert!(preview.status.success(), "{preview:?}");
     assert_eq!(
         String::from_utf8(preview.stdout).unwrap(),
-        "Would create file: ./metewand.yaml\n"
+        format!(
+            "Would create file: {}\n",
+            Path::new(".").join("metewand.yaml").display()
+        )
     );
     let result = metewand(root.path(), &["init"]);
     assert!(result.status.success(), "{result:?}");
     assert_eq!(
         String::from_utf8(result.stdout).unwrap(),
-        "Created file: ./metewand.yaml\n"
+        format!(
+            "Created file: {}\n",
+            Path::new(".").join("metewand.yaml").display()
+        )
     );
     assert_eq!(
         fs::read_to_string(root.path().join("keep.txt")).unwrap(),

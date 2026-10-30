@@ -415,6 +415,8 @@ fn python_starter_uses_the_selected_virtual_environment() {
     });
     let output = Command::new(&interpreter)
         .args([
+            "-X",
+            "utf8",
             "-c",
             "import sysconfig; print(sysconfig.get_path('purelib'))",
         ])

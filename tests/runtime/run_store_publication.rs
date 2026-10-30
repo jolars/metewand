@@ -396,13 +396,14 @@ fn staging_is_locked_leased_and_on_the_destination_filesystem_outside_database_t
     let (root, mut store, db) = setup();
     let attempt = reserve(&mut store);
     store.publish_artifact(&attempt, ArtifactKind::Other, |path| {
-        assert!(path.starts_with(root.path()));
+        let canonical_root = root.path().canonicalize().unwrap();
+        assert!(path.starts_with(&canonical_root));
         #[cfg(unix)]
         assert_eq!(fs::metadata(path)?.dev(), fs::metadata(root.path())?.dev());
         let stage = path.parent().unwrap();
         let lock = fs::File::open(stage.join("lock"))?;
         assert!(matches!(lock.try_lock(), Err(fs::TryLockError::WouldBlock)));
-        let relative = stage.strip_prefix(root.path()).unwrap().to_str().unwrap().replace(std::path::MAIN_SEPARATOR, "/");
+        let relative = stage.strip_prefix(&canonical_root).unwrap().to_str().unwrap().replace(std::path::MAIN_SEPARATOR, "/");
         assert_eq!(db.query_row("SELECT count(*) FROM leases WHERE purpose = 'staging' AND staging_path = ?1 AND released_at_ns IS NULL", [relative], |r| r.get::<_, i64>(0)).unwrap(), 1);
         // A second connection can commit while population is still in progress.
         db.execute("INSERT INTO events(occurred_at_ns, kind, payload_json) VALUES (11, 'test', '{}')", []).unwrap();

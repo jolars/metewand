@@ -524,7 +524,7 @@ fn check_native_inputs(value: &Value) -> Result<(), LockError> {
             if let Some(locked) = node.get("locked") {
                 if locked["type"] == "path" {
                     let path = locked["path"].as_str().unwrap_or("");
-                    if Path::new(path).is_absolute() {
+                    if Path::new(path).has_root() {
                         return Err(error(
                             "invalid_lock_source",
                             "absolute local flake inputs are not supported; use repository-relative path inputs",

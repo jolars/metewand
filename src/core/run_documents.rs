@@ -209,14 +209,15 @@ mod tests {
 
     #[test]
     fn timestamps_preserve_utc_dates_and_nanoseconds() {
+        // Windows SystemTime represents timestamps in 100-nanosecond ticks.
         for (seconds, expected) in [
-            (0, "1970-01-01T00:00:00.000000123Z"),
-            (951782400, "2000-02-29T00:00:00.000000123Z"),
-            (4107542400, "2100-03-01T00:00:00.000000123Z"),
-            (253402300799, "9999-12-31T23:59:59.000000123Z"),
+            (0, "1970-01-01T00:00:00.000012300Z"),
+            (951782400, "2000-02-29T00:00:00.000012300Z"),
+            (4107542400, "2100-03-01T00:00:00.000012300Z"),
+            (253402300799, "9999-12-31T23:59:59.000012300Z"),
         ] {
             assert_eq!(
-                timestamp(UNIX_EPOCH + Duration::new(seconds, 123)).unwrap(),
+                timestamp(UNIX_EPOCH + Duration::new(seconds, 12_300)).unwrap(),
                 expected
             );
         }

@@ -372,6 +372,10 @@ impl ArtifactStore {
                     Err(TryLockError::Error(error)) => return Err(error.into()),
                 }
             }
+            // The cache lock excludes new owners after the abandoned lease is
+            // identified. Close its handle so Windows can move the directory.
+            #[cfg(windows)]
+            drop(file);
             rename_no_replace(
                 &entry.path(),
                 &self.root.join("quarantine").join(entry.file_name()),

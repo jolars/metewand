@@ -542,6 +542,9 @@ fn compact_and_human_reports_list_the_same_paths_in_execution_order() {
             "{\"path\":\"datasets/new\",\"kind\":\"directory\",\"action\":\"create\"},",
             "{\"path\":\"datasets/new/materializer.py\",\"kind\":\"file\",\"action\":\"create\"},",
             "{\"path\":\"metewand.yaml\",\"kind\":\"file\",\"action\":\"modify\"}]}}\n"
+        ).replace(
+            "\"datasets/new\"",
+            &serde_json::to_string(&Path::new("datasets").join("new")).unwrap(),
         )
     );
     let human = command(root.path()).args(arguments).output().unwrap();
@@ -553,6 +556,13 @@ fn compact_and_human_reports_list_the_same_paths_in_execution_order() {
             "Would create directory: datasets/new\n",
             "Would create file: datasets/new/materializer.py\n",
             "Would modify file: metewand.yaml\n"
+        )
+        .replace(
+            "directory: datasets/new\n",
+            &format!(
+                "directory: {}\n",
+                Path::new("datasets").join("new").display()
+            ),
         )
     );
     let actual = command(root.path())
@@ -567,6 +577,13 @@ fn compact_and_human_reports_list_the_same_paths_in_execution_order() {
             "Created directory: datasets/new\n",
             "Created file: datasets/new/materializer.py\n",
             "Modified file: metewand.yaml\n"
+        )
+        .replace(
+            "directory: datasets/new\n",
+            &format!(
+                "directory: {}\n",
+                Path::new("datasets").join("new").display()
+            ),
         )
     );
 }
@@ -587,6 +604,7 @@ fn a_busy_manifest_fails_without_changing_any_path() {
         assert_eq!(diagnostic["data"]["code"], "scaffold_manifest_busy");
         assert_eq!(diagnostic["data"]["details"]["changed_paths"], json!([]));
     }
+    drop(file);
     assert_eq!(
         fs::read_to_string(root.path().join("metewand.yaml")).unwrap(),
         MANIFEST

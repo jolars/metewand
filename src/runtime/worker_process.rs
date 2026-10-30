@@ -1016,12 +1016,54 @@ struct ProcessGroup(libc::pid_t);
 
 #[cfg(unix)]
 impl ProcessGroup {
+    #[cfg(target_os = "macos")]
+    fn has_no_live_members(&self) -> bool {
+        // Darwin skips zombies when signaling a group and returns EPERM if no
+        // eligible members remain. Preserve permission errors for live groups.
+        let mut members: [libc::pid_t; 4096] = [0; 4096];
+        let capacity = std::mem::size_of_val(&members) as libc::c_int;
+        // SAFETY: The buffer is writable for the supplied byte count.
+        let bytes = unsafe {
+            libc::proc_listpgrppids(self.0, members.as_mut_ptr().cast(), capacity)
+        };
+        if bytes <= 0 {
+            // SAFETY: Signal zero only checks whether the private group exists.
+            return unsafe { libc::kill(-self.0, 0) } == -1
+                && io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH);
+        }
+        if bytes >= capacity {
+            return false;
+        }
+        members[..bytes as usize / std::mem::size_of::<libc::pid_t>()]
+            .iter()
+            .filter(|&&pid| pid != 0)
+            .all(|&pid| {
+                // SAFETY: proc_bsdinfo is a C record initialized by proc_pidinfo.
+                let mut info: libc::proc_bsdinfo = unsafe { std::mem::zeroed() };
+                let size = std::mem::size_of_val(&info) as libc::c_int;
+                // SAFETY: The output pointer is writable for exactly size bytes.
+                let read = unsafe {
+                    libc::proc_pidinfo(
+                        pid, libc::PROC_PIDTBSDINFO, 0,
+                        (&mut info as *mut libc::proc_bsdinfo).cast(), size,
+                    )
+                };
+                (read == size && info.pbi_status == libc::SZOMB)
+                    || (read <= 0
+                        && io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH))
+            })
+    }
+
     fn signal(&self, signal: libc::c_int) -> io::Result<()> {
         // SAFETY: A negative process ID addresses the private worker group.
         if unsafe { libc::kill(-self.0, signal) } == 0 {
             return Ok(());
         }
         let error = io::Error::last_os_error();
+        #[cfg(target_os = "macos")]
+        if error.raw_os_error() == Some(libc::EPERM) && self.has_no_live_members() {
+            return Ok(());
+        }
         if error.raw_os_error() == Some(libc::ESRCH) {
             Ok(())
         } else {

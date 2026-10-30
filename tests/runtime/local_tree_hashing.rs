@@ -177,26 +177,31 @@ mod unix {
     #[test]
     fn rejects_non_utf8_paths_and_symlink_targets() {
         let path_tree = TempDir::new().unwrap();
-        fs::write(
+        // Some Unix filesystems reject invalid UTF-8 before hashing can inspect it.
+        match fs::write(
             path_tree.path().join(OsString::from_vec(vec![b'f', 0xff])),
             b"contents",
-        )
-        .unwrap();
-        assert!(matches!(
-            hash_local_tree(path_tree.path()),
-            Err(LocalTreeHashError::NonUtf8Path { .. })
-        ));
+        ) {
+            Ok(()) => assert!(matches!(
+                hash_local_tree(path_tree.path()),
+                Err(LocalTreeHashError::NonUtf8Path { .. })
+            )),
+            Err(error) if error.raw_os_error() == Some(libc::EILSEQ) => {}
+            Err(error) => panic!("cannot create non-UTF-8 fixture: {error}"),
+        }
 
         let target_tree = TempDir::new().unwrap();
-        symlink(
+        match symlink(
             OsString::from_vec(vec![b't', 0xff]),
             target_tree.path().join("link"),
-        )
-        .unwrap();
-        assert!(matches!(
-            hash_local_tree(target_tree.path()),
-            Err(LocalTreeHashError::NonUtf8SymlinkTarget { .. })
-        ));
+        ) {
+            Ok(()) => assert!(matches!(
+                hash_local_tree(target_tree.path()),
+                Err(LocalTreeHashError::NonUtf8SymlinkTarget { .. })
+            )),
+            Err(error) if error.raw_os_error() == Some(libc::EILSEQ) => {}
+            Err(error) => panic!("cannot create non-UTF-8 symlink fixture: {error}"),
+        }
     }
 
     #[test]

@@ -512,9 +512,9 @@ fn spawn_child(
     let mut startup: STARTUPINFOEXW = unsafe { zeroed() };
     startup.StartupInfo.cb = size_of::<STARTUPINFOEXW>() as u32;
     startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
-    startup.StartupInfo.hStdInput = handles[2];
-    startup.StartupInfo.hStdOutput = handles[3];
-    startup.StartupInfo.hStdError = handles[4];
+    startup.StartupInfo.hStdInput = handles[0];
+    startup.StartupInfo.hStdOutput = handles[1];
+    startup.StartupInfo.hStdError = handles[2];
     startup.lpAttributeList = attributes.as_mut_ptr();
     let mut process: PROCESS_INFORMATION = unsafe { zeroed() };
     if unsafe {

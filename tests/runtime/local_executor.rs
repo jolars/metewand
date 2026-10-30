@@ -47,7 +47,10 @@ fn termination_kills_stubborn_descendants_and_removes_private_directory() {
         )
         .unwrap();
     let directory = process.private_working_directory().unwrap().to_owned();
-    assert_eq!(directory.parent(), Some(root.path()));
+    assert_eq!(
+        directory.parent(),
+        Some(root.path().canonicalize().unwrap().as_path())
+    );
     assert_eq!(
         directory.metadata().unwrap().permissions().mode() & 0o777,
         0o700

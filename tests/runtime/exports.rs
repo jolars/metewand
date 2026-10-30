@@ -248,7 +248,7 @@ fn every_terminal_outcome_retains_earlier_observations_and_distinct_guarantees()
     let index = results.index_bytes().unwrap();
     assert_eq!(
         results.rebuild_index().unwrap(),
-        root.path().join("index.jsonl")
+        root.path().canonicalize().unwrap().join("index.jsonl")
     );
     fs::write(root.path().join("index.jsonl"), "stale").unwrap();
     assert_eq!(

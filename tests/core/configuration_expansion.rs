@@ -123,7 +123,7 @@ fn schema_catalog_with_parameter_schemas(
     .into_iter()
     .map(|(name, source)| {
         (
-            Path::new("schemas").join(format!("{name}.json")),
+            format!("schemas/{name}.json").into(),
             serde_json::from_str::<Value>(source).unwrap(),
         )
     })

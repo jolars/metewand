@@ -21,7 +21,17 @@ fn install_package(directory: &Path) {
 }
 
 fn spawn(role: &str, library: &Path, adapter: &Path) -> WorkerProcess {
-    let mut command = Command::new("Rscript");
+    let program = if cfg!(windows) {
+        std::env::split_paths(&std::env::var_os("PATH").unwrap())
+            .map(|path| path.join("Rscript.exe"))
+            .find(|path| path.is_file())
+            .unwrap()
+            .canonicalize()
+            .unwrap()
+    } else {
+        "Rscript".into()
+    };
+    let mut command = Command::new(program);
     command
         .args([
             "--vanilla",

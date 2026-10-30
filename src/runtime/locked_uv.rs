@@ -414,7 +414,7 @@ pub(crate) fn verify(environment: &LockedUvEnvironment) -> Result<(), LockError>
 
 fn verify_in(environment: &LockedUvEnvironment, data: &Path) -> Result<(), LockError> {
     let receipt = read_receipt_in(environment, data)?;
-    let root = generation_in(environment, data)?.join("environment");
+    let root = fs::canonicalize(generation_in(environment, data)?.join("environment"))?;
     let replacements = replacements(&root, &receipt);
     let verify = || -> Result<bool, LockError> {
         if inventory(&root, false, &replacements)? != receipt.environment {
@@ -960,6 +960,21 @@ mod tests {
             calls: RefCell::new(vec![]),
         }
     }
+    #[cfg(unix)]
+    #[test]
+    fn verification_accepts_a_symlinked_data_directory() {
+        let temporary = tempfile::tempdir().unwrap();
+        let repository = fixture(&temporary.path().join("sources"));
+        let fake = fake(temporary.path());
+        let data = temporary.path().join("data");
+        let name = repository.manifest.environments.keys().next().unwrap();
+        let environment =
+            prepare_with(&repository, name, &repository.root, "source", &data, &fake).unwrap();
+        let alias = temporary.path().join("data-alias");
+        std::os::unix::fs::symlink(&data, &alias).unwrap();
+        verify_in(&environment, &alias).unwrap();
+    }
+
     #[test]
     fn preparation_is_reused_only_after_exact_verification_and_never_replaces_a_generation() {
         let temporary = tempfile::tempdir().unwrap();

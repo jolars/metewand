@@ -160,7 +160,10 @@ fn failed_run_roots_remain_after_the_output_directory_is_removed() {
     assert_eq!(report["data"]["targets"][0]["state"], "retained");
     assert_eq!(
         report["data"]["targets"][0]["roots"][0],
-        format!("run:{}", root.path().join("failed").display())
+        format!(
+            "run:{}",
+            root.path().canonicalize().unwrap().join("failed").display()
+        )
     );
 }
 
@@ -193,7 +196,10 @@ fn durable_run_roots_survive_stale_indexes_and_collection_preserves_reconstructi
         .path();
     let mapping = fs::read(derivation.join("dataset.json")).unwrap();
     for (index, name) in ["first", "second"].iter().enumerate() {
-        let root_name = format!("run:{}", root.path().join(name).display());
+        let root_name = format!(
+            "run:{}",
+            root.path().canonicalize().unwrap().join(name).display()
+        );
         let (code, report) = command(
             root.path(),
             &[

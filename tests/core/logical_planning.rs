@@ -111,7 +111,7 @@ fn schemas() -> SchemaCatalog {
                 _ => unreachable!(),
             };
             (
-                Path::new("schemas").join(format!("{name}.json")),
+                format!("schemas/{name}.json").into(),
                 serde_json::from_str::<Value>(source).unwrap(),
             )
         })
