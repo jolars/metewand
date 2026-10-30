@@ -1,4 +1,4 @@
-# Metewand
+# Metewand <img src="https://raw.githubusercontent.com/jolars/metewand/refs/heads/main/assets/logo.png" align="right" width="160" alt="A green measuring rod with brass ends" />
 
 [![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.23699794-blue)](https://doi.org/10.5281/zenodo.23699794)
 
@@ -44,37 +44,37 @@ cargo install metewand --locked
 
 ## Try a benchmark
 
-From this checkout, with Rust 1.98.0 and Python 3.11 or later:
+With the CLI and Python worker package
+[installed](docs/guide/getting-started.md#install), create and run a starter:
 
 ```sh
-cargo install --locked --path .
-python3 -m venv .venv
-. .venv/bin/activate
-python3 -m pip install ./packages/python
 metewand init my-benchmark
 cd my-benchmark
 metewand check --workers
-metewand plan
 metewand run --output-dir run
-metewand status --output-dir run
-metewand export --output-dir run --format csv --destination tables
 ```
 
-Windows source builds use Rust's MSVC toolchain and Visual Studio C++ build
-tools. See [getting started](docs/guide/getting-started.md) for PowerShell
-installation and the local NTFS storage requirement. The R package contains no
-native code and requires only `jsonlite` beyond standard R packages.
+The generated `benchmark.py` compares Python's built-in sum with a loop on seeded
+integers and independently checks each answer. The experiment in `metewand.yaml`
+declares the comparison:
 
-The starter has two files: `metewand.yaml` and `benchmark.py`. Use
-`metewand init --language r` for R. Choose a new output directory, or explicitly
-resume an existing run with `--resume`. See
-[running and analyzing comparisons](docs/guide/authoring/running.md) for timing,
-retries, and exports.
+```yaml
+experiments:
+  - name: comparison
+    problem: sum
+    datasets: [numbers]
+    implementations: [builtin, loop]
+    seed: 7
+```
 
-The [least-squares example](examples/least-squares) compares gradient descent
-with coordinate descent and adds scientific validation incrementally. The
-[example collection](examples) also covers native Rust workers, lifecycle callbacks,
-parameter matrices, fresh sequences, and buffered profiles.
+Metewand prints timings and absolute errors and saves the results in `run/`.
+Replace the generated functions and edit the configuration to compare your own
+methods. For R, start with `metewand init my-benchmark --language r`.
+
+Follow the [authoring guide](docs/guide/authoring/index.md) or adapt the
+[least-squares example](examples/least-squares) for a fuller comparison. See
+[running and analyzing comparisons](docs/guide/authoring/running.md) for repeated
+measurements and exports.
 
 ## Project status and development
 
