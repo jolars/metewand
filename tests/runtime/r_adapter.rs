@@ -21,12 +21,12 @@ fn install_package(directory: &Path) {
 }
 
 fn spawn(role: &str, library: &Path, adapter: &Path) -> WorkerProcess {
+    // R derives library paths from its executable, so preserve PATH's
+    // conventional Windows spelling instead of introducing a verbatim prefix.
     let program = if cfg!(windows) {
         std::env::split_paths(&std::env::var_os("PATH").unwrap())
             .map(|path| path.join("Rscript.exe"))
             .find(|path| path.is_file())
-            .unwrap()
-            .canonicalize()
             .unwrap()
     } else {
         "Rscript".into()
@@ -63,8 +63,15 @@ if (role == "implementation") {
 fn exchange(process: &mut WorkerProcess, request: &Value) -> Value {
     let mut bytes = serde_json::to_vec(request).unwrap();
     bytes.push(b'\n');
-    process.protocol_writer().write_all(&bytes).unwrap();
+    write_frame(process, &bytes);
     process.protocol_reader().read_frame().unwrap().unwrap()
+}
+
+fn write_frame(process: &mut WorkerProcess, bytes: &[u8]) {
+    if let Err(error) = process.protocol_writer().write_all(bytes) {
+        let output = process.log_snapshot();
+        panic!("R worker protocol write failed: {error}; {output:?}");
+    }
 }
 
 fn hello(role: &str) -> Value {
@@ -228,10 +235,7 @@ fn malformed_r_envelopes_terminate_serving_without_fabricating_an_id() {
         "{\"id\":\"one\",\"id\":\"two\",\"method\":\"shutdown\"}\n",
     ] {
         let mut process = spawn("implementation", library.path(), &adapter_path);
-        process
-            .protocol_writer()
-            .write_all(frame.as_bytes())
-            .unwrap();
+        write_frame(&mut process, frame.as_bytes());
         assert!(
             process.protocol_reader().read_frame().unwrap().is_none(),
             "{frame}"
@@ -270,10 +274,7 @@ fn non_json_r_frames_terminate_serving_without_invoking_callbacks() {
             if negotiated {
                 assert_eq!(exchange(&mut process, &hello("implementation"))["ok"], true);
             }
-            process
-                .protocol_writer()
-                .write_all(frame.as_bytes())
-                .unwrap();
+            write_frame(&mut process, frame.as_bytes());
             assert!(
                 process.protocol_reader().read_frame().unwrap().is_none(),
                 "{frame}"

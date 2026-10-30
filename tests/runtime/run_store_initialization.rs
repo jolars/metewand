@@ -185,6 +185,7 @@ fn concurrent_processes_initialize_one_store() {
                 .args([
                     "--exact",
                     "runtime_tests::run_store_initialization::child_initializer",
+                    "--nocapture",
                 ])
                 .env("METEWAND_TEST_RUN_STORE_ROOT", root.path())
                 .stdout(Stdio::null())
@@ -209,6 +210,23 @@ fn concurrent_processes_initialize_one_store() {
             .unwrap(),
         "ok"
     );
+}
+
+#[cfg(windows)]
+#[test]
+fn reopening_a_private_store_does_not_rewrite_child_acls() {
+    use std::os::windows::fs::OpenOptionsExt;
+
+    let root = TempDir::new().unwrap();
+    let store = RunStore::open(root.path()).unwrap();
+    let _exclusive = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .share_mode(0)
+        .open(root.path().join("exclusive"))
+        .unwrap();
+    let reopened = RunStore::open(root.path()).unwrap();
+    assert_eq!(store.database_path(), reopened.database_path());
 }
 
 #[test]

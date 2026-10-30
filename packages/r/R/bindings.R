@@ -155,6 +155,7 @@ json_array <- function(values) I(unname(values))
 #' @rdname json
 #' @export
 read_json <- function(path) {
+  path <- .file_path(path)
   connection <- file(path, "rb")
   on.exit(close(connection))
   .parse_json(rawToChar(readBin(connection, "raw", n = file.info(path)$size)))
@@ -163,11 +164,21 @@ read_json <- function(path) {
 #' @rdname json
 #' @export
 write_json <- function(path, value) {
+  path <- .file_path(path)
   bytes <- charToRaw(enc2utf8(.json_text(value)))
   connection <- file(path, "wb")
   on.exit(close(connection))
   writeBin(bytes, connection)
   invisible(NULL)
+}
+
+.file_path <- function(path) {
+  # Windows disables slash conversion for verbatim paths, while file.path()
+  # introduces forward slashes when callbacks append artifact names.
+  if (.Platform$OS.type == "windows" && startsWith(path, "\\\\?\\")) {
+    path <- chartr("/", "\\", path)
+  }
+  path
 }
 
 #' @rdname artifacts

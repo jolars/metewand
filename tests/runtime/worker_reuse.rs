@@ -144,10 +144,18 @@ fn directory_link(target: &Path, link: &Path) {
 #[cfg(windows)]
 fn directory_link(target: &Path, link: &Path) {
     // Junctions exercise directory-link cleanup without requiring symlink privileges.
+    // cmd.exe rejects verbatim working directories as UNC paths, so give it a
+    // conventional working directory and absolute paths for both junction ends.
+    let link = env::current_dir().unwrap().join(link);
+    let conventional = |path: &Path| {
+        let path = path.to_str().unwrap();
+        path.strip_prefix(r"\\?\").unwrap_or(path).to_owned()
+    };
     let output = std::process::Command::new("cmd.exe")
         .args(["/D", "/C", "mklink", "/J"])
-        .arg(link)
-        .arg(target)
+        .arg(conventional(&link))
+        .arg(conventional(target))
+        .current_dir(env::var_os("SYSTEMROOT").unwrap())
         .output()
         .unwrap();
     assert!(

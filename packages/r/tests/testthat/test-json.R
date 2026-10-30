@@ -1,3 +1,12 @@
+test_that("JSON files support mixed separators in verbatim Windows paths", {
+  skip_if(.Platform$OS.type != "windows")
+  directory <- withr::local_tempdir(pattern = "metewand JSON é ")
+  directory <- normalizePath(directory, winslash = "\\", mustWork = TRUE)
+  path <- file.path(paste0("\\\\?\\", directory), "data.json")
+  write_json(path, list(answer = 6))
+  expect_identical(read_json(path)$answer, 6L)
+})
+
 test_that("JSON round trips preserve binary64 values and container shapes", {
   path <- withr::local_tempfile()
   value <- list(

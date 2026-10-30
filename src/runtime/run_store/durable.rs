@@ -86,10 +86,14 @@ impl RunStore {
         let root_file = crate::runtime::platform_fs::open_directory(root)?;
         reject_network_filesystem(&root_file)?;
         crate::runtime::platform_fs::check_storage_root(root)?;
-        #[cfg(windows)]
-        crate::runtime::platform_fs::set_private_directory(root)?;
         let lock = open_lock(&root.join(".run-store-init.lock"))?;
         let _guard = acquire_lock(lock, check)?;
+        #[cfg(windows)]
+        if crate::runtime::platform_fs::verify_private_directory(root).is_err() {
+            // Reapplying an inheritable DACL also opens existing children, which
+            // can conflict with another process's live SQLite handles.
+            crate::runtime::platform_fs::set_private_directory(root)?;
+        }
         preflight(root, check)?;
 
         let database_path = root.join("run.sqlite3");
