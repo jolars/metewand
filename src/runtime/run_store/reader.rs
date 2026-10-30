@@ -28,9 +28,11 @@ impl StoreSnapshot {
             .prefix("metewand-inspect-")
             .tempdir()?;
         crate::runtime::platform_fs::set_private_directory(private.path())?;
-        copy_database_snapshot(&root, private.path(), "run.sqlite3")?;
+        // Temporary roots can have symlinked ancestors that SQLite's NOFOLLOW rejects.
+        let private_root = fs::canonicalize(private.path())?;
+        copy_database_snapshot(&root, &private_root, "run.sqlite3")?;
         let connection = Connection::open_with_flags(
-            private.path().join("run.sqlite3"),
+            private_root.join("run.sqlite3"),
             OpenFlags::SQLITE_OPEN_READ_ONLY
                 | OpenFlags::SQLITE_OPEN_NO_MUTEX
                 | OpenFlags::SQLITE_OPEN_NOFOLLOW,

@@ -43,10 +43,10 @@ fn r_sdk_contracts_and_roles_complete_a_validated_chain() {
         .args([
             "--vanilla",
             "-e",
-            "testthat::test_package('metewand', stop_on_failure = TRUE)",
+            ".libPaths(c(Sys.getenv('METEWAND_TEST_R_LIBRARY'), .libPaths())); testthat::test_package('metewand', stop_on_failure = TRUE)",
         ])
         .env("METEWAND_REPOSITORY", root())
-        .env("R_LIBS_USER", &library)
+        .env("METEWAND_TEST_R_LIBRARY", &library)
         .output()
         .unwrap();
     assert!(output.status.success(), "{output:?}");

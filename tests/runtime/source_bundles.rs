@@ -187,7 +187,7 @@ fn rejects_missing_and_non_directory_repository_roots() {
 
 #[cfg(unix)]
 mod unix {
-    use std::{ffi::OsString, os::unix::ffi::OsStringExt, os::unix::fs::symlink};
+    use std::os::unix::fs::symlink;
 
     use super::*;
 
@@ -321,8 +321,12 @@ mod unix {
         ));
     }
 
+    // macOS filesystems reject non-UTF-8 filenames before bundle expansion.
+    #[cfg(not(target_os = "macos"))]
     #[test]
     fn rejects_matched_paths_outside_the_utf8_repository_contract() {
+        use std::{ffi::OsString, os::unix::ffi::OsStringExt};
+
         let repository = TempDir::new().unwrap();
         let path = repository
             .path()

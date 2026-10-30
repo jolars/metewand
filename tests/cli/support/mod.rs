@@ -1,3 +1,4 @@
+#[cfg(unix)]
 pub mod export_fidelity;
 
 pub fn replace_yaml(source: &str, before: &str, after: &str) -> String {

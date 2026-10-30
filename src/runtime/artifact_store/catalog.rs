@@ -76,9 +76,10 @@ impl Catalog {
             .prefix("metewand-cache-snapshot-")
             .tempdir()?;
         crate::runtime::platform_fs::set_private_directory(private.path())?;
-        crate::runtime::run_store::reader::copy_database_snapshot(&store.root, private.path(), NAME)?;
+        let private_root = std::fs::canonicalize(private.path())?;
+        crate::runtime::run_store::reader::copy_database_snapshot(&store.root, &private_root, NAME)?;
         let connection = Connection::open_with_flags(
-            private.path().join(NAME),
+            private_root.join(NAME),
             OpenFlags::SQLITE_OPEN_READ_ONLY
                 | OpenFlags::SQLITE_OPEN_NO_MUTEX
                 | OpenFlags::SQLITE_OPEN_NOFOLLOW,

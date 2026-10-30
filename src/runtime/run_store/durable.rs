@@ -79,6 +79,10 @@ impl RunStore {
         {
             return Err(RunStoreError::UnsafePath(root.to_owned()));
         }
+        // SQLite's NOFOLLOW also rejects ancestor links such as macOS's /var.
+        // Resolve them only after rejecting a symlink at the authorized root.
+        let canonical_root = fs::canonicalize(root)?;
+        let root = canonical_root.as_path();
         let root_file = crate::runtime::platform_fs::open_directory(root)?;
         reject_network_filesystem(&root_file)?;
         crate::runtime::platform_fs::check_storage_root(root)?;

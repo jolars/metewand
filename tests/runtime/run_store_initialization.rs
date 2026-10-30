@@ -6,6 +6,39 @@ use crate::runtime::run_store::{RUN_STORE_SCHEMA_VERSION, RunStore, RunStoreErro
 use rusqlite::Connection;
 use tempfile::TempDir;
 
+#[cfg(unix)]
+#[test]
+fn stores_and_snapshots_allow_symlinked_ancestors() {
+    use std::process::Command;
+
+    use crate::runtime::{artifact_store::ArtifactStore, run_store::reader::StoreSnapshot};
+
+    if std::env::var_os("METEWAND_TEST_SYMLINKED_TEMP").is_some() {
+        let root = TempDir::new().unwrap();
+        let store = RunStore::open(root.path()).unwrap();
+        assert!(StoreSnapshot::read(root.path()).unwrap().tables["attempt"].is_empty());
+        drop(store.reconnect().unwrap());
+        let cache = ArtifactStore::open(&root.path().join("cache")).unwrap();
+        assert!(cache.roots().unwrap().targets.is_empty());
+        return;
+    }
+
+    // macOS exposes its temporary directory through /var, a symlink to /private/var.
+    let root = TempDir::new().unwrap();
+    let alias = root.path().join("alias");
+    std::os::unix::fs::symlink(fs::canonicalize(root.path()).unwrap(), &alias).unwrap();
+    let output = Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "runtime_tests::run_store_initialization::stores_and_snapshots_allow_symlinked_ancestors",
+        ])
+        .env("TMPDIR", alias)
+        .env("METEWAND_TEST_SYMLINKED_TEMP", "1")
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+}
+
 #[test]
 fn creates_and_reopens_a_versioned_wal_database_without_losing_history() {
     let root = TempDir::new().unwrap();

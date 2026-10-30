@@ -857,7 +857,7 @@ fn prepare_with(
     file.write_all(&bytes)?;
     file.sync_all()?;
     // Virtual environments retain absolute paths, so publication never renames them.
-    let path = generation.keep();
+    let _generation_path = generation.keep();
     verify_in(&entry, &data)?;
     let mut current = tempfile::NamedTempFile::new_in(&parent)?;
     current.write_all(&canonical_bytes(&entry)?)?;
@@ -867,7 +867,7 @@ fn prepare_with(
         .map_err(|e| e.error)?;
     #[cfg(unix)]
     {
-        fs::File::open(path)?.sync_all()?;
+        fs::File::open(_generation_path)?.sync_all()?;
         fs::File::open(&parent)?.sync_all()?;
     }
     Ok(entry)
