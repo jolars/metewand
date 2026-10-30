@@ -11,19 +11,18 @@ on:
       - Cargo.toml
       - Cargo.lock
       - rust-toolchain.toml
-      - crates/metewand-runtime/Cargo.toml
-      - crates/metewand-runtime/src/artifact_store.rs
-      - crates/metewand-runtime/src/artifact_store/**
-      - crates/metewand-runtime/src/archive.rs
-      - crates/metewand-runtime/src/archive/**
-      - crates/metewand-runtime/src/evidence.rs
-      - crates/metewand-runtime/src/durability.rs
-      - crates/metewand-runtime/src/fault_injection.rs
-      - crates/metewand-runtime/src/local_tree.rs
-      - crates/metewand-runtime/src/platform_fs.rs
-      - crates/metewand-runtime/src/publication.rs
-      - crates/metewand-runtime/src/run_store.rs
-      - crates/metewand-runtime/src/run_store/**
+      - src/runtime/artifact_store.rs
+      - src/runtime/artifact_store/**
+      - src/runtime/archive.rs
+      - src/runtime/archive/**
+      - src/runtime/evidence.rs
+      - src/runtime/durability.rs
+      - src/runtime/fault_injection.rs
+      - src/runtime/local_tree.rs
+      - src/runtime/platform_fs.rs
+      - src/runtime/publication.rs
+      - src/runtime/run_store.rs
+      - src/runtime/run_store/**
 
 permissions:
   contents: read
@@ -46,11 +45,11 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Exercise every durability boundary
         run: >-
-          cargo test -p metewand-runtime --lib --locked
-          run_store::fault_tests::every_durability_boundary_survives_process_death_and_resume
+          cargo test --test integration --locked
+          runtime::run_store::fault_tests::every_durability_boundary_survives_process_death_and_resume
           -- --exact --ignored --nocapture
       - name: Exercise every cache collection boundary
         run: >-
-          cargo test -p metewand-runtime --lib --locked
-          artifact_store::maintenance::tests::collection_recovers_after_each_database_sync_rename_and_cleanup_boundary
+          cargo test --test integration --locked
+          runtime::artifact_store::maintenance::tests::collection_recovers_after_each_database_sync_rename_and_cleanup_boundary
           -- --exact --ignored --nocapture

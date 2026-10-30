@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import shutil
 import subprocess
+import tomllib
 
 from evaluator import metrics as evaluate_metrics
 
@@ -23,7 +24,16 @@ def main():
     source = stage / "native/src"
     source.mkdir(parents=True)
     for name in ("basin.rs", "clustlasso.rs", "bridge.rs"):
-        shutil.copy2(HERE / name, source / name)
+        text = (HERE / name).read_text()
+        if name != "bridge.rs":
+            modules = json.dumps(str(REPOSITORY / "src/modules.rs"), ensure_ascii=False)
+            include = f"include!({modules});\n\n"
+            if text.startswith("#!["):
+                attribute, text = text.split("\n", 1)
+                text = attribute + "\n\n" + include + text
+            else:
+                text = include + text
+        (source / name).write_text(text)
     for path in (args.clustlasso / "rust").glob("*.rs"):
         if path.name not in ("lib.rs", "overlap.rs"):
             shutil.copy2(path, source / path.name)
@@ -37,13 +47,16 @@ def main():
     text = text.replace(original, "        if crate::bridge::record(iteration, beta, epsilon_g, work) { return; }\n" + original)
     trajectory.write_text(text)
     dependencies = {
-        "metewand-runtime": REPOSITORY / "crates/metewand-runtime",
-        "metewand-protocol": REPOSITORY / "crates/metewand-protocol",
         "basin": args.basin.resolve() / "crates/basin",
         "competitor-bench": args.basin.resolve() / "crates/competitor-bench",
     }
-    manifest = '[package]\nname = "metewand-adopters"\nversion = "0.1.0"\nedition = "2024"\npublish = false\n[workspace]\n[dependencies]\nserde_json = "1"\n'
-    manifest += "\n".join(f'{name} = {{ path = {json.dumps(str(path))} }}' for name, path in dependencies.items())
+    # The adapters compile private worker helpers, so they inherit their
+    # dependencies without introducing a Metewand library package.
+    metewand = (REPOSITORY / "Cargo.toml").read_text()
+    rust_version = tomllib.loads(metewand)["package"]["rust-version"]
+    manifest = f'[package]\nname = "metewand-adopters"\nversion = "0.1.0"\nedition = "2024"\nrust-version = "{rust_version}"\npublish = false\n[workspace]\n[dependencies]\n'
+    manifest += "".join(f'{name} = {{ path = {json.dumps(str(path))} }}\n' for name, path in dependencies.items())
+    manifest += metewand.split("[dependencies]\n", 1)[1].split("[dev-dependencies]", 1)[0]
     manifest += '\n[[bin]]\nname = "basin-worker"\npath = "src/basin.rs"\n[[bin]]\nname = "clustlasso-worker"\npath = "src/clustlasso.rs"\n'
     (stage / "native/Cargo.toml").write_text(manifest)
     for adopter in ("basin", "clustlasso"):

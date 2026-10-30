@@ -1,7 +1,7 @@
 use basin::{Executor, NelderMead, SimplexProgress, State, StepOutcome, problems::Rosenbrock};
 use competitor_bench::nm;
-use metewand_protocol::PrepareRequest;
-use metewand_runtime::{
+use crate::protocol::PrepareRequest;
+use crate::runtime::{
     buffered::{BufferedTrace, Decision, Progress},
     worker_sdk::{Implementation, WorkerError, WorkerResult, serve_implementation},
 };

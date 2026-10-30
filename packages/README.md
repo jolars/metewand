@@ -17,5 +17,7 @@ started](../docs/guide/getting-started.md) for a complete benchmark.
 The packages handle worker communication and standard result files. Lifecycle
 callbacks support separate preparation, custom artifacts, and profiles as a
 benchmark grows. Workers run as separate processes, so a benchmark can combine
-languages. Native Rust workers use the [helpers in
-`metewand-runtime`](../crates/metewand-runtime/src/worker_sdk.rs).
+languages. The repository's native Rust examples use [internal worker
+helpers](../src/runtime/worker_sdk.rs). Metewand currently publishes only the CLI,
+with no Rust library API. Other native workers implement the process protocol
+directly.

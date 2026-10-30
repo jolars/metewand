@@ -8,9 +8,9 @@ integers at most 10,000. These semantics belong to this example's contract.
 From the repository root, with Python 3 on `PATH`, run:
 
 ```sh
-cargo run --locked -p metewand-cli -- check --workers \
+cargo run --locked -p metewand -- check --workers \
   --manifest examples/dataset-free/metewand.yaml
-cargo run --locked -p metewand-cli -- run \
+cargo run --locked -p metewand -- run \
   --manifest examples/dataset-free/metewand.yaml \
   --output-dir "$(mktemp -d)/run" --output jsonl
 ```

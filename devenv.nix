@@ -28,7 +28,8 @@
   );
 
   scripts.test-fast.exec = ''
-    cargo nextest run -p metewand-core -p metewand-protocol --locked "$@"
+    cargo nextest run --test integration --locked \
+      -E 'test(/^(core|core_tests|protocol|protocol_tests)::/)' "$@"
   '';
 
   scripts.test-rust.exec = ''

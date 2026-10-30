@@ -12,7 +12,7 @@ demo_dir=$(mktemp -d)
 cp -R examples/r-package/. "$demo_dir/"
 mkdir "$demo_dir/library"
 R CMD INSTALL --library="$demo_dir/library" packages/r
-cargo run --locked -p metewand-cli -- run \
+cargo run --locked -p metewand -- run \
   --manifest "$demo_dir/metewand.yaml" \
   --output-dir "$demo_dir/run" --output jsonl
 ```
@@ -25,7 +25,7 @@ $demo = Join-Path $env:TEMP ([guid]::NewGuid().ToString())
 Copy-Item examples/r-package $demo -Recurse
 New-Item "$demo/library" -ItemType Directory
 R CMD INSTALL "--library=$demo/library" packages/r
-cargo run --locked -p metewand-cli -- run --manifest "$demo/metewand.yaml" --output-dir "$demo/run" --output jsonl
+cargo run --locked -p metewand -- run --manifest "$demo/metewand.yaml" --output-dir "$demo/run" --output jsonl
 ```
 
 Use local NTFS for the temporary directory and install `jsonlite` into the R

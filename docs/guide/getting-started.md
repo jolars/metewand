@@ -31,6 +31,18 @@ release numbers; compatibility follows binding API version 1. The CLI supplies
 its worker adapters, so compatible CLI upgrades do not require package updates.
 For development from a checkout, build and install the components below.
 
+### From crates.io
+
+Starting with the next release, install the CLI with Rust 1.98.0 or later:
+
+```sh
+cargo install metewand --locked
+```
+
+Cargo compiles the `metewand` executable and installs it in Cargo's binary
+directory. Windows builds require the MSVC Rust toolchain and Visual Studio C++
+build tools, including the Windows SDK. Install worker packages separately.
+
 ### From source
 
 Source builds require Git and Rust 1.98.0. Windows builds use the MSVC Rust
@@ -39,7 +51,7 @@ toolchain and the Visual Studio C++ build tools, including the Windows SDK.
 ```sh
 git clone https://github.com/jolars/metewand.git
 cd metewand
-cargo install --locked --path crates/metewand-cli
+cargo install --locked --path .
 python3 -m venv .venv
 . .venv/bin/activate
 python3 -m pip install ./packages/python
@@ -50,7 +62,7 @@ On Windows, run these commands in PowerShell instead:
 ```powershell
 git clone https://github.com/jolars/metewand.git
 cd metewand
-cargo install --locked --path crates/metewand-cli
+cargo install --locked --path .
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install ./packages/python
@@ -61,9 +73,8 @@ for the current session with `$env:Path = "$PWD\.venv\Scripts;$env:Path"`.
 
 Keep this environment active. Workers use its Python interpreter and installed
 dependencies. On Windows, the runner resolves the default `python3` launch to
-`python.exe` when needed. The CLI and package are not yet published to package
-registries. If you use Nix, `devenv shell` provides the repository's development
-tools.
+`python.exe` when needed. If you use Nix, `devenv shell` provides the
+repository's development tools.
 
 ## Create a benchmark
 

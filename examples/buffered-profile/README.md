@@ -11,13 +11,13 @@ Stage the example and the in-tree package from the repository root:
 benchmark_dir="$(mktemp -d)"
 cp -R examples/buffered-profile/. "$benchmark_dir/"
 cp -R packages/python/src/metewand "$benchmark_dir/metewand"
-cargo run --locked -p metewand-cli -- check --manifest "$benchmark_dir/metewand.yaml" --workers
-cargo run --locked -p metewand-cli -- plan --manifest "$benchmark_dir/metewand.yaml" --output json
-cargo run --locked -p metewand-cli -- run --manifest "$benchmark_dir/metewand.yaml" --output-dir "$benchmark_dir/run" --output json
-cargo run --locked -p metewand-cli -- status --output-dir "$benchmark_dir/run"
-cargo run --locked -p metewand-cli -- run --manifest "$benchmark_dir/metewand.yaml" --output-dir "$benchmark_dir/run" --resume
-cargo run --locked -p metewand-cli -- export --output-dir "$benchmark_dir/run" --destination "$benchmark_dir/jsonl" --format jsonl
-cargo run --locked -p metewand-cli -- export --output-dir "$benchmark_dir/run" --destination "$benchmark_dir/csv" --format csv
+cargo run --locked -p metewand -- check --manifest "$benchmark_dir/metewand.yaml" --workers
+cargo run --locked -p metewand -- plan --manifest "$benchmark_dir/metewand.yaml" --output json
+cargo run --locked -p metewand -- run --manifest "$benchmark_dir/metewand.yaml" --output-dir "$benchmark_dir/run" --output json
+cargo run --locked -p metewand -- status --output-dir "$benchmark_dir/run"
+cargo run --locked -p metewand -- run --manifest "$benchmark_dir/metewand.yaml" --output-dir "$benchmark_dir/run" --resume
+cargo run --locked -p metewand -- export --output-dir "$benchmark_dir/run" --destination "$benchmark_dir/jsonl" --format jsonl
+cargo run --locked -p metewand -- export --output-dir "$benchmark_dir/run" --destination "$benchmark_dir/csv" --format csv
 ```
 
 Expect five accepted attempts and fifteen independently evaluated snapshots.
@@ -33,10 +33,10 @@ are separate decisions.
 For the native loop, build and stage the Rust worker:
 
 ```sh
-cargo build --locked -p metewand-runtime --example buffered-worker
+cargo build --locked -p metewand --example buffered-worker
 cp target/debug/examples/buffered-worker "$benchmark_dir/native-worker"
-cargo run --locked -p metewand-cli -- check --manifest "$benchmark_dir/native.yaml" --workers
-cargo run --locked -p metewand-cli -- run --manifest "$benchmark_dir/native.yaml" --output-dir "$benchmark_dir/native-run"
+cargo run --locked -p metewand -- check --manifest "$benchmark_dir/native.yaml" --workers
+cargo run --locked -p metewand -- run --manifest "$benchmark_dir/native.yaml" --output-dir "$benchmark_dir/native-run"
 ```
 
 The native worker performs every local check in Rust and uses Python only for

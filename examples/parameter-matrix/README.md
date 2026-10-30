@@ -25,11 +25,11 @@ code.
 From the repository root, with Python 3 on `PATH`, inspect and run it:
 
 ```sh
-cargo run --locked -p metewand-cli -- plan \
+cargo run --locked -p metewand -- plan \
   --manifest examples/parameter-matrix/metewand.yaml --output json
-cargo run --locked -p metewand-cli -- check --workers \
+cargo run --locked -p metewand -- check --workers \
   --manifest examples/parameter-matrix/metewand.yaml
-cargo run --locked -p metewand-cli -- run \
+cargo run --locked -p metewand -- run \
   --manifest examples/parameter-matrix/metewand.yaml \
   --output-dir "$(mktemp -d)/run" --output jsonl
 ```

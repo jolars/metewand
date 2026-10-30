@@ -22,7 +22,7 @@ directory and run it:
 demo_dir=$(mktemp -d)
 cp -R examples/python-package/. "$demo_dir/"
 cp -R packages/python/src/metewand "$demo_dir/metewand"
-cargo run --locked -p metewand-cli -- run \
+cargo run --locked -p metewand -- run \
   --manifest "$demo_dir/metewand.yaml" \
   --output-dir "$demo_dir/run" --output jsonl
 ```

@@ -28,18 +28,23 @@ adopter can use it.
 
 ## Architecture and dependency direction
 
-The workspace contains four crates:
+Metewand is one binary-only Cargo package named `metewand`. Its internal modules
+preserve the existing separation of responsibilities:
 
-- `metewand-core`: manifests, planning, scheduling, and run records.
-- `metewand-protocol`: wire types and protocol versioning.
-- `metewand-runtime`: artifacts, environments, executors, and provenance.
-- `metewand-cli`: CLI parsing and user-facing diagnostics for the `metewand`
-  executable.
+- `src/core`: manifests, planning, scheduling, and run records.
+- `src/protocol`: wire types and protocol versioning.
+- `src/runtime`: artifacts, environments, executors, and provenance.
+- `src/cli`: CLI parsing and user-facing diagnostics.
 
-Core and protocol are independent foundation crates. Runtime may depend on both;
-the CLI may depend on all three. Runtime, core, and protocol must never depend
-on the CLI. Keep domain types out of the CLI, and keep execution and filesystem
-concerns out of core and protocol.
+Core and protocol remain independent foundations. Runtime may use both; the CLI
+composes all three. Runtime, core, and protocol must never use CLI modules. Keep
+domain types out of the CLI, and keep execution and filesystem concerns out of
+core and protocol.
+
+There is no public Rust library API. Repository tests and native examples compile
+internal modules directly through `src/modules.rs`. Keep the single integration
+harness in `tests/integration.rs`, with tests grouped by layer under `tests/`.
+Extract a reusable library only when a concrete consumer needs one.
 
 ## Repository conventions
 
@@ -68,7 +73,7 @@ schema, fixture, example, package, or document.
 
 ## Compatibility and releases
 
-Rust workspace SemVer is shared across the crates. Python and R have independent
+The Rust binary package, Python package, and R package have independent
 package releases, managed by Versionary from Conventional Commits. Keep their
 version-1 binding API stable across compatible CLI upgrades. Package SemVer is
 separate from the public compatibility constants for the manifest, schemas,
@@ -85,9 +90,11 @@ vectors where canonical bytes matter. New authoring syntax and profile APIs may
 evolve together with their current consumers before the MVP. Do not silently
 reinterpret existing results or promise readers for every development revision.
 
-The crates are not published to a registry yet. Versionary creates release PRs,
-tags, changelogs, and GitHub Releases; registry publication requires a separate,
-deliberate workflow.
+Versionary creates release PRs, tags, changelogs, and GitHub Releases. The
+separate `crates-publish.yml` workflow publishes the binary package as `metewand`
+on root release tags. Schemas and adapters ship directly from their canonical
+source directories. Check the extracted package with
+`cargo publish --locked --dry-run`; no asset preparation step is required.
 
 ## Development and verification
 

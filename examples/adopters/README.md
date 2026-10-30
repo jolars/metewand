@@ -18,6 +18,10 @@ adopter's code. Every local check remains in Rust, including snapshot capture.
 The collector includes metric, bridge, clock, and snapshot costs in its elapsed
 time. It does not convert a metric-only historical trace into validated results.
 
+These repository adapters compile Metewand's internal modules directly and inherit
+their dependencies from the root Cargo manifest. They require the Metewand source
+checkout; the published binary package has no Rust library API.
+
 ## Build and stage
 
 Use the Metewand development environment with Rust 1.98.0, Python, and CMake.
@@ -34,7 +38,7 @@ python3 examples/adopters/prepare.py --basin "$basin_dir" \
 cargo generate-lockfile --manifest-path "$stage/native/Cargo.toml"
 python3 tools/build_evidence.py --executable target/release/metewand \
   --source metewand=. --compiler rustc --profile release --lockfile Cargo.lock -- \
-  cargo build --release --locked -p metewand-cli --bin metewand
+  cargo build --release --locked -p metewand --bin metewand
 for adopter in basin clustlasso; do
   python3 tools/build_evidence.py \
     --executable "$stage/native/target/release/$adopter-worker" \

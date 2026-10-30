@@ -34,8 +34,8 @@ SDK, and Python on `PATH`. The R package itself requires neither Rtools nor a
 C++ compiler. See the [source installation guide](docs/guide/getting-started.md)
 for PowerShell commands. Nix and devenv are optional on other systems.
 
-The crates and packages are not yet published to registries. Use local path
-dependencies and install packages into the environment selected for the worker.
+Use local path dependencies for development, and install language packages into
+the environment selected for the worker.
 
 The R package uses roxygen2 comments in `packages/r/R/` to generate its help
 pages and exports. After changing those comments or public function signatures,
@@ -70,19 +70,20 @@ worker lifecycle and native R starter separately from the package checks.
 
   | Location                                 | Responsibility                                                                                                       |
   | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-  | [Core](crates/metewand-core/src)         | Manifest parsing, contracts, schemas, canonical values, identities, seeds, planning, scheduling, and public records. |
-  | [Protocol](crates/metewand-protocol/src) | Wire types, role and capability negotiation, and bounded framing.                                                    |
-  | [Runtime](crates/metewand-runtime/src)   | Source resolution, artifacts, environments, executors, measurements, provenance, publication, and the run store.     |
-  | [CLI](crates/metewand-cli/src)           | Argument parsing, orchestration, diagnostics, and human and machine rendering.                                       |
+  | [Core](src/core)         | Manifest parsing, contracts, schemas, canonical values, identities, seeds, planning, scheduling, and public records. |
+  | [Protocol](src/protocol) | Wire types, role and capability negotiation, and bounded framing.                                                    |
+  | [Runtime](src/runtime)   | Source resolution, artifacts, environments, executors, measurements, provenance, publication, and the run store.     |
+  | [CLI](src/cli)           | Argument parsing, orchestration, diagnostics, and human and machine rendering.                                       |
   | [Schemas](schemas/v1)                    | Versioned external contracts and adjacent fixtures.                                                                  |
   | [Shared fixtures](fixtures)              | Cross-language canonicalization, identity, seed, and protocol vectors.                                               |
   | [Packages](packages)                     | Python and R workers; native Rust helpers live in the runtime.                                                       |
   | [Examples](examples)                     | Runnable end-to-end comparisons and reproduction commands.                                                           |
   | [Website](docs)                          | User guides and the published general design.                                                                        |
 
-Core and protocol are independent foundations. Runtime may depend on both; the
-CLI may depend on all three. Keep filesystem and execution concerns out of core
-and protocol, and domain types out of the CLI.
+Metewand is one binary-only Cargo package. Core and protocol are independent
+internal modules. Runtime may use both; the CLI composes all three. Keep
+filesystem and execution concerns out of core and protocol, and domain types
+out of the CLI.
 
 ## Manifests and planning
 
@@ -181,13 +182,13 @@ symlink   = bytes(path) || "l" || bytes(target)
 Integers are unsigned big-endian; `bytes(x)` is `u64(length) || x`. The root is
 omitted, and the executable byte is zero or one. Preserve exact vectors when
 changing canonical or hashing code. See [identity
-types](crates/metewand-core/src/identity.rs), [seed
-derivation](crates/metewand-core/src/seed.rs), [tree
-hashing](crates/metewand-runtime/src/local_tree.rs), and [fixtures](fixtures).
+types](src/core/identity.rs), [seed
+derivation](src/core/seed.rs), [tree
+hashing](src/runtime/local_tree.rs), and [fixtures](fixtures).
 
 ## Compatibility versions
 
-Rust workspace SemVer is shared across the crates. Python and R releases are
+The Rust binary package has its own SemVer. Python and R releases are
 independent and managed by Versionary from Conventional Commits. Binding API
 version 1 governs package compatibility with the CLI; equal package and CLI
 release numbers are unnecessary. It is separate from public compatibility versions:
@@ -279,7 +280,7 @@ distinct from phase deadlines.
 
 For callback signatures, consult the [Python
 package](packages/python/src/metewand), [R help pages](packages/r/man), and
-[Rust helpers](crates/metewand-runtime/src/worker_sdk.rs). The [package
+[Rust helpers](src/runtime/worker_sdk.rs). The [package
 examples](examples) exercise each role. Ordinary functions use contexts and JSON
 objects; lifecycle adapters separate preparation, solving, conversion, custom
 writing, reset, and shutdown.
@@ -335,7 +336,7 @@ The normal suite tests closure verification through an injectable Nix command
 boundary. With Nix and uv available, run the Nix and mixed-backend integration tests explicitly:
 
 ```sh
-cargo test -p metewand-cli --test locked_nix --locked -- --ignored
+cargo test --test integration --locked cli_tests::locked_nix:: -- --ignored
 ```
 
 uv preparation shares worker discovery and lock publication with Nix. The uv
@@ -347,7 +348,7 @@ New locks use version 2; the version-1 Nix serializer and fingerprint remain
 unchanged. Install uv to run the offline package integration cases explicitly:
 
 ```sh
-cargo test -p metewand-cli --test locked_uv --locked -- --ignored
+cargo test --test integration --locked cli_tests::locked_uv:: -- --ignored
 ```
 
 Unix workers use umask `0077` and retain worker-environment provenance version 1.
@@ -445,7 +446,7 @@ python3 tools/build_evidence.py \
   --executable target/release/metewand \
   --source metewand=. --compiler rustc --profile release \
   --lockfile Cargo.lock -- \
-  cargo build --release --locked -p metewand-cli --bin metewand
+  cargo build --release --locked -p metewand --bin metewand
 ```
 
 The wrapper observes sources, compiler, command, settings, relevant flags, and
@@ -462,9 +463,9 @@ interpreter does not establish build evidence for imported native libraries.
 ## Durability and recovery
 
 The authoritative layouts are
-[v1.sql](crates/metewand-runtime/src/run_store/v1.sql),
-[v2.sql](crates/metewand-runtime/src/run_store/v2.sql), and
-[v3.sql](crates/metewand-runtime/src/run_store/v3.sql). Readers and writers
+[v1.sql](src/runtime/run_store/v1.sql),
+[v2.sql](src/runtime/run_store/v2.sql), and
+[v3.sql](src/runtime/run_store/v3.sql). Readers and writers
 check exact supported schemas. Opening an older store never silently migrates
 it. Use a new run directory when a selection needs a newer layout.
 
@@ -514,16 +515,16 @@ checks. Run the exhaustive campaign when changing durability, publication,
 recovery, or the run-store schema:
 
 ```sh
-cargo test -p metewand-runtime --lib --locked \
-  run_store::fault_tests::every_durability_boundary_survives_process_death_and_resume \
+cargo test --test integration --locked \
+  runtime::run_store::fault_tests::every_durability_boundary_survives_process_death_and_resume \
   -- --exact --ignored --nocapture
 ```
 
 For cache catalog durability, publication, or collection changes, also run:
 
 ```sh
-cargo test -p metewand-runtime --lib --locked \
-  artifact_store::maintenance::tests::collection_recovers_after_each_database_sync_rename_and_cleanup_boundary \
+cargo test --test integration --locked \
+  runtime::artifact_store::maintenance::tests::collection_recovers_after_each_database_sync_rename_and_cleanup_boundary \
   -- --exact --ignored --nocapture
 ```
 
@@ -628,7 +629,7 @@ Documentation-only changes do not require rebuilding or testing Rust. Use
 `--locked`. The complete agent-loop acceptance test remains opt-in:
 
 ```sh
-cargo test -p metewand-cli --test agent_loop --locked -- --ignored
+cargo test --test integration --locked cli_tests::agent_loop:: -- --ignored
 ```
 
 ## CLI releases
@@ -636,10 +637,11 @@ cargo test -p metewand-cli --test agent_loop --locked -- --ignored
 `dist-workspace.toml` pins cargo-dist 0.33.0 and builds the `metewand` binary
 for x64 and ARM64 Linux with glibc and musl, x64 and ARM64 macOS, and native
 Windows x64 with MSVC. The CLI opts into distribution through
-`package.metadata.dist` while the workspace keeps `publish = false`.
+`package.metadata.dist`.
 Archives, SHA-256 checksums, shell and PowerShell installers, and GitHub
 attestations go on the root `vX.Y.Z` release. Artifact names use the Cargo
-package name `metewand-cli`; the installed command is `metewand`.
+package name `metewand`; the installed command is also `metewand`. Its source
+entry point is `src/main.rs`; no library target is published.
 
 Versionary creates root releases as drafts with their changelog notes. The
 generated `.github/workflows/v-release.yml` runs on `v`-prefixed version tags,
@@ -669,6 +671,51 @@ forward arguments. The generated installers use Cargo's binary directory,
 normally `~/.cargo/bin`. Worker runtimes and packages are installed separately.
 Installer tests run in the platform CI matrix, and website integration tests
 check the served bytes and content types.
+
+### crates.io
+
+The binary-only Cargo package is named `metewand`, so users install the CLI with
+`cargo install metewand --locked`. The package has no library target or separate
+Metewand crate dependencies. Schemas, adapters, SQL files, and authoring templates
+ship directly from their canonical source directories. Schema bytes, identities,
+and wire compatibility versions do not change for registry packaging.
+
+Check the extracted package before publication:
+
+```sh
+compute run -- cargo publish --locked --dry-run
+```
+
+CI requires this check before Versionary runs. The integration suite also checks
+that Cargo exposes one Metewand package, one binary, and no library target.
+Repository tests compile the internal modules directly in
+`tests/integration.rs`; the binary's unit-test target stays empty to avoid
+running those same tests twice. Native Rust examples also compile internal
+modules from the checkout. They do not define a supported Rust library API.
+
+For the first publication, check out the new root release tag, authenticate
+with `cargo login`, and publish from that checkout:
+
+```sh
+compute run -- cargo publish --locked
+```
+
+A published version cannot be replaced. The existing `v0.2.0` tag predates this
+package layout; use a new root release containing it.
+
+After the first publication, configure a [Trusted
+Publisher](https://crates.io/docs/trusted-publishing) on the `metewand` crate:
+GitHub owner `jolars`, repository `metewand`, workflow `crates-publish.yml`, and
+environment `crates-io`. Create that GitHub environment with a deployment policy
+that permits root release tags. No stored crates.io token is needed in GitHub.
+
+The separate `.github/workflows/crates-publish.yml` runs on root `vX.Y.Z` tag
+pushes and supports manual dispatch with an existing tag. It requires the tag
+to match the package version, verifies the package, authenticates with Trusted
+Publishing, and publishes the CLI. Python and R tags do not trigger it.
+Versionary must push tags using `RELEASE_TOKEN` so GitHub starts this workflow.
+Registry publication and prebuilt binary builds run independently; inspect both
+workflows when releasing.
 
 ## Language package releases
 
@@ -734,8 +781,8 @@ version.
 Review the release PR, CLI installation instructions, and Python
 package README before publishing the first release. The Python package supplies
 worker helpers; users install the CLI separately from a compatible root release
-or source tag. Rust crates and the R package still require their own deliberate
-publication workflows.
+or source tag. The R package still requires its own deliberate publication
+workflow.
 
 ## Website development
 

@@ -11,13 +11,13 @@ Stage the example and package from the repository root:
 benchmark_dir="$(mktemp -d)"
 cp -R examples/streaming-profile/. "$benchmark_dir/"
 cp -R packages/python/src/metewand "$benchmark_dir/metewand"
-compute run -- cargo run --locked -p metewand-cli -- check --manifest "$benchmark_dir/metewand.yaml" --workers
-compute run -- cargo run --locked -p metewand-cli -- plan --manifest "$benchmark_dir/metewand.yaml" --output json
-compute run -- cargo run --locked -p metewand-cli -- run --manifest "$benchmark_dir/metewand.yaml" --output-dir "$benchmark_dir/run" --output json
-compute run -- cargo run --locked -p metewand-cli -- status --output-dir "$benchmark_dir/run"
-compute run -- cargo run --locked -p metewand-cli -- export --output-dir "$benchmark_dir/run" --destination "$benchmark_dir/jsonl" --format jsonl
-compute run -- cargo run --locked -p metewand-cli -- export --output-dir "$benchmark_dir/run" --destination "$benchmark_dir/csv" --format csv
-compute run -- cargo run --locked -p metewand-cli -- run --manifest "$benchmark_dir/metewand.yaml" --output-dir "$benchmark_dir/run" --resume
+compute run -- cargo run --locked -p metewand -- check --manifest "$benchmark_dir/metewand.yaml" --workers
+compute run -- cargo run --locked -p metewand -- plan --manifest "$benchmark_dir/metewand.yaml" --output json
+compute run -- cargo run --locked -p metewand -- run --manifest "$benchmark_dir/metewand.yaml" --output-dir "$benchmark_dir/run" --output json
+compute run -- cargo run --locked -p metewand -- status --output-dir "$benchmark_dir/run"
+compute run -- cargo run --locked -p metewand -- export --output-dir "$benchmark_dir/run" --destination "$benchmark_dir/jsonl" --format jsonl
+compute run -- cargo run --locked -p metewand -- export --output-dir "$benchmark_dir/run" --destination "$benchmark_dir/csv" --format csv
+compute run -- cargo run --locked -p metewand -- run --manifest "$benchmark_dir/metewand.yaml" --output-dir "$benchmark_dir/run" --resume
 ```
 
 Expect three accepted attempts and thirteen independently evaluated checkpoints.
@@ -30,10 +30,10 @@ after checking scientific validity.
 For the native loop, build and stage its executable:
 
 ```sh
-compute run -- cargo build --locked -p metewand-runtime --example streaming-worker
+compute run -- cargo build --locked -p metewand --example streaming-worker
 cp target/debug/examples/streaming-worker "$benchmark_dir/native-worker"
-compute run -- cargo run --locked -p metewand-cli -- check --manifest "$benchmark_dir/native.yaml" --workers
-compute run -- cargo run --locked -p metewand-cli -- run --manifest "$benchmark_dir/native.yaml" --output-dir "$benchmark_dir/native-run"
+compute run -- cargo run --locked -p metewand -- check --manifest "$benchmark_dir/native.yaml" --workers
+compute run -- cargo run --locked -p metewand -- run --manifest "$benchmark_dir/native.yaml" --output-dir "$benchmark_dir/native-run"
 ```
 
 On Windows, copy `streaming-worker.exe` as `native-worker.exe`, and update the

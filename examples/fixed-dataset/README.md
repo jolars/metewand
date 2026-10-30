@@ -3,7 +3,7 @@
 From the repository root, with Python 3 available on `PATH`, run:
 
 ```sh
-cargo run --locked -p metewand-cli -- run \
+cargo run --locked -p metewand -- run \
   --manifest examples/fixed-dataset/metewand.yaml \
   --output-dir /tmp/metewand-example \
   --output jsonl

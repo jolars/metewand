@@ -14,7 +14,7 @@ test("shell installer forwards arguments, propagates errors, and cleans up", { s
   writeFileSync(join(directory, "curl"), `#!/bin/sh
 for argument do
   case "$argument" in
-    https:*) test "$argument" = 'https://github.com/jolars/metewand/releases/latest/download/metewand-cli-installer.sh' || exit 99 ;;
+    https:*) test "$argument" = 'https://github.com/jolars/metewand/releases/latest/download/metewand-installer.sh' || exit 99 ;;
   esac
   output=$argument
 done
@@ -40,7 +40,7 @@ test("PowerShell installer forwards arguments and stops on failed downloads", { 
   const result = spawnSync("pwsh", ["-NoProfile", "-Command", `
     function Invoke-RestMethod {
       param($Uri)
-      if ($Uri -ne 'https://github.com/jolars/metewand/releases/latest/download/metewand-cli-installer.ps1') { throw 'Wrong URL' }
+      if ($Uri -ne 'https://github.com/jolars/metewand/releases/latest/download/metewand-installer.ps1') { throw 'Wrong URL' }
       return 'Write-Output ($args -join "|")'
     }
     & ./public/install.ps1 --help 'two words'

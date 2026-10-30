@@ -35,12 +35,19 @@ Install the Python or R worker package separately. See
 [getting started](docs/guide/getting-started.md) for package installation and
 source builds.
 
+Starting with the next release, Rust users can also install the CLI from
+crates.io with Rust 1.98.0 or later:
+
+```sh
+cargo install metewand --locked
+```
+
 ## Try a benchmark
 
 From this checkout, with Rust 1.98.0 and Python 3.11 or later:
 
 ```sh
-cargo install --locked --path crates/metewand-cli
+cargo install --locked --path .
 python3 -m venv .venv
 . .venv/bin/activate
 python3 -m pip install ./packages/python
@@ -74,7 +81,7 @@ parameter matrices, fresh sequences, and buffered profiles.
 Metewand is under active development. The current runner executes trusted local
 code and supports locked Nix and uv environments, streaming profiles, and
 portable result archives. Isolated execution and the Julia package remain
-planned. The crates and packages are not yet published to registries.
+planned. The CLI, Python package, and R package have separate release workflows.
 
 The [design](docs/design.md) describes the general model.
 [CONTRIBUTING.md](CONTRIBUTING.md) covers contributor setup, implementation

@@ -30,7 +30,7 @@ retain their package path.
 From the Metewand repository root, with a local `benchmark_slope` checkout:
 
 ```sh
-cargo build --locked -p metewand-cli
+cargo build --locked -p metewand
 comparison_dir=$(mktemp -d)
 python3 examples/benchopt-slope/prepare.py \
   --benchmark "$HOME/projects/benchmark_slope" \
@@ -80,7 +80,7 @@ The optional Rust integration test runs the same complete validation:
 ```sh
 METEWAND_SLOPE_ROOT="$HOME/projects/benchmark_slope" \
 METEWAND_SLOPE_PYTHON="$(command -v python3)" \
-  cargo nextest run --locked -p metewand-cli --test benchopt_slope \
+  cargo nextest run --locked -p metewand --test integration -E 'test(/^cli_tests::benchopt_slope::/)' \
   --run-ignored all
 ```
 

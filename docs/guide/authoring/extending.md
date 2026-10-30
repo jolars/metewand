@@ -22,10 +22,12 @@ It preserves existing manifest comments and refuses to overwrite adapter files.
 Use `--dry-run` to inspect the proposed paths first.
 
 `--manifest PATH` selects a different manifest. `--language r` selects R
-functions; `--language rust` generates native worker adapters. Rust adapters need
-to be added to a Cargo project and built. Copy each executable beside its
-adapter with the same basename and no extension. The crates currently require
-local path dependencies; scaffolding does not create a Cargo project.
+functions. `--language rust` generates callback templates for the internal Rust
+helpers used by Metewand's repository examples. Build these templates within a
+source checkout, then copy each executable beside its adapter with the same
+basename and no extension. Metewand currently publishes only the CLI; standalone
+native workers implement the versioned process protocol directly. Scaffolding
+does not create a Cargo project.
 
 ## Use R or native workers
 
@@ -73,8 +75,9 @@ Use `prepare(context)` to return state and `execute(state, context)` to return
 solver output. Optional `result(output, context)` converts that output, and
 `reset(state, context)` clears slot state. Select `protocol-transport: socket`
 for these lifecycle workers. The CLI supplies the adapter; package and CLI
-release numbers need not match when they support binding API version 1. Native Rust workers
-implement the `Implementation` trait and use the same serving lifecycle.
+release numbers need not match when they support binding API version 1. The native Rust
+examples implement the internal `Implementation` trait and use the same serving
+lifecycle. These helpers are not a published Rust library API.
 The runnable [Python](https://github.com/jolars/metewand/tree/main/examples/python-package),
 [R](https://github.com/jolars/metewand/tree/main/examples/r-package), and
 [Rust](https://github.com/jolars/metewand/tree/main/examples/rust-worker) examples

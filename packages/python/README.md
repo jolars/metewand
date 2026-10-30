@@ -10,7 +10,7 @@ validates outputs, computes file hashes, and publishes canonical artifacts.
 From a checkout, install the CLI and package in the selected worker environment:
 
 ```sh
-cargo install --locked --path crates/metewand-cli
+cargo install --locked --path .
 python3 -m venv .venv
 . .venv/bin/activate
 python3 -m pip install ./packages/python

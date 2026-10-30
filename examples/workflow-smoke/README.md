@@ -12,11 +12,11 @@ From the repository root:
 
 ```sh
 python3 -B -m unittest discover -s examples/workflow-smoke -p test_science.py
-cargo run --locked -p metewand-cli -- check \
+cargo run --locked -p metewand -- check \
   --manifest examples/workflow-smoke/metewand.yaml --workers
-cargo run --locked -p metewand-cli -- plan \
+cargo run --locked -p metewand -- plan \
   --manifest examples/workflow-smoke/metewand.yaml --output json
-cargo run --locked -p metewand-cli -- run \
+cargo run --locked -p metewand -- run \
   --manifest examples/workflow-smoke/metewand.yaml \
   --output-dir /tmp/metewand-workflow-smoke --output json
 ```

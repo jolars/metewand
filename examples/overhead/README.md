@@ -10,10 +10,10 @@ Build the runner and worker with receipts from the repository root:
 ```sh
 python3 tools/build_evidence.py --executable target/release/metewand \
   --source metewand=. --compiler rustc --profile release --lockfile Cargo.lock -- \
-  cargo build --release --locked -p metewand-cli --bin metewand
+  cargo build --release --locked -p metewand --bin metewand
 python3 tools/build_evidence.py --executable target/release/examples/overhead-worker \
   --source metewand=. --compiler rustc --profile release --lockfile Cargo.lock -- \
-  cargo build --release --locked -p metewand-runtime --example overhead-worker
+  cargo build --release --locked -p metewand --example overhead-worker
 benchmark_dir=$(mktemp -d)
 cp -R examples/overhead/. "$benchmark_dir/"
 cp target/release/examples/overhead-worker "$benchmark_dir/worker"

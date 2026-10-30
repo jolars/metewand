@@ -170,18 +170,20 @@ repetitions, and retries represent different things and retain separate indices.
 
 ## Architecture
 
-The Rust workspace separates domain logic from execution:
+Metewand is one binary package with internal modules that separate domain logic
+from execution:
 
-  | Crate               | Responsibility                                                                          |
-  | ------------------- | --------------------------------------------------------------------------------------- |
-  | `metewand-core`     | Manifests, contracts, canonical values, identities, plans, scheduling, and run records. |
-  | `metewand-protocol` | Versioned wire types and bounded framing.                                               |
-  | `metewand-runtime`  | Sources, artifacts, environments, worker execution, provenance, and durable storage.    |
-  | `metewand-cli`      | Commands, diagnostics, and human and machine rendering.                                 |
+  | Module         | Responsibility                                                                       |
+  | -------------- | ------------------------------------------------------------------------------------ |
+  | `core`         | Manifests, contracts, canonical values, identities, plans, scheduling, and run records. |
+  | `protocol`     | Versioned wire types and bounded framing.                                             |
+  | `runtime`      | Sources, artifacts, environments, worker execution, provenance, and durable storage.  |
+  | `cli`          | Commands, diagnostics, and human and machine rendering.                               |
 
-Core and protocol are independent foundations. Runtime may depend on both; the
-CLI composes all three. Filesystem and execution concerns stay out of core and
-protocol. Domain types stay out of the CLI.
+Core and protocol are independent foundations. Runtime may use both; the CLI
+composes all three. Filesystem and execution concerns stay out of core and
+protocol. Domain types stay out of the CLI. These modules are implementation
+details; the package does not expose a Rust library API.
 
 Workers negotiate roles and capabilities before receiving work. Implementations
 prepare, execute, and optionally reset for reuse. Dataset materializers and

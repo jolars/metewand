@@ -4,7 +4,7 @@ Run a benchmark-owned generator followed by two implementations and an independe
 evaluator, using Python's standard library and the raw worker protocol:
 
 ```sh
-cargo run --locked -p metewand-cli -- run \
+cargo run --locked -p metewand -- run \
   --manifest examples/generated-dataset/metewand.yaml \
   --output-dir /tmp/metewand-generated --output jsonl
 ```
@@ -30,7 +30,7 @@ The selected `prepare_and_execute` policy includes JSON loading, packing, and
 canonical result writing. Shared dataset construction runs once before either
 implementation is measured. Neither implementation writes to its dataset view.
 The [conversion vector](fixtures/preparation.json) and
-[conformance tests](../../crates/metewand-cli/tests/dataset_preparation.rs)
+[conformance tests](../../tests/cli/dataset_preparation.rs)
 check these rules across repeated attempts. See
 [materialization and implementation preparation](../../docs/guide/authoring/running.md#choose-what-to-time)
 for scope selection and the distinction between semantic rules and runtime
@@ -41,5 +41,5 @@ A dataset's optional `source` table may supply a pinned HTTP(S) JSON input with 
 `source` instead of generating the parameter values. See
 [dataset materialization](../../CONTRIBUTING.md#sources-and-artifacts) for the runtime
 overview and external-provider boundary. The
-[materialization module](../../crates/metewand-runtime/src/dataset_materialization.rs)
+[materialization module](../../src/runtime/dataset_materialization.rs)
 defines the runtime API and optional binary validation.

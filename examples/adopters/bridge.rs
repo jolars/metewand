@@ -1,6 +1,6 @@
 //! Adapt the adopter's existing native observation sites to bounded snapshots.
 
-use metewand_runtime::{
+use crate::runtime::{
     buffered::{BufferedTrace, Decision, Progress},
     worker_sdk::{WorkerError, WorkerResult},
 };

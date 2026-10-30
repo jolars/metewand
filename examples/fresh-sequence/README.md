@@ -17,7 +17,7 @@ Use `devenv shell`, which provides Python, R, and the R package's `jsonlite` dep
 From the repository root:
 
 ```sh
-cargo build --locked -p metewand-cli
+cargo build --locked -p metewand
 example_dir=$(mktemp -d)
 cp -R examples/fresh-sequence/. "$example_dir/"
 cp -R packages/python/src/metewand "$example_dir/metewand"

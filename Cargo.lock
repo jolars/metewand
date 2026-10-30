@@ -892,60 +892,23 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
 
 [[package]]
-name = "metewand-cli"
-version = "0.2.0"
-dependencies = [
- "metewand-core",
- "metewand-protocol",
- "metewand-runtime",
- "serde",
- "serde-saphyr",
- "serde_json",
- "sha2",
- "tempfile",
-]
-
-[[package]]
-name = "metewand-core"
-version = "0.2.0"
-dependencies = [
- "fluent-uri",
- "jsonschema",
- "serde",
- "serde-saphyr",
- "serde_json",
- "serde_json_canonicalizer",
- "serde_path_to_error",
- "sha2",
- "thiserror",
-]
-
-[[package]]
-name = "metewand-protocol"
-version = "0.2.0"
-dependencies = [
- "serde",
- "serde_json",
- "serde_json_canonicalizer",
- "thiserror",
-]
-
-[[package]]
-name = "metewand-runtime"
+name = "metewand"
 version = "0.2.0"
 dependencies = [
  "flate2",
+ "fluent-uri",
  "getrandom 0.4.3",
  "globset",
+ "jsonschema",
  "libc",
- "metewand-core",
- "metewand-protocol",
  "reqwest",
  "rusqlite",
  "rustix",
  "serde",
  "serde-saphyr",
  "serde_json",
+ "serde_json_canonicalizer",
+ "serde_path_to_error",
  "sha2",
  "tar",
  "tempfile",

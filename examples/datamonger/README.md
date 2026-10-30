@@ -11,7 +11,7 @@ uv venv /tmp/metewand-datamonger
 uv pip install --python /tmp/metewand-datamonger/bin/python \
   /path/to/datamonger/packages/python
 
-cargo run --locked -p metewand-runtime --example datamonger -- \
+cargo run --locked -p metewand --example datamonger -- \
   /tmp/metewand-datamonger/bin/python "$(command -v python3)" \
   /tmp/metewand-provider-cache /tmp/metewand-artifacts
 ```
@@ -65,17 +65,17 @@ inspect its manifest without acquiring data. The small `data.json` and
 Run the default offline example test with:
 
 ```sh
-cargo test --locked -p metewand-runtime --example datamonger
+cargo test --test integration --locked datamonger_example::tests::
 ```
 
 Run the actual-client conformance test, using a private local registry, with:
 
 ```sh
 METEWAND_DATAMONGER_PYTHON=/tmp/metewand-datamonger/bin/python \
-  cargo test --locked -p metewand-runtime --example datamonger -- --ignored
+  cargo test --test integration --locked datamonger_example::tests:: -- --ignored
 ```
 
 See [sources and artifacts](../../CONTRIBUTING.md#sources-and-artifacts) for the
-runtime boundary, the [adapter](../../crates/metewand-runtime/src/datamonger.rs)
+runtime boundary, the [adapter](../../src/runtime/datamonger.rs)
 for verification and failure handling, and [public schemas](../../schemas/v1)
 for its request and response formats.

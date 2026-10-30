@@ -8,13 +8,13 @@ protocol messages and standard artifact envelopes.
 From the repository root:
 
 ```sh
-cargo build --locked -p metewand-runtime --example rust-worker
+cargo build --locked -p metewand --example rust-worker
 demo_dir=$(mktemp -d)
 cp -R examples/rust-worker/. "$demo_dir/"
 cp target/debug/examples/rust-worker "$demo_dir/worker"
-cargo run --locked -p metewand-cli -- check \
+cargo run --locked -p metewand -- check \
   --manifest "$demo_dir/metewand.yaml" --workers
-cargo run --locked -p metewand-cli -- run \
+cargo run --locked -p metewand -- run \
   --manifest "$demo_dir/metewand.yaml" \
   --output-dir "$demo_dir/run" --output jsonl
 ```
@@ -22,13 +22,13 @@ cargo run --locked -p metewand-cli -- run \
 On Windows, use PowerShell and stage the executable with its `.exe` extension:
 
 ```powershell
-cargo build --locked -p metewand-runtime --example rust-worker
+cargo build --locked -p metewand --example rust-worker
 $demo = Join-Path $env:TEMP ([guid]::NewGuid().ToString())
 Copy-Item examples/rust-worker $demo -Recurse
 Copy-Item target/debug/examples/rust-worker.exe "$demo/worker.exe"
 (Get-Content "$demo/metewand.yaml" -Raw).Replace('./worker', './worker.exe').Replace('[worker]', '[worker.exe]') | Set-Content "$demo/metewand.yaml" -Encoding utf8NoBOM
-cargo run --locked -p metewand-cli -- check --manifest "$demo/metewand.yaml" --workers
-cargo run --locked -p metewand-cli -- run --manifest "$demo/metewand.yaml" --output-dir "$demo/run" --output jsonl
+cargo run --locked -p metewand -- check --manifest "$demo/metewand.yaml" --workers
+cargo run --locked -p metewand -- run --manifest "$demo/metewand.yaml" --output-dir "$demo/run" --output jsonl
 ```
 
 These commands require PowerShell 7 or later. Keep the temporary directory on
@@ -48,7 +48,11 @@ default from zero to one and run into a new output directory. The evaluator
 returns `NotReached` with absolute error one. Its completion target still comes
 from the problem declaration.
 
-See the [Rust helper interfaces](../../crates/metewand-runtime/src/worker_sdk.rs)
+The helpers are internal to the Metewand source checkout. Metewand currently
+publishes only its CLI. Native workers outside the checkout implement the
+versioned process protocol directly.
+
+See the [Rust helper interfaces](../../src/runtime/worker_sdk.rs)
 for custom writers, errors, and lifecycle hooks, and
 [extending a benchmark](../../docs/guide/authoring/extending.md#add-components)
 for dependency setup in another Cargo project.

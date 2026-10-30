@@ -14,8 +14,8 @@ mod solver;
 mod ssnal;
 mod trajectory;
 
-use metewand_protocol::PrepareRequest;
-use metewand_runtime::{
+use crate::protocol::PrepareRequest;
+use crate::runtime::{
     buffered::BufferedTrace,
     worker_sdk::{Implementation, WorkerError, WorkerResult, serve_implementation},
 };

@@ -1,0 +1,60 @@
+name: Publish Rust binary package
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing root release tag to publish (for example, v0.3.0)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: crates-publish-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment:
+      name: crates-io
+      url: https://crates.io/crates/metewand
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ format('refs/tags/{0}', inputs.tag || github.ref_name) }}
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+      - uses: Swatinem/rust-cache@v2
+      - name: Check the release tag
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          import tomllib
+
+          package = tomllib.loads(Path("Cargo.toml").read_text())["package"]
+          expected = "v" + package["version"]
+          if os.environ["RELEASE_TAG"] != expected:
+              raise SystemExit(f"release tag must be {expected}")
+          PY
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+      - name: Verify the binary package
+        run: cargo publish --locked --dry-run
+      - uses: rust-lang/crates-io-auth-action@v1
+        id: auth
+      - name: Publish the CLI
+        run: cargo publish --locked
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}

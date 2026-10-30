@@ -7,6 +7,6 @@ trap 'rm -rf "$installer_dir"' 0
 trap 'exit 1' HUP INT TERM
 
 curl --proto '=https' --tlsv1.2 -LsSf \
-  https://github.com/jolars/metewand/releases/latest/download/metewand-cli-installer.sh \
+  https://github.com/jolars/metewand/releases/latest/download/metewand-installer.sh \
   -o "$installer_dir/install.sh"
 sh "$installer_dir/install.sh" "$@"

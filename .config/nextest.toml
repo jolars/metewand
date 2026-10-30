@@ -6,12 +6,12 @@ slow-timeout = "15s"
 
 # These tests already start multiple workers or concurrent initialization writers.
 [[profile.default.overrides]]
-filter = 'binary(concurrency) | binary(run_store_initialization) | test(concurrent_invocations)'
+filter = 'test(/^cli_tests::concurrency::/) | test(/^runtime_tests::run_store_initialization::/) | test(concurrent_invocations)'
 test-group = "processes"
 threads-required = 4
 
 [[profile.default.overrides]]
-filter = 'package(metewand-cli) | package(metewand-runtime)'
+filter = 'test(/^(cli|cli_tests|runtime|runtime_tests|datamonger_example)::/)'
 test-group = "processes"
 
 [profile.ci]
