@@ -42,7 +42,7 @@ flate2 = "1.1"
 fluent-uri = "0.4.1"
 getrandom = "0.4"
 globset = "0.4.16"
-jsonschema = { version = "0.59.0", default-features = false }
+jsonschema = { version = "0.60.2", default-features = false }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 serde_json_canonicalizer = "0.4.1"
@@ -54,7 +54,7 @@ tar = "0.4"
 tempfile = "3.20.0"
 thiserror = "2.0.20"
 yaml-edit = "0.3.5"
-rusqlite = { version = "0.40.2", features = ["bundled"] }
+rusqlite = { version = "0.41.1", features = ["bundled"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
@@ -74,7 +74,7 @@ windows-sys = { version = "0.61.2", features = [
 ] }
 
 [dev-dependencies]
-rusqlite = { version = "0.40.2", features = ["trace"] }
+rusqlite = { version = "0.41.1", features = ["trace"] }
 
 [[example]]
 name = "datamonger"
