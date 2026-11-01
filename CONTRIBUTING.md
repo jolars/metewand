@@ -511,8 +511,9 @@ cannot establish acceptance or authorize retention changes.
 ### Crash conformance
 
 Normal tests include representative publication crashes and focused recovery
-checks. Run the exhaustive campaign when changing durability, publication,
-recovery, or the run-store schema:
+checks. Run the exhaustive run-store campaign when changing synchronization,
+transaction or publication ordering, recovery decisions, the run-store schema,
+or the campaign's crash points and assertions, or when explicitly requested:
 
 ```sh
 cargo test --test integration --locked \
@@ -520,13 +521,17 @@ cargo test --test integration --locked \
   -- --exact --ignored --nocapture
 ```
 
-For cache catalog durability, publication, or collection changes, also run:
+For changes to cache catalog synchronization, publication ordering, collection
+recovery, or the cache campaign's crash points and assertions, run:
 
 ```sh
 cargo test --test integration --locked \
   runtime::artifact_store::maintenance::tests::collection_recovers_after_each_database_sync_rename_and_cleanup_boundary \
   -- --exact --ignored --nocapture
 ```
+
+Compile-only tracing fixes need representative crash tests. Run only the
+campaigns affected by the change.
 
 The [durability workflow](.github/workflows/durability.yml) runs the exhaustive
 campaigns separately on Linux, macOS, and Windows. They interrupt subprocesses

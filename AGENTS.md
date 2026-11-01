@@ -108,11 +108,11 @@ for the complete Rust suite. These commands use Nextest and accept its filters.
 Keep combinatorial planning and scheduling assertions in core tests, with small
 CLI cases covering worker execution, emitted records, and provenance.
 
-Run focused tests while developing, then verify the changed scope once. Rust
-changes require formatting, Clippy, and the complete Rust suite below. Website
-or documentation changes require the documentation checks; documentation-only
-changes do not require rebuilding or retesting Rust. Use `devenv test` for the
-full local CI run when both scopes change. The equivalent commands are:
+Run focused tests while developing, then verify the affected behavior once.
+Rust changes require formatting and Clippy; run the complete suite for broad
+changes, uncertain impact, or an explicit request. Website changes require the
+documentation checks; repository prose needs only diff and link review. Use
+`devenv test` for a full local CI run when warranted. Available commands are:
 
 - `cargo fmt --all -- --check`
 - `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`
@@ -120,11 +120,10 @@ full local CI run when both scopes change. The equivalent commands are:
 - `npm --prefix docs ci`
 - `npm --prefix docs run deploy:check`
 
-The exhaustive crash campaign is ignored by default. Run it explicitly when
-changing durability, publication, recovery, or the run-store schema, or when
-requested. Ordinary CLI, planning, and documentation changes do not require it.
-See [Crash conformance](CONTRIBUTING.md#crash-conformance) for the command and
-separate CI coverage. Keep the representative crash tests in the normal suite.
+Run the relevant exhaustive crash campaign only for changes to durability
+behavior, persisted schemas, or crash coverage, or when requested. Compile-only
+tracing fixes need representative crash tests. See [Crash
+conformance](CONTRIBUTING.md#crash-conformance) for commands and CI coverage.
 
 Use Rust 1.98.0 and edition 2024. Keep `Cargo.lock` current and use `--locked`
 in verification. Comments should explain why a choice exists rather than
