@@ -426,7 +426,11 @@ fn open_database(path: &Path) -> Result<Connection, RunStoreError> {
     #[cfg(test)]
     crate::runtime::fault_injection::hit("database.open.after");
     #[cfg(test)]
-    crate::runtime::fault_injection::trace_database(&connection);
+    let connection = {
+        let mut connection = connection;
+        crate::runtime::fault_injection::trace_database(&mut connection);
+        connection
+    };
     connection.busy_timeout(BUSY_TIMEOUT)?;
     Ok(connection)
 }

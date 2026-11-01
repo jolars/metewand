@@ -43,7 +43,7 @@ impl Catalog {
         }
         let mut connection = Connection::open_with_flags(store.root.join(NAME), flags)?;
         #[cfg(test)]
-        crate::runtime::fault_injection::trace_database(&connection);
+        crate::runtime::fault_injection::trace_database(&mut connection);
         connection.busy_timeout(Duration::from_secs(5))?;
         verify_schema(&connection, initialize)?;
         connection.pragma_update(None, "journal_mode", "WAL")?;

@@ -41,10 +41,11 @@ pub(crate) fn hit(label: &str) {
     });
 }
 
-pub(crate) fn trace_database(connection: &Connection) {
-    connection.trace_v2(
+pub(crate) fn trace_database(connection: &mut Connection) {
+    connection
+        .trace_v2(
         TraceEventCodes::SQLITE_TRACE_STMT | TraceEventCodes::SQLITE_TRACE_PROFILE,
-        Some(|event| {
+        Some(|event: TraceEvent<'_>| {
             let (phase, sql) = match event {
                 // SQLite also emits annotations for trigger subprograms. Keep
                 // actual statements, including SQL with leading comments.
@@ -63,5 +64,6 @@ pub(crate) fn trace_database(connection: &Connection) {
                 .join(" ");
             hit(&format!("database.{phase} {statement}"));
         }),
-    );
+        )
+        .expect("install database crash tracing");
 }
