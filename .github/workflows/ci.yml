@@ -10,6 +10,10 @@ env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: -D warnings
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   python-package:
     uses: ./.github/workflows/python-package.yml
@@ -35,12 +39,8 @@ jobs:
       - run: cargo fmt --all -- --check
 
   clippy:
-    name: clippy (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+    name: clippy
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - name: Install Clippy

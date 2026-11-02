@@ -61,7 +61,15 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
         python: ['3.11', '3.14']
-        distribution: [wheel, sdist]
+        distribution: [wheel]
+        # The package is pure Python; source packaging only needs Linux coverage.
+        include:
+          - os: ubuntu-latest
+            python: '3.11'
+            distribution: sdist
+          - os: ubuntu-latest
+            python: '3.14'
+            distribution: sdist
     defaults:
       run:
         shell: bash
