@@ -115,10 +115,14 @@ documentation checks; repository prose needs only diff and link review. Use
 `devenv test` for a full local CI run when warranted. Available commands are:
 
 - `cargo fmt --all -- --check`
+- `rustfmt --edition 2024 --check src/modules.rs`
 - `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`
 - `cargo nextest run --workspace --all-targets --locked --profile ci`
 - `npm --prefix docs ci`
 - `npm --prefix docs run deploy:check`
+
+Run both formatting checks. Cargo's formatter does not discover the shared
+modules loaded through `include!`; the explicit entry point covers them.
 
 Run the relevant exhaustive crash campaign only for changes to durability
 behavior, persisted schemas, or crash coverage, or when requested. Compile-only

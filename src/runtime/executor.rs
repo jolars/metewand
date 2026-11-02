@@ -1,5 +1,6 @@
 //! Reusable execution boundary and trusted local-process implementation.
 
+use crate::core::records::ResolvedLaunchRecord;
 use crate::runtime::{
     local_worker::{
         LocalWorkerLaunchError, launch_trusted_local_worker,
@@ -8,7 +9,6 @@ use crate::runtime::{
     worker_environment::WorkerSecrets,
     worker_process::{WorkerLogLimits, WorkerProcess, WorkerProcessError},
 };
-use crate::core::records::ResolvedLaunchRecord;
 use std::{
     path::Path,
     thread,

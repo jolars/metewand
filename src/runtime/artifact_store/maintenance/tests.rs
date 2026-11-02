@@ -176,8 +176,10 @@ fn partial_detached_cleanup_never_deletes_a_reimported_rooted_or_leased_object()
         let catalog = Catalog::open(&fixture.store).unwrap();
         catalog.pending(&hex(fixture.target), false).unwrap();
         rename_no_replace(&fixture.store.object_path(fixture.target), &garbage).unwrap();
-        crate::runtime::platform_fs::complete_namespace_change(&fixture.store.root.join("objects")).unwrap();
-        crate::runtime::platform_fs::complete_namespace_change(&fixture.store.root.join("garbage")).unwrap();
+        crate::runtime::platform_fs::complete_namespace_change(&fixture.store.root.join("objects"))
+            .unwrap();
+        crate::runtime::platform_fs::complete_namespace_change(&fixture.store.root.join("garbage"))
+            .unwrap();
         catalog.pending(&hex(fixture.target), true).unwrap();
     }
     fs::remove_file(garbage.join("manifest.json")).unwrap();

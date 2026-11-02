@@ -44,26 +44,26 @@ pub(crate) fn hit(label: &str) {
 pub(crate) fn trace_database(connection: &mut Connection) {
     connection
         .trace_v2(
-        TraceEventCodes::SQLITE_TRACE_STMT | TraceEventCodes::SQLITE_TRACE_PROFILE,
-        Some(|event: TraceEvent<'_>| {
-            let (phase, sql) = match event {
-                // SQLite also emits annotations for trigger subprograms. Keep
-                // actual statements, including SQL with leading comments.
-                TraceEvent::Stmt(statement, sql) if sql == statement.sql().as_ref() => {
-                    ("before", statement.sql().into_owned())
-                }
-                TraceEvent::Profile(statement, _) => ("after", statement.sql().into_owned()),
-                _ => return,
-            };
-            let statement = sql
-                .lines()
-                .filter(|line| !line.trim_start().starts_with("--"))
-                .flat_map(str::split_whitespace)
-                .take(8)
-                .collect::<Vec<_>>()
-                .join(" ");
-            hit(&format!("database.{phase} {statement}"));
-        }),
+            TraceEventCodes::SQLITE_TRACE_STMT | TraceEventCodes::SQLITE_TRACE_PROFILE,
+            Some(|event: TraceEvent<'_>| {
+                let (phase, sql) = match event {
+                    // SQLite also emits annotations for trigger subprograms. Keep
+                    // actual statements, including SQL with leading comments.
+                    TraceEvent::Stmt(statement, sql) if sql == statement.sql().as_ref() => {
+                        ("before", statement.sql().into_owned())
+                    }
+                    TraceEvent::Profile(statement, _) => ("after", statement.sql().into_owned()),
+                    _ => return,
+                };
+                let statement = sql
+                    .lines()
+                    .filter(|line| !line.trim_start().starts_with("--"))
+                    .flat_map(str::split_whitespace)
+                    .take(8)
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                hit(&format!("database.{phase} {statement}"));
+            }),
         )
         .expect("install database crash tracing");
 }

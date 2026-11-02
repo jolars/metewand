@@ -6,13 +6,13 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use globset::GlobBuilder;
 use crate::core::{
     canonical::{CanonicalJsonError, CanonicalValue},
     identity::{IdentityError, identify_canonical},
     manifest::RepositoryPath,
     records::{RecordId, SourceBundleResource},
 };
+use globset::GlobBuilder;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
@@ -300,12 +300,12 @@ fn collect_descendants(
     paths: &mut Vec<PathBuf>,
 ) -> Result<(), SourceBundleError> {
     #[cfg(windows)]
-    crate::runtime::platform_fs::validate_directory_names(absolute_directory).map_err(|source| {
-        SourceBundleError::PathAccess {
+    crate::runtime::platform_fs::validate_directory_names(absolute_directory).map_err(
+        |source| SourceBundleError::PathAccess {
             path: relative_directory.to_path_buf(),
             source,
-        }
-    })?;
+        },
+    )?;
     let mut entries = fs::read_dir(absolute_directory)
         .map_err(|source| SourceBundleError::PathAccess {
             path: relative_directory.to_path_buf(),

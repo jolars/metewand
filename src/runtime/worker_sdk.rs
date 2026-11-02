@@ -827,8 +827,10 @@ pub fn write_dataset_manifest(directory: &Path, files: &[(&str, &str)]) -> Worke
             ));
         }
         let target = output_path(directory, path)?;
-        let mut file =
-            crate::runtime::platform_fs::open_regular(&target, std::fs::OpenOptions::new().read(true))?;
+        let mut file = crate::runtime::platform_fs::open_regular(
+            &target,
+            std::fs::OpenOptions::new().read(true),
+        )?;
         let metadata = file.metadata()?;
         if !metadata.is_file() {
             return Err(WorkerError::operation_failed(

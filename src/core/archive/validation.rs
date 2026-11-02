@@ -206,8 +206,8 @@ pub(super) fn validate(evidence: &ArchiveEvidence) -> Result<(), ArchiveEvidence
         if attempt["state"] == "accepted" && !accepted_slots.insert(text(attempt, "slot_id")?) {
             return Err(invalid("several accepted attempts occupy one slot"));
         }
-        if let Ok(slot) =
-            text(attempt, "slot_id")?.parse::<crate::core::records::RecordId<ResolvedAttemptSlotRecord>>()
+        if let Ok(slot) = text(attempt, "slot_id")?
+            .parse::<crate::core::records::RecordId<ResolvedAttemptSlotRecord>>()
         {
             let expected =
                 run_attempt_id(slot, integer(attempt, "retry_index")?).map_err(evidence_error)?;

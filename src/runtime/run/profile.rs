@@ -1,9 +1,9 @@
 use super::*;
-use crate::runtime::fixed_dataset_run::{ProfileEvent, run_buffered, run_streaming};
 use crate::core::{
     records::{CompletionStatus, ProfileAttemptStatus},
     run_output::ProfileObservationOutput,
 };
+use crate::runtime::fixed_dataset_run::{ProfileEvent, run_buffered, run_streaming};
 use serde_json::Value;
 
 pub(super) fn execute(

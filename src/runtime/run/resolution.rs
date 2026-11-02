@@ -1819,7 +1819,9 @@ fn text_path(path: &Path) -> Result<String, RunError> {
         .ok_or_else(|| unsupported("Gate 1 launch paths must be UTF-8"))
 }
 
-pub(super) fn resolve_worker_timeouts(repository: &CheckedRepository) -> Result<PhaseTimeouts, RunError> {
+pub(super) fn resolve_worker_timeouts(
+    repository: &CheckedRepository,
+) -> Result<PhaseTimeouts, RunError> {
     let timeouts = PhaseTimeouts::from(repository.manifest.worker_timeouts);
     let now = std::time::Instant::now();
     for (phase, limit) in [

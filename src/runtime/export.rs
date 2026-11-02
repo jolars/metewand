@@ -221,8 +221,12 @@ impl ResultSet {
             analysis::select(&self.analysis, &records)
         };
         if require_complete && !analysis.completeness.complete {
-            let messages = analysis.completeness.issues.iter()
-                .map(|issue| issue.message.as_str()).collect::<BTreeSet<_>>();
+            let messages = analysis
+                .completeness
+                .issues
+                .iter()
+                .map(|issue| issue.message.as_str())
+                .collect::<BTreeSet<_>>();
             return Err(ExportError::IncompleteResults(
                 messages.into_iter().collect::<Vec<_>>().join(" "),
             ));

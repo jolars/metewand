@@ -1,4 +1,4 @@
-{ pkgs, lib, ... }:
+{ pkgs, lib, config, ... }:
 {
   packages = [
     pkgs.cargo-nextest
@@ -48,10 +48,19 @@
     };
 
     rustfmt.enable = true;
+
+    rustfmt-modules = {
+      enable = true;
+      name = "rustfmt shared modules";
+      entry = "${config.git-hooks.hooks.rustfmt.package}/bin/rustfmt --edition 2024 src/modules.rs";
+      files = "\\.rs$";
+      pass_filenames = false;
+    };
   };
 
   enterTest = ''
     cargo fmt --all -- --check
+    rustfmt --edition 2024 --check src/modules.rs
     cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
     cargo nextest run --workspace --all-targets --locked --profile ci
     npm --prefix docs ci

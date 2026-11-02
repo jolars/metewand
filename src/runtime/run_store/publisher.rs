@@ -256,8 +256,8 @@ impl RunStore {
         kind: &str,
     ) -> Result<ArtifactRegistration, RunStoreError> {
         prepare_directory(&stage.object)?;
-        let content =
-            hash_local_tree(&stage.object).map_err(crate::runtime::publication::PublicationError::from)?;
+        let content = hash_local_tree(&stage.object)
+            .map_err(crate::runtime::publication::PublicationError::from)?;
         let manifest = ContentDigest::new(
             Sha256::digest(fs::read(stage.object.join("manifest.json"))?).into(),
         );
@@ -269,10 +269,13 @@ impl RunStore {
         let destination = parent.join(&name);
         publish_prepared_directory(&stage.object, &destination)?;
         verify_finalized_directory(&destination)?;
-        if hash_local_tree(&destination).map_err(crate::runtime::publication::PublicationError::from)?
+        if hash_local_tree(&destination)
+            .map_err(crate::runtime::publication::PublicationError::from)?
             != content
         {
-            return Err(crate::runtime::publication::PublicationError::Conflict(destination).into());
+            return Err(
+                crate::runtime::publication::PublicationError::Conflict(destination).into(),
+            );
         }
         Ok(ArtifactRegistration {
             id: format!("run-store-v1:{name}"),
@@ -481,8 +484,8 @@ fn hex(digest: ContentDigest) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::runtime::run_store::{LeaseRequest, RetryAuthorization};
     use crate::core::records::{RecordId, ResolvedAttemptSlotRecord};
+    use crate::runtime::run_store::{LeaseRequest, RetryAuthorization};
 
     #[test]
     fn nonaccepted_snapshots_survive_a_concurrent_winner_selecting_its_result() {

@@ -828,9 +828,7 @@ fn reference_input_resource(
     input: &crate::core::problem_contract::ReferenceInput,
 ) -> Result<Value, RepositoryCheckError> {
     match input {
-        crate::core::problem_contract::ReferenceInput::Path(path) => {
-            reference_resource(root, path)
-        }
+        crate::core::problem_contract::ReferenceInput::Path(path) => reference_resource(root, path),
         crate::core::problem_contract::ReferenceInput::Inline(value) => {
             Ok(json!({"inline": value.as_json()}))
         }

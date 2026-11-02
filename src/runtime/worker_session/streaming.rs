@@ -230,9 +230,11 @@ impl WorkerSession {
             let mut managed = serde_json::json!({"id": checkpoint.id, "ok":true, "draft": name});
             let request =
                 serde_json::json!({"id":checkpoint.id,"method":"execute","result_dir":directory});
-            if let Err(error) =
-                crate::runtime::managed_output::finalize(&request, &mut managed, started.checked_add(limit))
-            {
+            if let Err(error) = crate::runtime::managed_output::finalize(
+                &request,
+                &mut managed,
+                started.checked_add(limit),
+            ) {
                 if started.elapsed() >= limit {
                     self.discard_after_timeout();
                     return Err(timeout_error());
@@ -244,11 +246,11 @@ impl WorkerSession {
                 .expect("validated snapshot");
             value.as_object_mut().expect("checkpoint").remove("draft");
             value["manifest"] = Value::String(
-                crate::runtime::platform_fs::relative_path(&parent.join("result.json")).map_err(|e| {
-                    WorkerSessionError::StreamProtocol {
+                crate::runtime::platform_fs::relative_path(&parent.join("result.json")).map_err(
+                    |e| WorkerSessionError::StreamProtocol {
                         message: e.to_string(),
-                    }
-                })?,
+                    },
+                )?,
             );
         }
         let checkpoint: StreamCheckpoint =

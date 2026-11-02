@@ -134,10 +134,12 @@ pub fn parse_problem_contract_document(
     source_path: &Path,
     source: &str,
 ) -> Result<ProblemContract, ProblemContractError> {
-    let (mut contract, source_map): (ProblemContract, _) = crate::core::yaml::parse(source_path, source)
-        .map_err(|error| ProblemContractError::Parse {
-            message: error.message,
-            source_span: error.source_span,
+    let (mut contract, source_map): (ProblemContract, _) =
+        crate::core::yaml::parse(source_path, source).map_err(|error| {
+            ProblemContractError::Parse {
+                message: error.message,
+                source_span: error.source_span,
+            }
         })?;
     contract.set_schema_owner(source_path);
     contract.source_map = source_map;
@@ -200,7 +202,8 @@ pub struct ProblemContract {
     /// Timing scopes under which the problem may be measured.
     pub allowed_timing_scopes: Vec<TimingScope>,
     /// Explicit opt-in to worker-reported instrumented scopes.
-    pub instrumented_scopes: std::collections::BTreeMap<String, crate::core::profile::InstrumentedScope>,
+    pub instrumented_scopes:
+        std::collections::BTreeMap<String, crate::core::profile::InstrumentedScope>,
     /// Scientific budgets supported by the contract.
     pub supported_budgets: Vec<ScientificBudget>,
     /// Validated family-specific semantics and operational rules.
@@ -280,7 +283,8 @@ struct RawProblemContract {
     #[serde(default, deserialize_with = "deserialize_optional_non_null")]
     semantics_schema: Option<SchemaDeclaration>,
     #[serde(default)]
-    instrumented_scopes: std::collections::BTreeMap<String, crate::core::profile::InstrumentedScope>,
+    instrumented_scopes:
+        std::collections::BTreeMap<String, crate::core::profile::InstrumentedScope>,
     #[serde(default = "default_timing_scopes")]
     allowed_timing_scopes: Vec<TimingScope>,
     #[serde(default = "default_budgets")]

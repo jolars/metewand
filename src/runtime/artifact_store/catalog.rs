@@ -77,7 +77,11 @@ impl Catalog {
             .tempdir()?;
         crate::runtime::platform_fs::set_private_directory(private.path())?;
         let private_root = std::fs::canonicalize(private.path())?;
-        crate::runtime::run_store::reader::copy_database_snapshot(&store.root, &private_root, NAME)?;
+        crate::runtime::run_store::reader::copy_database_snapshot(
+            &store.root,
+            &private_root,
+            NAME,
+        )?;
         let connection = Connection::open_with_flags(
             private_root.join(NAME),
             OpenFlags::SQLITE_OPEN_READ_ONLY

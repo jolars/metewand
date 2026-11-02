@@ -364,8 +364,10 @@ pub(crate) fn run_fixed_dataset_with_session(
     run_checked(request, Some(view), measurements, Some(session), observer)
 }
 
-type PhaseObserver<'a> =
-    dyn FnMut(crate::runtime::run_store::AttemptPhase) -> Result<(), crate::runtime::run_store::RunStoreError> + 'a;
+type PhaseObserver<'a> = dyn FnMut(
+        crate::runtime::run_store::AttemptPhase,
+    ) -> Result<(), crate::runtime::run_store::RunStoreError>
+    + 'a;
 
 fn run_checked(
     request: FixedDatasetRun<'_>,

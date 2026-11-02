@@ -10,7 +10,6 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use flate2::{Compression, GzBuilder, bufread::GzDecoder};
 use crate::core::{
     archive::{
         ArchiveEvidence, ArchiveFile, ArchiveManifest, ArchiveOperation, ArchiveReport,
@@ -19,6 +18,7 @@ use crate::core::{
     canonical::{CanonicalJsonError, CanonicalValue},
     public_schemas::{PublicSchema, public_schema_catalog},
 };
+use flate2::{Compression, GzBuilder, bufread::GzDecoder};
 use serde::{Serialize, de::DeserializeOwned};
 use sha2::{Digest, Sha256};
 use tempfile::{Builder, TempDir};

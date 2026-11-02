@@ -88,12 +88,12 @@ fn collect_entries(
         PathBuf::from(relative_directory)
     };
     #[cfg(windows)]
-    crate::runtime::platform_fs::validate_directory_names(absolute_directory).map_err(|source| {
-        LocalTreeHashError::ReadDirectory {
+    crate::runtime::platform_fs::validate_directory_names(absolute_directory).map_err(
+        |source| LocalTreeHashError::ReadDirectory {
             path: error_path.clone(),
             source,
-        }
-    })?;
+        },
+    )?;
     let mut directory_entries = fs::read_dir(absolute_directory)
         .map_err(|source| LocalTreeHashError::ReadDirectory {
             path: error_path.clone(),

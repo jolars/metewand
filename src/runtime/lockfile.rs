@@ -1050,9 +1050,14 @@ fn lock_with(
                     &environment_roots,
                     nix,
                 )?),
-                EnvironmentDefinition::Uv { .. } => LockedEnvironment::Uv(
-                    crate::runtime::locked_uv::prepare(repository, name, directory.path(), &digest)?,
-                ),
+                EnvironmentDefinition::Uv { .. } => {
+                    LockedEnvironment::Uv(crate::runtime::locked_uv::prepare(
+                        repository,
+                        name,
+                        directory.path(),
+                        &digest,
+                    )?)
+                }
                 _ => unreachable!("checked locked backend"),
             },
         );

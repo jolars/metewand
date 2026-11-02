@@ -81,7 +81,9 @@ pub fn finalize_failed_attempt(
     root: &Path,
     record: RunAttemptRecord,
 ) -> Result<(IdentifiedRecord<RunAttemptRecord>, PathBuf), PublicationError> {
-    if !root.is_absolute() || !crate::runtime::platform_fs::is_real_directory(&fs::symlink_metadata(root)?) {
+    if !root.is_absolute()
+        || !crate::runtime::platform_fs::is_real_directory(&fs::symlink_metadata(root)?)
+    {
         return Err(PublicationError::InvalidRoot);
     }
     if !matches!(
@@ -365,7 +367,10 @@ fn copy_result(result: &FixedDatasetResult, destination: &Path) -> Result<(), Pu
     for entry in files.values() {
         let target = destination.join(&entry.path);
         fs::create_dir_all(target.parent().expect("a destination file has a parent"))?;
-        crate::runtime::platform_fs::copy_owned_file(&result.result_directory().join(&entry.path), &target)?;
+        crate::runtime::platform_fs::copy_owned_file(
+            &result.result_directory().join(&entry.path),
+            &target,
+        )?;
     }
     // Validate the copy rather than trusting a pre-copy hash if the source
     // changed while files were being copied.
@@ -405,7 +410,10 @@ fn durable_child(parent: &Path, name: &str) -> Result<PathBuf, PublicationError>
 }
 
 fn staging(parent: &Path) -> Result<TempDir, PublicationError> {
-    Ok(crate::runtime::platform_fs::private_tempdir_in(parent, ".staging-")?)
+    Ok(crate::runtime::platform_fs::private_tempdir_in(
+        parent,
+        ".staging-",
+    )?)
 }
 
 pub(crate) fn write_file(path: &Path, bytes: &[u8]) -> Result<(), PublicationError> {
@@ -596,8 +604,10 @@ fn inventory(root: &Path) -> Result<BTreeMap<String, FileEntry>, PublicationErro
             if crate::runtime::platform_fs::is_real_directory(&metadata) {
                 walk(root, &path, files)?;
             } else if crate::runtime::platform_fs::is_regular_file(&metadata) {
-                let mut file =
-                    crate::runtime::platform_fs::open_regular(&entry.path(), OpenOptions::new().read(true))?;
+                let mut file = crate::runtime::platform_fs::open_regular(
+                    &entry.path(),
+                    OpenOptions::new().read(true),
+                )?;
                 let mut hasher = Sha256::new();
                 let mut size_bytes = 0;
                 let mut buffer = [0_u8; 64 * 1024];

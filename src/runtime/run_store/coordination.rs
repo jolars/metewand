@@ -367,9 +367,7 @@ impl RunStore {
         #[cfg(test)]
         if matches!(
             observation.record.profile,
-            Some(crate::core::records::ProfileObservationRecord::Streaming(
-                _
-            ))
+            Some(crate::core::records::ProfileObservationRecord::Streaming(_))
         ) {
             crate::runtime::fault_injection::hit("stream.checkpoint.after_commit");
         }

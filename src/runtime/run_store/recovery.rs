@@ -225,7 +225,9 @@ impl RunStore {
             crate::runtime::platform_fs::complete_namespace_change(&objects)?;
             let quarantine = objects.join(".quarantine");
             if quarantine.try_exists()? {
-                if !crate::runtime::platform_fs::is_real_directory(&fs::symlink_metadata(&quarantine)?) {
+                if !crate::runtime::platform_fs::is_real_directory(&fs::symlink_metadata(
+                    &quarantine,
+                )?) {
                     return Err(RunStoreError::UnsafePath(quarantine));
                 }
                 crate::runtime::platform_fs::complete_namespace_change(&quarantine)?;
@@ -473,8 +475,8 @@ impl RunStore {
             &document.to_canonical_bytes()?,
         )?;
         prepare_directory(&object)?;
-        let digest =
-            hash_local_tree(&object).map_err(crate::runtime::publication::PublicationError::from)?;
+        let digest = hash_local_tree(&object)
+            .map_err(crate::runtime::publication::PublicationError::from)?;
         let relative_path = format!("artifacts/attempt-{}", hex(digest));
         let path = root.join(&relative_path);
         publish_prepared_directory(&object, &path)?;
@@ -727,7 +729,8 @@ fn completed_metadata(
 ) -> Result<(String, ArtifactRegistration), RunStoreError> {
     let path = safe_path(root, relative)?;
     verify_finalized_directory(&path)?;
-    let digest = hash_local_tree(&path).map_err(crate::runtime::publication::PublicationError::from)?;
+    let digest =
+        hash_local_tree(&path).map_err(crate::runtime::publication::PublicationError::from)?;
     let name = path
         .file_name()
         .and_then(|n| n.to_str())
@@ -786,8 +789,10 @@ fn verify_registered(root: &Path, stored: &StoredArtifact) -> Result<(), RunStor
     let artifact = &stored.artifact;
     let path = safe_path(root, &artifact.relative_path)?;
     let metadata = fs::symlink_metadata(&path)?;
-    if (stored.storage_kind == "directory" && !crate::runtime::platform_fs::is_real_directory(&metadata))
-        || (stored.storage_kind == "file" && !crate::runtime::platform_fs::is_regular_file(&metadata))
+    if (stored.storage_kind == "directory"
+        && !crate::runtime::platform_fs::is_real_directory(&metadata))
+        || (stored.storage_kind == "file"
+            && !crate::runtime::platform_fs::is_regular_file(&metadata))
     {
         return Err(invalid("dependency storage kind changed"));
     }

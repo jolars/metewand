@@ -110,7 +110,8 @@ pub struct ExpandedExperiment {
 #[derive(Clone, Debug, Default)]
 pub struct LogicalPlanningCatalog {
     /// Instrumentation schemas with their resolved dependency identities.
-    pub schema_identities: BTreeMap<std::path::PathBuf, RecordId<crate::core::records::SchemaResource>>,
+    pub schema_identities:
+        BTreeMap<std::path::PathBuf, RecordId<crate::core::records::SchemaResource>>,
     /// Manifest and built-in dataset-definition identities.
     pub dataset_definitions:
         BTreeMap<DatasetConfigurationDefinition, RecordId<DatasetDefinitionRecord>>,
@@ -315,9 +316,9 @@ fn plan_experiment(
         experiment.execution_policy.clone(),
         execution_policy_definition,
     ))?;
-    crate::core::controls::validate_required_controls(&crate::core::controls::local_control_report(
-        &execution_policy.record,
-    ))?;
+    crate::core::controls::validate_required_controls(
+        &crate::core::controls::local_control_report(&execution_policy.record),
+    )?;
     let observation_policy_definition = manifest
         .observation_policies
         .get(&experiment.observation_policy)

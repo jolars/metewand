@@ -721,10 +721,12 @@ fn execute(
     });
     if let Err(
         FixedDatasetRunError::Implementation {
-            source: crate::runtime::worker_session::WorkerSessionError::ControlEnforcementLost { control },
+            source:
+                crate::runtime::worker_session::WorkerSessionError::ControlEnforcementLost { control },
         }
         | FixedDatasetRunError::Evaluator {
-            source: crate::runtime::worker_session::WorkerSessionError::ControlEnforcementLost { control },
+            source:
+                crate::runtime::worker_session::WorkerSessionError::ControlEnforcementLost { control },
         },
     ) = &result
     {

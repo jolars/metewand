@@ -1023,9 +1023,8 @@ impl ProcessGroup {
         let mut members: [libc::pid_t; 4096] = [0; 4096];
         let capacity = std::mem::size_of_val(&members) as libc::c_int;
         // SAFETY: The buffer is writable for the supplied byte count.
-        let bytes = unsafe {
-            libc::proc_listpgrppids(self.0, members.as_mut_ptr().cast(), capacity)
-        };
+        let bytes =
+            unsafe { libc::proc_listpgrppids(self.0, members.as_mut_ptr().cast(), capacity) };
         if bytes <= 0 {
             // SAFETY: Signal zero only checks whether the private group exists.
             return unsafe { libc::kill(-self.0, 0) } == -1
@@ -1044,13 +1043,15 @@ impl ProcessGroup {
                 // SAFETY: The output pointer is writable for exactly size bytes.
                 let read = unsafe {
                     libc::proc_pidinfo(
-                        pid, libc::PROC_PIDTBSDINFO, 0,
-                        (&mut info as *mut libc::proc_bsdinfo).cast(), size,
+                        pid,
+                        libc::PROC_PIDTBSDINFO,
+                        0,
+                        (&mut info as *mut libc::proc_bsdinfo).cast(),
+                        size,
                     )
                 };
                 (read == size && info.pbi_status == libc::SZOMB)
-                    || (read <= 0
-                        && io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH))
+                    || (read <= 0 && io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH))
             })
     }
 

@@ -1,14 +1,5 @@
 //! Private construction and validation of dataset artifacts through processes.
 
-use crate::runtime::{
-    LOCAL_TREE_HASH_VERSION,
-    local_tree::{LocalTreeHashError, hash_local_tree},
-    local_worker::{LocalWorkerLaunchError, launch_trusted_local_worker},
-    source_resolution::{ResolvedSource, SourceOrigin, SourceResolutionError},
-    worker_output::{ValidatedDataset, WorkerOutputError, WorkerOutputValidator},
-    worker_process::{WorkerLogLimits, WorkerProcessError, WorkerProcessOutput},
-    worker_session::{PhaseTimeouts, WorkerSession, WorkerSessionError},
-};
 use crate::core::{
     canonical::{CanonicalJsonError, CanonicalValue},
     identity::{IdentityError, canonical_identity_bytes, identify_record, record_id},
@@ -22,6 +13,15 @@ use crate::core::{
     schema::SchemaCatalog,
 };
 use crate::protocol::{WorkerIdentity, WorkerRole};
+use crate::runtime::{
+    LOCAL_TREE_HASH_VERSION,
+    local_tree::{LocalTreeHashError, hash_local_tree},
+    local_worker::{LocalWorkerLaunchError, launch_trusted_local_worker},
+    source_resolution::{ResolvedSource, SourceOrigin, SourceResolutionError},
+    worker_output::{ValidatedDataset, WorkerOutputError, WorkerOutputValidator},
+    worker_process::{WorkerLogLimits, WorkerProcessError, WorkerProcessOutput},
+    worker_session::{PhaseTimeouts, WorkerSession, WorkerSessionError},
+};
 use serde_json::json;
 use std::{
     fs, io,

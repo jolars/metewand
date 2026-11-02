@@ -505,7 +505,8 @@ impl StoredArtifact {
         let lease = self.store.lease("view", self.digest)?;
         let _guard = self.store.lock()?;
         self.store.verify_or_quarantine(self.digest)?;
-        let directory = crate::runtime::platform_fs::private_tempdir_in(&parent, "metewand-dataset-view-")?;
+        let directory =
+            crate::runtime::platform_fs::private_tempdir_in(&parent, "metewand-dataset-view-")?;
         let copied = copy_verified(self.directory(), directory.path(), self.digest);
         self.store.verify_or_quarantine(self.digest)?;
         copied?;

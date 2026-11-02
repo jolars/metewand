@@ -2,12 +2,12 @@
 
 pub use crate::runtime::buffered::{Decision, Progress};
 
-use crate::runtime::worker_sdk::{WorkerError, WorkerResult};
 use crate::core::{
     canonical::MAX_SAFE_INTEGER,
     profile::{SelectedStreamingProfile, StopReason},
 };
 use crate::protocol::{RequestId, StreamAction, StreamCheckpoint, StreamDecision};
+use crate::runtime::worker_sdk::{WorkerError, WorkerResult};
 use serde_json::Value;
 use std::{
     fs, io,
@@ -169,7 +169,8 @@ pub(crate) fn snapshot_directory(
     reference: &str,
     limit: u64,
 ) -> io::Result<(PathBuf, String)> {
-    let path = crate::runtime::worker_output::validate_relative_path(reference).map_err(io::Error::other)?;
+    let path = crate::runtime::worker_output::validate_relative_path(reference)
+        .map_err(io::Error::other)?;
     let parent = path
         .parent()
         .filter(|p| !p.as_os_str().is_empty())

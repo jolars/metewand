@@ -641,9 +641,16 @@ Rust changes require:
 
 ```sh
 cargo fmt --all -- --check
+rustfmt --edition 2024 --check src/modules.rs
 cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 cargo nextest run --workspace --all-targets --locked --profile ci
 ```
+
+Run both formatting checks because Cargo's formatter does not discover the
+shared modules loaded through `include!`. The explicit `src/modules.rs` entry
+point covers core, protocol, and runtime modules. To apply formatting, run
+`cargo fmt --all` and `rustfmt --edition 2024 src/modules.rs`. The devenv hooks
+run both formatters when Rust files change.
 
 CI runs Clippy on Linux and compiles and tests on Linux, macOS, and Windows.
 The portable CLI suite exercises Python, R, and Rust workers, generated dataset caching,

@@ -715,12 +715,12 @@ fn collect_entries(
     entries: &mut Vec<OutputEntry>,
 ) -> Result<(), WorkerOutputError> {
     #[cfg(windows)]
-    crate::runtime::platform_fs::validate_directory_names(absolute_directory).map_err(|source| {
-        WorkerOutputError::EntryAccess {
+    crate::runtime::platform_fs::validate_directory_names(absolute_directory).map_err(
+        |source| WorkerOutputError::EntryAccess {
             path: relative_directory.to_path_buf(),
             source,
-        }
-    })?;
+        },
+    )?;
     let display_path = if relative_directory.as_os_str().is_empty() {
         PathBuf::from(".")
     } else {

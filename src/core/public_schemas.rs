@@ -341,7 +341,9 @@ impl PublicSchema {
             Self::ExportRecord => include_str!("../../schemas/v1/export-record.schema.json"),
             Self::ExportRow => include_str!("../../schemas/v1/export-row.schema.json"),
             Self::ExportOutput => include_str!("../../schemas/v1/export-output.schema.json"),
-            Self::AnalysisSnapshot => include_str!("../../schemas/v1/analysis-snapshot.schema.json"),
+            Self::AnalysisSnapshot => {
+                include_str!("../../schemas/v1/analysis-snapshot.schema.json")
+            }
             Self::CacheOutput => include_str!("../../schemas/v1/cache-output.schema.json"),
             Self::Manifest => include_str!("../../schemas/v1/manifest.schema.json"),
             Self::ProblemContract => {

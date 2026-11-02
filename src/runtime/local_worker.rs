@@ -111,8 +111,9 @@ pub fn launch_trusted_local_worker_with_secrets(
         .current_dir(private_working_directory.path());
 
     if let Some(language) = variables.get("METEWAND_ADAPTER_LANGUAGE") {
-        let path = crate::runtime::language_adapter::stage(language, private_working_directory.path())
-            .map_err(LocalWorkerLaunchError::CreatePrivateWorkingDirectory)?;
+        let path =
+            crate::runtime::language_adapter::stage(language, private_working_directory.path())
+                .map_err(LocalWorkerLaunchError::CreatePrivateWorkingDirectory)?;
         command.env("METEWAND_ADAPTER_PATH", path);
     }
 

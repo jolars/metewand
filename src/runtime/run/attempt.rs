@@ -164,7 +164,14 @@ impl AttemptExecution {
         &mut self,
         result: &FixedDatasetResult,
         request: PublicationRequest<'_>,
-    ) -> Result<(crate::runtime::publication::PublishedOneShot, String, String), RunError> {
+    ) -> Result<
+        (
+            crate::runtime::publication::PublishedOneShot,
+            String,
+            String,
+        ),
+        RunError,
+    > {
         let mut prepared = prepare_fixed_dataset(result, request)?;
         let success = matches!(
             prepared.attempt.record.outcome,

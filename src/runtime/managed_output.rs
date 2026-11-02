@@ -1,7 +1,7 @@
 //! Finalization of explicitly negotiated version-1 managed output drafts.
 
-use crate::runtime::language_adapter::hex;
 use crate::core::canonical::CanonicalValue;
+use crate::runtime::language_adapter::hex;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -211,7 +211,8 @@ fn prepare(
         .into_iter()
         .collect::<BTreeSet<_>>();
     check_deadline(deadline)?;
-    let document = crate::runtime::worker_output::read_stable_file(&root, &draft_path).map_err(invalid)?;
+    let document =
+        crate::runtime::worker_output::read_stable_file(&root, &draft_path).map_err(invalid)?;
     check_deadline(deadline)?;
     let value = CanonicalValue::from_slice(&document).map_err(invalid)?;
     check_deadline(deadline)?;
@@ -251,7 +252,8 @@ fn prepare(
     for file in draft.files {
         check_deadline(deadline)?;
         let path = root.join(&file.path);
-        let mut input = crate::runtime::platform_fs::open_regular(&path, OpenOptions::new().read(true))?;
+        let mut input =
+            crate::runtime::platform_fs::open_regular(&path, OpenOptions::new().read(true))?;
         let signature = crate::runtime::platform_fs::file_signature(&input)?;
         let mut hash = Sha256::new();
         let mut size = 0_u64;

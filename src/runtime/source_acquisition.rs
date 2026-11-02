@@ -1,10 +1,10 @@
 //! Bounded pinned HTTP downloads and private extraction of verified archives.
 
+use crate::core::{canonical::CanonicalValue, materialization::hex, records::ContentDigest};
 use crate::runtime::source_resolution::{
     AcquiredSource, ResolvedSource, SourceAcquirer, SourceFile, SourceRequest,
     SourceResolutionError,
 };
-use crate::core::{canonical::CanonicalValue, materialization::hex, records::ContentDigest};
 use sha2::{Digest, Sha256};
 use std::{
     fs::{self, File},

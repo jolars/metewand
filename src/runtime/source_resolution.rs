@@ -425,8 +425,10 @@ fn inventory(root: &Path) -> Result<(Vec<SourceFile>, Vec<PathBuf>), SourceResol
                     path: relative.to_path_buf(),
                 })?;
                 #[cfg(any(unix, windows))]
-                let mut file =
-                    crate::runtime::platform_fs::open_regular(&path, fs::OpenOptions::new().read(true))?;
+                let mut file = crate::runtime::platform_fs::open_regular(
+                    &path,
+                    fs::OpenOptions::new().read(true),
+                )?;
                 #[cfg(not(any(unix, windows)))]
                 let mut file = fs::File::open(&path)?;
                 let mut hash = Sha256::new();

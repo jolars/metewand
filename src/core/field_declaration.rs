@@ -144,7 +144,10 @@ pub(crate) fn diagnose(document: &Value) -> Option<FieldError> {
             compile_field::<PARAMETERS>(value.clone(), true)
                 .err()
                 .map(|error| {
-                    error.within(&format!("{pointer}/{}", crate::core::yaml::escape_pointer(name)))
+                    error.within(&format!(
+                        "{pointer}/{}",
+                        crate::core::yaml::escape_pointer(name)
+                    ))
                 })
         })
     }
