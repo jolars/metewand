@@ -631,11 +631,21 @@ cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 cargo nextest run --workspace --all-targets --locked --profile ci
 ```
 
-CI compiles, runs Clippy, and tests on Linux, macOS, and Windows. The portable
-CLI suite exercises Python, R, and Rust workers, generated dataset caching,
+CI runs Clippy on Linux and compiles and tests on Linux, macOS, and Windows.
+The portable CLI suite exercises Python, R, and Rust workers, generated dataset caching,
 fresh sequences, buffered profiles, failures, resume, inspection, and both
 exports. Keep Unix-only tests narrowly scoped to Unix operations. R package
 contracts and native R starter checks run on all three platforms.
+
+The test profile optimizes SHA-256 because native worker tests repeatedly hash
+their executables for provenance. Application code retains the default test
+optimization level and debug assertions. Nextest bounds process-heavy tests to
+avoid multiplying worker concurrency; exhaustive crash campaigns run separately
+as described under [crash conformance](#crash-conformance).
+
+Python package CI tests the installed wheel on all three platforms with the
+oldest and newest supported Python versions. Linux jobs also install and test
+the source distribution on both versions.
 
 Documentation and website changes require:
 

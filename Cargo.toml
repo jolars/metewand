@@ -37,6 +37,10 @@ lto = "thin"
 [profile.test]
 debug = "line-tables-only"
 
+# Native worker tests repeatedly hash their executables for provenance.
+[profile.test.package.sha2]
+opt-level = 3
+
 [dependencies]
 flate2 = "1.1"
 fluent-uri = "0.4.1"
