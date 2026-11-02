@@ -100,7 +100,10 @@ fn trusted_local_launch_uses_a_private_directory_and_only_allowlisted_environmen
     let working_directory = worker.private_working_directory().unwrap().to_owned();
 
     let canonical_root = fs::canonicalize(private_root.path()).unwrap();
-    assert_eq!(working_directory.parent(), Some(canonical_root.as_path()));
+    assert_eq!(
+        fs::canonicalize(working_directory.parent().unwrap()).unwrap(),
+        canonical_root,
+    );
     assert_ne!(working_directory, private_root.path());
     #[cfg(unix)]
     assert_eq!(file_mode(&working_directory), Some(0o700));
@@ -110,7 +113,7 @@ fn trusted_local_launch_uses_a_private_directory_and_only_allowlisted_environmen
     let response = worker.protocol_reader().read_frame().unwrap().unwrap();
     assert_eq!(
         fs::canonicalize(response["cwd"].as_str().unwrap()).unwrap(),
-        working_directory,
+        fs::canonicalize(&working_directory).unwrap(),
     );
     #[cfg(unix)]
     {

@@ -24,6 +24,23 @@ fn r_expressions_start_in_the_isolated_worker_environment() {
         })
         .find(|path| path.is_file())
         .unwrap();
+    #[cfg(windows)]
+    let environment_variables = {
+        // The top-level Rscript launcher uses system() to start bin/x64/Rscript.
+        // Match resolved workers' search path so it can find cmd.exe.
+        let root = crate::runtime::worker_environment::system_root().unwrap();
+        let paths = [
+            program.parent().unwrap().to_owned(),
+            root.join("System32"),
+            root,
+        ];
+        std::collections::BTreeMap::from([(
+            "PATH".into(),
+            std::env::join_paths(paths).unwrap().into_string().unwrap(),
+        )])
+    };
+    #[cfg(unix)]
+    let environment_variables = Default::default();
     let launch = ResolvedLaunchRecord {
         environment: RecordId::from_digest([1; 32]),
         program: program.to_str().unwrap().into(),
@@ -32,7 +49,7 @@ fn r_expressions_start_in_the_isolated_worker_environment() {
             "-e".into(),
             "cat('expression started')".into(),
         ],
-        environment_variables: Default::default(),
+        environment_variables,
         working_directory: WorkerWorkingDirectory::PrivateRunDirectory,
     };
     let private = TempDir::new().unwrap();
