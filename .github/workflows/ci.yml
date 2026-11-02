@@ -117,13 +117,18 @@ jobs:
           import os
           from pathlib import Path
           import subprocess
+          import sys
           import tempfile
 
           executable = Path("target/debug", "metewand.exe" if os.name == "nt" else "metewand").resolve()
           with tempfile.TemporaryDirectory(prefix="metewand R starter é ") as temporary:
               project = Path(temporary, "benchmark")
               def invoke(*arguments):
-                  output = subprocess.run([str(executable), *arguments, "--output", "json"], cwd=temporary, check=True, capture_output=True)
+                  output = subprocess.run([str(executable), *arguments, "--output", "json"], cwd=temporary, capture_output=True)
+                  if output.returncode:
+                      print(output.stdout.decode("utf-8", errors="replace"), flush=True)
+                      print(output.stderr.decode("utf-8", errors="replace"), file=sys.stderr, flush=True)
+                  output.check_returncode()
                   return json.loads(output.stdout)["data"]
               invoke("init", str(project), "--language", "r")
               manifest = ["--manifest", str(project / "metewand.yaml")]
