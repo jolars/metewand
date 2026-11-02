@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.3.0](https://github.com/jolars/metewand/compare/v0.2.0...v0.3.0) (2026-11-02)
+
+### Breaking changes
+
+- move language adapters into the CLI ([`3e03be4`](https://github.com/jolars/metewand/commit/3e03be48dba8621b832655b5a89b184defb460d3))
+
+### Features
+
+- add standalone analysis exports ([`4760a6f`](https://github.com/jolars/metewand/commit/4760a6fb2a01b439d57036f551be6ee6711265ea))
+- add native uv locked environments ([`6fb3104`](https://github.com/jolars/metewand/commit/6fb3104340a0c1063a360958cd23c9be9e792570))
+- add Nix environment locking ([`98db3e9`](https://github.com/jolars/metewand/commit/98db3e92fc8087a0ea14b7768e4160fb53bd4f04))
+- add portable result archives ([`32a1128`](https://github.com/jolars/metewand/commit/32a1128c95c3f209b3e4a878c617fc78a866c48a))
+- add streaming profiles ([`651f15d`](https://github.com/jolars/metewand/commit/651f15de43341660321ef38bf85b8d3430969b08))
+- release binaries ([`f6ce5e0`](https://github.com/jolars/metewand/commit/f6ce5e0c183c023c75225ad15911c975266387c2))
+- support native Windows execution ([`6ef978d`](https://github.com/jolars/metewand/commit/6ef978d3ed62cdb0371d987e71092a2eac6146c3))
+
+### Bug Fixes
+
+- normalize Windows worker directory paths ([`6b953f1`](https://github.com/jolars/metewand/commit/6b953f1e90e7f9ab41581b9b3cdab06ae9ad0b02))
+- adapt crash tracing to rusqlite 0.41 ([`befde83`](https://github.com/jolars/metewand/commit/befde8330a655b8b25764a04386809a6b0897bc5))
+- repair Windows CI paths and store initialization ([`71e2c62`](https://github.com/jolars/metewand/commit/71e2c62a29a8b4e1a37896b60f6636aeeda2fb54))
+- repair macOS and Windows CI failures ([`ae6d68a`](https://github.com/jolars/metewand/commit/ae6d68a60345011e83d3125df91fbfb56f5b2b52))
+- restore cross-platform CI ([`6b63d82`](https://github.com/jolars/metewand/commit/6b63d82ebcf6c596227cb42e617b70cee32bd8de))
+
 ## [0.2.0](https://github.com/jolars/metewand/compare/v0.1.0...v0.2.0) (2026-10-27)
 
 ### Breaking changes
