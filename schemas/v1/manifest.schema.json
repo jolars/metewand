@@ -11,6 +11,40 @@
       "const": 1
     },
     "name": { "$ref": "common.schema.json#/$defs/name" },
+    "worker-timeouts": {
+      "type": "object",
+      "properties": {
+        "hello": {
+          "type": "string",
+          "pattern": "^\\s*[1-9][0-9]*\\s*(ms|s|min|h)\\s*$"
+        },
+        "materialize": {
+          "type": "string",
+          "pattern": "^\\s*[1-9][0-9]*\\s*(ms|s|min|h)\\s*$"
+        },
+        "prepare": {
+          "type": "string",
+          "pattern": "^\\s*[1-9][0-9]*\\s*(ms|s|min|h)\\s*$"
+        },
+        "execute": {
+          "type": "string",
+          "pattern": "^\\s*[1-9][0-9]*\\s*(ms|s|min|h)\\s*$"
+        },
+        "reset": {
+          "type": "string",
+          "pattern": "^\\s*[1-9][0-9]*\\s*(ms|s|min|h)\\s*$"
+        },
+        "evaluate": {
+          "type": "string",
+          "pattern": "^\\s*[1-9][0-9]*\\s*(ms|s|min|h)\\s*$"
+        },
+        "shutdown": {
+          "type": "string",
+          "pattern": "^\\s*[1-9][0-9]*\\s*(ms|s|min|h)\\s*$"
+        }
+      },
+      "additionalProperties": false
+    },
     "datasets": {
       "type": "object",
       "propertyNames": { "$ref": "common.schema.json#/$defs/name" },

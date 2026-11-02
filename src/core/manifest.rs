@@ -35,9 +35,9 @@ use crate::core::{
 pub fn parse_manifest(source_path: &Path, source: &str) -> Result<Manifest, ManifestParseError> {
     let (mut manifest, source_map): (Manifest, _) = crate::core::yaml::parse(source_path, source)
         .map_err(|error| ManifestParseError {
-            message: error.message,
-            source_span: error.source_span,
-        })?;
+        message: error.message,
+        source_span: error.source_span,
+    })?;
     for dataset in manifest.datasets.values_mut() {
         match dataset {
             DatasetDefinition::Fixed(dataset) => dataset.output_schema.set_owner(source_path),
@@ -66,7 +66,10 @@ pub fn parse_manifest(source_path: &Path, source: &str) -> Result<Manifest, Mani
     for (name, problem) in &mut manifest.problems {
         if let ContractDeclaration::Inline(contract) = &mut problem.contract {
             contract.set_schema_owner(source_path);
-            let mut pointer = format!("/problems/{}", crate::core::yaml::escape_pointer(name.as_str()));
+            let mut pointer = format!(
+                "/problems/{}",
+                crate::core::yaml::escape_pointer(name.as_str())
+            );
             if source_map.contains(&format!("{pointer}/contract")) {
                 pointer.push_str("/contract");
             }
@@ -77,6 +80,54 @@ pub fn parse_manifest(source_path: &Path, source: &str) -> Result<Manifest, Mani
     Ok(manifest)
 }
 
+/// Resolved operational deadlines in positive safe nanoseconds.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
+pub struct WorkerTimeouts {
+    pub hello: u64,
+    pub materialize: u64,
+    pub prepare: u64,
+    pub execute: u64,
+    pub reset: u64,
+    pub evaluate: u64,
+    pub shutdown: u64,
+}
+
+impl Default for WorkerTimeouts {
+    fn default() -> Self {
+        Self {
+            hello: 10_000_000_000,
+            materialize: 10_000_000_000,
+            prepare: 10_000_000_000,
+            execute: 10_000_000_000,
+            reset: 10_000_000_000,
+            evaluate: 10_000_000_000,
+            shutdown: 10_000_000_000,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for WorkerTimeouts {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let entries = BTreeMap::<String, String>::deserialize(deserializer)?;
+        let mut timeouts = Self::default();
+        for (phase, value) in entries {
+            let target = match phase.as_str() {
+                "hello" => &mut timeouts.hello,
+                "materialize" => &mut timeouts.materialize,
+                "prepare" => &mut timeouts.prepare,
+                "execute" => &mut timeouts.execute,
+                "reset" => &mut timeouts.reset,
+                "evaluate" => &mut timeouts.evaluate,
+                "shutdown" => &mut timeouts.shutdown,
+                _ => return Err(de::Error::custom(format!("unknown worker phase `{phase}`"))),
+            };
+            *target =
+                crate::core::duration::positive_nanoseconds(&value).map_err(de::Error::custom)?;
+        }
+        Ok(timeouts)
+    }
+}
+
 /// A parsed version-1 benchmark manifest.
 #[derive(Debug)]
 pub struct Manifest {
@@ -85,6 +136,8 @@ pub struct Manifest {
     pub version: u32,
     /// Benchmark name.
     pub name: Name,
+    /// Operational deadlines, independent of scientific timing budgets.
+    pub worker_timeouts: WorkerTimeouts,
     /// Dataset definitions keyed by manifest-local name.
     pub datasets: BTreeMap<Name, DatasetDefinition>,
     /// Problem definitions keyed by manifest-local name.
@@ -108,6 +161,8 @@ struct RawManifest {
     version: u32,
     name: Name,
     #[serde(default)]
+    worker_timeouts: WorkerTimeouts,
+    #[serde(default)]
     datasets: BTreeMap<Name, DatasetDefinition>,
     #[serde(default, deserialize_with = "deserialize_problems")]
     problems: BTreeMap<Name, ProblemDefinition>,
@@ -130,6 +185,7 @@ impl<'de> Deserialize<'de> for Manifest {
             source_map: crate::core::yaml::SourceMap::default(),
             version: raw.version,
             name: raw.name,
+            worker_timeouts: raw.worker_timeouts,
             datasets: raw.datasets,
             problems: raw.problems,
             implementations: raw.implementations,
@@ -1341,8 +1397,11 @@ impl<'de> Deserialize<'de> for ImplementationDefinition {
             ParameterBoundary::lower(raw.parameters, raw.parameter_schema, raw.parameter_defaults)
                 .map_err(de::Error::custom)?;
         if raw.function.is_some() {
-            crate::core::problem_contract::ensure_unique(&raw.problem_contracts, "`problem-contracts`")
-                .map_err(de::Error::custom)?;
+            crate::core::problem_contract::ensure_unique(
+                &raw.problem_contracts,
+                "`problem-contracts`",
+            )
+            .map_err(de::Error::custom)?;
             if raw.capabilities.is_empty() {
                 raw.capabilities.push(ImplementationCapability::OneShot);
             }

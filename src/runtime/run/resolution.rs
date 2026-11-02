@@ -404,7 +404,7 @@ pub(super) fn resolve(
     let mut datasets = BTreeMap::new();
     let mut candidates = Vec::new();
     for (candidate, experiment, implementation, evaluator, dataset_plan) in prepared {
-        let timeouts = PhaseTimeouts::default();
+        let timeouts = PhaseTimeouts::from(repository.manifest.worker_timeouts);
         let key = candidate.dataset_configuration.id;
         if let std::collections::btree_map::Entry::Vacant(entry) = datasets.entry(key) {
             let (snapshot, output_schema, provenance) = match dataset_plan {
@@ -809,6 +809,7 @@ fn resolve_candidate(
         dataset_instance.id,
         repository.resources.problem_contracts[problem_name].to_string(),
         &policy,
+        repository.manifest.worker_timeouts.into(),
     )?;
     let mut measurements = Vec::new();
     for specification in candidate.specifications.iter().filter(|_| {
@@ -905,7 +906,7 @@ fn resolve_candidate(
                 "timing_scope": timing.scope.to_string(),
                 "operation_scope": timing.scope == crate::core::manifest::TimingScope::ExecuteOnly,
                 "scientific_timeout_ns": timing.timeout.map(|limit| limit.as_nanos().to_string()),
-                "operational_timeouts_ns": PhaseTimeouts::default().provenance(),
+                "operational_timeouts_ns": PhaseTimeouts::from(repository.manifest.worker_timeouts).provenance(),
                 "logical_candidate_id": candidate.candidate.id,
                 "logical_slot_id": slot.id,
                 "implementation_seed": specification.specification.record.implementation_seed.value,
@@ -1059,7 +1060,7 @@ fn resolve_candidate(
             .clone(),
         result_schema: contract.result_schema.as_path().to_path_buf(),
         metric_schema: contract.metric_schema.as_path().to_path_buf(),
-        timeouts: PhaseTimeouts::default(),
+        timeouts: PhaseTimeouts::from(repository.manifest.worker_timeouts),
         timing,
     })
 }
@@ -1071,6 +1072,7 @@ fn resolve_applicability(
     dataset_instance: RecordId<DatasetInstanceRecord>,
     contract_id: String,
     policy: &crate::core::records::ExecutionPolicyRecord,
+    timeouts: PhaseTimeouts,
 ) -> Result<IdentifiedRecord<crate::core::applicability::ApplicabilityDecisionRecord>, RunError> {
     use crate::core::{
         applicability::{ApplicabilityDecisionRecord, ApplicabilityOutcome},
@@ -1137,7 +1139,7 @@ fn resolve_applicability(
             crate::protocol::WorkerRole::Implementation,
             implementation.identity.clone(),
             &[crate::protocol::Capability::Applicability],
-            PhaseTimeouts::default(),
+            timeouts,
         )?;
         let environment = session.environment().map(|environment| {
             let directory = environment.working_directory.to_string_lossy();
@@ -1184,9 +1186,7 @@ fn resolve_applicability(
     let (response, environment) = checked?;
     let outcome = match response.outcome {
         crate::protocol::ApplicabilityOutcome::Applicable => ApplicabilityOutcome::Applicable,
-        crate::protocol::ApplicabilityOutcome::NotApplicable => {
-            ApplicabilityOutcome::NotApplicable
-        }
+        crate::protocol::ApplicabilityOutcome::NotApplicable => ApplicabilityOutcome::NotApplicable,
     };
     Ok(identify_record(ApplicabilityDecisionRecord {
         candidate_id: candidate.candidate.id,
@@ -1512,11 +1512,12 @@ pub(crate) fn resolve_worker_with_lock(
         environment_variables: variables,
         working_directory: WorkerWorkingDirectory::PrivateRunDirectory,
     };
-    let executable_evidence = crate::runtime::build_evidence::executable_evidence(if source_executable {
-        &original_executable
-    } else {
-        &executable
-    })?;
+    let executable_evidence =
+        crate::runtime::build_evidence::executable_evidence(if source_executable {
+            &original_executable
+        } else {
+            &executable
+        })?;
     if executable_evidence["executable_sha256"] != executable_digest {
         return Err(RunError::ChangedInput);
     }
@@ -1782,8 +1783,9 @@ fn executor_configuration() -> Value {
         configuration["timeout_termination"] = json!({"interrupt": null, "grace_ms": 0,
             "force": "TerminateJobObject", "exit_wait_ms": 1000});
         configuration["transport"] = json!("windows_inherited_handles");
-        configuration["storage"] = serde_json::to_value(crate::runtime::platform_fs::storage_evidence())
-            .expect("typed storage evidence");
+        configuration["storage"] =
+            serde_json::to_value(crate::runtime::platform_fs::storage_evidence())
+                .expect("typed storage evidence");
         configuration
     };
     configuration

@@ -1,10 +1,10 @@
 //! Bounded local collection and validation for instrumented profiles.
 
-use crate::runtime::worker_sdk::{WorkerError, WorkerResult};
 use crate::core::{
     canonical::{CanonicalValue, MAX_SAFE_INTEGER},
     profile::*,
 };
+use crate::runtime::worker_sdk::{WorkerError, WorkerResult};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -77,9 +77,7 @@ impl BufferedTrace {
     ) -> WorkerResult<Self> {
         profile.policy.validate().map_err(invalid)?;
         profile.policy.validate_buffered().map_err(invalid)?;
-        if profile.check_schedule.every == 0 {
-            return Err(invalid("check interval must be positive"));
-        }
+        profile.check_schedule.validate().map_err(invalid)?;
         Ok(Self {
             profile,
             directory,
@@ -127,11 +125,9 @@ impl BufferedTrace {
             ));
         }
         let expected = self
-            .points
-            .last()
-            .map_or(Some(self.profile.check_schedule.start), |p| {
-                p.check_index.checked_add(self.profile.check_schedule.every)
-            });
+            .profile
+            .check_schedule
+            .next_after(self.points.last().map(|p| p.check_index));
         if progress.check_index > MAX_SAFE_INTEGER
             || progress.work.values().any(|v| *v > MAX_SAFE_INTEGER)
         {
@@ -535,13 +531,13 @@ pub fn validate_buffer(
     {
         return Err("buffer requires exactly one terminal check at its end".into());
     }
-    let mut expected = profile.check_schedule.start;
+    let mut expected = profile.check_schedule.next_after(None);
     for (i, p) in points.iter().enumerate() {
         if p.check_index > MAX_SAFE_INTEGER
             || p.instrumented_time_ns > manifest.instrumented_total_time_ns
             || !p.provisional_metrics.is_object()
-            || (!p.terminal && p.check_index != expected)
-            || (p.terminal && p.check_index > expected)
+            || (!p.terminal && Some(p.check_index) != expected)
+            || (p.terminal && expected.is_some_and(|n| p.check_index > n))
             || p.work.values().any(|v| *v > MAX_SAFE_INTEGER)
         {
             return Err("invalid trace clock, progress, metrics, or check schedule".into());
@@ -579,10 +575,7 @@ pub fn validate_buffer(
         {
             return Err("execution continued after a required local stop".into());
         }
-        expected = p
-            .check_index
-            .checked_add(profile.check_schedule.every)
-            .ok_or("check schedule overflow")?;
+        expected = profile.check_schedule.next_after(Some(p.check_index));
     }
     if manifest.snapshots.is_empty()
         || manifest.snapshots.len() as u64 > profile.policy.max_observations
@@ -744,9 +737,10 @@ fn inventory_files(
         let entry = entry.map_err(|e| e.to_string())?;
         let metadata = fs::symlink_metadata(entry.path()).map_err(|e| e.to_string())?;
         let path = entry.path();
-        let relative =
-            crate::runtime::platform_fs::relative_path(path.strip_prefix(root).map_err(|e| e.to_string())?)
-                .map_err(|e| e.to_string())?;
+        let relative = crate::runtime::platform_fs::relative_path(
+            path.strip_prefix(root).map_err(|e| e.to_string())?,
+        )
+        .map_err(|e| e.to_string())?;
         safe_path(Path::new(&relative))?;
         if metadata.is_dir() {
             inventory_files(root, &path, files)?;

@@ -58,6 +58,21 @@ fn verifies_workers_and_executes_reference_cases_without_creating_a_run() {
 }
 
 #[test]
+fn worker_check_honors_the_authored_handshake_deadline() {
+    let repository = repository();
+    let path = repository.path().join("metewand.yaml");
+    let mut source = fs::read_to_string(&path).unwrap();
+    source.push_str("\nworker-timeouts: {hello: 1 ms}\n");
+    fs::write(path, source).unwrap();
+    let output = check(repository.path());
+    assert!(!output.status.success(), "{output:?}");
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("1ms timeout"),
+        "{output:?}"
+    );
+}
+
+#[test]
 fn rejects_reference_metric_disagreement() {
     let repository = repository();
     fs::write(

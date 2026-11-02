@@ -52,7 +52,7 @@ fn checkpoint_slots_preserve_measurement_repetitions_across_deliveries() {
     .unwrap();
     let selected = SelectedStreamingProfile {
         policy,
-        check_schedule: CheckSchedule { every: 1, start: 0 },
+        check_schedule: CheckSchedule::Periodic { every: 1, start: 0 },
     };
     assert_eq!(
         (0..12)
@@ -60,4 +60,36 @@ fn checkpoint_slots_preserve_measurement_repetitions_across_deliveries() {
             .collect::<Vec<_>>(),
         vec![0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2]
     );
+}
+
+#[test]
+fn explicit_checkpoint_indices_are_strict_and_preserve_periodic_bytes() {
+    use crate::core::profile::CheckSchedule;
+    let value = json!({"indices": [0, 1, 2, 4, 8]});
+    let schedule: CheckSchedule = serde_json::from_value(value.clone()).unwrap();
+    schedule.validate().unwrap();
+    assert_eq!(serde_json::to_value(&schedule).unwrap(), value);
+    for index in 0..10 {
+        assert_eq!(schedule.includes(index), [0, 1, 2, 4, 8].contains(&index));
+    }
+    assert_eq!(schedule.next_after(None), Some(0));
+    assert_eq!(schedule.next_after(Some(2)), Some(4));
+    assert_eq!(schedule.next_after(Some(3)), Some(4));
+    assert_eq!(schedule.next_after(Some(8)), None);
+    for value in [
+        json!({"indices": []}),
+        json!({"indices": [1, 1]}),
+        json!({"indices": [2, 1]}),
+        json!({"indices": [-1]}),
+        json!({"indices": [9007199254740992u64]}),
+        json!({"indices": [0], "every": 1}),
+    ] {
+        assert!(match serde_json::from_value::<CheckSchedule>(value) {
+            Err(_) => true,
+            Ok(schedule) => schedule.validate().is_err(),
+        });
+    }
+    let periodic = json!({"every": 3, "start": 1});
+    let schedule: CheckSchedule = serde_json::from_value(periodic.clone()).unwrap();
+    assert_eq!(serde_json::to_value(schedule).unwrap(), periodic);
 }

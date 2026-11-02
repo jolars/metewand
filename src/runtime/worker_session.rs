@@ -64,6 +64,20 @@ impl PhaseTimeouts {
     }
 }
 
+impl From<crate::core::manifest::WorkerTimeouts> for PhaseTimeouts {
+    fn from(value: crate::core::manifest::WorkerTimeouts) -> Self {
+        Self {
+            hello: Duration::from_nanos(value.hello),
+            materialize: Duration::from_nanos(value.materialize),
+            prepare: Duration::from_nanos(value.prepare),
+            execute: Duration::from_nanos(value.execute),
+            reset: Duration::from_nanos(value.reset),
+            evaluate: Duration::from_nanos(value.evaluate),
+            shutdown: Duration::from_nanos(value.shutdown),
+        }
+    }
+}
+
 impl Default for PhaseTimeouts {
     fn default() -> Self {
         let limit = Duration::from_secs(10);
@@ -697,9 +711,11 @@ impl WorkerSession {
                     ),
                 });
             }
-            if let Err(source) =
-                crate::runtime::managed_output::finalize(&request, &mut value, started.checked_add(limit))
-            {
+            if let Err(source) = crate::runtime::managed_output::finalize(
+                &request,
+                &mut value,
+                started.checked_add(limit),
+            ) {
                 if started.elapsed() >= limit {
                     self.discard_after_timeout();
                     return Err(timeout_error());

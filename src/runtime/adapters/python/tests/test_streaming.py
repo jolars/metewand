@@ -7,6 +7,25 @@ from metewand_adapter._worker import WorkerError
 
 
 class StreamingTests(unittest.TestCase):
+    def test_explicit_indices_skip_serialization_and_allow_an_unscheduled_terminal(self):
+        frames = []
+
+        def exchange(frame):
+            frames.append(frame)
+            return {"id": "1", "method": "stream_decision", "sequence": frame["sequence"],
+                    "action": "stop" if frame["terminal"] else "continue",
+                    **({"reason": "implementation_stopped"} if frame["terminal"] else {})}
+
+        with tempfile.TemporaryDirectory() as directory:
+            stream = StreamingContext(
+                {"policy": {"max-observations": 5, "max-checkpoint-bytes": 65536},
+                 "check_schedule": {"indices": [0, 1, 2, 4, 8]}},
+                Path(directory), "1", exchange)
+            for index in range(6):
+                stream.checkpoint({"check_index": index}, lambda: {"x": index})
+            stream.finish({"check_index": 6}, lambda: {"x": 6})
+            self.assertEqual([frame["check_index"] for frame in frames], [0, 1, 2, 4, 6])
+
     def test_checkpoint_byte_limit_excludes_draft_only_metadata(self):
         for limit in [45, 46, 50]:
             with self.subTest(limit=limit), tempfile.TemporaryDirectory() as directory:

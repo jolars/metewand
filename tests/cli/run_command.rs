@@ -173,6 +173,48 @@ fn execute_only_scientific_timeout_leaves_untimed_phases_their_operational_limit
 }
 
 #[test]
+fn authored_worker_deadlines_reach_execution_and_provenance() {
+    for (deadline, accepted) in [("1 ms", false), ("1 s", true)] {
+        let root = repository();
+        let path = root.path().join("metewand.yaml");
+        let mut source = fs::read_to_string(&path).unwrap();
+        source.push_str(&format!(
+            "\nworker-timeouts:\n  hello: 30 s\n  execute: {deadline}\n"
+        ));
+        fs::write(path, source).unwrap();
+        replace(
+            root.path(),
+            "worker.py",
+            "elif method == \"execute\":",
+            "elif method == \"execute\":\n            import time\n            time.sleep(0.05)",
+        );
+        let output = metewand(
+            root.path(),
+            &["run", "--output-dir", "run", "--output", "jsonl"],
+        );
+        assert_eq!(output.status.success(), accepted, "{output:?}");
+        let records = envelopes(&output);
+        let attempt = &records.last().unwrap()["data"]["attempts"][0];
+        if accepted {
+            let observation = document(
+                &root
+                    .path()
+                    .join("run")
+                    .join(attempt["observation_directory"].as_str().unwrap())
+                    .join("observation.json"),
+            );
+            let timeouts =
+                &observation["provenance"]["data"]["execution"]["operational_timeouts_ns"];
+            assert_eq!(timeouts["hello"], "30000000000");
+            assert_eq!(timeouts["execute"], "1000000000");
+            assert_eq!(timeouts["prepare"], "10000000000");
+        } else {
+            assert_eq!(attempt["diagnostic"]["code"], "phase_timeout");
+        }
+    }
+}
+
+#[test]
 fn run_streams_events_and_publishes_a_self_describing_attempt() {
     let root = repository();
     let manifest_path = root.path().join("metewand.yaml");

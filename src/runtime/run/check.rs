@@ -180,7 +180,13 @@ pub fn check_repository_workers(
     };
     for (name, role, capabilities, worker) in resolved {
         worker.verify()?;
-        let mut session = connect(&worker, private.path(), role, &capabilities)?;
+        let mut session = connect(
+            &worker,
+            private.path(),
+            role,
+            &capabilities,
+            repository.manifest.worker_timeouts.into(),
+        )?;
         let negotiated = session.negotiated();
         report.workers.push(WorkerCheck {
             component: name.clone(),
@@ -341,6 +347,7 @@ fn connect(
     private: &Path,
     role: WorkerRole,
     capabilities: &[Capability],
+    timeouts: PhaseTimeouts,
 ) -> Result<WorkerSession, WorkerCheckError> {
     let process =
         launch_trusted_local_worker(&worker.launch, private, WorkerLogLimits::new(65536, 65536))?;
@@ -349,7 +356,7 @@ fn connect(
         role,
         worker.identity.clone(),
         capabilities,
-        PhaseTimeouts::default(),
+        timeouts,
     )?)
 }
 

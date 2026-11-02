@@ -239,11 +239,16 @@ impl ProfileDefinition {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-pub struct CheckSchedule {
-    pub every: u64,
-    #[serde(default)]
-    pub start: u64,
+#[serde(untagged, deny_unknown_fields)]
+pub enum CheckSchedule {
+    Periodic {
+        every: u64,
+        #[serde(default)]
+        start: u64,
+    },
+    Explicit {
+        indices: Vec<u64>,
+    },
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
@@ -377,12 +382,8 @@ impl ProfileBinding {
             }
             Self::Buffered(b) => {
                 policy.validate_buffered()?;
-                if b.instrumented_scope.is_empty()
-                    || !b.instrumentation.is_object()
-                    || b.check_schedule.every == 0
-                    || b.check_schedule.every > MAX_SAFE_INTEGER
-                    || b.check_schedule.start > MAX_SAFE_INTEGER
-                {
+                b.check_schedule.validate()?;
+                if b.instrumented_scope.is_empty() || !b.instrumentation.is_object() {
                     return Err("buffered binding requires a scope, instrumentation object, and positive safe check interval".into());
                 }
             }
@@ -448,14 +449,50 @@ pub struct StreamingObservationRecord {
 
 impl CheckSchedule {
     pub fn validate(&self) -> Result<(), String> {
-        if self.every == 0 || self.every > MAX_SAFE_INTEGER || self.start > MAX_SAFE_INTEGER {
-            return Err("check schedules require a positive safe interval and safe start".into());
+        let valid = match self {
+            Self::Periodic { every, start } => {
+                *every > 0 && *every <= MAX_SAFE_INTEGER && *start <= MAX_SAFE_INTEGER
+            }
+            Self::Explicit { indices } => {
+                !indices.is_empty()
+                    && indices.iter().all(|n| *n <= MAX_SAFE_INTEGER)
+                    && indices.windows(2).all(|pair| pair[0] < pair[1])
+            }
+        };
+        if valid {
+            Ok(())
+        } else {
+            Err("check schedules require a positive safe interval or strictly increasing safe indices".into())
         }
-        Ok(())
     }
 
     pub fn includes(&self, index: u64) -> bool {
-        index >= self.start && (index - self.start).is_multiple_of(self.every)
+        match self {
+            Self::Periodic { every, start } => {
+                *every > 0 && index >= *start && (index - start).is_multiple_of(*every)
+            }
+            Self::Explicit { indices } => indices.binary_search(&index).is_ok(),
+        }
+    }
+
+    pub fn next_after(&self, previous: Option<u64>) -> Option<u64> {
+        match self {
+            Self::Periodic { every, start } => {
+                let next = match previous {
+                    None => Some(*start),
+                    Some(index) if index < *start => Some(*start),
+                    Some(index) => (index - start)
+                        .checked_div(*every)?
+                        .checked_add(1)?
+                        .checked_mul(*every)?
+                        .checked_add(*start),
+                };
+                next.filter(|n| *n <= MAX_SAFE_INTEGER)
+            }
+            Self::Explicit { indices } => indices
+                .get(previous.map_or(0, |index| indices.partition_point(|n| *n <= index)))
+                .copied(),
+        }
     }
 }
 
@@ -506,7 +543,10 @@ impl ControlSchedule {
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
-    pub fn expand(&self, bound: u64) -> Result<Vec<crate::core::canonical::CanonicalValue>, String> {
+    pub fn expand(
+        &self,
+        bound: u64,
+    ) -> Result<Vec<crate::core::canonical::CanonicalValue>, String> {
         use crate::core::canonical::CanonicalValue;
         let count = self.len();
         if count == 0 || count > bound || count > MAX_SAFE_INTEGER {

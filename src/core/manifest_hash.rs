@@ -256,7 +256,7 @@ fn require_name(
 }
 
 fn manifest_value(manifest: &Manifest) -> Value {
-    object([
+    let mut value = object([
         ("version", json!(manifest.version)),
         ("name", json!(manifest.name.as_str())),
         ("datasets", named_map(&manifest.datasets, dataset)),
@@ -289,7 +289,14 @@ fn manifest_value(manifest: &Manifest) -> Value {
                 value
             }),
         ),
-    ])
+    ]);
+    if manifest.worker_timeouts != crate::core::manifest::WorkerTimeouts::default() {
+        value.as_object_mut().expect("manifest object").insert(
+            "worker_timeouts".into(),
+            serde_json::to_value(manifest.worker_timeouts).expect("timeouts"),
+        );
+    }
+    value
 }
 
 fn dataset(dataset: &DatasetDefinition) -> Value {
@@ -327,7 +334,9 @@ fn dataset(dataset: &DatasetDefinition) -> Value {
 
 fn problem(problem: &crate::core::manifest::ProblemDefinition) -> Value {
     let inline = match &problem.contract {
-        crate::core::problem_contract::ContractDeclaration::Inline(contract) => Some(contract.as_ref()),
+        crate::core::problem_contract::ContractDeclaration::Inline(contract) => {
+            Some(contract.as_ref())
+        }
         crate::core::problem_contract::ContractDeclaration::Reference(_) => None,
     };
     let defaults = inline.map_or(problem.parameter_defaults.as_ref(), |contract| {

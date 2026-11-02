@@ -5,6 +5,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from ._schedules import CheckSchedule
 from ._artifacts import _relative_path
 from ._canonical import MAX_SAFE_INTEGER, canonical_bytes, parse_json
 
@@ -58,10 +59,7 @@ class BufferedTrace:
                 _fail(f"Invalid profile bound: {key}")
         if self.policy["terminal-reserve-bytes"] > self.policy["max-buffer-bytes"]:
             _fail("Terminal reserve exceeds buffer capacity.")
-        self.schedule = self.profile["check_schedule"]
-        self.schedule.setdefault("start", 0)
-        if type(self.schedule["every"]) is not int or not 0 < self.schedule["every"] <= MAX_SAFE_INTEGER:
-            _fail("Check interval must be a positive safe integer.")
+        self.schedule = CheckSchedule(self.profile["check_schedule"])
         self.thresholds = self.policy.get("record-thresholds") or ([self.policy["threshold"]] if "threshold" in self.policy else [])
         expression = self.policy["max-active-time"].strip()
         for suffix, multiplier in (("ms", 1_000_000), ("s", 1_000_000_000), ("min", 60_000_000_000), ("h", 3_600_000_000_000)):
@@ -100,10 +98,10 @@ class BufferedTrace:
         if type(index) is not int or not 0 <= index <= MAX_SAFE_INTEGER or type(work) is not dict or any(type(v) is not int or not 0 <= v <= MAX_SAFE_INTEGER for v in work.values()):
             _fail("Progress must contain nonnegative safe integers.")
         previous = self.points[-1] if self.points else None
-        expected = previous["check_index"] + self.schedule["every"] if previous else self.schedule["start"]
+        expected = self.schedule.next_after(previous["check_index"] if previous else None)
         if previous and (index <= previous["check_index"] or any(work.get(k, -1) < v for k, v in previous["work"].items())):
             _fail("Progress and work counts must be monotonic.")
-        if index > expected:
+        if expected is not None and index > expected:
             _fail("A scheduled check was skipped.")
         expired = self.clock() >= self.active_ns
         if not terminal and not expired and index != expected:

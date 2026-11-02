@@ -51,6 +51,20 @@ Concurrency changes the workload and is recorded in the execution policy.
 `timeout` is a scientific wall-time limit over the selected scope. Separate
 operational limits bound each worker phase, with ten-second defaults. A larger
 scientific timeout does not extend those phase limits.
+Override operational deadlines independently at the manifest's top level:
+
+```yaml
+worker-timeouts:
+  materialize: 20 min
+  prepare: 2 min
+  execute: 60 s
+  evaluate: 30 s
+```
+
+The other phase names are `hello`, `reset`, and `shutdown`. Omitted phases keep
+their ten-second defaults. Values are positive whole numbers with `ms`, `s`,
+`min`, or `h` units and must fit the safe nanosecond range. Worker checking and
+running use the same settings, and run provenance records the resolved values.
 
 Lifecycle workers can opt into `worker-reuse: true` and `warmup-runs: 1`.
 Reuse requires a successful reset at each boundary. A replacement process

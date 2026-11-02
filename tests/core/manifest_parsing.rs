@@ -9,6 +9,47 @@ use serde_json::json;
 const COMPLETE_MANIFEST: &str = include_str!("../../fixtures/manifest/v1/complete.yaml");
 
 #[test]
+fn worker_phase_deadlines_are_positive_and_affect_the_manifest_hash() {
+    use crate::core::manifest_hash::hash_manifest;
+    let base = "version: 1\nname: deadlines\n";
+    let default = parse_manifest(Path::new("metewand.yaml"), base).unwrap();
+    let explicit_default = parse_manifest(
+        Path::new("metewand.yaml"),
+        &format!("{base}worker-timeouts: {{execute: 10 s}}\n"),
+    )
+    .unwrap();
+    assert_eq!(
+        hash_manifest(&default).unwrap(),
+        hash_manifest(&explicit_default).unwrap()
+    );
+    let changed = parse_manifest(
+        Path::new("metewand.yaml"),
+        &format!("{base}worker-timeouts: {{materialize: 20 min, execute: 60 s}}\n"),
+    )
+    .unwrap();
+    assert_ne!(
+        hash_manifest(&default).unwrap(),
+        hash_manifest(&changed).unwrap()
+    );
+    for invalid in ["0 s", "-1 s", "1.5 s", "forever", "null", "10"] {
+        assert!(
+            parse_manifest(
+                Path::new("metewand.yaml"),
+                &format!("{base}worker-timeouts: {{execute: {invalid}}}\n")
+            )
+            .is_err()
+        );
+    }
+    assert!(
+        parse_manifest(
+            Path::new("metewand.yaml"),
+            &format!("{base}worker-timeouts: {{typo: 1 s}}\n")
+        )
+        .is_err()
+    );
+}
+
+#[test]
 fn concurrency_is_serial_by_default_and_requires_a_positive_safe_integer() {
     let source =
         "version: 1\nname: \"concurrency\"\nexecution-policies:\n  local:\n    version: 1\n";

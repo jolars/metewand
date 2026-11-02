@@ -4,6 +4,7 @@ from pathlib import Path
 
 import metewand as binding
 from ._buffered import Decision, _fail
+from ._schedules import CheckSchedule
 from ._canonical import MAX_SAFE_INTEGER, canonical_bytes, parse_json
 
 
@@ -17,11 +18,8 @@ class StreamingContext:
         self.count = 0
         self.last = None
         self.stopped = None
-        schedule = self.profile["check_schedule"]
-        self.every = schedule["every"]
-        self.start = schedule.get("start", 0)
-        for value, minimum in [(self.every, 1), (self.start, 0),
-                               (self.policy["max-observations"], 1),
+        self.schedule = CheckSchedule(self.profile["check_schedule"])
+        for value, minimum in [(self.policy["max-observations"], 1),
                                (self.policy["max-checkpoint-bytes"], 1)]:
             if type(value) is not int or not minimum <= value <= MAX_SAFE_INTEGER:
                 _fail("Streaming bounds and schedule must use safe integers.")
@@ -50,7 +48,7 @@ class StreamingContext:
             _fail("Checkpoint progress must use safe integers.")
         if self.last is not None and index <= self.last:
             _fail("Checkpoint progress must increase.")
-        if not terminal and (index < self.start or (index - self.start) % self.every):
+        if not terminal and not self.schedule.includes(index):
             return Decision()
         if self.count >= self.policy["max-observations"]:
             _fail("Checkpoint count exceeds the policy.")

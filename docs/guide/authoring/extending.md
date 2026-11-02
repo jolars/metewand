@@ -149,3 +149,10 @@ child processes or background threads.
 
 Find further integrations in [examples](../examples.md), or read the
 [design](../../design.md) for the underlying model.
+
+Checkpoint schedules accept periodic checks, such as `{every: 10, start: 0}`,
+or explicit indices, such as `{indices: [0, 1, 2, 4, 8, 16]}`. Explicit indices
+must be nonempty, strictly increasing, nonnegative safe integers. Both streaming
+and buffered profiles use the same schedule semantics. A terminal snapshot may
+occur between scheduled checks; unscheduled intermediate checks do not serialize
+a snapshot. Existing periodic schedules retain their representation and identity.
