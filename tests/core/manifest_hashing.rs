@@ -54,6 +54,38 @@ observation-policies:
 "#;
 
 #[test]
+fn worker_timeouts_preserve_default_bytes_and_normalize_overrides() {
+    let parse = |suffix: &str| {
+        parse_manifest(
+            Path::new("metewand.yaml"),
+            &format!("{IMPLICIT_DEFAULTS}{suffix}"),
+        )
+        .unwrap()
+    };
+    let baseline = canonical_manifest_bytes(&parse("")).unwrap();
+    assert_eq!(
+        canonical_manifest_bytes(&parse("worker-timeouts: {}\n")).unwrap(),
+        baseline
+    );
+    assert_eq!(
+        canonical_manifest_bytes(&parse("worker-timeouts:\n  execute: 10000 ms\n")).unwrap(),
+        baseline
+    );
+    let changed = canonical_manifest_bytes(&parse("worker-timeouts:\n  execute: 30 s\n")).unwrap();
+    assert_ne!(changed, baseline);
+    assert_eq!(
+        changed,
+        canonical_manifest_bytes(&parse(
+            "worker-timeouts:\n  execute: 30000 ms\n  hello: 10 s\n"
+        ))
+        .unwrap()
+    );
+    let value: serde_json::Value = serde_json::from_slice(&changed).unwrap();
+    assert_eq!(value["worker_timeouts"]["execute"], 30_000_000_000_u64);
+    assert_eq!(value["worker_timeouts"]["prepare"], 10_000_000_000_u64);
+}
+
+#[test]
 fn pins_normalized_inline_schema_bytes() {
     let source = r#"
 version: 1

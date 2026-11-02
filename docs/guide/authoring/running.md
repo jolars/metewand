@@ -51,20 +51,31 @@ Concurrency changes the workload and is recorded in the execution policy.
 `timeout` is a scientific wall-time limit over the selected scope. Separate
 operational limits bound each worker phase, with ten-second defaults. A larger
 scientific timeout does not extend those phase limits.
-Override operational deadlines independently at the manifest's top level:
+
+Set `worker-timeouts` at the top level to change individual operational limits:
 
 ```yaml
 worker-timeouts:
-  materialize: 20 min
+  materialize: 10 min
   prepare: 2 min
-  execute: 60 s
-  evaluate: 30 s
+  execute: 45 s
+  evaluate: 1 min
 ```
 
-The other phase names are `hello`, `reset`, and `shutdown`. Omitted phases keep
-their ten-second defaults. Values are positive whole numbers with `ms`, `s`,
-`min`, or `h` units and must fit the safe nanosecond range. Worker checking and
-running use the same settings, and run provenance records the resolved values.
+The available phases are `hello`, `materialize`, `prepare`, `execute`, `reset`,
+`evaluate`, and `shutdown`. Each accepts a positive integer followed by `ms`,
+`s`, `min`, or `h`, within the safe nanosecond range. Omitted phases retain
+their ten-second limits. Applicability checks use the preparation limit.
+Worker checks with `check --workers` use the same settings, including reference
+evaluation and shutdown. Materialization limits also bound remote dataset
+requests.
+
+Scientific limits still apply to the selected timing scope. For example, a
+`30 s` scientific budget with `execute: 45 s` permits an eleven-second solver
+call, but still stops measured work at thirty seconds. Preparation remains
+within that budget under `prepare_and_execute`; use a contract-authorized
+`execute_only` scope for untimed preparation. Effective phase limits are
+retained in provenance. Changing them changes resolved execution identities.
 
 Lifecycle workers can opt into `worker-reuse: true` and `warmup-runs: 1`.
 Reuse requires a successful reset at each boundary. A replacement process

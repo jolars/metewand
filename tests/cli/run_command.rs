@@ -215,6 +215,203 @@ fn authored_worker_deadlines_reach_execution_and_provenance() {
 }
 
 #[test]
+fn worker_timeouts_allow_execution_beyond_the_default_and_retain_provenance() {
+    let root = repository();
+    replace(
+        root.path(),
+        "worker.py",
+        "elif method == \"execute\":",
+        "elif method == \"execute\":\n            import time\n            time.sleep(11)",
+    );
+    replace(
+        root.path(),
+        "metewand.yaml",
+        "primary-time: \"timed_wall_time\"",
+        "primary-time: \"timed_wall_time\"\ntimeout: 30 s",
+    );
+    let path = root.path().join("metewand.yaml");
+    let source = fs::read_to_string(&path).unwrap();
+    fs::write(&path, format!("{source}\nworker-timeouts:\n  materialize: 2 min\n  prepare: 1 min\n  execute: 45 s\n  evaluate: 20 s\n")).unwrap();
+    let output = metewand(
+        root.path(),
+        &["run", "--output-dir", "run", "--output", "jsonl"],
+    );
+    assert!(output.status.success(), "{output:?}");
+    let records = envelopes(&output);
+    let attempt = &records.last().unwrap()["data"]["attempts"][0];
+    let observation = document(
+        &root
+            .path()
+            .join("run")
+            .join(attempt["observation_directory"].as_str().unwrap())
+            .join("observation.json"),
+    );
+    let data = &observation["provenance"]["data"];
+    let limits = serde_json::json!({"hello":"10000000000", "materialize":"120000000000", "prepare":"60000000000", "execute":"45000000000", "reset":"10000000000", "evaluate":"20000000000", "shutdown":"10000000000"});
+    assert_eq!(data["execution"]["operational_timeouts_ns"], limits);
+    assert_eq!(data["context"]["operational_timeouts_ns"], limits);
+    assert_eq!(data["execution"]["scientific_timeout_ns"], "30000000000");
+}
+
+#[test]
+fn worker_timeouts_bind_resolved_identities_and_preserve_logical_slots() {
+    let root = repository();
+    let path = root.path().join("metewand.yaml");
+    let source = fs::read_to_string(&path).unwrap();
+    let mut identities = Vec::new();
+    for (index, settings) in [
+        "",
+        "worker-timeouts:\n  execute: 10 s\n",
+        "worker-timeouts:\n  execute: 30 s\n",
+        "worker-timeouts:\n  execute: 30000 ms\n",
+    ]
+    .iter()
+    .enumerate()
+    {
+        fs::write(&path, format!("{source}\n{settings}")).unwrap();
+        let output = metewand(
+            root.path(),
+            &[
+                "run",
+                "--output-dir",
+                &format!("run-{index}"),
+                "--output",
+                "json",
+            ],
+        );
+        assert!(output.status.success(), "{output:?}");
+        let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+        let attempt = &report["data"]["attempts"][0];
+        identities.push((
+            attempt["logical_slot_id"].clone(),
+            attempt["resolved_slot_id"].clone(),
+        ));
+        assert!(identities.last().unwrap().1.is_string());
+    }
+    assert_eq!(identities[0], identities[1]);
+    assert_eq!(identities[0].0, identities[2].0);
+    assert_ne!(identities[0].1, identities[2].1);
+    assert_eq!(identities[2], identities[3]);
+}
+
+#[test]
+fn worker_timeouts_bound_each_implementation_phase_and_independent_evaluation() {
+    for phase in [
+        "hello", "prepare", "execute", "reset", "evaluate", "shutdown",
+    ] {
+        let root = repository();
+        replace(
+            root.path(),
+            "worker.py",
+            "method = request[\"method\"]",
+            &format!(
+                "method = request[\"method\"]\n        if method == {phase:?}:\n            import time\n            time.sleep(0.5)"
+            ),
+        );
+        if phase == "reset" {
+            replace(
+                root.path(),
+                "metewand.yaml",
+                "primary-time: \"timed_wall_time\"",
+                "primary-time: \"timed_wall_time\"\nworker-reuse: true\nwarmup-runs: 1",
+            );
+        }
+        let path = root.path().join("metewand.yaml");
+        let source = fs::read_to_string(&path).unwrap();
+        fs::write(
+            &path,
+            format!("{source}\nworker-timeouts:\n  {phase}: 100 ms\n"),
+        )
+        .unwrap();
+        let output = metewand(
+            root.path(),
+            &["run", "--output-dir", "run", "--output", "json"],
+        );
+        assert!(!output.status.success(), "{phase}: {output:?}");
+        assert!(
+            String::from_utf8_lossy(&output.stdout)
+                .contains(&format!("worker {phase} exceeded its 100ms timeout")),
+            "{phase}: {output:?}"
+        );
+    }
+}
+
+#[test]
+fn worker_timeouts_do_not_extend_the_scientific_budget() {
+    let root = repository();
+    replace(
+        root.path(),
+        "worker.py",
+        "elif method == \"execute\":",
+        "elif method == \"execute\":\n            import time\n            time.sleep(0.5)",
+    );
+    replace(
+        root.path(),
+        "metewand.yaml",
+        "primary-time: \"timed_wall_time\"",
+        "primary-time: \"timed_wall_time\"\ntimeout: 100 ms",
+    );
+    let path = root.path().join("metewand.yaml");
+    let source = fs::read_to_string(&path).unwrap();
+    fs::write(
+        &path,
+        format!("{source}\nworker-timeouts:\n  execute: 45 s\n"),
+    )
+    .unwrap();
+    let output = metewand(
+        root.path(),
+        &["run", "--output-dir", "run", "--output", "json"],
+    );
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(!output.status.success(), "{output:?}");
+    assert_eq!(
+        report["data"]["attempts"][0]["diagnostic"]["code"],
+        "scientific_timeout"
+    );
+}
+
+#[test]
+fn worker_timeouts_use_the_preparation_limit_for_applicability_checks() {
+    let root = repository();
+    replace(
+        root.path(),
+        "metewand.yaml",
+        "capabilities: [\"one_shot\"]",
+        "capabilities: [\"one_shot\", \"applicability\"]",
+    );
+    replace(
+        root.path(),
+        "worker.py",
+        "capabilities=[\"one_shot\"]",
+        "capabilities=[\"one_shot\", \"applicability\"]",
+    );
+    replace(
+        root.path(),
+        "worker.py",
+        "elif method == \"prepare\":",
+        "elif method == \"check_applicability\":\n            import time\n            time.sleep(0.5)\n        elif method == \"prepare\":",
+    );
+    let path = root.path().join("metewand.yaml");
+    let source = fs::read_to_string(&path).unwrap();
+    fs::write(
+        path,
+        format!("{source}\nworker-timeouts:\n  prepare: 100 ms\n"),
+    )
+    .unwrap();
+    let output = metewand(
+        root.path(),
+        &["run", "--output-dir", "run", "--output", "json"],
+    );
+    assert!(!output.status.success(), "{output:?}");
+    assert!(
+        String::from_utf8_lossy(&output.stdout)
+            .contains("worker check_applicability exceeded its 100ms timeout"),
+        "{output:?}"
+    );
+    assert!(!root.path().join("run").exists());
+}
+
+#[test]
 fn run_streams_events_and_publishes_a_self_describing_attempt() {
     let root = repository();
     let manifest_path = root.path().join("metewand.yaml");

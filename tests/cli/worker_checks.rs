@@ -73,6 +73,36 @@ fn worker_check_honors_the_authored_handshake_deadline() {
 }
 
 #[test]
+fn worker_timeouts_apply_to_check_handshakes_references_and_shutdown() {
+    for phase in ["hello", "evaluate", "shutdown"] {
+        let root = repository();
+        let worker = fs::read_to_string(
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/fixed-dataset/worker.py"),
+        )
+        .unwrap();
+        let worker = worker.replace("method = request[\"method\"]", &format!("method = request[\"method\"]\n        if method == {phase:?}:\n            import time\n            time.sleep(0.5)"));
+        fs::write(root.path().join("worker.py"), worker).unwrap();
+        let path = root.path().join("metewand.yaml");
+        let source = fs::read_to_string(&path)
+            .unwrap()
+            .replace("protocol-transport: socket", "protocol-transport: pipes");
+        fs::write(
+            path,
+            format!("{source}\nworker-timeouts:\n  {phase}: 100 ms\n"),
+        )
+        .unwrap();
+        let output = check(root.path());
+        assert!(!output.status.success(), "{phase}: {output:?}");
+        assert!(
+            String::from_utf8_lossy(&output.stdout)
+                .contains(&format!("worker {phase} exceeded its 100ms timeout")),
+            "{phase}: {output:?}"
+        );
+        assert!(!root.path().join("run").exists());
+    }
+}
+
+#[test]
 fn rejects_reference_metric_disagreement() {
     let repository = repository();
     fs::write(

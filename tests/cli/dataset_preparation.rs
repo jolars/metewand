@@ -108,6 +108,29 @@ fn duration(event: &Value) -> Duration {
 }
 
 #[test]
+fn worker_timeouts_bound_dataset_materialization_before_attempts() {
+    let root = repository();
+    let path = root.path().join("metewand.yaml");
+    let source = fs::read_to_string(&path).unwrap();
+    fs::write(
+        path,
+        format!("{source}\nworker-timeouts:\n  materialize: 100 ms\n"),
+    )
+    .unwrap();
+    let output = metewand(
+        root.path(),
+        &["run", "--output-dir", "run", "--output", "json"],
+    );
+    assert!(!output.status.success(), "{output:?}");
+    assert!(
+        String::from_utf8_lossy(&output.stdout)
+            .contains("worker materialize exceeded its 100ms timeout"),
+        "{output:?}"
+    );
+    assert!(!root.path().join("run").exists());
+}
+
+#[test]
 fn shared_materialization_and_private_conversions_have_distinct_timing_boundaries() {
     let root = repository();
     let vector: Value = serde_json::from_str(PREPARATION_VECTOR).unwrap();

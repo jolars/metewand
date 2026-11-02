@@ -313,11 +313,15 @@ pub(super) fn resolve(
             }
         }
     }
+    let timeouts = resolve_worker_timeouts(repository)?;
     let private_root = Builder::new().prefix("metewand-run-").tempdir()?;
     let executor = identify_record(ExecutorDefinitionRecord {
         kind: serde_json::from_value(json!("trusted_local")).expect("static valid name"),
         configuration: canonical({
             let mut configuration = executor_configuration();
+            if timeouts != PhaseTimeouts::default() {
+                configuration["worker_timeouts_ns"] = timeouts.provenance();
+            }
             if locked.is_some() {
                 configuration["environment_class"] = json!("locked");
             }
@@ -404,7 +408,6 @@ pub(super) fn resolve(
     let mut datasets = BTreeMap::new();
     let mut candidates = Vec::new();
     for (candidate, experiment, implementation, evaluator, dataset_plan) in prepared {
-        let timeouts = PhaseTimeouts::from(repository.manifest.worker_timeouts);
         let key = candidate.dataset_configuration.id;
         if let std::collections::btree_map::Entry::Vacant(entry) = datasets.entry(key) {
             let (snapshot, output_schema, provenance) = match dataset_plan {
@@ -1814,6 +1817,27 @@ fn text_path(path: &Path) -> Result<String, RunError> {
     path.to_str()
         .map(str::to_owned)
         .ok_or_else(|| unsupported("Gate 1 launch paths must be UTF-8"))
+}
+
+pub(super) fn resolve_worker_timeouts(repository: &CheckedRepository) -> Result<PhaseTimeouts, RunError> {
+    let timeouts = PhaseTimeouts::from(repository.manifest.worker_timeouts);
+    let now = std::time::Instant::now();
+    for (phase, limit) in [
+        ("hello", timeouts.hello),
+        ("materialize", timeouts.materialize),
+        ("prepare", timeouts.prepare),
+        ("execute", timeouts.execute),
+        ("reset", timeouts.reset),
+        ("evaluate", timeouts.evaluate),
+        ("shutdown", timeouts.shutdown),
+    ] {
+        if limit.is_zero() || now.checked_add(limit).is_none() {
+            return Err(unsupported(format!(
+                "worker timeout `{phase}` cannot form a positive monotonic deadline"
+            )));
+        }
+    }
+    Ok(timeouts)
 }
 
 fn scientific_timeout(expression: Option<&str>) -> Result<Option<Duration>, RunError> {

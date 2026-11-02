@@ -278,6 +278,16 @@ details. Preserve the failing phase. Operational timeouts, early EOF, protocol
 violations, and failed resets discard the worker. Scientific deadlines remain
 distinct from phase deadlines.
 
+Top-level `worker-timeouts` resolves positive per-phase durations for all worker
+roles, worker checks, and remote dataset requests. Applicability checks share
+the preparation deadline. Normalize durations to nanoseconds in manifest hashes
+and executor configuration, omitting the field when all limits equal the
+ten-second defaults. This preserves existing canonical bytes and identities
+while binding changed limits into resolved execution identities. Provenance
+retains every effective phase limit. This additive manifest syntax keeps
+compatibility version 1 and does not change the wire protocol or existing
+execution semantics.
+
 For callback signatures, consult the [Python
 package](packages/python/src/metewand), [R help pages](packages/r/man), and
 [Rust helpers](src/runtime/worker_sdk.rs). The [package

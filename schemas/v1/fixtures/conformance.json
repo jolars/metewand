@@ -2,6 +2,23 @@
   "version": 1,
   "valid": [
     {
+      "name": "worker phase deadlines",
+      "schema": "manifest",
+      "instance": {
+        "version": 1,
+        "name": "worker-timeouts",
+        "worker-timeouts": {
+          "hello": "1ms",
+          "materialize": "10 min",
+          "prepare": "2 min",
+          "execute": "45 s",
+          "reset": "10 s",
+          "evaluate": "1 min",
+          "shutdown": "10 s"
+        }
+      }
+    },
+    {
       "name": "prepared Nix environment and exact worker launch",
       "schema": "lockfile-v1",
       "instance": {
@@ -2267,6 +2284,72 @@
     }
   ],
   "invalid": [
+    {
+      "name": "invalid worker timeout zero",
+      "schema": "manifest",
+      "instance": {
+        "version": 1,
+        "name": "worker-timeouts",
+        "worker-timeouts": {
+          "execute": "0 s"
+        }
+      }
+    },
+    {
+      "name": "invalid worker timeout negative",
+      "schema": "manifest",
+      "instance": {
+        "version": 1,
+        "name": "worker-timeouts",
+        "worker-timeouts": {
+          "prepare": "-1 s"
+        }
+      }
+    },
+    {
+      "name": "invalid worker timeout fractional",
+      "schema": "manifest",
+      "instance": {
+        "version": 1,
+        "name": "worker-timeouts",
+        "worker-timeouts": {
+          "evaluate": "1.5 s"
+        }
+      }
+    },
+    {
+      "name": "invalid worker timeout unit",
+      "schema": "manifest",
+      "instance": {
+        "version": 1,
+        "name": "worker-timeouts",
+        "worker-timeouts": {
+          "materialize": "2 days"
+        }
+      }
+    },
+    {
+      "name": "invalid worker timeout unknown phase",
+      "schema": "manifest",
+      "instance": {
+        "version": 1,
+        "name": "worker-timeouts",
+        "worker-timeouts": {
+          "typo": "1 s"
+        }
+      }
+    },
+    {
+      "name": "invalid worker timeout number",
+      "schema": "manifest",
+      "instance": {
+        "version": 1,
+        "name": "worker-timeouts",
+        "worker-timeouts": {
+          "hello": 10
+        }
+      }
+    },
     {
       "name": "lockfile rejects unsupported versions",
       "schema": "lockfile-v1",

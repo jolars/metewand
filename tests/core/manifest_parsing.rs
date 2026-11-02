@@ -50,6 +50,37 @@ fn worker_phase_deadlines_are_positive_and_affect_the_manifest_hash() {
 }
 
 #[test]
+fn worker_timeouts_accept_positive_duration_units() {
+    let source = "version: 1\nname: timeouts\nworker-timeouts:\n  hello: 1ms\n  materialize: 2 s\n  prepare: 3 min\n  execute: 4h\n  reset: 500 ms\n  evaluate: 20 s\n  shutdown: 1 s\n";
+    parse_manifest(Path::new("metewand.yaml"), source).unwrap();
+}
+
+#[test]
+fn worker_timeouts_reject_invalid_durations_with_source_spans() {
+    for value in [
+        "0 s",
+        "-1 s",
+        "1.5 s",
+        "1",
+        "1 day",
+        "18446744073709551615 h",
+        "null",
+        "true",
+        "{}",
+    ] {
+        let source = format!("version: 1\nname: timeouts\nworker-timeouts:\n  execute: {value}\n");
+        let error = parse_manifest(Path::new("metewand.yaml"), &source).unwrap_err();
+        assert!(error.source_span().is_some(), "{value}: {error}");
+    }
+    let error = parse_manifest(
+        Path::new("metewand.yaml"),
+        "version: 1\nname: timeouts\nworker-timeouts:\n  typo: 1 s\n",
+    )
+    .unwrap_err();
+    assert!(error.message().contains("unknown worker phase `typo`"));
+}
+
+#[test]
 fn concurrency_is_serial_by_default_and_requires_a_positive_safe_integer() {
     let source =
         "version: 1\nname: \"concurrency\"\nexecution-policies:\n  local:\n    version: 1\n";

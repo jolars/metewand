@@ -15,7 +15,7 @@ use thiserror::Error;
 
 use super::{
     RunError,
-    resolution::{ResolvedWorker, resolve_worker},
+    resolution::{ResolvedWorker, resolve_worker, resolve_worker_timeouts},
 };
 use crate::runtime::{
     local_tree::hash_local_tree,
@@ -120,6 +120,7 @@ pub fn check_repository_workers(
     repository: &CheckedRepository,
 ) -> Result<WorkerCheckReport, WorkerCheckError> {
     verify_repository(repository)?;
+    let timeouts = resolve_worker_timeouts(repository)?;
     let plan = repository.logical_plan()?;
     let executor =
         crate::runtime::executor::LocalProcessExecutor::new(std::time::Duration::from_millis(100));
@@ -180,13 +181,7 @@ pub fn check_repository_workers(
     };
     for (name, role, capabilities, worker) in resolved {
         worker.verify()?;
-        let mut session = connect(
-            &worker,
-            private.path(),
-            role,
-            &capabilities,
-            repository.manifest.worker_timeouts.into(),
-        )?;
+        let mut session = connect(&worker, private.path(), role, &capabilities, timeouts)?;
         let negotiated = session.negotiated();
         report.workers.push(WorkerCheck {
             component: name.clone(),
