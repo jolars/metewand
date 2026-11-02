@@ -9,6 +9,42 @@ use tempfile::TempDir;
 const WORKER_ID: &str =
     "mw1-resolved-worker-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
+#[test]
+fn r_expressions_start_in_the_isolated_worker_environment() {
+    use crate::core::records::{RecordId, ResolvedLaunchRecord, WorkerWorkingDirectory};
+    use crate::runtime::local_worker::launch_trusted_local_worker;
+
+    let program = std::env::split_paths(&std::env::var_os("PATH").unwrap())
+        .map(|path| {
+            path.join(if cfg!(windows) {
+                "Rscript.exe"
+            } else {
+                "Rscript"
+            })
+        })
+        .find(|path| path.is_file())
+        .unwrap();
+    let launch = ResolvedLaunchRecord {
+        environment: RecordId::from_digest([1; 32]),
+        program: program.to_str().unwrap().into(),
+        args: vec![
+            "--vanilla".into(),
+            "-e".into(),
+            "cat('expression started')".into(),
+        ],
+        environment_variables: Default::default(),
+        working_directory: WorkerWorkingDirectory::PrivateRunDirectory,
+    };
+    let private = TempDir::new().unwrap();
+    let output =
+        launch_trusted_local_worker(&launch, private.path(), WorkerLogLimits::new(4096, 4096))
+            .unwrap()
+            .wait()
+            .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(output.stdout.bytes(), b"expression started");
+}
+
 fn install_package(directory: &Path) {
     let package = Path::new(env!("CARGO_MANIFEST_DIR")).join("packages/r");
     let output = Command::new("R")

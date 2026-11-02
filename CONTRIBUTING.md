@@ -315,6 +315,10 @@ identities use stable path templates and content hashes; provenance records
 allocated paths. The local environment does not establish a dependency closure
 or isolation from undeclared host files.
 
+On Windows, resolve private worker directories before exposing them with
+conventional drive or UNC paths. R's expression launcher appends a forward slash
+to its temporary directory, which Windows verbatim paths do not accept.
+
 `metewand lock` prepares the complete plan's worker graph. Nix evidence binds
 content snapshots, native locks, source NARs, realized outputs,
 runtime closure hashes and references, and normalized launches. Root snapshots

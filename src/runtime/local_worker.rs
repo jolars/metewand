@@ -64,6 +64,11 @@ pub fn launch_trusted_local_worker_with_secrets(
     secrets.validate(&variables)?;
     let private_root = fs::canonicalize(private_root)
         .map_err(LocalWorkerLaunchError::CreatePrivateWorkingDirectory)?;
+    // Rscript appends a forward slash to TMPDIR when launching an expression.
+    // Windows verbatim paths disable slash conversion, so expose conventional
+    // paths to interpreters after resolving the private root's actual location.
+    #[cfg(windows)]
+    let private_root = interpreter_directory(private_root);
     let private_working_directory = match launch.working_directory {
         WorkerWorkingDirectory::PrivateRunDirectory => {
             crate::runtime::platform_fs::private_tempdir_in(&private_root, "worker-")
@@ -131,6 +136,35 @@ pub fn launch_trusted_local_worker_with_secrets(
     process.retain_environment(provenance);
     process.retain_private_working_directory(private_working_directory);
     Ok(process)
+}
+
+#[cfg(windows)]
+fn interpreter_directory(path: std::path::PathBuf) -> std::path::PathBuf {
+    use std::{ffi::OsString, path::Prefix};
+
+    let mut components = path.components();
+    let Some(std::path::Component::Prefix(prefix)) = components.next() else {
+        return path;
+    };
+    let root = match prefix.kind() {
+        Prefix::VerbatimDisk(drive) => OsString::from(format!("{}:\\", char::from(drive))),
+        Prefix::VerbatimUNC(server, share) => {
+            let mut root = OsString::from("\\\\");
+            root.push(server);
+            root.push("\\");
+            root.push(share);
+            root.push("\\");
+            root
+        }
+        _ => return path,
+    };
+    let mut result = std::path::PathBuf::from(root);
+    for component in components {
+        if let std::path::Component::Normal(name) = component {
+            result.push(name);
+        }
+    }
+    result
 }
 
 /// Failure to launch a trusted worker through the minimal local path.
