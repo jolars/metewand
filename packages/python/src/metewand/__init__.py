@@ -11,7 +11,7 @@ import sys
 try:
     __version__ = version("metewand")
 except PackageNotFoundError:
-    __version__ = "0+source"
+    __version__ = "0.3.0"
 BINDING_API_VERSION = 1
 
 
