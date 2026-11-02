@@ -253,7 +253,12 @@ def _prepare(request: dict[str, object]) -> dict[str, object]:
     )
     if implementation_parameters.get("algorithm") != "sum":
         raise RequestError("fixture implementation requires algorithm 'sum'")
-    timing_delay_ms = int(os.environ.get("METEWAND_TEST_TIMING_DELAY_MS", "0"))
+    timing_delay_ms = int(
+        os.environ.get(
+            "METEWAND_TEST_PREPARE_DELAY_MS",
+            os.environ.get("METEWAND_TEST_TIMING_DELAY_MS", "0"),
+        )
+    )
     time.sleep(timing_delay_ms / 1000)
     return {
         "problem_parameters": problem_parameters,

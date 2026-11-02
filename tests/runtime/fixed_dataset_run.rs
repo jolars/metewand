@@ -225,17 +225,27 @@ fn cold_startup_consumes_scientific_time_but_untimed_startup_does_not() {
 #[test]
 fn execute_only_excludes_preparation_from_the_scientific_budget() {
     let (_private, outcome) = run_timing_case(
-        Some(("METEWAND_TEST_TIMING_DELAY_MS", "200")),
+        Some(("METEWAND_TEST_PREPARE_DELAY_MS", "1500")),
         None,
-        timeouts(),
+        PhaseTimeouts {
+            prepare: Duration::from_secs(10),
+            ..timeouts()
+        },
         ExecutionTimingPolicy {
             scope: TimingScope::ExecuteOnly,
-            timeout: Some(Duration::from_millis(300)),
+            timeout: Some(Duration::from_secs(1)),
         },
     );
+    let FixedDatasetRunOutcome::Validated(result) = outcome else {
+        panic!("{outcome:?}")
+    };
     assert!(
-        matches!(outcome, FixedDatasetRunOutcome::Validated(_)),
-        "{outcome:?}"
+        result
+            .measurements
+            .prepare_time_ns
+            .complete_value()
+            .unwrap()
+            >= 1_500_000_000
     );
 }
 

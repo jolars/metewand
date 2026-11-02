@@ -1,6 +1,6 @@
 #![cfg(any(unix, windows))]
 
-use std::{io::Write, path::Path, process::Command};
+use std::{fs, io::Write, path::Path, process::Command};
 
 use crate::runtime::worker_process::{WorkerLogLimits, WorkerProcess};
 use serde_json::{Value, json};
@@ -31,12 +31,11 @@ fn spawn(role: &str, library: &Path, adapter: &Path) -> WorkerProcess {
     } else {
         "Rscript".into()
     };
-    let mut command = Command::new(program);
-    command
-        .args([
-            "--vanilla",
-            "-e",
-            r#"
+    // A script file avoids platform-specific quoting of multiline R expressions.
+    let script = library.join("worker.R");
+    fs::write(
+        &script,
+        r#"
 library(metewand)
 role <- commandArgs(trailingOnly = TRUE)[[1L]]
 if (role == "implementation") {
@@ -52,8 +51,13 @@ if (role == "implementation") {
   serve_evaluator(function(context) { cat("evaluate\n"); evaluation(list(error = 0), "not_required") })
 }
 "#,
-            role,
-        ])
+    )
+    .unwrap();
+    let mut command = Command::new(program);
+    command
+        .arg("--vanilla")
+        .arg(script)
+        .arg(role)
         .env("R_LIBS_USER", library)
         .env("METEWAND_ADAPTER_PATH", adapter)
         .env("METEWAND_PROTOCOL_TRANSPORT", "socket");
