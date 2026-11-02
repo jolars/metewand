@@ -22,7 +22,7 @@ use crate::runtime::{
     local_tree::{LocalTreeHashError, hash_local_tree},
     source_bundle::{
         SourceBundleError, SourceBundleIdentityError, expand_source_bundle, identify_source_bundle,
-        literal_prefix,
+        source_bundle_overlaps_directory,
     },
 };
 
@@ -200,7 +200,7 @@ impl ResolvedSource {
 /// Resolves an explicit request to verified files and provenance in private storage.
 ///
 /// `private_parent` must already exist. Repository staging must be outside
-/// selected source directories and glob prefixes to avoid copying staging
+/// selected source directories and possible glob matches to avoid copying staging
 /// output into itself or changing the selection. Acquired URL bytes
 /// retain their original encoding and compression as the single file `source`.
 /// External outputs must exactly match the backend's pinned file inventory.
@@ -224,17 +224,8 @@ pub fn resolve_source(
         } => {
             let root = fs::canonicalize(root)?;
             let parent = fs::canonicalize(private_parent)?;
-            for source in *sources {
-                let (prefix, has_meta) = literal_prefix(
-                    source
-                        .as_path()
-                        .to_str()
-                        .expect("validated UTF-8 source pattern"),
-                );
-                let prefix = root.join(prefix);
-                if (has_meta || prefix.is_dir()) && parent.starts_with(prefix) {
-                    return Err(SourceResolutionError::StagingOverlapsSource);
-                }
+            if source_bundle_overlaps_directory(&root, sources, &parent)? {
+                return Err(SourceResolutionError::StagingOverlapsSource);
             }
             if identify_source_bundle(&root, sources)? != *expected {
                 return Err(SourceResolutionError::ChangedSource);
@@ -540,7 +531,9 @@ pub enum SourceResolutionError {
     #[error("source contents changed after validation or during resolution")]
     ChangedSource,
     /// Staging could become an input to its own copy operation.
-    #[error("private source staging must be outside selected source directories and glob prefixes")]
+    #[error(
+        "private source staging must be outside selected source directories and possible glob matches"
+    )]
     StagingOverlapsSource,
     /// Source staging or acquisition encountered a filesystem failure.
     #[error("source resolution failed: {0}")]

@@ -228,10 +228,14 @@ metewand run --output-dir results
 metewand status --output-dir results
 ```
 
-The output directory must be new, its parent must exist, and it must be outside
-declared source directories and glob prefixes. The walkthrough includes only
-`benchmark.py` as worker source, so `results` beside it is suitable. If you
-declare the whole benchmark directory as a source, put output elsewhere.
+The output directory must be new, its parent must exist, and its contents must
+stay outside the declared source selection. The walkthrough includes only
+`benchmark.py` as worker source, so `results` beside it is suitable. A selection
+such as `benchmark/*.py` also allows `benchmark/outputs/run`, since neither that
+directory nor its contents can match the glob. A matched directory includes its
+whole tree: `benchmark/output.py/run` would overlap `benchmark/*.py`. If you
+declare the whole benchmark directory or use `benchmark/**/*.py`, put output
+elsewhere. The same selection rules apply to an explicit artifact cache.
 
 The comparison retains method names, effective settings, repetitions, metrics,
 completion, and failures. It reports individual measurements. In a toy Python

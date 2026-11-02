@@ -12,7 +12,12 @@ use crate::core::{
     manifest::RepositoryPath,
     records::{RecordId, SourceBundleResource},
 };
-use globset::GlobBuilder;
+use globset::{Glob, GlobBuilder};
+use regex_automata::{
+    Anchored, Input, MatchKind,
+    dfa::{Automaton, StartKind, dense},
+    util::syntax,
+};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
@@ -73,15 +78,7 @@ pub fn expand_source_bundle(
         let pattern_text = pattern_path
             .to_str()
             .expect("RepositoryPath values are valid UTF-8");
-        let matcher = GlobBuilder::new(pattern_text)
-            .literal_separator(true)
-            .backslash_escape(false)
-            .build()
-            .map_err(|error| SourceBundleError::InvalidPattern {
-                pattern: pattern_path.to_path_buf(),
-                message: error.to_string(),
-            })?
-            .compile_matcher();
+        let matcher = source_glob(pattern)?.compile_matcher();
 
         let (prefix, has_meta) = literal_prefix(pattern_text);
         let candidates = pattern_candidates(&repository_root, &prefix, has_meta)?;
@@ -246,6 +243,81 @@ fn hex(bytes: &[u8]) -> String {
         output.push(DIGITS[usize::from(byte & 0x0f)] as char);
     }
     output
+}
+
+/// Checks whether writes beneath a directory could change a source selection.
+/// The repository root and directory must already use canonical parent paths.
+pub(crate) fn source_bundle_overlaps_directory(
+    repository_root: &Path,
+    patterns: &[RepositoryPath],
+    directory: &Path,
+) -> Result<bool, SourceBundleError> {
+    let Ok(relative) = directory.strip_prefix(repository_root) else {
+        return Ok(false);
+    };
+    let relative_text = utf8_path(relative)?;
+    for pattern in patterns {
+        let (prefix, has_meta) = literal_prefix(pattern.as_str());
+        let prefix = repository_root.join(prefix);
+        if !directory.starts_with(&prefix) {
+            continue;
+        }
+        if !has_meta {
+            if prefix.is_dir() {
+                return Ok(true);
+            }
+            continue;
+        }
+        let glob = source_glob(pattern)?;
+        let matcher = glob.compile_matcher();
+        if relative
+            .ancestors()
+            .any(|ancestor| matcher.is_match(ancestor))
+            || relative_text.is_empty()
+        {
+            return Ok(true);
+        }
+
+        // Reuse the selector's regex so alternatives, character classes, and
+        // recursive globs retain exactly the same matching rules. A live state
+        // after the separator can still match newly written descendants.
+        let Ok(dfa) = dense::Builder::new()
+            .configure(
+                dense::Config::new()
+                    .start_kind(StartKind::Anchored)
+                    .match_kind(MatchKind::All)
+                    .dfa_size_limit(Some(10 * 1024 * 1024))
+                    .determinize_size_limit(Some(10 * 1024 * 1024)),
+            )
+            .syntax(syntax::Config::new().utf8(false).dot_matches_new_line(true))
+            .build(glob.regex())
+        else {
+            // Keep the literal-prefix guard if proving disjointness exceeds
+            // the memory bound for a complex selector.
+            return Ok(true);
+        };
+        let mut state = dfa
+            .start_state_forward(&Input::new(&relative_text).anchored(Anchored::Yes))
+            .expect("the source selector supports anchored matching");
+        for byte in relative_text.bytes().chain(std::iter::once(b'/')) {
+            state = dfa.next_state(state, byte);
+        }
+        if !dfa.is_dead_state(state) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+fn source_glob(pattern: &RepositoryPath) -> Result<Glob, SourceBundleError> {
+    GlobBuilder::new(pattern.as_str())
+        .literal_separator(true)
+        .backslash_escape(false)
+        .build()
+        .map_err(|error| SourceBundleError::InvalidPattern {
+            pattern: pattern.as_path().to_path_buf(),
+            message: error.to_string(),
+        })
 }
 
 pub(crate) fn literal_prefix(pattern: &str) -> (PathBuf, bool) {

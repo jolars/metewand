@@ -318,6 +318,11 @@ declarations. Relative worker programs resolve within the bundle. Bare programs
 use the selected `PATH`. `{sources}/PATH` is an explicit argument reference, not
 general interpolation.
 
+Keep output, cache, and private staging directories outside the source selection.
+A directory may share a glob's literal prefix when neither it, its ancestors,
+nor any possible descendants can match the glob. Matched directories include
+their entire trees, even when the glob is nonrecursive.
+
 The local launcher uses an environment allowlist, fixed locale and timezone,
 and private working, home, temporary, configuration, and cache directories.
 Do not inherit ambient language search paths. Resolved launch

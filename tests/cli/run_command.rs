@@ -81,6 +81,100 @@ fn replace(root: &Path, path: &str, before: &str, after: &str) {
     fs::write(path, updated).unwrap();
 }
 
+fn repository_with_worker_sources(sources: &str) -> TempDir {
+    let root = repository();
+    fs::create_dir_all(root.path().join("benchmark/outputs")).unwrap();
+    fs::rename(
+        root.path().join("worker.py"),
+        root.path().join("benchmark/worker.py"),
+    )
+    .unwrap();
+    replace(
+        root.path(),
+        "metewand.yaml",
+        "{sources}/worker.py",
+        "{sources}/benchmark/worker.py",
+    );
+    replace(
+        root.path(),
+        "metewand.yaml",
+        "sources: [\"worker.py\"]",
+        &format!("sources: [{sources}]"),
+    );
+    root
+}
+
+#[test]
+fn run_and_cache_can_share_nonrecursive_source_glob_prefixes() {
+    let root = repository_with_worker_sources(
+        "benchmark/*.py, benchmark/solvers/*.py, benchmark/datasets/*.py",
+    );
+    for directory in ["solvers", "datasets"] {
+        fs::create_dir(root.path().join("benchmark").join(directory)).unwrap();
+        fs::write(
+            root.path()
+                .join("benchmark")
+                .join(directory)
+                .join("helper.py"),
+            b"# Benchmark source.\n",
+        )
+        .unwrap();
+    }
+    let output = metewand(
+        root.path(),
+        &[
+            "run",
+            "--output-dir",
+            "benchmark/outputs/run",
+            "--cache-dir",
+            "benchmark/outputs/cache",
+            "--output",
+            "jsonl",
+        ],
+    );
+    assert!(output.status.success(), "{output:?}");
+    let records = envelopes(&output);
+    assert_eq!(
+        records.last().unwrap()["data"]["summary"]["accepted_attempts"],
+        1
+    );
+    assert!(
+        root.path()
+            .join("benchmark/outputs/run/run.sqlite3")
+            .is_file()
+    );
+    assert!(root.path().join("benchmark/outputs/cache").is_dir());
+    let checked = metewand(root.path(), &["check", "--output", "json"]);
+    assert!(checked.status.success(), "{checked:?}");
+}
+
+#[test]
+fn run_rejects_destinations_captured_by_source_directories_or_globs() {
+    for (pattern, destination) in [
+        ("benchmark", "benchmark/outputs/run"),
+        ("benchmark/**", "benchmark/outputs/run"),
+        ("benchmark/**/*.py", "benchmark/outputs/run"),
+        ("benchmark/*", "benchmark/outputs/run"),
+        ("benchmark/*.py", "benchmark/run.py"),
+        ("benchmark/*.py", "benchmark/outputs.py/run"),
+    ] {
+        let root = repository_with_worker_sources(pattern);
+        fs::create_dir(root.path().join("benchmark/outputs.py")).unwrap();
+        for option in ["--output-dir", "--cache-dir"] {
+            let mut args = vec!["run", option, destination, "--output", "json"];
+            if option == "--cache-dir" {
+                args.extend(["--output-dir", "run"]);
+            }
+            let output = metewand(root.path(), &args);
+            assert!(!output.status.success(), "{pattern:?}: {output:?}");
+            let diagnostic: Value = serde_json::from_slice(&output.stdout).unwrap();
+            assert_eq!(diagnostic["data"]["code"], "unsupported_operation");
+            assert!(!root.path().join(destination).exists());
+            assert!(!root.path().join("run").exists());
+        }
+    }
+}
+
 #[test]
 fn run_publishes_each_authorized_timing_scope_with_its_accounting_boundary() {
     for (scope, cpu_scope) in [

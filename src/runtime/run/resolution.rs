@@ -48,7 +48,7 @@ use crate::runtime::{
     local_tree::hash_local_tree,
     repository::CheckedRepository,
     source_acquisition::HttpAcquirer,
-    source_bundle::identify_source_bundle,
+    source_bundle::{identify_source_bundle, source_bundle_overlaps_directory},
     source_resolution::{SourceRequest, SourceResolutionError, resolve_source},
     worker_output::WorkerOutputValidator,
     worker_process::WorkerLogLimits,
@@ -239,28 +239,12 @@ impl ResolvedCandidate {
 }
 
 fn validate_snapshot_destination(snapshot: &Snapshot, output: &Path) -> Result<(), RunError> {
-    if let Some((root, patterns, _)) = &snapshot.original {
-        for pattern in patterns {
-            let mut prefix = PathBuf::new();
-            let mut has_glob = false;
-            for component in pattern.as_path().components() {
-                if component
-                    .as_os_str()
-                    .to_string_lossy()
-                    .contains(['*', '?', '[', '{'])
-                {
-                    has_glob = true;
-                    break;
-                }
-                prefix.push(component);
-            }
-            let prefix = root.join(prefix);
-            if (has_glob || prefix.is_dir()) && output.starts_with(prefix) {
-                return Err(unsupported(
-                    "choose an output directory outside declared source directories and glob prefixes",
-                ));
-            }
-        }
+    if let Some((root, patterns, _)) = &snapshot.original
+        && source_bundle_overlaps_directory(root, patterns, output)?
+    {
+        return Err(unsupported(
+            "choose an output directory outside selected source directories and possible glob matches",
+        ));
     }
     Ok(())
 }

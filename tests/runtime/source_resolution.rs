@@ -442,27 +442,107 @@ fn failed_acquisition_drops_partial_outputs() {
 
 #[test]
 fn repository_staging_cannot_become_part_of_its_own_input() {
-    let repository = TempDir::new().unwrap();
-    fs::create_dir(repository.path().join("data")).unwrap();
-    fs::write(repository.path().join("data/input"), b"abc").unwrap();
-    let patterns = [path("data")];
-    let expected = identify_source_bundle(repository.path(), &patterns).unwrap();
-    assert!(matches!(
-        resolve_source(
+    for (pattern, parent) in [
+        ("benchmark", "benchmark/outputs"),
+        ("benchmark/**", "benchmark/outputs"),
+        ("benchmark/**/*.py", "benchmark/outputs"),
+        ("benchmark/*", "benchmark/outputs/run"),
+        ("benchmark/*.py", "benchmark/outputs.py/run"),
+        ("benchmark/*/*.py", "benchmark/outputs"),
+        ("benchmark/**/solvers/*.py", "benchmark/outputs"),
+        ("benchmark/[so]*", "benchmark/outputs/run"),
+        ("benchmark/{solvers/*.py,outputs/*.py}", "benchmark/outputs"),
+        ("**/*.py", "outputs"),
+    ] {
+        let repository = TempDir::new().unwrap();
+        let parent = repository.path().join(parent);
+        fs::create_dir_all(&parent).unwrap();
+        fs::create_dir_all(repository.path().join("benchmark/solvers")).unwrap();
+        fs::write(repository.path().join("benchmark/worker.py"), b"abc").unwrap();
+        fs::write(
+            repository.path().join("benchmark/solvers/worker.py"),
+            b"abc",
+        )
+        .unwrap();
+        let patterns = [path(pattern)];
+        let expected = identify_source_bundle(repository.path(), &patterns).unwrap();
+        let entries = fs::read_dir(&parent).unwrap().count();
+
+        assert!(
+            matches!(
+                resolve_source(
+                    &SourceRequest::Repository {
+                        root: repository.path(),
+                        sources: &patterns,
+                        expected,
+                    },
+                    None,
+                    &parent
+                ),
+                Err(SourceResolutionError::StagingOverlapsSource)
+            ),
+            "pattern {pattern:?} must reject staging in {parent:?}"
+        );
+        assert_eq!(fs::read_dir(&parent).unwrap().count(), entries);
+        assert_eq!(
+            identify_source_bundle(repository.path(), &patterns).unwrap(),
+            expected
+        );
+    }
+}
+
+#[test]
+fn repository_staging_can_share_a_glob_prefix_without_changing_selected_sources() {
+    for (pattern, parent) in [
+        ("benchmark/*.py", "benchmark/outputs"),
+        ("benchmark/*.py", ""),
+        ("benchmark/solvers/*.py", "benchmark"),
+        ("*.py", "outputs"),
+        ("benchmark/*/*.py", "benchmark/outputs/run"),
+        ("benchmark/[sd]*/*.py", "benchmark/outputs"),
+        ("benchmark/solver?/*.py", "benchmark/outputs"),
+        ("benchmark/{solvers,datasets}/*.py", "benchmark/outputs"),
+        (
+            "benchmark/{solvers/*.py,datasets/*.py}",
+            "benchmark/outputs",
+        ),
+        ("benchmark/{solvers,datasets}/**/*.py", "benchmark/outputs"),
+        ("benchmark/solvers/**/*.py", "benchmark/outputs"),
+    ] {
+        let repository = TempDir::new().unwrap();
+        let parent = repository.path().join(parent);
+        fs::create_dir_all(&parent).unwrap();
+        for directory in ["", "benchmark", "benchmark/solvers", "benchmark/datasets"] {
+            fs::create_dir_all(repository.path().join(directory)).unwrap();
+            fs::write(repository.path().join(directory).join("worker.py"), b"abc").unwrap();
+        }
+        let patterns = [path(pattern)];
+        let expected = identify_source_bundle(repository.path(), &patterns).unwrap();
+        let entries = fs::read_dir(&parent).unwrap().count();
+        let resolved = resolve_source(
             &SourceRequest::Repository {
                 root: repository.path(),
                 sources: &patterns,
                 expected,
             },
             None,
-            &repository.path().join("data")
-        ),
-        Err(SourceResolutionError::StagingOverlapsSource)
-    ));
-    assert_eq!(
-        identify_source_bundle(repository.path(), &patterns).unwrap(),
-        expected
-    );
+            &parent,
+        )
+        .unwrap_or_else(|error| panic!("pattern {pattern:?} rejected {parent:?}: {error}"));
+
+        resolved.verify().unwrap();
+        assert!(resolved.directory().starts_with(&parent));
+        assert_eq!(
+            identify_source_bundle(repository.path(), &patterns).unwrap(),
+            expected
+        );
+        assert_eq!(
+            identify_source_bundle(resolved.directory(), &patterns).unwrap(),
+            expected
+        );
+        drop(resolved);
+        assert_eq!(fs::read_dir(&parent).unwrap().count(), entries);
+    }
 }
 
 #[test]

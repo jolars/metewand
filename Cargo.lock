@@ -902,6 +902,7 @@ dependencies = [
  "globset",
  "jsonschema",
  "libc",
+ "regex-automata",
  "reqwest",
  "rusqlite",
  "rustix",

@@ -53,6 +53,7 @@ serde_json_canonicalizer = "0.4.1"
 serde-saphyr = { version = "2.0.0", default-features = false, features = ["deserialize", "serialize"] }
 serde_path_to_error = "0.1.20"
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
+regex-automata = { version = "0.4", default-features = false, features = ["dfa-build", "std", "syntax"] }
 sha2 = "0.11.1"
 tar = "0.4"
 tempfile = "3.20.0"
