@@ -19,6 +19,49 @@ struct Starter {
     path: OsString,
 }
 
+#[test]
+fn r_functions_share_problem_preparation_with_the_evaluator() {
+    let starter = Starter::new("r");
+    let manifest = include_str!("../../examples/problem-preparation/metewand.yaml")
+        .replace("functions.py", "benchmark.R")
+        .replace("preparation.py", "preparation.R");
+    fs::write(starter.project.join("metewand.yaml"), manifest).unwrap();
+    fs::write(starter.project.join("benchmark.R"), r#"
+generate <- function(context) list(values = metewand::json_array(seq_len(context$parameters$size) - 1))
+solve <- function(data, context) {
+  grid <- metewand::read_json(file.path(context$problem_dir, "data.json"))$alpha
+  list(total = sum(unlist(data$values)) * sum(unlist(grid)))
+}
+solve_loop <- solve
+evaluate <- function(data, result, context) list(error = abs(result$total - solve(data, context)$total))
+"#).unwrap();
+    fs::write(
+        starter.project.join("preparation.R"),
+        r#"
+prepare_path <- function(data, context) {
+  parameters <- context$problem_parameters
+  length <- min(parameters$path_length, length(data$values) - 2)
+  scale <- max(unlist(data$values)) + as.integer(parameters$fit_intercept)
+  list(alpha = metewand::json_array(scale * parameters$q ^ (seq_len(length) - 1)))
+}
+"#,
+    )
+    .unwrap();
+    let checked = starter.json(&["check", "--workers"], 0);
+    assert!(
+        checked["workers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|worker| worker["role"] == "problem_preparer")
+    );
+    let run = starter.json(&["run", "--output-dir", "run"], 0);
+    assert_eq!(run["summary"]["accepted_attempts"], 8);
+    for row in run["comparison"].as_array().unwrap() {
+        assert_eq!(row["metrics"]["error"], 0);
+    }
+}
+
 fn copy(source: &Path, destination: &Path) {
     fs::create_dir_all(destination).unwrap();
     for entry in fs::read_dir(source).unwrap() {

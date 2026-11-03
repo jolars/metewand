@@ -80,6 +80,11 @@ computation. Implementation parameters control how a method computes its answer.
 Budgets and execution settings remain policies. Metewand preserves the author's
 classification rather than guessing from parameter names.
 
+A problem may prepare shared inputs from the verified dataset and its resolved
+parameters. Preparation runs once per dataset and problem configuration before
+measured work. Its cached artifact has a separate content hash, and every method
+and evaluator receives a verified private view of the same inputs.
+
 ### Validity and completion
 
 A problem contract defines accepted datasets, result and metric shapes,

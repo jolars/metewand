@@ -583,7 +583,27 @@ fn execute(
         }
     };
     let effective_timeout = std::cell::Cell::new(candidate.timing.timeout);
+    let problem_view = match candidate
+        .preparation
+        .as_ref()
+        .map(|preparation| preparation.artifact.private_view(private_root))
+        .transpose()
+    {
+        Ok(view) => view,
+        Err(error) => {
+            worker.discard();
+            return failed_attempt(
+                measurement,
+                execution,
+                started_at,
+                "dataset_mutation",
+                error.to_string(),
+                &measurements,
+            );
+        }
+    };
     let request = || FixedDatasetRun {
+        problem_view: problem_view.as_ref(),
         observation_control: measurement.fresh.as_ref().map(|f| &f.observation_control),
         dataset_dir: dataset_view.directory(),
         problem_contract_id: &candidate.contract_id,

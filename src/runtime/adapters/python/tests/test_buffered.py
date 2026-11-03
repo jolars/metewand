@@ -70,7 +70,7 @@ class BufferedTests(unittest.TestCase):
                 ],
             )
             self.assertEqual(
-                replies[0]["capabilities"], ["managed_outputs", "buffered_profile"]
+                replies[0]["capabilities"], ["managed_outputs", "problem_preparation", "buffered_profile"]
             )
             self.assertEqual(replies[2]["error"]["code"], "unsupported_operation")
             manifest = parse_json(

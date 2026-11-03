@@ -83,6 +83,7 @@ pub(crate) fn run_streaming(
         return Err(FixedDatasetRunError::InvalidScientificTimeout);
     }
     let integrity = DatasetIntegrity {
+        problem_view: request.problem_view,
         directory: request.dataset_dir,
         digest: view.digest(),
         view: Some(view),
@@ -132,6 +133,8 @@ pub(crate) fn run_streaming(
             .as_deref_mut()
             .or(owned.as_mut())
             .expect("implementation session");
+        bind_problem_directory(implementation, &request)
+            .map_err(|source| FixedDatasetRunError::Implementation { source })?;
         tree = Some(
             TreeMonitor::new(implementation.tree_source())
                 .map_err(FixedDatasetRunError::PrivateDirectory)?,
@@ -264,6 +267,8 @@ pub(crate) fn run_streaming(
                 )?);
             }
             let evaluator = evaluator.as_mut().expect("evaluator");
+            bind_problem_directory(evaluator, &request)
+                .map_err(|source| FixedDatasetRunError::Evaluator { source })?;
             event(ProfileEvent::Phase(
                 crate::runtime::run_store::AttemptPhase::Evaluating,
             ))?;
@@ -379,13 +384,14 @@ pub(crate) fn run_streaming(
                 stop_reason: reason.clone(),
             };
             clock.update(measurements, true);
-            let provenance = json!({"environment_class":"development","executor":"trusted_local","architecture":std::env::consts::ARCH,"os":std::env::consts::OS,
+            let mut provenance = json!({"environment_class":"development","executor":"trusted_local","architecture":std::env::consts::ARCH,"os":std::env::consts::OS,
                 "implementation":worker_provenance(request.implementation_launch,implementation),"evaluator":worker_provenance(request.evaluator_launch,evaluator),
                 "problem_contract_id":request.problem_contract_id,"problem_parameters":request.problem_parameters,"implementation_parameters":request.implementation_parameters,
                 "implementation_seed":request.implementation_seed,"timing_scope":request.timing.scope.to_string(),"timing_excluded_phases":["checkpoint_validation","evaluation","publication","stop_acknowledgment"],
                 "scientific_timeout_ns":request.timing.timeout.map(|t|t.as_nanos().to_string()),"operational_timeouts_ns":request.timeouts.provenance(),
                 "result_schema":request.result_schema,"metric_schema":request.metric_schema,"profile_observation":coordinate,"profile_policy":profile,
                 "dataset_directory":request.dataset_dir,"dataset_tree_sha256":hex_digest(integrity.digest),"controls":crate::core::controls::default_local_control_report()});
+            record_problem_directory(&mut provenance, request.problem_view);
             let mut result = FixedDatasetResult {
                 measurements: measurements.clone(),
                 result: validated_result.data().clone(),

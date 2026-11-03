@@ -84,6 +84,55 @@ The runnable [Python](https://github.com/jolars/metewand/tree/main/examples/pyth
 show complete adapters and declarations. The package source and R help pages
 describe their callback interfaces.
 
+## Share problem-dependent preparation
+
+Add `preparation` to a problem when shared inputs depend on problem parameters.
+For example, a solution-path comparison needs one alpha grid even when the
+reference method stops its path early:
+
+```yaml
+problems:
+  path:
+    parameters:
+      path_length: {type: integer, default: 100}
+      q: {type: number, default: 0.1}
+      fit_intercept: {type: boolean, default: true}
+    preparation:
+      function: benchmark.py:prepare_path
+    # Declare result fields, metrics, and an evaluator as usual.
+```
+
+The Python or R function takes `(data, context)`. `data` contains the original
+JSON dataset, and `context.problem_parameters` (`context$problem_parameters` in
+R) contains the resolved problem settings. Return a JSON object or a `Dataset`
+with declared files. Implementations and evaluators read the prepared artifact
+through `context.problem_dir`, while `context.dataset_dir` continues to contain
+the original dataset. For example, use
+`read_json(context.problem_dir / "data.json")` to read a prepared JSON grid.
+
+Preparation runs once per dataset and problem configuration, before any
+implementation timing scope, warmup, or applicability check. Repetitions and
+methods share its output. `run --cache-dir cache` also reuses it across runs.
+The cache identity includes the verified dataset instance, complete problem
+configuration, preparation sources, launch, environment, and output schema.
+Changing problem settings does not rematerialize the raw dataset. Keep solver
+initialization in each implementation's own `prepare` callback.
+Use `worker-timeouts.materialize` to adjust the preparation deadline.
+
+For binary datasets, register `serve_problem_preparer(materialize)` and read the
+verified `context.dataset_dir` directly. Write shared files beneath
+`context.output_dir` and return a `Dataset` with `Artifact` declarations. Select
+`protocol-transport: socket` and declare `output-schema` beneath `preparation`.
+Raw workers serve `problem_preparer`, receive a `materialize` request with
+`dataset_dir`, `problem_contract_id`, `problem_parameters`, and `output_dir`, and
+return the standard dataset manifest. Consumers negotiate `problem_preparation`
+before receiving `problem_dir`. Existing benchmarks without preparation keep
+their original request shapes and identities.
+
+The [shared preparation example](https://github.com/jolars/metewand/tree/main/examples/problem-preparation)
+compares two methods over two path configurations and retains an early-stopped
+grid for independent evaluation.
+
 ## Include source and data deliberately
 
 Function declarations automatically include the selected source file. Add

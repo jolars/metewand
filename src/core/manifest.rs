@@ -64,6 +64,9 @@ pub fn parse_manifest(source_path: &Path, source: &str) -> Result<Manifest, Mani
         }
     }
     for (name, problem) in &mut manifest.problems {
+        if let Some(preparation) = &mut problem.preparation {
+            preparation.output_schema.set_owner(source_path);
+        }
         if let ContractDeclaration::Inline(contract) = &mut problem.contract {
             contract.set_schema_owner(source_path);
             let mut pointer = format!(
@@ -250,11 +253,10 @@ impl Manifest {
                 DatasetDefinition::Generated(dataset) => Some(&mut dataset.worker),
                 DatasetDefinition::Fixed(_) => None,
             })
-            .chain(
-                self.problems
-                    .values_mut()
-                    .map(|problem| &mut problem.evaluator),
-            )
+            .chain(self.problems.values_mut().flat_map(|problem| {
+                std::iter::once(&mut problem.evaluator)
+                    .chain(problem.preparation.iter_mut().map(|p| &mut p.worker))
+            }))
             .chain(
                 self.implementations
                     .values_mut()
@@ -333,6 +335,39 @@ pub struct ProblemDefinition {
     pub parameter_defaults: Option<CanonicalValue>,
     /// Worker that evaluates implementation results.
     pub evaluator: WorkerDefinition,
+    /// Shared construction of problem-dependent inputs before measured work.
+    pub preparation: Option<ProblemPreparationDefinition>,
+}
+
+/// A worker that derives shared inputs from a dataset and problem parameters.
+#[derive(Debug)]
+pub struct ProblemPreparationDefinition {
+    /// Worker serving the `problem_preparer` role.
+    pub worker: WorkerDefinition,
+    /// Schema for the completed artifact manifest.
+    pub output_schema: SchemaDeclaration,
+}
+
+impl<'de> Deserialize<'de> for ProblemPreparationDefinition {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let mut fields = serde_json::Map::<String, JsonValue>::deserialize(deserializer)?;
+        let schema = fields.remove("output-schema");
+        let raw = RawWorkerDefinition::deserialize(JsonValue::Object(fields))
+            .map_err(de::Error::custom)?;
+        let function = raw.function.is_some();
+        let worker = raw
+            .into_worker("problem_preparer")
+            .map_err(de::Error::custom)?;
+        let output_schema = match schema {
+            Some(value) => SchemaDeclaration::deserialize(value).map_err(de::Error::custom)?,
+            None if function => json_dataset_schema(),
+            None => return Err(de::Error::missing_field("output-schema")),
+        };
+        Ok(Self {
+            worker,
+            output_schema,
+        })
+    }
 }
 
 impl ProblemDefinition {
@@ -1260,7 +1295,7 @@ impl<'de> Deserialize<'de> for ProblemField {
         let key = String::deserialize(deserializer)?;
         if matches!(
             key.as_str(),
-            "contract" | "evaluator" | "parameter-defaults"
+            "contract" | "evaluator" | "preparation" | "parameter-defaults"
         ) || crate::core::problem_contract::CONTRACT_FIELDS.contains(&key.as_str())
         {
             Ok(Self(key))
@@ -1292,11 +1327,15 @@ impl<'de> Visitor<'de> for ProblemDefinitionSeed<'_> {
         let mut contract = None;
         let mut parameter_defaults = None;
         let mut evaluator = None;
+        let mut preparation = None;
         let mut fields = serde_json::Map::new();
         while let Some(ProblemField(key)) = map.next_key()? {
             match key.as_str() {
                 "contract" => contract = Some(map.next_value::<ContractDeclaration>()?),
                 "evaluator" => evaluator = Some(map.next_value::<WorkerDefinition>()?),
+                "preparation" => {
+                    preparation = Some(map.next_value::<ProblemPreparationDefinition>()?)
+                }
                 "parameter-defaults" => {
                     parameter_defaults = map.next_value::<ProblemParameterDefaults>()?.0;
                 }
@@ -1352,6 +1391,7 @@ impl<'de> Visitor<'de> for ProblemDefinitionSeed<'_> {
             contract,
             parameter_defaults,
             evaluator: evaluator.ok_or_else(|| de::Error::missing_field("evaluator"))?,
+            preparation,
         })
     }
 }
@@ -1505,36 +1545,42 @@ impl<'de> Deserialize<'de> for WorkerDefinition {
         D: Deserializer<'de>,
     {
         let raw = RawWorkerDefinition::deserialize(deserializer)?;
-        if let Some(function) = raw.function {
-            if raw.runner.is_some()
-                || raw.entrypoint.is_some()
-                || raw.program.is_some()
-                || raw.args.is_some()
+        raw.into_worker("problem_evaluator")
+            .map_err(de::Error::custom)
+    }
+}
+
+impl RawWorkerDefinition {
+    fn into_worker(self, role: &str) -> Result<WorkerDefinition, String> {
+        if let Some(function) = self.function {
+            if self.runner.is_some()
+                || self.entrypoint.is_some()
+                || self.program.is_some()
+                || self.args.is_some()
             {
-                return Err(de::Error::custom(
-                    "`function` cannot be combined with runner, entrypoint, program, or args",
-                ));
+                return Err(
+                    "`function` cannot be combined with runner, entrypoint, program, or args"
+                        .to_owned(),
+                );
             }
             build_function_worker(
                 &function,
-                "problem_evaluator",
-                raw.sources,
-                raw.environment,
-                raw.protocol_transport,
+                role,
+                self.sources,
+                self.environment,
+                self.protocol_transport,
             )
         } else {
             build_worker(
-                raw.runner
-                    .ok_or_else(|| de::Error::missing_field("runner"))?,
-                raw.entrypoint,
-                raw.program,
-                raw.args.unwrap_or_default(),
-                raw.sources,
-                raw.environment,
-                raw.protocol_transport,
+                self.runner.ok_or("missing field `runner`")?,
+                self.entrypoint,
+                self.program,
+                self.args.unwrap_or_default(),
+                self.sources,
+                self.environment,
+                self.protocol_transport,
             )
         }
-        .map_err(de::Error::custom)
     }
 }
 

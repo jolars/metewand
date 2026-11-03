@@ -22,11 +22,18 @@ binding_api_version <- 1L
                problem_semantics = "object", result_dir = "string", metrics_path = "string"),
   shutdown = character())
 
-.validate_request <- function(request) {
+.validate_request <- function(request, role = NULL) {
   method <- request[["method"]]
   if (!.nonempty_string(method)) .fail("invalid_request", "A request must name a method.")
   if (!method %in% names(.request_fields)) .fail("unsupported_operation", "Unsupported worker operation.")
   fields <- .request_fields[[method]]
+  if (method == "materialize" && identical(role, "problem_preparer")) {
+    fields <- c(dataset_dir = "string", problem_contract_id = "string",
+                problem_parameters = "object", output_dir = "string")
+  }
+  if (method %in% c("prepare", "check_applicability", "evaluate") && "problem_dir" %in% names(request)) {
+    fields <- c(fields, problem_dir = "string")
+  }
   if (method == "execute" && "observation_control" %in% names(request)) {
     fields <- c(fields, observation_control = "object")
   }
@@ -38,7 +45,7 @@ binding_api_version <- 1L
     valid <- switch(fields[[key]],
       string = .nonempty_string(value), object = .is_object(value),
       seed = .integer(value, 9007199254740991),
-      role = .nonempty_string(value) && value %in% c("implementation", "dataset_materializer", "problem_evaluator"),
+      role = .nonempty_string(value) && value %in% c("implementation", "dataset_materializer", "problem_preparer", "problem_evaluator"),
       worker_id = .nonempty_string(value) && grepl("^mw1-resolved-worker-[0-9a-f]{64}$", value),
       protocols = is.list(value) && is.null(names(value)) && length(value) > 0L &&
         all(vapply(value, .integer, logical(1), maximum = 2^32 - 1)) && !anyDuplicated(unlist(value)))
@@ -96,7 +103,7 @@ binding_api_version <- 1L
 
 serve_bindings <- function(api_version, role, callbacks, metadata, codec) {
   if (!identical(api_version, binding_api_version)) stop("Unsupported binding API version; this CLI supports version 1.")
-  if (!role %in% c("implementation", "dataset_materializer", "problem_evaluator")) stop("Unknown worker role.")
+  if (!role %in% c("implementation", "dataset_materializer", "problem_preparer", "problem_evaluator")) stop("Unknown worker role.")
   callbacks <- Filter(function(callback) !is.null(callback), callbacks)
   initialize <- function() NULL
   selected <- NULL
@@ -113,17 +120,18 @@ serve_bindings <- function(api_version, role, callbacks, metadata, codec) {
                             execute = function(state, context) selected(state, context),
                             reset = function(state, context) NULL),
       dataset_materializer = list(materialize = function(context) selected(context)),
+      problem_preparer = list(materialize = function(context) selected(.read_data(context$dataset_dir), context)),
       problem_evaluator = list(evaluate = function(context) selected(.read_data(context$dataset_dir),
                                metewand::read_json(file.path(context$result_dir, "result.json"))$data, context)))
   }
   allowed <- switch(role,
     implementation = c("prepare", "execute", "result", "statistics", "reset", "shutdown", "check_applicability"),
-    dataset_materializer = "materialize", problem_evaluator = "evaluate")
+    dataset_materializer = "materialize", problem_preparer = "materialize", problem_evaluator = "evaluate")
   if (is.null(names(callbacks)) || anyDuplicated(names(callbacks)) ||
       any(!names(callbacks) %in% allowed) || !all(vapply(callbacks, is.function, logical(1)))) {
     stop("Unsupported or noncallable worker callback.")
   }
-  required <- switch(role, implementation = c("prepare", "execute"), dataset_materializer = "materialize", problem_evaluator = "evaluate")
+  required <- switch(role, implementation = c("prepare", "execute"), dataset_materializer = "materialize", problem_preparer = "materialize", problem_evaluator = "evaluate")
   if (any(!required %in% names(callbacks))) stop("Missing required worker callback.")
   port <- as.integer(Sys.getenv("METEWAND_PROTOCOL_PORT"))
   connection <- socketConnection(host = "127.0.0.1", port = port, blocking = TRUE,
@@ -135,7 +143,7 @@ serve_bindings <- function(api_version, role, callbacks, metadata, codec) {
   state <- NULL
   context <- NULL
   dispatch <- function(request) {
-    method <- .validate_request(request)
+    method <- .validate_request(request, role)
     if (!ready) {
       if (method != "hello" || !identical(request$role, role)) {
         .fail("invalid_request", "The first request must negotiate this worker's role.")
@@ -144,6 +152,7 @@ serve_bindings <- function(api_version, role, callbacks, metadata, codec) {
       initialize()
       ready <<- TRUE
       capabilities <- list("managed_outputs")
+      if (role %in% c("implementation", "problem_evaluator")) capabilities <- c(capabilities, list("problem_preparation"))
       if (role == "implementation") {
         capabilities <- c(capabilities, list("one_shot", "fresh_sequence"))
         if (is.function(callbacks$check_applicability)) capabilities <- c(capabilities, list("applicability"))
@@ -179,7 +188,7 @@ serve_bindings <- function(api_version, role, callbacks, metadata, codec) {
       if (!is.function(callbacks$reset)) stop(metewand::worker_error("unsupported_operation", "Reset is not implemented."))
       on.exit({ state <<- NULL })
       callbacks$reset(state, context)
-    } else if (method == "materialize" && role == "dataset_materializer") {
+    } else if (method == "materialize" && role %in% c("dataset_materializer", "problem_preparer")) {
       value <- callbacks$materialize(.context(request))
       if (!inherits(value, "metewand_dataset")) value <- metewand::dataset(value)
       return(list(draft = .draft(request$output_dir, "dataset", value$data, value$files)))

@@ -7,7 +7,7 @@
 serve_function(role = NULL, file = NULL, name = NULL)
 }
 \arguments{
-\item{role}{One of \code{dataset_materializer}, \code{implementation}, or
+\item{role}{One of \code{dataset_materializer}, \code{problem_preparer}, \code{implementation}, or
 \code{problem_evaluator}. When \code{NULL}, read role, file, and name from the three
 trailing command arguments.}
 
@@ -20,11 +20,12 @@ Returns invisibly after shutdown or a rejected handshake.
 }
 \description{
 Load a manifest-selected function inside a worker process and adapt it to the
-CLI-owned dataset, implementation, or evaluator lifecycle.
+CLI-owned dataset, problem preparation, implementation, or evaluator lifecycle.
 }
 \details{
-Dataset functions take \code{context}; implementation functions take \code{data} and
-\code{context}; evaluator functions take \code{data}, \code{result}, and \code{context}. Context
+Dataset functions take \code{context}; problem preparation and implementation
+functions take \code{data} and \code{context}; evaluator functions take \code{data}, \code{result},
+and \code{context}. Context
 is a list containing \code{parameters}, \code{problem_parameters}, \code{seed}, and
 \code{semantics}. Seeds are available for generation and solving; scientific rules
 are available for evaluation. Unavailable objects are empty JSON objects and

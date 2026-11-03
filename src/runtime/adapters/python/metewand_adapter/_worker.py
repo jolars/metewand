@@ -101,11 +101,12 @@ _METHODS = {
         "shutdown",
     },
     "dataset_materializer": {"materialize", "shutdown"},
+    "problem_preparer": {"materialize", "shutdown"},
     "problem_evaluator": {"evaluate", "shutdown"},
 }
 
 
-def _validate_request(request):
+def _validate_request(request, role=None):
     if (
         type(request) is not dict
         or type(request.get("id")) is not str
@@ -118,7 +119,16 @@ def _validate_request(request):
         raise WorkerError("invalid_request", "A request must name a method.")
     if method not in _FIELDS:
         raise WorkerError("unsupported_operation", f"Unsupported method: {method}.")
-    fields = _FIELDS[method]
+    fields = dict(_FIELDS[method])
+    if method == "materialize" and role == "problem_preparer":
+        fields = {
+            "dataset_dir": "string",
+            "problem_contract_id": "string",
+            "problem_parameters": "object",
+            "output_dir": "string",
+        }
+    if method in {"prepare", "check_applicability", "evaluate"} and "problem_dir" in request:
+        fields["problem_dir"] = "string"
     if set(request) != {"id", "method"} | set(fields):
         raise WorkerError(
             "invalid_request", f"Unexpected or missing fields for {method}."
@@ -220,7 +230,7 @@ class _Dispatcher:
                 )
             request = request.copy()
             control = parse_json(canonical_bytes(request.pop("observation_control")))
-        method = _validate_request(request)
+        method = _validate_request(request, self.role)
         if not self.ready:
             if method != "hello" or request["role"] != self.role:
                 raise WorkerError(
@@ -233,6 +243,8 @@ class _Dispatcher:
                 )
             self.ready = True
             capabilities = ["managed_outputs"]
+            if self.role in {"implementation", "problem_evaluator"}:
+                capabilities.append("problem_preparation")
             if self.role == "implementation":
                 if "execute" in self.worker.binding_callbacks:
                     capabilities.append("one_shot")
@@ -356,12 +368,20 @@ class _Dispatcher:
             self.worker.reset()
         elif method == "materialize":
             directory = Path(request["output_dir"])
-            manifest = self.worker(
-                Path(request["source_dir"]),
-                request["dataset_parameters"],
-                request["dataset_seed"],
-                directory,
-            )
+            if self.role == "problem_preparer":
+                manifest = self.worker(
+                    Path(request["dataset_dir"]),
+                    request["problem_contract_id"],
+                    request["problem_parameters"],
+                    directory,
+                )
+            else:
+                manifest = self.worker(
+                    Path(request["source_dir"]),
+                    request["dataset_parameters"],
+                    request["dataset_seed"],
+                    directory,
+                )
             return {"draft": _completed_manifest(directory, manifest)}
         elif method == "evaluate":
             metrics_path = Path(request["metrics_path"])
@@ -372,6 +392,7 @@ class _Dispatcher:
                 *([semantics] if self.semantics else []),
                 Path(request["result_dir"]),
                 metrics_path,
+                **({"problem_dir": Path(request["problem_dir"])} if "problem_dir" in request else {}),
             )
             from ._bindings import _draft
 

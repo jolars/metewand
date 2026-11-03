@@ -17,6 +17,7 @@ mod inspection;
 mod local_examples;
 mod locked_nix;
 mod locked_uv;
+mod problem_preparation;
 mod python_sdk;
 mod qualification_examples;
 mod r_sdk;

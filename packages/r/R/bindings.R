@@ -311,6 +311,9 @@ worker_error <- function(code, message, details = NULL) {
 #' assigned input and output directories, and `observation_control` where
 #' applicable. Additional optional fields may appear without changing callback
 #' signatures. Neither seeds nor random generators are set automatically.
+#' Shared problem preparation receives `dataset_dir`, `problem_parameters`, and
+#' `output_dir`. Implementations and evaluators receive the prepared artifact in
+#' `problem_dir` when the problem declares preparation.
 #'
 #' Select `protocol-transport: socket` for lifecycle workers. Ordinary function
 #' launches select managed transport automatically. Standard output and standard
@@ -333,6 +336,12 @@ serve_dataset_materializer <- function(materialize) {
 
 #' @rdname workers
 #' @export
+serve_problem_preparer <- function(materialize) {
+  .serve("problem_preparer", list(materialize = materialize))
+}
+
+#' @rdname workers
+#' @export
 serve_evaluator <- function(evaluate) {
   .serve("problem_evaluator", list(evaluate = evaluate))
 }
@@ -340,16 +349,17 @@ serve_evaluator <- function(evaluate) {
 #' Serve an Ordinary Benchmark Function
 #'
 #' Load a manifest-selected function inside a worker process and adapt it to the
-#' CLI-owned dataset, implementation, or evaluator lifecycle.
+#' CLI-owned dataset, problem preparation, implementation, or evaluator lifecycle.
 #'
-#' @param role One of `dataset_materializer`, `implementation`, or
+#' @param role One of `dataset_materializer`, `problem_preparer`, `implementation`, or
 #'   `problem_evaluator`. When `NULL`, read role, file, and name from the three
 #'   trailing command arguments.
 #' @param file The selected source file, sourced during the worker handshake.
 #' @param name The name of the function defined in that file.
 #' @details
-#' Dataset functions take `context`; implementation functions take `data` and
-#' `context`; evaluator functions take `data`, `result`, and `context`. Context
+#' Dataset functions take `context`; problem preparation and implementation
+#' functions take `data` and `context`; evaluator functions take `data`, `result`,
+#' and `context`. Context
 #' is a list containing `parameters`, `problem_parameters`, `seed`, and
 #' `semantics`. Seeds are available for generation and solving; scientific rules
 #' are available for evaluation. Unavailable objects are empty JSON objects and

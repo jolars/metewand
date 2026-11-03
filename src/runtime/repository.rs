@@ -205,6 +205,14 @@ fn schema_roots<'a>(
     for implementation in manifest.implementations.values() {
         roots.extend(implementation.parameter_schema.iter());
     }
+    for problem in manifest.problems.values() {
+        roots.extend(
+            problem
+                .preparation
+                .iter()
+                .map(|preparation| &preparation.output_schema),
+        );
+    }
     for policy in manifest.observation_policies.values() {
         if let Some(profile) = &policy.profile {
             roots.extend(profile.implementations.values().filter_map(|b| b.schema()));
@@ -524,6 +532,23 @@ fn build_planning_catalog(
                 .resolved_parameter_defaults(&contracts[name])
                 .cloned(),
             evaluator,
+            preparation: definition
+                .preparation
+                .as_ref()
+                .map(|preparation| {
+                    Ok::<_, RepositoryCheckError>(
+                        crate::core::records::ProblemPreparationDefinitionRecord {
+                            worker: worker_record(
+                                root,
+                                &preparation.worker,
+                                &environment_definitions,
+                                &mut source_bundles,
+                            )?,
+                            output_schema: schema_ids[preparation.output_schema.as_path()],
+                        },
+                    )
+                })
+                .transpose()?,
         })?;
         let mut record = InspectionRecord::identified(&identified)?;
         record.label = Some(name.to_string());

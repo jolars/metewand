@@ -451,7 +451,10 @@ fn data_callbacks_write_canonical_envelopes_and_require_preparation() {
     .unwrap();
     let replies = responses(&output);
     assert_eq!(replies[0]["sdk"]["name"], "metewand-rust");
-    assert_eq!(replies[0]["capabilities"], json!(["one_shot"]));
+    assert_eq!(
+        replies[0]["capabilities"],
+        json!(["problem_preparation", "one_shot"])
+    );
     assert_eq!(replies[2]["result"], json!({"manifest":"result.json"}));
     assert_eq!(replies[3]["error"]["code"], "invalid_request");
     assert_eq!(
@@ -637,7 +640,7 @@ fn optional_applicability_callback_runs_without_preparation() {
     let replies = responses(&output);
     assert_eq!(
         replies[0]["capabilities"],
-        json!(["one_shot", "applicability"])
+        json!(["problem_preparation", "one_shot", "applicability"])
     );
     assert_eq!(
         replies[1],

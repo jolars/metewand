@@ -86,6 +86,7 @@ fn represents_component_definitions_with_typed_dependencies() {
         },
     };
     let problem = ProblemDefinitionRecord {
+        preparation: None,
         name: name("regression"),
         contract: id(6),
         parameter_defaults: Some(value(r#"{"centered":true}"#)),
@@ -135,6 +136,7 @@ fn separates_logical_records_from_resolved_runtime_dependencies() {
         output_schema: id::<SchemaResource>(17),
     };
     let problem_instance = ProblemInstanceRecord {
+        preparation: None,
         dataset: id::<DatasetInstanceRecord>(18),
         configuration: id::<ProblemConfigurationRecord>(19),
     };

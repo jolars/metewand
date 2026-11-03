@@ -52,6 +52,7 @@ def _context(request):
     fields.update(request)
     for key in (
         "dataset_dir",
+        "problem_dir",
         "source_dir",
         "result_dir",
         "output_dir",
@@ -198,6 +199,10 @@ def serve_bindings(*, api_version, role, callbacks, metadata):
             }
         elif role == "dataset_materializer":
             callbacks = {"materialize": lambda context: _invoke(selected[0], context)}
+        elif role == "problem_preparer":
+            callbacks = {"materialize": lambda context: _invoke(
+                selected[0], _read_function_data(context.dataset_dir), context
+            )}
         else:
             callbacks = {
                 "evaluate": lambda context: _invoke(
@@ -221,7 +226,7 @@ def serve_bindings(*, api_version, role, callbacks, metadata):
         }
         if role == "implementation"
         else {"materialize"}
-        if role == "dataset_materializer"
+        if role in {"dataset_materializer", "problem_preparer"}
         else {"evaluate"}
     )
     if set(callbacks) - allowed or any(
@@ -252,9 +257,20 @@ def serve_bindings(*, api_version, role, callbacks, metadata):
             if isinstance(value, binding.Dataset):
                 return _draft(output, "dataset", value.data, value.files)
             return _draft(output, "dataset", value)
+    elif role == "problem_preparer":
+
+        def worker(dataset, contract, parameters, output):
+            context = _context(dict(
+                method="materialize", dataset_dir=dataset, problem_contract_id=contract,
+                problem_parameters=parameters, output_dir=output,
+            ))
+            value = _invoke(callbacks["materialize"], context)
+            if isinstance(value, binding.Dataset):
+                return _draft(output, "dataset", value.data, value.files)
+            return _draft(output, "dataset", value)
     elif role == "problem_evaluator":
 
-        def worker(dataset, contract, parameters, semantics, result, metrics):
+        def worker(dataset, contract, parameters, semantics, result, metrics, problem_dir=None):
             context = _context(
                 dict(
                     method="evaluate",
@@ -264,6 +280,7 @@ def serve_bindings(*, api_version, role, callbacks, metadata):
                     problem_semantics=semantics,
                     result_dir=result,
                     metrics_path=metrics,
+                    **({"problem_dir": problem_dir} if problem_dir is not None else {}),
                 )
             )
             return _evaluation(_invoke(callbacks["evaluate"], context), semantics)

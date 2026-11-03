@@ -146,6 +146,9 @@ fn workers<'a>(
                 &repository.manifest.implementations[implementation].worker,
                 &repository.manifest.problems[problem].evaluator,
             ];
+            if let Some(preparation) = &repository.manifest.problems[problem].preparation {
+                selected.push(&preparation.worker);
+            }
             if let Some((crate::core::planning::DatasetConfigurationDefinition::Named(name), _)) =
                 catalog
                     .dataset_definitions

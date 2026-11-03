@@ -63,6 +63,13 @@ and optional `observation_control`. Optional fields can be added without
 changing signatures. Path fields are `pathlib.Path` values. The CLI never sets
 scientific random generators automatically.
 
+Problems can declare a shared `preparation` function taking `(data, context)`.
+It receives the verified dataset and resolved `context.problem_parameters`.
+Return a JSON object or `Dataset`; implementations and evaluators receive its
+cached artifact in `context.problem_dir`. For file-only datasets, register
+`serve_problem_preparer(materialize)` and read `context.dataset_dir` directly.
+See the [shared preparation example](../../examples/problem-preparation).
+
 Cooperative solvers can register `execute_stream(state, context)` and use
 `context.stream.checkpoint(progress, snapshot)` to pause for an independently
 evaluated decision. The CLI supplies this helper within binding API 1. See the

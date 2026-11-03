@@ -13,127 +13,179 @@
       "$ref": "common.schema.json#/$defs/identity"
     },
     "derivation": {
-      "type": "object",
-      "properties": {
-        "version": {
-          "const": 1
-        },
-        "definition": {
-          "$ref": "common.schema.json#/$defs/identity"
-        },
-        "sources": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "selection": {
-                "type": "object"
-              },
-              "tree_hash_version": {
-                "const": 1
-              },
-              "tree_sha256": {
-                "type": "string",
-                "pattern": "^[0-9a-f]{64}$"
-              },
-              "decoding": {
-                "anyOf": [
-                  {
-                    "type": "object",
-                    "properties": {
-                      "resolved_dataset_version": {
-                        "type": "string",
-                        "minLength": 1
-                      },
-                      "decoding_recipe": {
-                        "type": "object"
-                      },
-                      "decoded_values": {
-                        "enum": [
-                          "not_verified",
-                          "provider_verified"
-                        ]
-                      }
-                    },
-                    "required": [
-                      "resolved_dataset_version",
-                      "decoding_recipe",
-                      "decoded_values"
-                    ],
-                    "additionalProperties": false
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              }
-            },
-            "required": [
-              "selection",
-              "tree_hash_version",
-              "tree_sha256",
-              "decoding"
-            ],
-            "additionalProperties": false
-          }
-        },
-        "materializer": {
+      "oneOf": [
+        {
           "type": "object",
           "properties": {
-            "source_bundle": {
-              "anyOf": [
-                {
+            "version": {
+              "const": 1
+            },
+            "definition": {
+              "$ref": "common.schema.json#/$defs/identity"
+            },
+            "sources": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "selection": {
+                    "type": "object"
+                  },
+                  "tree_hash_version": {
+                    "const": 1
+                  },
+                  "tree_sha256": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  },
+                  "decoding": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "resolved_dataset_version": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "decoding_recipe": {
+                            "type": "object"
+                          },
+                          "decoded_values": {
+                            "enum": [
+                              "not_verified",
+                              "provider_verified"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "resolved_dataset_version",
+                          "decoding_recipe",
+                          "decoded_values"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "selection",
+                  "tree_hash_version",
+                  "tree_sha256",
+                  "decoding"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "materializer": {
+              "type": "object",
+              "properties": {
+                "source_bundle": {
+                  "anyOf": [
+                    {
+                      "$ref": "common.schema.json#/$defs/identity"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "environment": {
                   "$ref": "common.schema.json#/$defs/identity"
                 },
-                {
-                  "type": "null"
+                "launch": {
+                  "$ref": "common.schema.json#/$defs/identity"
                 }
-              ]
+              },
+              "required": [
+                "source_bundle",
+                "environment",
+                "launch"
+              ],
+              "additionalProperties": false
             },
-            "environment": {
-              "$ref": "common.schema.json#/$defs/identity"
+            "parameters": {
+              "type": "object"
             },
-            "launch": {
-              "$ref": "common.schema.json#/$defs/identity"
+            "seed": {
+              "type": "object",
+              "properties": {
+                "value": {
+                  "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
+                },
+                "derivation_digest": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                }
+              },
+              "required": [
+                "value",
+                "derivation_digest"
+              ],
+              "additionalProperties": false
             }
           },
           "required": [
-            "source_bundle",
-            "environment",
-            "launch"
+            "version",
+            "definition",
+            "sources",
+            "materializer",
+            "parameters",
+            "seed"
           ],
           "additionalProperties": false
         },
-        "parameters": {
-          "type": "object"
-        },
-        "seed": {
+        {
           "type": "object",
           "properties": {
-            "value": {
-              "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
+            "version": {
+              "const": 1
             },
-            "derivation_digest": {
-              "type": "string",
-              "pattern": "^[0-9a-f]{64}$"
+            "dataset": {
+              "$ref": "common.schema.json#/$defs/identity"
+            },
+            "problem": {
+              "$ref": "common.schema.json#/$defs/identity"
+            },
+            "preparer": {
+              "type": "object",
+              "properties": {
+                "source_bundle": {
+                  "anyOf": [
+                    {
+                      "$ref": "common.schema.json#/$defs/identity"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "environment": {
+                  "$ref": "common.schema.json#/$defs/identity"
+                },
+                "launch": {
+                  "$ref": "common.schema.json#/$defs/identity"
+                }
+              },
+              "required": [
+                "source_bundle",
+                "environment",
+                "launch"
+              ],
+              "additionalProperties": false
             }
           },
           "required": [
-            "value",
-            "derivation_digest"
+            "version",
+            "dataset",
+            "problem",
+            "preparer"
           ],
           "additionalProperties": false
         }
-      },
-      "required": [
-        "version",
-        "definition",
-        "sources",
-        "materializer",
-        "parameters",
-        "seed"
-      ],
-      "additionalProperties": false
+      ]
     },
     "output": {
       "type": "object",

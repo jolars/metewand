@@ -15,6 +15,76 @@ const WORKER_ID: &str =
     "mw1-resolved-worker-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
 #[test]
+fn shared_preparation_extends_version_one_with_negotiated_private_inputs() {
+    use crate::{
+        core::public_schemas::{PublicSchema, public_schema_catalog},
+        protocol::PrepareProblemRequest,
+    };
+    let preparation = PrepareProblemRequest::new(
+        "1".parse().unwrap(),
+        "/data".into(),
+        "contract".into(),
+        json!({"q":0.1}),
+        "/problem".into(),
+    );
+    assert_eq!(encode_message(&preparation).unwrap(), b"{\"dataset_dir\":\"/data\",\"id\":\"1\",\"method\":\"materialize\",\"output_dir\":\"/problem\",\"problem_contract_id\":\"contract\",\"problem_parameters\":{\"q\":0.1}}\n");
+    let schemas = public_schema_catalog().unwrap();
+    let value = serde_json::to_value(&preparation).unwrap();
+    schemas
+        .validate(
+            PublicSchema::WorkerProtocolMessage.repository_path(),
+            &value,
+        )
+        .unwrap();
+    assert_eq!(
+        decode_message::<PrepareProblemRequest>(value).unwrap(),
+        preparation
+    );
+    for role in [WorkerRole::Implementation, WorkerRole::ProblemEvaluator] {
+        let hello = HelloRequest::new("0".parse().unwrap(), role, WORKER_ID.parse().unwrap());
+        let response = HelloResponse::new(
+            "0".parse().unwrap(),
+            WORKER_ID.parse().unwrap(),
+            None,
+            [Capability::ProblemPreparation],
+        );
+        validate_hello_response(&hello, &response, &[Capability::ProblemPreparation]).unwrap();
+    }
+    let mut request = PrepareRequest::new(
+        "2".parse().unwrap(),
+        "/data",
+        "contract",
+        json!({}),
+        json!({}),
+        7,
+    );
+    assert!(
+        serde_json::to_value(&request)
+            .unwrap()
+            .get("problem_dir")
+            .is_none()
+    );
+    request.problem_dir = Some("/problem".into());
+    let value = serde_json::to_value(request).unwrap();
+    schemas
+        .validate(
+            PublicSchema::WorkerProtocolMessage.repository_path(),
+            &value,
+        )
+        .unwrap();
+    for invalid in [json!(null), json!(""), json!(7)] {
+        let mut bad = value.clone();
+        bad["problem_dir"] = invalid;
+        assert!(decode_message::<PrepareRequest>(bad.clone()).is_err());
+        assert!(
+            schemas
+                .validate(PublicSchema::WorkerProtocolMessage.repository_path(), &bad)
+                .is_err()
+        );
+    }
+}
+
+#[test]
 fn buffered_delivery_has_stable_frames_and_strict_envelopes() {
     let id: RequestId = "1".parse().unwrap();
     let request = ExecuteBufferedRequest::new(

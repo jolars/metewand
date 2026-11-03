@@ -71,7 +71,27 @@ pub(super) fn execute(
             );
         }
     };
+    let problem_view = match candidate
+        .preparation
+        .as_ref()
+        .map(|preparation| preparation.artifact.private_view(private_root))
+        .transpose()
+    {
+        Ok(view) => view,
+        Err(error) => {
+            worker.discard();
+            return failed_attempt(
+                measurement,
+                execution,
+                started_at,
+                "dataset_mutation",
+                error.to_string(),
+                &measurements,
+            );
+        }
+    };
     let request = || FixedDatasetRun {
+        problem_view: problem_view.as_ref(),
         observation_control: None,
         dataset_dir: view.directory(),
         problem_contract_id: &candidate.contract_id,

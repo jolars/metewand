@@ -19,10 +19,10 @@ use crate::core::canonical::{CanonicalJsonError, CanonicalValue, MAX_SAFE_INTEGE
 use crate::protocol::{
     Acknowledgement, Capability, CheckApplicabilityRequest, CheckApplicabilityResponse,
     EvaluateRequest, EvaluateResponse, EvaluationVerdict, ExecuteRequest, ExecuteResponse,
-    HelloRequest, HelloResponse, MaterializeRequest, MaterializeResponse, PrepareRequest,
-    RequestId, ResetRequest, SdkMetadata, ShutdownRequest, WireMessage, WorkerFailure,
-    WorkerFailureCode, WorkerFailureResponse, WorkerRole, decode_message, encode_message,
-    framing::FrameReader, negotiate_protocol,
+    HelloRequest, HelloResponse, MaterializeRequest, MaterializeResponse, PrepareProblemRequest,
+    PrepareRequest, RequestId, ResetRequest, SdkMetadata, ShutdownRequest, WireMessage,
+    WorkerFailure, WorkerFailureCode, WorkerFailureResponse, WorkerRole, decode_message,
+    encode_message, framing::FrameReader, negotiate_protocol,
 };
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -311,6 +311,35 @@ pub fn serve_dataset_materializer_on(
     )
 }
 
+/// Serves shared problem preparation through the standard artifact envelope.
+pub fn serve_problem_preparer(
+    worker: &mut impl FnMut(&PrepareProblemRequest) -> WorkerResult<String>,
+) -> Result<(), ServeError> {
+    let (reader, writer) = inherited_pipes()?;
+    serve_on(
+        WorkerRole::ProblemPreparer,
+        [],
+        reader,
+        writer,
+        |request, _, _| match request["method"].as_str().unwrap_or_default() {
+            "materialize" => {
+                let request: PrepareProblemRequest = decode(request)?;
+                let manifest = worker(&request)?;
+                completed_manifest(Path::new(&request.output_dir), &manifest)?;
+                response(&MaterializeResponse::new(request.id.clone(), manifest))
+            }
+            "shutdown" => {
+                let request: ShutdownRequest = decode(request)?;
+                response(&Acknowledgement::new(request.id().clone()))
+            }
+            _ => Err(failure(
+                WorkerFailureCode::UnsupportedOperation,
+                "This preparer does not accept the requested method.",
+            )),
+        },
+    )
+}
+
 /// Serves an implementation on explicit streams without taking their descriptors.
 ///
 /// # Errors
@@ -332,7 +361,7 @@ fn implementation_on(
     mut clock: impl FnMut() -> u128,
 ) -> Result<(), ServeError> {
     let mut prepared = false;
-    let mut capabilities = Vec::new();
+    let mut capabilities = vec![Capability::ProblemPreparation];
     if worker.supports_one_shot() {
         capabilities.push(Capability::OneShot);
     }
@@ -480,7 +509,7 @@ pub fn serve_evaluator_on(
 ) -> Result<(), ServeError> {
     serve_on(
         WorkerRole::ProblemEvaluator,
-        [Capability::ProblemSemantics],
+        [Capability::ProblemSemantics, Capability::ProblemPreparation],
         reader,
         writer,
         |request, _, _| match request["method"].as_str().unwrap_or_default() {

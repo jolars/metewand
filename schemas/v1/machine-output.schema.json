@@ -311,6 +311,7 @@
                 "enum": [
                   "implementation",
                   "problem_evaluator",
+                  "problem_preparer",
                   "dataset_materializer"
                 ]
               },
@@ -331,7 +332,7 @@
                     "fresh_sequence",
                     "buffered_profile",
                     "managed_outputs", "streaming_profile",
-                    "problem_semantics"
+                    "problem_semantics", "problem_preparation"
                   ]
                 }
               },
@@ -345,7 +346,7 @@
                     "fresh_sequence",
                     "buffered_profile",
                     "managed_outputs", "streaming_profile",
-                    "problem_semantics"
+                    "problem_semantics", "problem_preparation"
                   ]
                 }
               }

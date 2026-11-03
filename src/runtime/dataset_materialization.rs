@@ -3,7 +3,9 @@
 use crate::core::{
     canonical::{CanonicalJsonError, CanonicalValue},
     identity::{IdentityError, canonical_identity_bytes, identify_record, record_id},
-    materialization::{DatasetDerivationRecord, VerifiedSourceRecord, hex},
+    materialization::{
+        DatasetDerivationRecord, ProblemPreparationRecord, VerifiedSourceRecord, hex,
+    },
     measurements::Measurement,
     public_schemas::PublicSchemaCatalogError,
     records::{
@@ -64,11 +66,11 @@ pub struct DatasetMaterialization<'a> {
 
 /// A private dataset whose output hash is recorded separately from its recipe.
 #[derive(Debug)]
-pub struct MaterializedDataset {
+pub struct MaterializedDataset<D = DatasetDerivationRecord> {
     /// Complete generation or transformation request, excluding worker startup.
     pub materialization_time_ns: Measurement,
     directory: TempDir,
-    pub derivation: IdentifiedRecord<DatasetDerivationRecord>,
+    pub derivation: IdentifiedRecord<D>,
     pub output_digest: ContentDigest,
     pub manifest: ValidatedDataset,
     pub provenance: CanonicalValue,
@@ -76,7 +78,7 @@ pub struct MaterializedDataset {
     pub validator_output: Option<WorkerProcessOutput>,
 }
 
-impl MaterializedDataset {
+impl<D> MaterializedDataset<D> {
     #[must_use]
     pub fn directory(&self) -> &Path {
         self.directory.path()
@@ -92,6 +94,92 @@ impl MaterializedDataset {
     pub fn into_directory(self) -> TempDir {
         self.directory
     }
+}
+
+/// Resolved scientific inputs for one shared problem construction.
+pub struct ProblemPreparation<'a> {
+    pub derivation: IdentifiedRecord<ProblemPreparationRecord>,
+    pub dataset: &'a crate::runtime::artifact_store::StoredArtifact,
+    pub contract: String,
+    pub parameters: &'a CanonicalValue,
+    pub launch: &'a ResolvedLaunchRecord,
+    pub output_schema: &'a Path,
+    pub schemas: &'a SchemaCatalog,
+    pub private_root: &'a Path,
+    pub timeouts: PhaseTimeouts,
+}
+
+/// Constructs a shared artifact from a verified private dataset view.
+pub fn prepare_problem(
+    input: ProblemPreparation<'_>,
+) -> Result<MaterializedDataset<ProblemPreparationRecord>, MaterializationError> {
+    let view = input.dataset.private_view(input.private_root)?;
+    let directory = Builder::new()
+        .prefix("metewand-problem-")
+        .tempdir_in(input.private_root)?;
+    let identity = record_id(&input.derivation.record.preparer)?
+        .to_string()
+        .parse()
+        .expect("resolved worker identity");
+    let process = launch_trusted_local_worker(
+        input.launch,
+        input.private_root,
+        WorkerLogLimits::new(64 * 1024, 64 * 1024),
+    )?;
+    let mut session = WorkerSession::connect(
+        process,
+        WorkerRole::ProblemPreparer,
+        identity,
+        &[],
+        input.timeouts,
+    )?;
+    let sdk = session
+        .negotiated()
+        .sdk()
+        .map(|sdk| json!({"name": sdk.name(), "version": sdk.version()}));
+    let started = Instant::now();
+    let response = session.prepare_problem(
+        text(view.directory())?.to_owned(),
+        input.contract,
+        input.parameters.as_json().clone(),
+        text(directory.path())?.to_owned(),
+    )?;
+    let materialization_time_ns = Measurement::elapsed(started.elapsed(), true);
+    let materializer_output = session.shutdown()?;
+    view.verify()?;
+    let validator = WorkerOutputValidator::new(input.schemas)?;
+    let manifest = validator.validate_materialized_dataset(
+        directory.path(),
+        &response,
+        input.output_schema,
+    )?;
+    fs::write(
+        directory.path().join(manifest.manifest_path()),
+        manifest.manifest().to_canonical_bytes()?,
+    )?;
+    let output_digest = hash_local_tree(directory.path())?;
+    let provenance = CanonicalValue::try_from(json!({
+        "version": 1,
+        "materialization_time_ns": materialization_time_ns,
+        "derivation_id": input.derivation.id,
+        "derivation": serde_json::from_slice::<serde_json::Value>(&canonical_identity_bytes(&input.derivation.record)?).expect("canonical identity JSON"),
+        "output": {"tree_hash_version": LOCAL_TREE_HASH_VERSION, "sha256": hex(output_digest)},
+        "source": null,
+        "materializer_sdk": sdk,
+        "worker_environment": materializer_output.environment,
+        "validator_environment": null,
+        "binary_validation": null,
+    }))?;
+    Ok(MaterializedDataset {
+        materialization_time_ns,
+        directory,
+        derivation: input.derivation,
+        output_digest,
+        manifest,
+        provenance,
+        materializer_output,
+        validator_output: None,
+    })
 }
 
 /// Captures the source selection and semantic decoding evidence without host paths.
@@ -335,6 +423,8 @@ fn validate_binary(
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum MaterializationError {
+    #[error(transparent)]
+    Artifact(#[from] crate::runtime::artifact_store::ArtifactStoreError),
     #[error("dataset parameters must be a canonical object")]
     InvalidParameters,
     #[error("materialization requires absolute UTF-8 paths")]

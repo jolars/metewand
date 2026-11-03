@@ -119,6 +119,11 @@ def serve_dataset_materializer(materialize):
     return _serve("dataset_materializer", {"materialize": materialize})
 
 
+def serve_problem_preparer(materialize):
+    """Serve shared materialize(context) from a dataset and problem parameters."""
+    return _serve("problem_preparer", {"materialize": materialize})
+
+
 def serve_evaluator(evaluate):
     """Serve evaluate(context), returning an Evaluation."""
     return _serve("problem_evaluator", {"evaluate": evaluate})
@@ -126,4 +131,4 @@ def serve_evaluator(evaluate):
 
 __all__ = ["BINDING_API_VERSION", "Artifact", "Context", "Dataset", "Evaluation", "Result",
            "WorkerError", "read_json", "write_json", "serve_implementation",
-           "serve_dataset_materializer", "serve_evaluator"]
+           "serve_dataset_materializer", "serve_problem_preparer", "serve_evaluator"]

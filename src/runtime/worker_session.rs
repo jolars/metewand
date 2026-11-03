@@ -132,6 +132,7 @@ impl std::fmt::Display for WorkerPhase {
 /// One negotiated worker process that executes serial typed requests.
 #[derive(Debug)]
 pub struct WorkerSession {
+    problem_dir: Option<String>,
     stream: Option<streaming::StreamState>,
     redactor: Redactor,
     role: WorkerRole,
@@ -193,6 +194,7 @@ impl WorkerSession {
             }
         };
         let mut session = Self {
+            problem_dir: None,
             stream: None,
             redactor: process.redactor(),
             role,
@@ -225,6 +227,13 @@ impl WorkerSession {
         {
             selected_capabilities.push(Capability::ManagedOutputs);
         }
+        if response
+            .capabilities()
+            .contains(&Capability::ProblemPreparation)
+            && !selected_capabilities.contains(&Capability::ProblemPreparation)
+        {
+            selected_capabilities.push(Capability::ProblemPreparation);
+        }
         let negotiated = match validate_hello_response(&request, &response, &selected_capabilities)
         {
             Ok(negotiated) => negotiated,
@@ -235,6 +244,54 @@ impl WorkerSession {
         };
         session.negotiated = Some(negotiated);
         Ok(session)
+    }
+
+    /// Binds a private shared-input view only after the worker advertises support.
+    pub fn set_problem_directory(
+        &mut self,
+        directory: Option<String>,
+    ) -> Result<(), WorkerSessionError> {
+        if directory.is_some()
+            && !self
+                .negotiated()
+                .selected_capabilities()
+                .contains(&Capability::ProblemPreparation)
+        {
+            return Err(WorkerSessionError::CapabilityNotSelected {
+                phase: if self.role == WorkerRole::ProblemEvaluator {
+                    WorkerPhase::Evaluate
+                } else {
+                    WorkerPhase::Prepare
+                },
+                capability: Capability::ProblemPreparation,
+            });
+        }
+        self.problem_dir = directory;
+        Ok(())
+    }
+
+    /// Constructs shared problem inputs outside all implementation timing scopes.
+    pub fn prepare_problem(
+        &mut self,
+        dataset_dir: impl Into<String>,
+        problem_contract_id: String,
+        problem_parameters: Value,
+        output_dir: impl Into<String>,
+    ) -> Result<MaterializeResponse, WorkerSessionError> {
+        self.require_role(WorkerPhase::Materialize, WorkerRole::ProblemPreparer)?;
+        let id = self.begin_request(WorkerPhase::Materialize)?;
+        let request = crate::protocol::PrepareProblemRequest::new(
+            id,
+            dataset_dir.into(),
+            problem_contract_id,
+            problem_parameters,
+            output_dir.into(),
+        );
+        self.exchange(
+            WorkerPhase::Materialize,
+            &request,
+            self.timeouts.materialize,
+        )
     }
 
     /// Sets the absolute deadline shared by exchanges inside a scientific scope.
@@ -339,7 +396,7 @@ impl WorkerSession {
             });
         }
         let id = self.begin_request(phase)?;
-        let request = CheckApplicabilityRequest::new(
+        let mut request = CheckApplicabilityRequest::new(
             id,
             dataset_dir,
             dataset_manifest,
@@ -347,6 +404,7 @@ impl WorkerSession {
             problem_parameters,
             implementation_parameters,
         );
+        request.problem_dir = self.problem_dir.clone();
         let response = self.exchange(phase, &request, self.timeouts.prepare)?;
         Ok((request, response))
     }
@@ -367,7 +425,7 @@ impl WorkerSession {
     ) -> Result<Acknowledgement, WorkerSessionError> {
         self.require_role(WorkerPhase::Prepare, WorkerRole::Implementation)?;
         let id = self.begin_request(WorkerPhase::Prepare)?;
-        let request = PrepareRequest::new(
+        let mut request = PrepareRequest::new(
             id,
             dataset_dir,
             problem_contract_id,
@@ -375,6 +433,7 @@ impl WorkerSession {
             implementation_parameters,
             implementation_seed,
         );
+        request.problem_dir = self.problem_dir.clone();
         let timeout = self.timeouts.prepare;
         self.exchange(WorkerPhase::Prepare, &request, timeout)
     }
@@ -515,6 +574,7 @@ impl WorkerSession {
             result_dir,
             metrics_path,
         );
+        request.problem_dir = self.problem_dir.clone();
         if self
             .negotiated()
             .selected_capabilities()

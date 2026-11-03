@@ -167,6 +167,14 @@ pub fn check_repository_workers(
         ));
     }
     for (name, problem) in &repository.manifest.problems {
+        if let Some(preparation) = &problem.preparation {
+            resolved.push((
+                name.to_string(),
+                WorkerRole::ProblemPreparer,
+                vec![],
+                resolve_worker(repository, &preparation.worker, private.path())?,
+            ));
+        }
         resolved.push((
             name.to_string(),
             WorkerRole::ProblemEvaluator,
@@ -197,9 +205,11 @@ pub fn check_repository_workers(
             let parameters = definition
                 .resolved_parameter_defaults(contract)
                 .map_or_else(|| json!({}), |value| value.as_json().clone());
-            repository
-                .schemas
-                .validate(contract.parameter_schema.as_path(), &parameters)?;
+            if !contract.reference_cases.is_empty() {
+                repository
+                    .schemas
+                    .validate(contract.parameter_schema.as_path(), &parameters)?;
+            }
             for (case_index, case) in contract.reference_cases.iter().enumerate() {
                 let staged = TempDir::new_in(private.path())?;
                 let dataset = staged.path().join("dataset");
@@ -232,6 +242,38 @@ pub fn check_repository_workers(
                             "problem `{name}` reference case {case_index}: dataset matches no accepted schema"
                         )));
                     }
+                }
+                if let Some(preparation) = &definition.preparation {
+                    let worker = resolve_worker(repository, &preparation.worker, private.path())?;
+                    let mut preparer = connect(
+                        &worker,
+                        private.path(),
+                        WorkerRole::ProblemPreparer,
+                        &[],
+                        timeouts,
+                    )?;
+                    let directory = staged.path().join("problem");
+                    fs::create_dir(&directory)?;
+                    let before = hash_local_tree(&dataset).map_err(RunError::from)?;
+                    let response = preparer.prepare_problem(
+                        text(&dataset)?,
+                        repository.resources.problem_contracts[name.as_str()].to_string(),
+                        parameters.clone(),
+                        text(&directory)?,
+                    )?;
+                    preparer.shutdown()?;
+                    worker.verify()?;
+                    if hash_local_tree(&dataset).map_err(RunError::from)? != before {
+                        return Err(WorkerCheckError::Conformance(format!(
+                            "problem `{name}` reference case {case_index}: preparation mutated its dataset"
+                        )));
+                    }
+                    validator.validate_materialized_dataset(
+                        &directory,
+                        &response,
+                        preparation.output_schema.as_path(),
+                    )?;
+                    session.set_problem_directory(Some(text(&directory)?.to_owned()))?;
                 }
                 let result = staged.path().join("result");
                 fs::create_dir(&result)?;

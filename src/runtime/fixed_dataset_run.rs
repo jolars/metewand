@@ -115,6 +115,8 @@ pub(crate) enum ProfileEvent<'a> {
 /// does not materialize it or create a private dataset view.
 #[derive(Debug)]
 pub struct FixedDatasetRun<'a> {
+    /// Verified shared problem inputs, separate from the raw dataset view.
+    pub problem_view: Option<&'a DatasetView>,
     /// Selected canonical control, absent for one-shot execution.
     pub observation_control: Option<&'a Value>,
     /// Directory containing the fixed local dataset consumed by both workers.
@@ -386,6 +388,7 @@ fn run_checked(
             .map_err(|source| FixedDatasetRunError::DatasetTreeHash { source })?,
     };
     let integrity = DatasetIntegrity {
+        problem_view: request.problem_view,
         directory: request.dataset_dir,
         digest,
         view,
@@ -478,6 +481,8 @@ fn run_workers(
             .as_mut()
             .expect("a fresh execution owns its session"),
     };
+    bind_problem_directory(implementation, &request)
+        .map_err(|source| FixedDatasetRunError::Implementation { source })?;
 
     if let Some(observer) = observer.as_mut() {
         observer(crate::runtime::run_store::AttemptPhase::Preparing)?;
@@ -562,8 +567,10 @@ fn run_workers(
             .map_err(|source| FixedDatasetRunError::Evaluator { source })
         })
     })?;
+    bind_problem_directory(&mut evaluator, &request)
+        .map_err(|source| FixedDatasetRunError::Evaluator { source })?;
 
-    let execution_provenance = serde_json::json!({
+    let mut execution_provenance = serde_json::json!({
         "environment_class": "development",
         "executor": "trusted_local",
         "architecture": std::env::consts::ARCH,
@@ -593,6 +600,7 @@ fn run_workers(
         "metric_schema": request.metric_schema,
         "controls": crate::core::controls::default_local_control_report(),
     });
+    record_problem_directory(&mut execution_provenance, request.problem_view);
 
     if let Some(observer) = observer.as_mut() {
         observer(crate::runtime::run_store::AttemptPhase::Validating)?;
@@ -701,6 +709,7 @@ fn excluded_phases(scope: TimingScope) -> Vec<&'static str> {
 }
 
 struct DatasetIntegrity<'a> {
+    problem_view: Option<&'a DatasetView>,
     directory: &'a Path,
     digest: ContentDigest,
     view: Option<&'a DatasetView>,
@@ -708,6 +717,13 @@ struct DatasetIntegrity<'a> {
 
 impl DatasetIntegrity<'_> {
     fn verify(&self, operation: &'static str) -> Result<(), FixedDatasetRunError> {
+        if let Some(view) = self.problem_view {
+            view.verify()
+                .map_err(|error| FixedDatasetRunError::DatasetMutation {
+                    operation,
+                    message: format!("shared problem inputs: {error}"),
+                })?;
+        }
         match self.view {
             Some(view) => view.verify(),
             None => verify_dataset_tree(self.directory, self.digest),
@@ -728,6 +744,24 @@ impl DatasetIntegrity<'_> {
         // A mutation invalidates the attempt even when the worker also fails.
         self.verify(operation)?;
         result
+    }
+}
+
+fn bind_problem_directory(
+    session: &mut WorkerSession,
+    request: &FixedDatasetRun<'_>,
+) -> Result<(), WorkerSessionError> {
+    session.set_problem_directory(
+        request
+            .problem_view
+            .map(|view| view.directory().to_string_lossy().into_owned()),
+    )
+}
+
+fn record_problem_directory(provenance: &mut Value, view: Option<&DatasetView>) {
+    if let Some(view) = view {
+        provenance["problem_directory"] = serde_json::json!(view.directory());
+        provenance["problem_tree_sha256"] = serde_json::json!(hex_digest(view.digest()));
     }
 }
 

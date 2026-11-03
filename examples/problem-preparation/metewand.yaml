@@ -1,0 +1,33 @@
+version: 1
+name: shared-problem-preparation
+datasets:
+  numbers:
+    function: functions.py:generate
+    parameters:
+      size: {type: integer, default: 5}
+problems:
+  path:
+    parameters:
+      path_length: {type: integer, grid: [2, 4]}
+      q: {type: number, default: 0.5}
+      fit_intercept: {type: boolean, default: true}
+    preparation:
+      function: preparation.py:prepare_path
+    result:
+      total: {type: number}
+    metrics:
+      error: {type: number}
+    evaluator:
+      function: functions.py:evaluate
+implementations:
+  builtin:
+    function: functions.py:solve
+  loop:
+    function: functions.py:solve_loop
+experiments:
+  - name: shared
+    problem: path
+    datasets: [numbers]
+    implementations: [builtin, loop]
+    measurement-repetitions: 2
+    seed: 17

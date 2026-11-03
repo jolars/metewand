@@ -218,6 +218,21 @@
         {"$ref": "#/$defs/function_dataset"}
       ]
     },
+    "preparation": {
+      "type": "object",
+      "properties": {
+        "output-schema": { "$ref": "common.schema.json#/$defs/schema_declaration" }
+      },
+      "anyOf": [
+        { "$ref": "#/$defs/interpreted_launch" },
+        { "$ref": "#/$defs/command_launch" },
+        { "$ref": "#/$defs/function_launch" }
+      ],
+      "if": { "required": ["function"] },
+      "then": {},
+      "else": { "required": ["output-schema"] },
+      "unevaluatedProperties": false
+    },
     "problem": {
       "oneOf": [
         { "$ref": "#/$defs/wrapped_problem" },
@@ -244,6 +259,7 @@
             }],
           "properties": {
             "evaluator": { "$ref": "#/$defs/worker" },
+            "preparation": { "$ref": "#/$defs/preparation" },
             "parameter-defaults": { "type": "object" }
           },
           "required": ["evaluator"],
@@ -262,7 +278,8 @@
           ]
         },
         "parameter-defaults": { "type": "object" },
-        "evaluator": { "$ref": "#/$defs/worker" }
+        "evaluator": { "$ref": "#/$defs/worker" },
+        "preparation": { "$ref": "#/$defs/preparation" }
       },
       "required": ["contract", "evaluator"],
       "not": {

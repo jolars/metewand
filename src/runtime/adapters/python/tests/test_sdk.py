@@ -161,6 +161,31 @@ class ArtifactTests(unittest.TestCase):
 
 
 class WorkerTests(unittest.TestCase):
+    def test_problem_preparer_receives_problem_parameters_and_manages_binary_outputs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+
+            def materialize(context):
+                self.assertEqual(context.dataset_dir, root)
+                self.assertEqual(context.parameters, {"path_length": 4})
+                self.assertEqual(context.problem_parameters, context.parameters)
+                self.assertIsNone(context.seed)
+                self.assertFalse(hasattr(context, "implementation_parameters"))
+                (context.output_dir / "grid.bin").write_bytes(b"grid")
+                return Dataset(files=[Artifact("grid.bin", "application/octet-stream")])
+
+            replies = exchange(
+                {"materialize": materialize}, "problem_preparer",
+                [hello("problem_preparer"), request("materialize", dataset_dir=directory,
+                    problem_contract_id="contract", problem_parameters={"path_length": 4},
+                    output_dir=directory), request("shutdown")],
+            )
+            self.assertTrue(replies[1]["ok"])
+            draft = read_json(root / replies[1]["draft"])
+            self.assertEqual(draft["kind"], "dataset")
+            self.assertIsNone(draft["data"])
+            self.assertEqual(draft["files"][0]["path"], "grid.bin")
+
     def test_lifecycle_contexts_state_cleanup_and_solve_timing(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -251,7 +276,7 @@ class WorkerTests(unittest.TestCase):
                     "protocol": 1,
                     "worker_id": WORKER_ID,
                     "sdk": METADATA,
-                    "capabilities": ["managed_outputs", "one_shot", "fresh_sequence"],
+                    "capabilities": ["managed_outputs", "problem_preparation", "one_shot", "fresh_sequence"],
                 },
             )
             self.assertEqual(replies[2]["implementation_time_ns"], 25)
@@ -378,7 +403,7 @@ class WorkerTests(unittest.TestCase):
                 [hello("problem_evaluator"), call, request("shutdown")],
             )
             self.assertEqual(
-                replies[0]["capabilities"], ["managed_outputs", "problem_semantics"]
+                replies[0]["capabilities"], ["managed_outputs", "problem_preparation", "problem_semantics"]
             )
             self.assertEqual(replies[1]["verdict"], "reached")
             self.assertEqual(

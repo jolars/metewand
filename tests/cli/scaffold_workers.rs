@@ -109,6 +109,9 @@ fn generated_adapters_negotiate_and_report_unfinished_science() {
                             "-m",
                             "metewand",
                             match role {
+                                WorkerRole::ProblemPreparer => {
+                                    unreachable!("this test exercises scaffolded roles")
+                                }
                                 WorkerRole::DatasetMaterializer => "dataset_materializer",
                                 WorkerRole::Implementation => "implementation",
                                 WorkerRole::ProblemEvaluator => "problem_evaluator",
@@ -116,6 +119,9 @@ fn generated_adapters_negotiate_and_report_unfinished_science() {
                         ])
                         .arg(&source)
                         .arg(match role {
+                            WorkerRole::ProblemPreparer => {
+                                unreachable!("this test exercises scaffolded roles")
+                            }
                             WorkerRole::DatasetMaterializer => "generate",
                             WorkerRole::Implementation => "solve",
                             WorkerRole::ProblemEvaluator => "evaluate",
@@ -132,6 +138,9 @@ fn generated_adapters_negotiate_and_report_unfinished_science() {
                             "-e",
                             "metewand::serve_function()",
                             match role {
+                                WorkerRole::ProblemPreparer => {
+                                    unreachable!("this test exercises scaffolded roles")
+                                }
                                 WorkerRole::DatasetMaterializer => "dataset_materializer",
                                 WorkerRole::Implementation => "implementation",
                                 WorkerRole::ProblemEvaluator => "problem_evaluator",
@@ -139,6 +148,9 @@ fn generated_adapters_negotiate_and_report_unfinished_science() {
                         ])
                         .arg(&source)
                         .arg(match role {
+                            WorkerRole::ProblemPreparer => {
+                                unreachable!("this test exercises scaffolded roles")
+                            }
                             WorkerRole::DatasetMaterializer => "generate",
                             WorkerRole::Implementation => "solve",
                             WorkerRole::ProblemEvaluator => "evaluate",
@@ -171,6 +183,7 @@ fn generated_adapters_negotiate_and_report_unfinished_science() {
                 PosixWorkerProcess::spawn(command, WorkerLogLimits::new(4096, 4096)).unwrap();
             let limit = Duration::from_secs(10);
             let required = match role {
+                WorkerRole::ProblemPreparer => unreachable!("this test exercises scaffolded roles"),
                 WorkerRole::Implementation => &[Capability::OneShot][..],
                 WorkerRole::ProblemEvaluator => &[Capability::ProblemSemantics][..],
                 WorkerRole::DatasetMaterializer => &[],
@@ -198,6 +211,7 @@ fn generated_adapters_negotiate_and_report_unfinished_science() {
             );
             let directory = benchmark.path().to_str().unwrap();
             let error = match role {
+                WorkerRole::ProblemPreparer => unreachable!("this test exercises scaffolded roles"),
                 WorkerRole::DatasetMaterializer => session
                     .materialize(directory, json!({}), 7, directory)
                     .unwrap_err(),

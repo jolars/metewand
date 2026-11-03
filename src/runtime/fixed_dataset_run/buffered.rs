@@ -16,6 +16,7 @@ pub(crate) fn run_buffered(
 ) -> Result<(), FixedDatasetRunError> {
     let mut timing = TimingEnvelope::new(request.timing)?;
     let integrity = DatasetIntegrity {
+        problem_view: request.problem_view,
         directory: request.dataset_dir,
         digest: view.digest(),
         view: Some(view),
@@ -94,6 +95,8 @@ fn run_workers(
             .as_mut()
             .expect("a fresh execution owns its session"),
     };
+    bind_problem_directory(implementation, &request)
+        .map_err(|source| FixedDatasetRunError::Implementation { source })?;
 
     event(ProfileEvent::Phase(
         crate::runtime::run_store::AttemptPhase::Preparing,
@@ -222,8 +225,10 @@ fn run_workers(
             .map_err(|source| FixedDatasetRunError::Evaluator { source })
         })
     })?;
+    bind_problem_directory(&mut evaluator, &request)
+        .map_err(|source| FixedDatasetRunError::Evaluator { source })?;
 
-    let base_provenance = serde_json::json!({
+    let mut base_provenance = serde_json::json!({
         "environment_class": "development",
         "executor": "trusted_local",
         "architecture": std::env::consts::ARCH,
@@ -253,6 +258,7 @@ fn run_workers(
         "metric_schema": request.metric_schema,
         "controls": crate::core::controls::default_local_control_report(),
     });
+    record_problem_directory(&mut base_provenance, request.problem_view);
 
     event(ProfileEvent::Phase(
         crate::runtime::run_store::AttemptPhase::Evaluating,

@@ -77,6 +77,7 @@ pub(super) struct ResolvedCandidate {
     pub logical_selection_ids: Vec<String>,
     pub applicability: IdentifiedRecord<crate::core::applicability::ApplicabilityDecisionRecord>,
     pub dataset: Arc<DatasetSnapshot>,
+    pub preparation: Option<Arc<DatasetSnapshot>>,
     pub implementation: ResolvedWorker,
     pub evaluator: ResolvedWorker,
     pub measurements: Vec<ResolvedMeasurement>,
@@ -220,6 +221,9 @@ impl ResolvedCandidate {
 
     pub fn verify(&self) -> Result<(), RunError> {
         self.dataset.verify()?;
+        if let Some(preparation) = &self.preparation {
+            preparation.verify()?;
+        }
         self.implementation.verify()?;
         self.evaluator.verify()
     }
@@ -343,10 +347,30 @@ pub(super) fn resolve(
                 locked,
             )?;
             let dataset = prepare_dataset(repository, candidate, private_root.path(), locked)?;
+            let preparation = repository.manifest.problems[problem_name]
+                .preparation
+                .as_ref()
+                .map(|definition| {
+                    Ok::<_, RunError>((
+                        definition,
+                        resolve_worker_with_lock(
+                            repository,
+                            &definition.worker,
+                            private_root.path(),
+                            locked,
+                        )?,
+                    ))
+                })
+                .transpose()?;
             for sources in implementation
                 .sources
                 .iter()
                 .chain(evaluator.sources.iter())
+                .chain(
+                    preparation
+                        .iter()
+                        .flat_map(|(_, worker)| worker.sources.iter()),
+                )
             {
                 validate_snapshot_destination(sources, output)?;
             }
@@ -359,7 +383,14 @@ pub(super) fn resolve(
                 }
             }
 
-            prepared.push((candidate, experiment, implementation, evaluator, dataset));
+            prepared.push((
+                candidate,
+                experiment,
+                implementation,
+                evaluator,
+                dataset,
+                preparation,
+            ));
         }
     }
     let temporary_cache = private_root.path().join("artifacts");
@@ -369,11 +400,16 @@ pub(super) fn resolve(
             "artifact cache and run output must be separate directories",
         ));
     }
-    for (_, _, implementation, evaluator, dataset) in &prepared {
+    for (_, _, implementation, evaluator, dataset, preparation) in &prepared {
         for snapshot in implementation
             .sources
             .iter()
             .chain(evaluator.sources.iter())
+            .chain(
+                preparation
+                    .iter()
+                    .flat_map(|(_, worker)| worker.sources.iter()),
+            )
         {
             validate_snapshot_destination(snapshot, cache_directory)?;
         }
@@ -390,8 +426,9 @@ pub(super) fn resolve(
     }
     let store = ArtifactStore::open(cache_directory)?;
     let mut datasets = BTreeMap::new();
+    let mut preparations = BTreeMap::new();
     let mut candidates = Vec::new();
-    for (candidate, experiment, implementation, evaluator, dataset_plan) in prepared {
+    for (candidate, experiment, implementation, evaluator, dataset_plan, preparation) in prepared {
         let key = candidate.dataset_configuration.id;
         if let std::collections::btree_map::Entry::Vacant(entry) = datasets.entry(key) {
             let (snapshot, output_schema, provenance) = match dataset_plan {
@@ -497,6 +534,23 @@ pub(super) fn resolve(
                 provenance,
             });
         }
+        let preparation_key = (key, candidate.problem_configuration.id);
+        if let Some((definition, worker)) = preparation
+            && let std::collections::btree_map::Entry::Vacant(entry) =
+                preparations.entry(preparation_key)
+        {
+            let dataset = &datasets[&key];
+            entry.insert(resolve_preparation(
+                repository,
+                candidate,
+                dataset,
+                definition,
+                &worker,
+                &store,
+                private_root.path(),
+                timeouts,
+            )?);
+        }
         candidates.push(resolve_candidate(
             repository,
             candidate,
@@ -505,6 +559,7 @@ pub(super) fn resolve(
             implementation,
             evaluator,
             &datasets[&key],
+            preparations.get(&preparation_key),
         )?);
     }
     let runner = crate::runtime::build_evidence::executable_evidence(&env::current_exe()?)?;
@@ -683,6 +738,104 @@ struct ResolvedDataset {
     provenance: Option<CanonicalValue>,
 }
 
+struct ResolvedPreparation {
+    snapshot: Arc<DatasetSnapshot>,
+    provenance: CanonicalValue,
+}
+
+fn artifact_id(artifact: &StoredArtifact) -> Result<RecordId<DatasetArtifact>, RunError> {
+    Ok(identify_canonical(&canonical(json!({
+        "tree_hash_version": LOCAL_TREE_HASH_VERSION,
+        "tree_sha256": hex(artifact.digest().bytes()),
+    }))?)?)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn resolve_preparation(
+    repository: &CheckedRepository,
+    candidate: &LogicalCandidatePlan,
+    dataset: &ResolvedDataset,
+    definition: &crate::core::manifest::ProblemPreparationDefinition,
+    worker: &ResolvedWorker,
+    store: &ArtifactStore,
+    private_root: &Path,
+    timeouts: PhaseTimeouts,
+) -> Result<ResolvedPreparation, RunError> {
+    use crate::core::materialization::ProblemPreparationRecord;
+    use crate::runtime::dataset_materialization::{ProblemPreparation, prepare_problem};
+    let dataset_instance = identify_record(DatasetInstanceRecord {
+        configuration: candidate.dataset_configuration.id,
+        artifact: artifact_id(&dataset.snapshot.artifact)?,
+        output_schema: dataset.output_schema,
+    })?;
+    let derivation = identify_record(ProblemPreparationRecord {
+        dataset: dataset_instance.id,
+        problem: candidate.problem_configuration.id,
+        preparer: worker.record.clone(),
+    })?;
+    let problem = repository
+        .planning_catalog
+        .problem_definitions
+        .iter()
+        .find(|(_, id)| **id == candidate.problem_configuration.record.definition)
+        .expect("checked problem")
+        .0;
+    worker.verify()?;
+    dataset.snapshot.verify()?;
+    let (artifact, provenance, materialization_time_ns, manifest) =
+        if let Some(cached) = store.lookup_dataset(&derivation)? {
+            WorkerOutputValidator::new(&repository.schemas)?.validate_materialized_dataset(
+                cached.artifact.directory(),
+                &MaterializeResponse::new(
+                    "cache".parse().expect("static request ID"),
+                    cached.manifest.as_str(),
+                ),
+                definition.output_schema.as_path(),
+            )?;
+            (
+                cached.artifact,
+                cached.provenance,
+                Measurement::unavailable(MissingReason::CacheHit),
+                cached.manifest.as_str().to_owned(),
+            )
+        } else {
+            let materialized = prepare_problem(ProblemPreparation {
+                derivation,
+                dataset: &dataset.snapshot.artifact,
+                contract: repository.resources.problem_contracts[problem].to_string(),
+                parameters: &candidate.problem_configuration.record.parameters,
+                launch: &worker.launch,
+                output_schema: definition.output_schema.as_path(),
+                schemas: &repository.schemas,
+                private_root,
+                timeouts,
+            })?;
+            let artifact = store.publish_dataset(&materialized)?;
+            (
+                artifact,
+                materialized.provenance,
+                materialized.materialization_time_ns,
+                materialized
+                    .manifest
+                    .manifest_path()
+                    .to_string_lossy()
+                    .into_owned(),
+            )
+        };
+    worker.verify()?;
+    dataset.snapshot.verify()?;
+    Ok(ResolvedPreparation {
+        snapshot: Arc::new(DatasetSnapshot {
+            manifest: Some(manifest),
+            materialization_time_ns,
+            artifact,
+            original: None,
+        }),
+        provenance,
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
 fn resolve_candidate(
     repository: &CheckedRepository,
     candidate: &LogicalCandidatePlan,
@@ -691,6 +844,7 @@ fn resolve_candidate(
     implementation: ResolvedWorker,
     evaluator: ResolvedWorker,
     dataset: &ResolvedDataset,
+    preparation: Option<&ResolvedPreparation>,
 ) -> Result<ResolvedCandidate, RunError> {
     let policy = experiment.execution_policy.record.clone();
     let timing = ExecutionTimingPolicy {
@@ -703,15 +857,15 @@ fn resolve_candidate(
     let catalog = &repository.planning_catalog;
     let dataset_instance = identify_record(DatasetInstanceRecord {
         configuration: candidate.dataset_configuration.id,
-        artifact: identify_canonical::<DatasetArtifact>(&canonical(json!({
-            "tree_hash_version": LOCAL_TREE_HASH_VERSION,
-            "tree_sha256": hex(dataset.artifact.digest().bytes()),
-        }))?)?,
+        artifact: artifact_id(&dataset.artifact)?,
         output_schema,
     })?;
     let problem_instance = identify_record(ProblemInstanceRecord {
         dataset: dataset_instance.id,
         configuration: candidate.problem_configuration.id,
+        preparation: preparation
+            .map(|p| artifact_id(&p.snapshot.artifact))
+            .transpose()?,
     })?;
     let problem_name = catalog
         .problem_definitions
@@ -797,6 +951,7 @@ fn resolve_candidate(
         repository.resources.problem_contracts[problem_name].to_string(),
         &policy,
         repository.manifest.worker_timeouts.into(),
+        preparation,
     )?;
     let mut measurements = Vec::new();
     for specification in candidate.specifications.iter().filter(|_| {
@@ -930,6 +1085,13 @@ fn resolve_candidate(
                 "cpu_model": null, "selected_cores": null, "memory": null, "kernel": null,
                 "language_runtime": null, "blas": null, "thread_settings": null,
             }))?;
+            if let Some(preparation) = preparation {
+                let mut value = provenance.as_json().clone();
+                value["problem_preparation"] = preparation.provenance.as_json().clone();
+                value["problem_preparation_time_ns"] =
+                    json!(preparation.snapshot.materialization_time_ns);
+                provenance = canonical(value)?;
+            }
             if let Some(streaming) = &streaming_profile {
                 let mut value = provenance.as_json().clone();
                 value["streaming_profile"] =
@@ -1028,6 +1190,7 @@ fn resolve_candidate(
             .collect(),
         reuse_key,
         dataset,
+        preparation: preparation.map(|p| Arc::clone(&p.snapshot)),
         implementation,
         evaluator,
         measurements,
@@ -1052,6 +1215,7 @@ fn resolve_candidate(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 fn resolve_applicability(
     candidate: &LogicalCandidatePlan,
     implementation: &ResolvedWorker,
@@ -1060,6 +1224,7 @@ fn resolve_applicability(
     contract_id: String,
     policy: &crate::core::records::ExecutionPolicyRecord,
     timeouts: PhaseTimeouts,
+    preparation: Option<&ResolvedPreparation>,
 ) -> Result<IdentifiedRecord<crate::core::applicability::ApplicabilityDecisionRecord>, RunError> {
     use crate::core::{
         applicability::{ApplicabilityDecisionRecord, ApplicabilityOutcome},
@@ -1082,6 +1247,9 @@ fn resolve_applicability(
     }
     let private = Builder::new().prefix("metewand-applicability-").tempdir()?;
     let view = dataset.artifact.private_view(private.path())?;
+    let problem_view = preparation
+        .map(|p| p.snapshot.artifact.private_view(private.path()))
+        .transpose()?;
     let manifest_path = if let Some(path) = &dataset.manifest {
         view.directory().join(path)
     } else {
@@ -1105,14 +1273,18 @@ fn resolve_applicability(
         .parameters
         .as_json()
         .clone();
-    let checked_inputs = canonical(json!({
+    let mut checked_inputs = json!({
         "dataset_instance": dataset_instance,
         "dataset_manifest": manifest.as_json(),
         "dataset_manifest_path": dataset.manifest,
         "problem_contract_id": contract_id,
         "problem_parameters": problem_parameters,
         "implementation_parameters": implementation_parameters,
-    }))?;
+    });
+    if let Some(preparation) = preparation {
+        checked_inputs["problem_preparation"] = json!(artifact_id(&preparation.snapshot.artifact)?);
+    }
+    let checked_inputs = canonical(checked_inputs)?;
     implementation.verify()?;
     dataset.verify()?;
     let checked = (|| {
@@ -1127,6 +1299,12 @@ fn resolve_applicability(
             implementation.identity.clone(),
             &[crate::protocol::Capability::Applicability],
             timeouts,
+        )?;
+        session.set_problem_directory(
+            problem_view
+                .as_ref()
+                .map(|view| text_path(view.directory()))
+                .transpose()?,
         )?;
         let environment = session.environment().map(|environment| {
             let directory = environment.working_directory.to_string_lossy();
@@ -1165,6 +1343,9 @@ fn resolve_applicability(
     })();
     // Verify after every exit path, including handshake and callback failures.
     view.verify()?;
+    if let Some(view) = &problem_view {
+        view.verify()?;
+    }
     dataset.verify()?;
     implementation.verify()?;
     if CanonicalValue::from_slice(&fs::read(&manifest_path)?)? != manifest {

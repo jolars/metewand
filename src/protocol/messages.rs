@@ -8,7 +8,9 @@ use thiserror::Error;
 
 use crate::protocol::{WIRE_PROTOCOL_VERSION, framing::MAX_LINE_BYTES};
 
+mod preparation;
 mod streaming;
+pub use preparation::PrepareProblemRequest;
 pub use streaming::{
     ExecuteStreamRequest, ExecuteStreamResponse, StreamAction, StreamCheckpoint, StreamDecision,
 };
@@ -114,6 +116,8 @@ impl<'de> Deserialize<'de> for WorkerIdentity {
 pub enum WorkerRole {
     /// A worker that produces a dataset artifact.
     DatasetMaterializer,
+    /// A worker that constructs shared problem-dependent input artifacts.
+    ProblemPreparer,
     /// A worker that executes a benchmark implementation.
     Implementation,
     /// A problem-owned worker that evaluates canonical results.
@@ -124,6 +128,8 @@ pub enum WorkerRole {
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Capability {
+    /// Receives verified shared inputs through `problem_dir`.
+    ProblemPreparation,
     /// Produces one final result per execution.
     OneShot,
     /// Can report whether a configuration is applicable before execution.
@@ -517,6 +523,12 @@ enum MaterializeMethod {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct CheckApplicabilityRequest {
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_problem_dir"
+    )]
+    pub problem_dir: Option<String>,
     /// Identifier echoed by the response.
     pub id: RequestId,
     method: CheckApplicabilityMethod,
@@ -541,6 +553,11 @@ impl private::Sealed for CheckApplicabilityRequest {}
 impl WireMessage for CheckApplicabilityRequest {}
 
 impl CheckApplicabilityRequest {
+    /// Returns the shared problem input directory when preparation is selected.
+    pub fn problem_dir(&self) -> Option<&str> {
+        self.problem_dir.as_deref()
+    }
+
     /// Creates a check outside measured preparation and execution.
     #[must_use]
     pub fn new(
@@ -552,6 +569,7 @@ impl CheckApplicabilityRequest {
         implementation_parameters: Value,
     ) -> Self {
         Self {
+            problem_dir: None,
             id,
             method: CheckApplicabilityMethod::CheckApplicability,
             dataset_dir,
@@ -635,6 +653,12 @@ impl CheckApplicabilityResponse {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct PrepareRequest {
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_problem_dir"
+    )]
+    pub problem_dir: Option<String>,
     id: RequestId,
     method: PrepareMethod,
     #[serde(deserialize_with = "deserialize_nonempty_string")]
@@ -654,6 +678,11 @@ impl private::Sealed for PrepareRequest {}
 impl WireMessage for PrepareRequest {}
 
 impl PrepareRequest {
+    /// Returns the shared problem input directory when preparation is selected.
+    pub fn problem_dir(&self) -> Option<&str> {
+        self.problem_dir.as_deref()
+    }
+
     /// Creates one implementation preparation request.
     #[must_use]
     pub fn new(
@@ -665,6 +694,7 @@ impl PrepareRequest {
         implementation_seed: u64,
     ) -> Self {
         Self {
+            problem_dir: None,
             id,
             method: PrepareMethod::Prepare,
             dataset_dir: dataset_dir.into(),
@@ -881,6 +911,12 @@ enum ResetMethod {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct EvaluateRequest {
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_problem_dir"
+    )]
+    pub problem_dir: Option<String>,
     id: RequestId,
     method: EvaluateMethod,
     #[serde(deserialize_with = "deserialize_nonempty_string")]
@@ -906,6 +942,11 @@ impl private::Sealed for EvaluateRequest {}
 impl WireMessage for EvaluateRequest {}
 
 impl EvaluateRequest {
+    /// Returns the shared problem input directory when preparation is selected.
+    pub fn problem_dir(&self) -> Option<&str> {
+        self.problem_dir.as_deref()
+    }
+
     /// Creates one independent evaluator request.
     #[must_use]
     pub fn new(
@@ -917,6 +958,7 @@ impl EvaluateRequest {
         metrics_path: impl Into<String>,
     ) -> Self {
         Self {
+            problem_dir: None,
             id,
             method: EvaluateMethod::Evaluate,
             dataset_dir: dataset_dir.into(),
@@ -1697,6 +1739,10 @@ pub fn validate_hello_response(
         .iter()
         .find(|capability| match capability {
             Capability::ManagedOutputs => false,
+            Capability::ProblemPreparation => !matches!(
+                request.role,
+                WorkerRole::Implementation | WorkerRole::ProblemEvaluator
+            ),
             Capability::ProblemSemantics => request.role != WorkerRole::ProblemEvaluator,
             _ => request.role != WorkerRole::Implementation,
         })
@@ -1712,6 +1758,7 @@ pub fn validate_hello_response(
             Capability::OneShot
                 | Capability::Applicability
                 | Capability::ProblemSemantics
+                | Capability::ProblemPreparation
                 | Capability::BufferedProfile
                 | Capability::FreshSequence
                 | Capability::ManagedOutputs
@@ -1969,4 +2016,10 @@ fn deserialize_control<'de, D: serde::Deserializer<'de>>(
 ) -> Result<Option<Value>, D::Error> {
     let control = deserialize_object(deserializer)?;
     Ok(Some(control))
+}
+
+fn deserialize_problem_dir<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<String>, D::Error> {
+    deserialize_nonempty_string(deserializer).map(Some)
 }

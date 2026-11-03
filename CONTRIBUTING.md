@@ -272,6 +272,20 @@ Materializers and evaluators serve separate roles. Evaluators that negotiate
 sequences, buffered execution, and streaming require their respective capabilities;
 one-shot messages retain their supported shapes.
 
+An optional problem `preparation` serves the `problem_preparer` role. Its
+`materialize` request carries a verified dataset view and resolved problem
+parameters, without implementation settings or a repetition seed. It returns
+the standard dataset artifact envelope. A domain-separated
+`problem-preparation` identity binds the dataset instance, problem configuration,
+and resolved worker. The problem definition binds the preparation worker and
+output schema; the resolved problem instance also binds its output artifact.
+Reuse the existing cache publication and receipt validation path. Consumers
+negotiate `problem_preparation` before receiving `problem_dir` in preparation,
+applicability, and evaluation requests. Verify both private input views around
+each worker operation. Shared construction stays outside every implementation
+timing scope. These additive version-1 extensions omit new identity fields and
+wire fields when preparation is absent, preserving historical canonical bytes.
+
 Worker failures use `invalid_request`, `unsupported_operation`,
 `operation_failed`, or `internal_error`, a nonempty message, and optional object
 details. Preserve the failing phase. Operational timeouts, early EOF, protocol

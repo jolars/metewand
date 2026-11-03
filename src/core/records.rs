@@ -365,6 +365,17 @@ pub struct ProblemDefinitionRecord {
     pub parameter_defaults: Option<CanonicalValue>,
     /// Independent evaluator definition owned by this problem.
     pub evaluator: WorkerDefinitionRecord,
+    /// Optional shared preparation and its output contract.
+    pub preparation: Option<ProblemPreparationDefinitionRecord>,
+}
+
+/// Scientific preparation owned by a problem definition.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ProblemPreparationDefinitionRecord {
+    /// Shared input construction worker.
+    pub worker: WorkerDefinitionRecord,
+    /// Validated output manifest schema.
+    pub output_schema: RecordId<SchemaResource>,
 }
 
 /// One implementation definition after contract and source resolution.
@@ -485,6 +496,8 @@ pub struct ProblemInstanceRecord {
     pub dataset: RecordId<DatasetInstanceRecord>,
     /// Configured problem.
     pub configuration: RecordId<ProblemConfigurationRecord>,
+    /// Verified shared input artifact, when the problem declares preparation.
+    pub preparation: Option<RecordId<DatasetArtifact>>,
 }
 
 /// A pre-applicability comparison candidate that requires no materialization.

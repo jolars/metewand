@@ -567,12 +567,22 @@ fn remote_source(value: &RemoteSourceRecord) -> Value {
 
 impl IdentityRecord for ProblemDefinitionRecord {
     fn identity_fields(&self) -> Map<String, Value> {
-        fields([
+        let mut fields = fields([
             ("name", json!(self.name.as_str())),
             ("contract", id(&self.contract)),
             ("parameter_defaults", canonical(&self.parameter_defaults)),
             ("evaluator", worker(&self.evaluator)),
-        ])
+        ]);
+        if let Some(preparation) = &self.preparation {
+            fields.insert(
+                "preparation".to_owned(),
+                json!({
+                    "worker": worker(&preparation.worker),
+                    "output_schema": preparation.output_schema,
+                }),
+            );
+        }
+        fields
     }
 }
 
@@ -682,10 +692,14 @@ impl IdentityRecord for DatasetInstanceRecord {
 
 impl IdentityRecord for ProblemInstanceRecord {
     fn identity_fields(&self) -> Map<String, Value> {
-        fields([
+        let mut fields = fields([
             ("dataset", id(&self.dataset)),
             ("configuration", id(&self.configuration)),
-        ])
+        ]);
+        if let Some(preparation) = self.preparation {
+            fields.insert("preparation".to_owned(), id(&preparation));
+        }
+        fields
     }
 }
 

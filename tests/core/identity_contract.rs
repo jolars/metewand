@@ -273,6 +273,7 @@ fn graph(mutation: Option<&str>, order: ObjectOrder, checked: bool) -> IdentityG
         &mut vectors,
         "problem-definition",
         ProblemDefinitionRecord {
+            preparation: None,
             name: name(if is_mutated(mutation, "problem-definition") {
                 "regression-v2"
             } else {
@@ -427,6 +428,7 @@ fn graph(mutation: Option<&str>, order: ObjectOrder, checked: bool) -> IdentityG
         &mut vectors,
         "problem-instance",
         ProblemInstanceRecord {
+            preparation: None,
             dataset: if is_mutated(mutation, "problem-instance") {
                 opaque_id(0x42)
             } else {

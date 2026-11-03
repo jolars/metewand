@@ -106,6 +106,13 @@ fn validate_references(manifest: &Manifest) -> Result<(), ManifestHashError> {
     }
 
     for (name, problem) in &manifest.problems {
+        if let Some(preparation) = &problem.preparation {
+            validate_worker_environment(
+                manifest,
+                format!("problem `{name}` preparation"),
+                &preparation.worker,
+            )?;
+        }
         validate_worker_environment(
             manifest,
             format!("problem `{name}` evaluator"),
@@ -342,11 +349,17 @@ fn problem(problem: &crate::core::manifest::ProblemDefinition) -> Value {
     let defaults = inline.map_or(problem.parameter_defaults.as_ref(), |contract| {
         problem.resolved_parameter_defaults(contract)
     });
-    let value = object([
+    let mut value = object([
         ("contract", problem.contract.declaration_value()),
         ("parameter_defaults", optional_canonical(defaults)),
         ("evaluator", worker(&problem.evaluator)),
     ]);
+    if let Some(preparation) = &problem.preparation {
+        value["preparation"] = json!({
+            "worker": worker(&preparation.worker),
+            "output_schema": preparation.output_schema.declaration_value(),
+        });
+    }
     if let Some(contract) = inline {
         with_parameter_grids(value, &contract.parameter_grids)
     } else {

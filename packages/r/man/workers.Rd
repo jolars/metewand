@@ -3,12 +3,15 @@
 \name{serve_implementation}
 \alias{serve_implementation}
 \alias{serve_dataset_materializer}
+\alias{serve_problem_preparer}
 \alias{serve_evaluator}
 \title{Register Stable Scientific Callbacks}
 \usage{
 serve_implementation(...)
 
 serve_dataset_materializer(materialize)
+
+serve_problem_preparer(materialize)
 
 serve_evaluator(evaluate)
 }
@@ -44,6 +47,9 @@ Context supplies \code{parameters}, \code{problem_parameters}, \code{seed}, \cod
 assigned input and output directories, and \code{observation_control} where
 applicable. Additional optional fields may appear without changing callback
 signatures. Neither seeds nor random generators are set automatically.
+Shared problem preparation receives \code{dataset_dir}, \code{problem_parameters}, and
+\code{output_dir}. Implementations and evaluators receive the prepared artifact in
+\code{problem_dir} when the problem declares preparation.
 
 Select \code{protocol-transport: socket} for lifecycle workers. Ordinary function
 launches select managed transport automatically. Standard output and standard

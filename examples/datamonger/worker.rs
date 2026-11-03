@@ -176,6 +176,7 @@ fn compare(
         let identity = record_id(&implementation)?.to_string().parse()?;
         view.verify()?;
         let result = run_fixed_dataset(FixedDatasetRun {
+            problem_view: None,
             observation_control: None,
             dataset_dir: view.directory(),
             problem_contract_id: &contract_id,

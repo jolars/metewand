@@ -13,9 +13,9 @@ use std::{
 
 use crate::core::{
     canonical::{CanonicalJsonError, CanonicalValue},
-    identity::{IdentityError, canonical_identity_bytes, record_id},
+    identity::{IdentityError, IdentityRecord, canonical_identity_bytes, record_id},
     manifest::RepositoryPath,
-    materialization::{DatasetDerivationRecord, hex},
+    materialization::hex,
     public_schemas::{PublicSchema, PublicSchemaCatalogError, public_schema_catalog},
     records::{ContentDigest, IdentifiedRecord},
     schema::SchemaValidationError,
@@ -239,9 +239,9 @@ impl ArtifactStore {
 
     /// Publishes the output first, then atomically binds the construction to
     /// that output. A recipe already bound to different bytes always fails.
-    pub fn publish_dataset(
+    pub fn publish_dataset<D: IdentityRecord>(
         &self,
-        dataset: &MaterializedDataset,
+        dataset: &MaterializedDataset<D>,
     ) -> Result<StoredArtifact, ArtifactStoreError> {
         let artifact = self.import_tree(dataset.directory(), dataset.output_digest)?;
         let lease = self.lease("mapping", artifact.digest)?;
@@ -286,9 +286,9 @@ impl ArtifactStore {
 
     /// Resolves a recipe through its completion marker, exact identity
     /// transcript, construction receipt, and separately verified output.
-    pub fn lookup_dataset(
+    pub fn lookup_dataset<D: IdentityRecord>(
         &self,
-        derivation: &IdentifiedRecord<DatasetDerivationRecord>,
+        derivation: &IdentifiedRecord<D>,
     ) -> Result<Option<CachedDataset>, ArtifactStoreError> {
         let path = self
             .root
@@ -713,9 +713,9 @@ fn same_bytes(left: &Path, right: &Path) -> Result<bool, ArtifactStoreError> {
     Ok(true)
 }
 
-fn verify_receipt(
+fn verify_receipt<D: IdentityRecord>(
     document: &CanonicalValue,
-    derivation: &IdentifiedRecord<DatasetDerivationRecord>,
+    derivation: &IdentifiedRecord<D>,
 ) -> Result<ContentDigest, ArtifactStoreError> {
     let receipt = &document.as_json()["receipt"];
     if record_id(&derivation.record)? != derivation.id

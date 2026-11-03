@@ -4,7 +4,8 @@ use crate::core::{
     canonical::CanonicalValue,
     identity::{IdentityKind, IdentityRecord},
     records::{
-        ContentDigest, DatasetDefinitionRecord, DerivedSeedRecord, RecordId, ResolvedWorkerRecord,
+        ContentDigest, DatasetDefinitionRecord, DatasetInstanceRecord, DerivedSeedRecord,
+        ProblemConfigurationRecord, RecordId, ResolvedWorkerRecord,
     },
 };
 use serde_json::{Map, Value, json};
@@ -59,6 +60,35 @@ impl IdentityRecord for DatasetDerivationRecord {
             "parameters": self.parameters.as_json(),
             "seed": {"value": self.seed.value, "derivation_digest": hex(self.seed.derivation_digest)},
         }).as_object().expect("explicit identity object").clone()
+    }
+}
+
+/// Verified inputs to shared problem preparation, excluding incidental paths.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ProblemPreparationRecord {
+    pub dataset: RecordId<DatasetInstanceRecord>,
+    pub problem: RecordId<ProblemConfigurationRecord>,
+    pub preparer: ResolvedWorkerRecord,
+}
+
+impl IdentityKind for ProblemPreparationRecord {
+    const KIND: &'static str = "problem-preparation";
+}
+
+impl IdentityRecord for ProblemPreparationRecord {
+    fn identity_fields(&self) -> Map<String, Value> {
+        json!({
+            "dataset": self.dataset,
+            "problem": self.problem,
+            "preparer": {
+                "source_bundle": self.preparer.source_bundle,
+                "environment": self.preparer.environment,
+                "launch": self.preparer.launch,
+            },
+        })
+        .as_object()
+        .expect("explicit identity object")
+        .clone()
     }
 }
 

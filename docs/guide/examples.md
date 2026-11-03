@@ -17,6 +17,7 @@ example's README for its working directory and dependencies.
 | [Locked Nix](https://github.com/jolars/metewand/tree/main/examples/locked-nix) | Prepare exact software outputs and verify locked worker launches. |
 | [Locked uv](https://github.com/jolars/metewand/tree/main/examples/locked-uv) | Prepare Python workers with local dependencies and verify their installed content offline. |
 | [Generated dataset](https://github.com/jolars/metewand/tree/main/examples/generated-dataset) | Materialize datasets and write custom artifacts. |
+| [Shared problem preparation](https://github.com/jolars/metewand/tree/main/examples/problem-preparation) | Cache problem-dependent inputs and share them across methods and evaluation. |
 | [Fresh sequences](https://github.com/jolars/metewand/tree/main/examples/fresh-sequence) | Compare black-box solvers over clean runs with independent targets. |
 | [Buffered profiles](https://github.com/jolars/metewand/tree/main/examples/buffered-profile) | Instrument a trajectory and evaluate selected snapshots. |
 | [Streaming profiles](https://github.com/jolars/metewand/tree/main/examples/streaming-profile) | Pause at checkpoints for independent evaluation and durable stopping decisions. |
