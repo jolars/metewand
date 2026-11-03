@@ -185,7 +185,7 @@ fn component_ids(manifest: &Manifest) -> Vec<String> {
         .expect("fixture defines the local environment");
     assert!(matches!(
         environment,
-        ManifestEnvironmentDefinition::Local {}
+        ManifestEnvironmentDefinition::Local { .. }
     ));
     let environment_id = identify_record(EnvironmentDefinitionRecord {
         name: environment_name.clone(),

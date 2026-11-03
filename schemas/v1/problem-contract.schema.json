@@ -109,7 +109,21 @@
         "expected-metrics": {
           "oneOf": [{"$ref": "common.schema.json#/$defs/repository_path"}, {"type": "object"}]
         },
-        "expected-verdict": {"enum": ["invalid", "reached", "not_reached", "not_required"]}
+        "expected-verdict": {"enum": ["invalid", "reached", "not_reached", "not_required"]},
+        "metric-tolerance": {
+          "type": "object",
+          "properties": {
+            "absolute": {
+              "type": "number",
+              "minimum": 0
+            },
+            "relative": {
+              "type": "number",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false
+        }
       },
       "required": ["result", "expected-metrics"],
       "additionalProperties": false

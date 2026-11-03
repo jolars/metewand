@@ -160,6 +160,29 @@ completed manifests directly. See the
 
 ## Move from final answers to profiles
 
+Fresh bindings accept compact `controls` instead of a full `control-schema`:
+
+```yaml
+delivery: fresh_sequence
+controls:
+  tolerance: {type: number, exclusiveMinimum: 0}
+schedule:
+  kind: geometric
+  field: tolerance
+  start: 0.1
+  ratio: 0.1
+  count: 12
+  prefix: [{initial: true}]
+```
+
+The prefix runs first and its exact values are included in the compact control
+schema. `count` counts generated controls; observation limits include the
+prefix. Linear schedules also accept a prefix. Streaming and buffered bindings
+can use
+`check-schedule: {kind: geometric, start: 1, ratio: 2, count: 10, prefix: [0]}`
+instead of listing indices. Checkpoint ratios are integers of at least two;
+expanded indices must be strictly increasing safe integers.
+
 Use a profile when the question concerns progress toward a common accuracy
 target. Profile selection is explicit and requires lifecycle workers with the
 corresponding capability.

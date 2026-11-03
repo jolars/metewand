@@ -15,7 +15,7 @@ categories = ["command-line-utilities", "development-tools::profiling", "science
 autolib = false
 autotests = false
 autoexamples = false
-include = ["/src/", "/schemas/**/*.schema.json", "/LICENSE-*", "/README.md"]
+include = ["/src/", "!/src/**/__pycache__/**", "/schemas/**/*.schema.json", "/LICENSE-*", "/README.md"]
 
 [package.metadata.dist]
 dist = true

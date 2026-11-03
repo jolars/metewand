@@ -7,6 +7,37 @@ from metewand_adapter._artifacts import read_json
 
 
 class FreshTests(unittest.TestCase):
+    def test_warmup_runs_once_and_measured_state_is_reconstructed(self):
+        from metewand_adapter._bindings import _Callbacks
+
+        events = []
+
+        def prepare(context):
+            state = {"answer": 0}
+            events.append(("prepare", state))
+            return state
+
+        def warmup(state, context):
+            state["answer"] = 99
+            events.append(("warmup", state))
+
+        worker = _Callbacks(
+            {
+                "prepare": prepare,
+                "warmup": warmup,
+                "reset": lambda state, context: events.append(("reset", state)),
+            }
+        )
+        worker.prepare()
+        self.assertEqual(worker.state, {"answer": 0})
+        self.assertEqual(
+            [name for name, _ in events], ["prepare", "warmup", "reset", "prepare"]
+        )
+        worker.reset()
+        worker.prepare()
+        self.assertEqual(sum(name == "warmup" for name, _ in events), 1)
+        self.assertIsNot(events[0][1], worker.state)
+
     def test_controls_are_forwarded_and_echo_is_frozen(self):
         state = {"answer": 0}
 

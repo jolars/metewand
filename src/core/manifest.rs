@@ -139,6 +139,8 @@ pub struct Manifest {
     pub version: u32,
     /// Benchmark name.
     pub name: Name,
+    /// Experiment selected by commands when no explicit selection is supplied.
+    pub default_experiment: Option<Name>,
     /// Operational deadlines, independent of scientific timing budgets.
     pub worker_timeouts: WorkerTimeouts,
     /// Dataset definitions keyed by manifest-local name.
@@ -163,6 +165,8 @@ struct RawManifest {
     #[serde(deserialize_with = "deserialize_version_one")]
     version: u32,
     name: Name,
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
+    default_experiment: Option<Name>,
     #[serde(default)]
     worker_timeouts: WorkerTimeouts,
     #[serde(default)]
@@ -188,6 +192,7 @@ impl<'de> Deserialize<'de> for Manifest {
             source_map: crate::core::yaml::SourceMap::default(),
             version: raw.version,
             name: raw.name,
+            default_experiment: raw.default_experiment,
             worker_timeouts: raw.worker_timeouts,
             datasets: raw.datasets,
             problems: raw.problems,
@@ -209,6 +214,14 @@ impl<'de> Deserialize<'de> for Manifest {
 
 impl Manifest {
     fn resolve_authoring_defaults(&mut self) -> Result<(), String> {
+        if let Some(name) = &self.default_experiment
+            && !self
+                .experiments
+                .iter()
+                .any(|experiment| &experiment.name == name)
+        {
+            return Err(format!("default experiment `{name}` is not declared"));
+        }
         for experiment in &mut self.experiments {
             if experiment.execution_policy.as_str().is_empty() {
                 let name = Name("@local".to_owned());
@@ -272,14 +285,18 @@ impl Manifest {
                 continue;
             }
             if self.environments.is_empty() {
-                self.environments
-                    .insert(Name("local".to_owned()), EnvironmentDefinition::Local {});
+                self.environments.insert(
+                    Name("local".to_owned()),
+                    EnvironmentDefinition::Local {
+                        environment_variables: BTreeMap::new(),
+                    },
+                );
             }
             let local = self
                 .environments
                 .iter()
                 .filter_map(|(name, definition)| {
-                    matches!(definition, EnvironmentDefinition::Local {}).then_some(name)
+                    matches!(definition, EnvironmentDefinition::Local { .. }).then_some(name)
                 })
                 .collect::<Vec<_>>();
             if local.len() != 1 {
@@ -412,7 +429,11 @@ pub struct ImplementationDefinition {
 )]
 pub enum EnvironmentDefinition {
     /// The existing host software context.
-    Local {},
+    Local {
+        /// Explicit literal settings supplied to isolated local workers.
+        #[serde(default)]
+        environment_variables: BTreeMap<String, String>,
+    },
     /// A Python environment resolved from a uv project and lockfile.
     Uv {
         /// Project root.

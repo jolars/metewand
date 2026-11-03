@@ -140,7 +140,7 @@ fn parses_every_version_one_definition_into_domain_types() {
 
     assert!(matches!(
         manifest.environments["local"],
-        EnvironmentDefinition::Local {}
+        EnvironmentDefinition::Local { .. }
     ));
     assert!(matches!(
         manifest.environments["native"],

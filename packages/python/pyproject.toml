@@ -13,6 +13,9 @@ authors = [{name = "Johan Larsson", email = "johan@jolars.co"}]
 readme = "README.md"
 dependencies = []
 
+[project.optional-dependencies]
+arrays = ["numpy", "scipy"]
+
 [project.urls]
 Homepage = "https://metewand.org"
 Documentation = "https://metewand.org/guide/getting-started"

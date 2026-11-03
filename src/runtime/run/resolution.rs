@@ -1423,7 +1423,7 @@ pub(crate) fn resolve_worker_with_lock(
     if locked.is_none()
         && !matches!(
             repository.manifest.environments[environment],
-            EnvironmentDefinition::Local {}
+            EnvironmentDefinition::Local { .. }
         )
     {
         return Err(unsupported(format!(
@@ -1559,7 +1559,13 @@ pub(crate) fn resolve_worker_with_lock(
     let source_executable = sources
         .as_ref()
         .is_some_and(|sources| executable.starts_with(sources.directory.path()));
-    let mut variables = crate::runtime::worker_environment::worker_environment_template();
+    let mut variables = match &repository.manifest.environments[environment] {
+        EnvironmentDefinition::Local {
+            environment_variables,
+        } => crate::runtime::worker_environment::resolve_local_environment(environment_variables)
+            .map_err(|error| unsupported(error.to_string()))?,
+        _ => crate::runtime::worker_environment::worker_environment_template(),
+    };
     variables.insert(
         "PATH".to_owned(),
         worker_search_path(None, source_executable)?,

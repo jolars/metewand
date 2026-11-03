@@ -28,7 +28,7 @@ fn repository() -> TempDir {
     let package =
         std::path::PathBuf::from(String::from_utf8(output.stdout).unwrap().trim()).join("metewand");
     fs::create_dir_all(&package).unwrap();
-    for file in ["__init__.py", "__main__.py"] {
+    for file in ["__init__.py", "__main__.py", "_helpers.py", "arrays.py"] {
         fs::copy(
             Path::new(env!("CARGO_MANIFEST_DIR"))
                 .join("packages/python/src/metewand")

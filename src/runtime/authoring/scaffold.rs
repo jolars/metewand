@@ -253,7 +253,7 @@ pub fn scaffold_component(
         && manifest
             .environments
             .values()
-            .filter(|environment| matches!(environment, EnvironmentDefinition::Local {}))
+            .filter(|environment| matches!(environment, EnvironmentDefinition::Local { .. }))
             .count()
             != 1
     {

@@ -297,6 +297,9 @@ fn manifest_value(manifest: &Manifest) -> Value {
             }),
         ),
     ]);
+    if let Some(name) = &manifest.default_experiment {
+        value["default_experiment"] = json!(name.as_str());
+    }
     if manifest.worker_timeouts != crate::core::manifest::WorkerTimeouts::default() {
         value.as_object_mut().expect("manifest object").insert(
             "worker_timeouts".into(),
@@ -412,7 +415,15 @@ fn with_parameter_grids(mut value: Value, grids: &ParameterAxes) -> Value {
 
 fn environment(environment: &EnvironmentDefinition) -> Value {
     match environment {
-        EnvironmentDefinition::Local {} => object([("kind", json!("local"))]),
+        EnvironmentDefinition::Local {
+            environment_variables,
+        } => {
+            let mut value = object([("kind", json!("local"))]);
+            if !environment_variables.is_empty() {
+                value["environment_variables"] = json!(environment_variables);
+            }
+            value
+        }
         EnvironmentDefinition::Uv {
             project,
             lockfile,

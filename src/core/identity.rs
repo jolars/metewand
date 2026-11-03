@@ -469,6 +469,12 @@ impl IdentityRecord for EnvironmentDefinitionRecord {
     fn identity_fields(&self) -> Map<String, Value> {
         let definition = match &self.kind {
             EnvironmentDefinitionKind::Local => object([("kind", json!("local"))]),
+            EnvironmentDefinitionKind::LocalWithVariables {
+                environment_variables,
+            } => object([
+                ("kind", json!("local")),
+                ("environment_variables", json!(environment_variables)),
+            ]),
             EnvironmentDefinitionKind::Uv {
                 project,
                 lockfile,

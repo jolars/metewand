@@ -238,7 +238,7 @@ impl ProfileDefinition {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 #[serde(untagged, deny_unknown_fields)]
 pub enum CheckSchedule {
     Periodic {
@@ -447,6 +447,77 @@ pub struct StreamingObservationRecord {
     pub stop_reason: Option<StopReason>,
 }
 
+impl<'de> Deserialize<'de> for CheckSchedule {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(untagged, deny_unknown_fields)]
+        enum Raw {
+            Periodic {
+                every: u64,
+                #[serde(default)]
+                start: u64,
+            },
+            Explicit {
+                indices: Vec<u64>,
+            },
+            Generated {
+                #[serde(rename = "kind")]
+                _kind: GeometricKind,
+                start: u64,
+                ratio: u64,
+                count: u64,
+                #[serde(default)]
+                prefix: Vec<u64>,
+            },
+        }
+        #[derive(Deserialize)]
+        enum GeometricKind {
+            #[serde(rename = "geometric")]
+            Geometric,
+        }
+        let schedule = match Raw::deserialize(deserializer)? {
+            Raw::Periodic { every, start } => Self::Periodic { every, start },
+            Raw::Explicit { indices } => Self::Explicit { indices },
+            Raw::Generated {
+                _kind: _,
+                start,
+                ratio,
+                count,
+                prefix,
+            } => {
+                if count == 0
+                    || count > MAX_SAFE_INTEGER
+                    || start == 0
+                    || !(2..=MAX_SAFE_INTEGER).contains(&ratio)
+                {
+                    return Err(serde::de::Error::custom(
+                        "geometric checkpoints require positive start and count, and an integer ratio of at least two",
+                    ));
+                }
+                let mut indices = prefix;
+                let mut value = start;
+                for index in 0..count {
+                    if value > MAX_SAFE_INTEGER {
+                        return Err(serde::de::Error::custom(
+                            "checkpoint indices must be safe integers",
+                        ));
+                    }
+                    indices.push(value);
+                    if index + 1 < count {
+                        value = value.checked_mul(ratio).ok_or_else(|| {
+                            serde::de::Error::custom("checkpoint arithmetic overflow")
+                        })?;
+                    }
+                }
+                let schedule = Self::Explicit { indices };
+                schedule.validate().map_err(serde::de::Error::custom)?;
+                schedule
+            }
+        };
+        Ok(schedule)
+    }
+}
+
 impl CheckSchedule {
     pub fn validate(&self) -> Result<(), String> {
         let valid = match self {
@@ -496,13 +567,57 @@ impl CheckSchedule {
     }
 }
 
-#[derive(Clone, Debug, Deserialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[derive(Clone, Debug)]
 pub struct FreshBinding {
     pub delivery: FreshDelivery,
     pub control_schema: SchemaDeclaration,
     pub schedule: ControlSchedule,
 }
+impl<'de> Deserialize<'de> for FreshBinding {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(rename_all = "kebab-case", deny_unknown_fields)]
+        struct Raw {
+            delivery: FreshDelivery,
+            #[serde(default)]
+            control_schema: Option<SchemaDeclaration>,
+            #[serde(default)]
+            controls: Option<crate::core::field_declaration::OutputDeclarations>,
+            schedule: ControlSchedule,
+        }
+        let raw = Raw::deserialize(deserializer)?;
+        let control_schema = match (raw.controls, raw.control_schema) {
+            (Some(controls), None) => {
+                let schema = controls.compile().map_err(serde::de::Error::custom)?.schema;
+                let prefix = raw.schedule.prefix();
+                if prefix.is_empty() {
+                    schema
+                } else {
+                    let mut alternatives = vec![schema.declaration_value()];
+                    alternatives.extend(
+                        prefix
+                            .iter()
+                            .map(|value| serde_json::json!({"const": value})),
+                    );
+                    serde_json::from_value(serde_json::json!({"anyOf": alternatives}))
+                        .map_err(serde::de::Error::custom)?
+                }
+            }
+            (None, Some(schema)) => schema,
+            _ => {
+                return Err(serde::de::Error::custom(
+                    "declare exactly one of controls and control-schema",
+                ));
+            }
+        };
+        Ok(Self {
+            delivery: raw.delivery,
+            control_schema,
+            schedule: raw.schedule,
+        })
+    }
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum FreshDelivery {
@@ -525,19 +640,31 @@ pub enum ControlSchedule {
         start: f64,
         step: f64,
         count: u64,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        prefix: Vec<Value>,
     },
     Geometric {
         field: String,
         start: f64,
         ratio: f64,
         count: u64,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        prefix: Vec<Value>,
     },
 }
 impl ControlSchedule {
+    fn prefix(&self) -> &[Value] {
+        match self {
+            Self::Explicit { .. } => &[],
+            Self::Linear { prefix, .. } | Self::Geometric { prefix, .. } => prefix,
+        }
+    }
     pub fn len(&self) -> u64 {
         match self {
             Self::Explicit { controls } => controls.len() as u64,
-            Self::Linear { count, .. } | Self::Geometric { count, .. } => *count,
+            Self::Linear { count, prefix, .. } | Self::Geometric { count, prefix, .. } => {
+                count.saturating_add(prefix.len() as u64)
+            }
         }
     }
     pub fn is_empty(&self) -> bool {
@@ -572,8 +699,21 @@ impl ControlSchedule {
                 if field.is_empty() {
                     return Err("schedule field must be nonempty".into());
                 }
+                for value in self.prefix() {
+                    if !value.is_object() {
+                        return Err("observation controls must be objects".into());
+                    }
+                    controls.push(
+                        CanonicalValue::try_from(value.clone())
+                            .map_err(|error| error.to_string())?,
+                    );
+                }
+                let generated = count - self.prefix().len() as u64;
+                if generated == 0 {
+                    return Err("generated schedules require a positive count".into());
+                }
                 let mut value = *start;
-                for index in 0..count {
+                for index in 0..generated {
                     if !value.is_finite() {
                         return Err("schedule arithmetic must remain finite".into());
                     }
@@ -586,7 +726,7 @@ impl ControlSchedule {
                         CanonicalValue::try_from(serde_json::json!({field: number}))
                             .map_err(|e| e.to_string())?,
                     );
-                    if index + 1 < count {
+                    if index + 1 < generated {
                         value = match self {
                             Self::Linear { step, .. } => value + step,
                             Self::Geometric { ratio, .. } => value * ratio,

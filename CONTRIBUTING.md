@@ -123,6 +123,20 @@ implementation-repetition, and measurement blocks. Bounded concurrency
 contributes to execution policy and resolved identity. Dispatch and event order
 remain deterministic, and batches do not cross experiment boundaries.
 
+Named experiment selection filters an already expanded plan, preserving logical
+identities and manifest order. Without an explicit selection, commands use
+`default-experiment` when declared. Worker checks visit only selected
+dependencies. Local `environment-variables` are literal, validated worker
+settings, not ambient inheritance. Empty settings retain the original local
+environment identity.
+
+Compact profile controls lower to closed schemas, including constant prefix
+alternatives. Generated checkpoint indices lower to the existing explicit form.
+Reference metric tolerances are opt-in and never relax verdict or shape checks.
+These additions preserve compatibility version 1 and existing canonical records
+when omitted. Python lifecycle and array helpers are additive binding API 1
+APIs.
+
 ## Canonical values and identities
 
 Metewand hashes and transports one restricted JSON domain. Object keys must be

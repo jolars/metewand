@@ -460,9 +460,68 @@ pub struct ReferenceCase {
     pub result: ReferenceInput,
     /// Expected evaluator metrics for the result.
     pub expected_metrics: ReferenceInput,
+    /// Optional numeric portability allowance; structure and verdicts remain exact.
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
+    pub metric_tolerance: Option<MetricTolerance>,
     /// Omitted expectations follow whether the problem declares a completion target.
     #[serde(default, deserialize_with = "deserialize_optional_non_null")]
     pub expected_verdict: Option<ExpectedVerdict>,
+}
+
+#[derive(Clone, Copy, Debug, serde::Serialize)]
+pub struct MetricTolerance {
+    pub absolute: f64,
+    pub relative: f64,
+}
+
+impl<'de> Deserialize<'de> for MetricTolerance {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Raw {
+            #[serde(default)]
+            absolute: f64,
+            #[serde(default)]
+            relative: f64,
+        }
+        let raw = Raw::deserialize(deserializer)?;
+        if [raw.absolute, raw.relative]
+            .iter()
+            .any(|value| !value.is_finite() || *value < 0.0)
+        {
+            return Err(serde::de::Error::custom(
+                "metric tolerances must be finite and nonnegative",
+            ));
+        }
+        Ok(Self {
+            absolute: raw.absolute,
+            relative: raw.relative,
+        })
+    }
+}
+
+impl MetricTolerance {
+    pub fn matches(self, actual: &Value, expected: &Value) -> bool {
+        match (actual, expected) {
+            (Value::Number(a), Value::Number(b)) => {
+                let (Some(a), Some(b)) = (a.as_f64(), b.as_f64()) else {
+                    return false;
+                };
+                a == b
+                    || ((a - b).abs().is_finite()
+                        && (a - b).abs() <= self.absolute + self.relative * b.abs())
+            }
+            (Value::Array(a), Value::Array(b)) => {
+                a.len() == b.len() && a.iter().zip(b).all(|(a, b)| self.matches(a, b))
+            }
+            (Value::Object(a), Value::Object(b)) => {
+                a.len() == b.len()
+                    && a.iter()
+                        .all(|(key, a)| b.get(key).is_some_and(|b| self.matches(a, b)))
+            }
+            _ => actual == expected,
+        }
+    }
 }
 
 impl ReferenceCase {
@@ -471,6 +530,9 @@ impl ReferenceCase {
             "result": self.result.declaration_value(), "expected_metrics": self.expected_metrics.declaration_value()});
         if let Some(verdict) = self.expected_verdict {
             value["expected_verdict"] = json!(verdict.as_str());
+        }
+        if let Some(tolerance) = self.metric_tolerance {
+            value["metric_tolerance"] = json!(tolerance);
         }
         value
     }

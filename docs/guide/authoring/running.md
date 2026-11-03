@@ -3,6 +3,45 @@
 Use `metewand plan` after each manifest change to inspect the expanded settings.
 Start with a small run before increasing the grid or repetition counts.
 
+## Select a named experiment
+
+Keep full, smoke, and example experiments in one manifest. Set
+`default-experiment: full` at the top level to choose the usual run. Without
+that setting, commands select every experiment as before.
+
+```sh
+metewand plan --experiment smoke
+metewand check --experiment smoke --workers
+metewand run --experiment smoke --output-dir outputs/smoke
+metewand run --experiment smoke --output-dir outputs/smoke --resume
+```
+
+Repeat `--experiment` to select a union in manifest order. Explicit selection
+overrides the default; `--select` narrows the resulting plan. Selection belongs
+to the invocation, so repeat it when resuming. Static checks validate the entire
+manifest. Worker checks launch only workers needed by the selected experiments.
+
+## Declare worker variables
+
+Local workers receive an isolated environment. Declare numerical-library
+settings explicitly rather than relying on the shell that launches Metewand:
+
+```yaml
+environments:
+  local:
+    kind: local
+    environment-variables:
+      OMP_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      PYTHONHASHSEED: "0"
+```
+
+The literal strings enter worker identities and provenance. Runtime-owned
+variables, including private home and cache directories and protocol channels,
+cannot be overridden. Library settings do not establish CPU affinity or enforced
+resource isolation.
+
 ## Choose what to time
 
 The default `prepare_and_execute` wall time includes loading the shared JSON

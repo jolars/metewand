@@ -30,6 +30,120 @@ experiments:
 "#;
 
 #[test]
+fn named_experiment_defaults_and_unknown_names_are_checked() {
+    let source = format!("{BASIC}\ndefault-experiment: comparison\n");
+    let manifest = parse_manifest(Path::new("metewand.yaml"), &source).unwrap();
+    assert_eq!(
+        manifest.default_experiment.as_ref().unwrap().as_str(),
+        "comparison"
+    );
+    assert!(
+        parse_manifest(
+            Path::new("metewand.yaml"),
+            &source.replace(
+                "default-experiment: comparison",
+                "default-experiment: missing"
+            )
+        )
+        .is_err()
+    );
+    assert!(
+        parse_manifest(
+            Path::new("metewand.yaml"),
+            &format!("{BASIC}\ndefault-experiment: null\n")
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn public_schemas_accept_compact_profiles_and_explicit_worker_settings() {
+    let catalog = public_schema_catalog().unwrap();
+    let mut document: serde_json::Value = serde_saphyr::from_str(BASIC).unwrap();
+    document["default-experiment"] = serde_json::json!("comparison");
+    document["environments"] = serde_json::json!({"local": {"kind": "local", "environment-variables": {"OMP_NUM_THREADS": "1"}}});
+    catalog
+        .validate(PublicSchema::Manifest.repository_path(), &document)
+        .unwrap();
+    let policy = serde_json::json!({
+        "version": 1, "kind": "profile", "metric": "gap", "direction": "at_most", "threshold": 1e-7,
+        "max-observations": 4, "max-active-time": "1 s", "max-checkpoint-bytes": 4096,
+        "implementations": {
+            "fresh": {"delivery": "fresh_sequence", "controls": {"tolerance": {"type": "number", "exclusiveMinimum": 0}},
+                "schedule": {"kind": "geometric", "field": "tolerance", "start": 0.1, "ratio": 0.1, "count": 3, "prefix": [{"initial": true}]}},
+            "stream": {"delivery": "streaming_profile", "measurement-basis": "executor_observed",
+                "check-schedule": {"kind": "geometric", "start": 1, "ratio": 2, "count": 3, "prefix": [0]}}
+        }
+    });
+    catalog
+        .validate(
+            Path::new("schemas/v1/profile-observation-policy.schema.json"),
+            &policy,
+        )
+        .unwrap();
+}
+
+#[test]
+fn compact_profile_controls_include_prefixed_initial_observations() {
+    use crate::core::profile::{CheckSchedule, FreshBinding};
+    let binding: FreshBinding = serde_json::from_value(serde_json::json!({
+        "delivery": "fresh_sequence",
+        "controls": {"tolerance": {"type": "number", "exclusiveMinimum": 0}},
+        "schedule": {"kind": "geometric", "field": "tolerance", "start": 0.1,
+            "ratio": 0.1, "count": 3, "prefix": [{"initial": true}]}
+    }))
+    .unwrap();
+    let controls = binding.schedule.expand(4).unwrap();
+    assert_eq!(controls[0].as_json(), &serde_json::json!({"initial": true}));
+    assert_eq!(
+        controls[1].as_json(),
+        &serde_json::json!({"tolerance": 0.1})
+    );
+    assert!(binding.schedule.expand(3).is_err());
+    let schedule: CheckSchedule = serde_json::from_value(serde_json::json!({
+        "kind": "geometric", "start": 1, "ratio": 2, "count": 4, "prefix": [0]
+    }))
+    .unwrap();
+    assert_eq!(
+        schedule,
+        CheckSchedule::Explicit {
+            indices: vec![0, 1, 2, 4, 8]
+        }
+    );
+}
+
+#[test]
+fn metric_tolerances_preserve_structure_and_reject_invalid_bounds() {
+    use crate::core::problem_contract::MetricTolerance;
+    let tolerance: MetricTolerance =
+        serde_json::from_value(serde_json::json!({"absolute": 1e-12, "relative": 1e-6})).unwrap();
+    assert!(tolerance.matches(
+        &serde_json::json!({"gap": 1e-13, "label": "ok"}),
+        &serde_json::json!({"gap": 0, "label": "ok"})
+    ));
+    assert!(!tolerance.matches(
+        &serde_json::json!({"gap": 1e-13}),
+        &serde_json::json!({"gap": 0, "label": "ok"})
+    ));
+    assert!(!tolerance.matches(&serde_json::json!("1"), &serde_json::json!(1)));
+    assert!(
+        serde_json::from_value::<MetricTolerance>(serde_json::json!({"absolute": -1})).is_err()
+    );
+}
+
+#[test]
+fn checkpoint_shorthand_rejects_duplicate_or_unsafe_indices() {
+    use crate::core::profile::CheckSchedule;
+    for source in [
+        serde_json::json!({"kind":"geometric", "start":1,"ratio":2,"count":4,"prefix":[1]}),
+        serde_json::json!({"kind":"geometric", "start":1,"ratio":2,"count":54}),
+        serde_json::json!({"kind":"geometric", "start":1,"ratio":1,"count":4}),
+    ] {
+        assert!(serde_json::from_value::<CheckSchedule>(source).is_err());
+    }
+}
+
+#[test]
 fn basic_functions_need_no_policies_artifact_schemas_or_scientific_rules() {
     let document: serde_json::Value = serde_saphyr::from_str(BASIC).unwrap();
     public_schema_catalog()

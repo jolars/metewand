@@ -6,6 +6,7 @@ mod profile;
 
 pub use check::{
     ReferenceCaseCheck, WorkerCheck, WorkerCheckError, WorkerCheckReport, check_repository_workers,
+    check_repository_workers_for_experiments,
 };
 pub(crate) mod resolution;
 mod selection;
@@ -112,7 +113,14 @@ pub fn run_repository_with_options(
     options: &RunOptions,
     mut event_sink: impl FnMut(&RunEvent) -> io::Result<()>,
 ) -> Result<RunReport, RunError> {
-    let plan = selection::preselect(plan, options)?;
+    let plan = plan
+        .clone()
+        .select_experiments(
+            &options.experiments,
+            repository.manifest.default_experiment.as_ref(),
+        )
+        .map_err(RunError::Selection)?;
+    let plan = selection::preselect(&plan, options)?;
     let output_directory = destination(output_directory, options.resume)?;
     let cache_directory = cache_directory
         .map(|path| {

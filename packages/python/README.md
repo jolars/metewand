@@ -82,6 +82,40 @@ context)` releases slot state, and `shutdown(state, context)` releases resources
 Execution consumes preparation even when it fails; the original preparation
 state remains available for cleanup.
 
+An optional `warmup(state, context)` callback warms the first prepared state
+once per worker. The CLI calls `reset` when supplied and prepares fresh state
+before execution. It runs inside preparation, so `execute_only` excludes it.
+This is separate from execution-policy `warmup-runs`, which repeat the selected
+workload.
+
+Use `stream_callback` for a solver that accepts a Boolean callback:
+
+```python
+with stream_callback(
+    context.stream,
+    lambda: write_result(solver.get_result(), context.stream.output_dir),
+    work_field="iterations",
+) as checkpoint:
+    solver.run(checkpoint)
+```
+
+It counts checks, stops at the orchestrator's decision, and captures a terminal
+result when the solver finishes naturally. Exceptions retain partial evidence.
+
+Install `metewand[arrays]` for optional NumPy and SciPy helpers:
+
+```python
+from metewand.arrays import read_array, write_array
+
+artifact = write_array(context.output_dir, "coefficients", coefficients)
+result = Result({"coefficients": str(artifact.path)}, [artifact])
+coefficients = read_array(context.result_dir, "coefficients.npy")
+```
+
+Dense arrays use `.npy`; sparse arrays retain their format in `.npz`. The
+helpers reject object arrays and never enable pickle. The base package and
+importing `metewand.arrays` require neither optional dependency.
+
 `Dataset(data, files)` and `Result(data, files)` describe JSON data and completed
 files. Write files beneath `context.output_dir`, close them, and declare them
 with `Artifact(path, media_type, representation)`. The CLI owns envelopes,

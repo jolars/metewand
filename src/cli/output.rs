@@ -1933,6 +1933,9 @@ fn render_machine<T: Serialize>(
 
 fn repository_diagnostic(error: &RepositoryCheckError) -> Diagnostic {
     match error {
+        RepositoryCheckError::WorkerEnvironment(_) => {
+            Diagnostic::new("invalid_worker_environment", error.to_string())
+        }
         RepositoryCheckError::ManifestAccess { path, .. } => {
             Diagnostic::new("manifest_access_failed", error.to_string())
                 .with_detail("path", path_string(path))
@@ -2033,7 +2036,7 @@ fn path_string(path: &Path) -> String {
 
 fn environment_requirement(environment: &EnvironmentDefinition) -> &'static str {
     match environment {
-        EnvironmentDefinition::Local {} => "use the existing host context; no build",
+        EnvironmentDefinition::Local { .. } => "use the existing host context; no build",
         EnvironmentDefinition::Uv { .. } => "resolve and provision the declared uv project",
         EnvironmentDefinition::Renv { .. } => "resolve and provision the declared renv project",
         EnvironmentDefinition::Nix { .. } => "resolve and realize the declared Nix output",

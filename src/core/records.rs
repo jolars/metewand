@@ -238,6 +238,10 @@ pub struct EnvironmentDefinitionRecord {
 pub enum EnvironmentDefinitionKind {
     /// The existing host software context.
     Local,
+    /// Local execution with explicit worker settings.
+    LocalWithVariables {
+        environment_variables: BTreeMap<String, String>,
+    },
     /// A Python environment described by a uv project and lockfile.
     Uv {
         /// Repository-relative project root.

@@ -15,6 +15,8 @@ pub struct RunOptions {
     pub locked: bool,
     /// Union of stable IDs to execute; an empty list selects the complete plan.
     pub selected_ids: Vec<String>,
+    /// Named experiment union, or the manifest default when empty.
+    pub experiments: Vec<String>,
     /// Maximum new attempts allocated by this invocation, including retries.
     pub max_attempts: Option<u64>,
     /// Reopen an existing durable output directory.

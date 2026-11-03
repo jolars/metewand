@@ -154,6 +154,37 @@ pub struct LogicalPlan {
     pub experiments: Vec<LogicalExperimentPlan>,
 }
 
+impl LogicalPlan {
+    /// Selects named experiments without rebuilding their identities or order.
+    pub fn select_experiments(
+        mut self,
+        names: &[String],
+        default: Option<&Name>,
+    ) -> Result<Self, String> {
+        let selected = if names.is_empty() {
+            default
+                .map(|name| vec![name.to_string()])
+                .unwrap_or_default()
+        } else {
+            names.to_vec()
+        };
+        for name in &selected {
+            if !self
+                .experiments
+                .iter()
+                .any(|experiment| experiment.name.as_str() == name)
+            {
+                return Err(format!("experiment `{name}` is not declared"));
+            }
+        }
+        if !selected.is_empty() {
+            self.experiments
+                .retain(|experiment| selected.iter().any(|name| experiment.name.as_str() == name));
+        }
+        Ok(self)
+    }
+}
+
 /// One experiment expanded into identified logical records.
 #[derive(Clone, Debug, PartialEq)]
 pub struct LogicalExperimentPlan {

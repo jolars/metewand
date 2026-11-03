@@ -47,6 +47,13 @@ optional in this example.
 
 ## Check the evaluator against analytic cases
 
+Reference metrics compare exactly by default. For numerical differences across
+libraries, add `metric-tolerance: {absolute: 1e-12, relative: 1e-12}` to a
+reference case. Numeric leaves pass when their difference is at most
+`absolute + relative * abs(expected)`. Structure, nonnumeric values, and the
+expected verdict still compare exactly. Keep stopping metrics unrounded; apply
+portability tolerances to reference checks instead.
+
 Add `reference-cases` beside `semantics`:
 
 ```yaml

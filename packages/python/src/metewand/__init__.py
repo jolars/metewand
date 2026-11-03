@@ -8,10 +8,13 @@ import os
 from pathlib import Path
 import sys
 
+from ._helpers import stream_callback
+
 try:
     __version__ = version("metewand")
 except PackageNotFoundError:
     __version__ = "0.3.0"
+
 BINDING_API_VERSION = 1
 
 
@@ -110,7 +113,11 @@ def _serve(role, callbacks):
 
 
 def serve_implementation(**callbacks):
-    """Serve named lifecycle callbacks with explicit state and a context."""
+    """Serve lifecycle callbacks, optionally warming fresh state once per worker.
+
+    ``warmup(state, context)`` runs during the first preparation. The CLI resets
+    that state and prepares a clean replacement before executing measured work.
+    """
     return _serve("implementation", callbacks)
 
 
@@ -129,6 +136,6 @@ def serve_evaluator(evaluate):
     return _serve("problem_evaluator", {"evaluate": evaluate})
 
 
-__all__ = ["BINDING_API_VERSION", "Artifact", "Context", "Dataset", "Evaluation", "Result",
+__all__ = ["BINDING_API_VERSION", "Artifact", "Context", "Dataset", "Evaluation", "Result", "stream_callback",
            "WorkerError", "read_json", "write_json", "serve_implementation",
            "serve_dataset_materializer", "serve_problem_preparer", "serve_evaluator"]

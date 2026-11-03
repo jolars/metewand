@@ -20,6 +20,111 @@ struct Starter {
 }
 
 #[test]
+fn named_experiments_isolate_workers_and_record_explicit_environment() {
+    let starter = Starter::new("python");
+    fs::write(starter.project.join("benchmark.py"), r#"
+import os
+def generate(context): return {"values": [1, 2]}
+def solve(data, context):
+    assert os.environ["OMP_NUM_THREADS"] == "1"
+    return {"total": sum(data["values"])}
+def evaluate(data, result, context): return {"error": abs(result["total"] - sum(data["values"])) + 1e-13}
+"#).unwrap();
+    fs::write(
+        starter.project.join("unavailable.py"),
+        "raise RuntimeError('unselected worker imported')\n",
+    )
+    .unwrap();
+    fs::write(
+        starter.project.join("metewand.yaml"),
+        r#"
+version: 1
+name: selection
+default-experiment: smoke
+environments:
+  local:
+    kind: local
+    environment-variables: {OMP_NUM_THREADS: "1"}
+datasets:
+  numbers: {function: benchmark.py:generate}
+problems:
+  sum:
+    result: {total: number}
+    metrics: {error: number}
+    evaluator: {function: benchmark.py:evaluate}
+    reference-cases:
+      - dataset: {values: [1, 2]}
+        result: {total: 3}
+        expected-metrics: {error: 0}
+        metric-tolerance: {absolute: 1e-12}
+implementations:
+  available: {function: benchmark.py:solve}
+  unavailable: {function: unavailable.py:solve}
+experiments:
+  - {name: smoke, problem: sum, datasets: [numbers], implementations: [available], seed: 7}
+  - {name: full, problem: sum, datasets: [numbers], implementations: [unavailable], seed: 7}
+"#,
+    )
+    .unwrap();
+    let plan = starter.json(&["plan"], 0);
+    assert_eq!(plan["summary"]["logical_candidates"], 1);
+    let checked = starter.json(&["check", "--workers"], 0);
+    assert_eq!(checked["worker_launches"], 3);
+    assert_eq!(checked["reference_cases"][0]["metrics"]["error"], 1e-13);
+    let selected = starter.json(
+        &["plan", "--experiment", "full", "--experiment", "smoke"],
+        0,
+    );
+    assert_eq!(selected["summary"]["logical_candidates"], 2);
+    let run = starter.json(&["run", "--experiment", "smoke", "--output-dir", "run"], 0);
+    assert_eq!(run["summary"]["accepted_attempts"], 1);
+    let resumed = starter.json(
+        &[
+            "run",
+            "--experiment",
+            "smoke",
+            "--output-dir",
+            "run",
+            "--resume",
+        ],
+        0,
+    );
+    assert_eq!(resumed["summary"]["attempt_slots"], 0);
+    let attempts = fs::read_dir(starter.project.join("run/artifacts")).unwrap();
+    let receipt = attempts
+        .filter_map(Result::ok)
+        .map(|entry| entry.path().join("attempt.json"))
+        .find(|path| path.exists())
+        .unwrap();
+    let receipt: Value = serde_json::from_slice(&fs::read(receipt).unwrap()).unwrap();
+    assert_eq!(
+        receipt["provenance"]["data"]["execution"]["implementation"]["environment_variables"]["OMP_NUM_THREADS"],
+        "1"
+    );
+    let failed = starter.invoke(&["check", "--workers", "--experiment", "full"]);
+    assert!(!failed.status.success());
+    let unknown = starter.invoke(&["run", "--experiment", "missing", "--output-dir", "missing"]);
+    assert!(!unknown.status.success());
+    assert!(!starter.project.join("missing").exists());
+    let path = starter.project.join("metewand.yaml");
+    let manifest = fs::read_to_string(&path).unwrap();
+    for name in ["PATH", "HOME", "METEWAND_PROTOCOL_TRANSPORT"] {
+        fs::write(
+            &path,
+            manifest.replace("OMP_NUM_THREADS: \"1\"", &format!("{name}: \"1\"")),
+        )
+        .unwrap();
+        let output = starter.invoke(&["check", "--output", "json"]);
+        assert!(!output.status.success());
+        let envelope: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(
+            envelope["data"]["causes"][0]["code"],
+            "invalid_worker_environment"
+        );
+    }
+}
+
+#[test]
 fn r_functions_share_problem_preparation_with_the_evaluator() {
     let starter = Starter::new("r");
     let manifest = include_str!("../../examples/problem-preparation/metewand.yaml")

@@ -119,9 +119,42 @@ impl From<RunError> for WorkerCheckError {
 pub fn check_repository_workers(
     repository: &CheckedRepository,
 ) -> Result<WorkerCheckReport, WorkerCheckError> {
+    check_repository_workers_for_experiments(repository, &[])
+}
+
+/// Checks only workers and reference cases reachable from selected experiments.
+pub fn check_repository_workers_for_experiments(
+    repository: &CheckedRepository,
+    experiments: &[String],
+) -> Result<WorkerCheckReport, WorkerCheckError> {
     verify_repository(repository)?;
     let timeouts = resolve_worker_timeouts(repository)?;
-    let plan = repository.logical_plan()?;
+    let plan = repository
+        .logical_plan()?
+        .select_experiments(experiments, repository.manifest.default_experiment.as_ref())
+        .map_err(WorkerCheckError::Conformance)?;
+    let selected = repository
+        .manifest
+        .experiments
+        .iter()
+        .filter(|definition| {
+            plan.experiments
+                .iter()
+                .any(|experiment| experiment.name == definition.name)
+        })
+        .collect::<Vec<_>>();
+    let datasets = selected
+        .iter()
+        .flat_map(|experiment| experiment.datasets.iter())
+        .collect::<std::collections::BTreeSet<_>>();
+    let implementations = selected
+        .iter()
+        .flat_map(|experiment| experiment.implementations.iter())
+        .collect::<std::collections::BTreeSet<_>>();
+    let problems = selected
+        .iter()
+        .map(|experiment| &experiment.problem)
+        .collect::<std::collections::BTreeSet<_>>();
     let executor =
         crate::runtime::executor::LocalProcessExecutor::new(std::time::Duration::from_millis(100));
     for experiment in &plan.experiments {
@@ -130,6 +163,9 @@ pub fn check_repository_workers(
     let private = TempDir::new()?;
     let mut resolved = Vec::new();
     for (name, dataset) in &repository.manifest.datasets {
+        if !datasets.contains(name) {
+            continue;
+        }
         if let DatasetDefinition::Generated(dataset) = dataset {
             resolved.push((
                 name.to_string(),
@@ -140,6 +176,9 @@ pub fn check_repository_workers(
         }
     }
     for (name, implementation) in &repository.manifest.implementations {
+        if !implementations.contains(name) {
+            continue;
+        }
         let capabilities = implementation
             .capabilities
             .iter()
@@ -167,6 +206,9 @@ pub fn check_repository_workers(
         ));
     }
     for (name, problem) in &repository.manifest.problems {
+        if !problems.contains(name) {
+            continue;
+        }
         if let Some(preparation) = &problem.preparation {
             resolved.push((
                 name.to_string(),
@@ -333,7 +375,12 @@ pub fn check_repository_workers(
                     case.resolved_verdict(&contract.semantics).as_str()
                 ))
                 .expect("reference verdict");
-                if metrics.data() != expected.data() {
+                if !case.metric_tolerance.map_or_else(
+                    || metrics.data() == expected.data(),
+                    |tolerance| {
+                        tolerance.matches(metrics.data().as_json(), expected.data().as_json())
+                    },
+                ) {
                     return Err(WorkerCheckError::Conformance(format!(
                         "problem `{name}` reference case {case_index}: reference metrics disagree"
                     )));

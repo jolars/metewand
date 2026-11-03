@@ -119,6 +119,44 @@
                       "indices"
                     ],
                     "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "const": "geometric"
+                      },
+                      "start": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 9007199254740991
+                      },
+                      "ratio": {
+                        "type": "integer",
+                        "minimum": 2,
+                        "maximum": 9007199254740991
+                      },
+                      "count": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 9007199254740991
+                      },
+                      "prefix": {
+                        "type": "array",
+                        "items": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        }
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "start",
+                      "ratio",
+                      "count"
+                    ],
+                    "additionalProperties": false
                   }
                 ]
               }
@@ -184,6 +222,12 @@
                         "type": "integer",
                         "minimum": 1,
                         "maximum": 9007199254740991
+                      },
+                      "prefix": {
+                        "type": "array",
+                        "items": {
+                          "type": "object"
+                        }
                       }
                     },
                     "required": [
@@ -215,6 +259,12 @@
                         "type": "integer",
                         "minimum": 1,
                         "maximum": 9007199254740991
+                      },
+                      "prefix": {
+                        "type": "array",
+                        "items": {
+                          "type": "object"
+                        }
                       }
                     },
                     "required": [
@@ -227,14 +277,38 @@
                     "additionalProperties": false
                   }
                 ]
+              },
+              "controls": {
+                "$ref": "common.schema.json#/$defs/compact_outputs"
               }
             },
             "required": [
               "delivery",
-              "control-schema",
               "schedule"
             ],
-            "additionalProperties": false
+            "additionalProperties": false,
+            "oneOf": [
+              {
+                "required": [
+                  "control-schema"
+                ],
+                "not": {
+                  "required": [
+                    "controls"
+                  ]
+                }
+              },
+              {
+                "required": [
+                  "controls"
+                ],
+                "not": {
+                  "required": [
+                    "control-schema"
+                  ]
+                }
+              }
+            ]
           },
           {
             "type": "object",
@@ -280,6 +354,44 @@
                     },
                     "required": [
                       "indices"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "const": "geometric"
+                      },
+                      "start": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 9007199254740991
+                      },
+                      "ratio": {
+                        "type": "integer",
+                        "minimum": 2,
+                        "maximum": 9007199254740991
+                      },
+                      "count": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 9007199254740991
+                      },
+                      "prefix": {
+                        "type": "array",
+                        "items": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        }
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "start",
+                      "ratio",
+                      "count"
                     ],
                     "additionalProperties": false
                   }
@@ -635,10 +747,15 @@
           "implementations": {
             "not": {
               "additionalProperties": {
-                "properties": {
-                  "delivery": {
-                    "const": "fresh_sequence"
-                  }
+                "not": {
+                  "properties": {
+                    "delivery": {
+                      "const": "buffered_profile"
+                    }
+                  },
+                  "required": [
+                    "delivery"
+                  ]
                 }
               }
             }

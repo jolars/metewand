@@ -87,6 +87,9 @@
           }
         ]
       }
+    },
+    "default-experiment": {
+      "$ref": "common.schema.json#/$defs/name"
     }
   },
   "required": ["version", "name"],
@@ -344,7 +347,13 @@
         {
           "type": "object",
           "properties": {
-            "kind": { "type": "string", "const": "local" }
+            "kind": { "type": "string", "const": "local" },
+            "environment-variables": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            }
           },
           "required": ["kind"],
           "additionalProperties": false

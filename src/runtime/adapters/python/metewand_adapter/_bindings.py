@@ -73,6 +73,7 @@ class _Callbacks:
         self.binding_callbacks = callbacks
         self.state = None
         self.context = None
+        self.warmed = False
 
     def _request_context(self, request):
         if request["method"] in {"prepare", "check_applicability"}:
@@ -86,6 +87,15 @@ class _Callbacks:
     def prepare(self):
         self.state = None
         self.state = _invoke(self.binding_callbacks["prepare"], self.context)
+        warmup = self.binding_callbacks.get("warmup")
+        if warmup is not None and not self.warmed:
+            _invoke(warmup, self.state, self.context)
+            reset = self.binding_callbacks.get("reset")
+            if reset is not None:
+                _invoke(reset, self.state, self.context)
+            self.state = None
+            self.state = _invoke(self.binding_callbacks["prepare"], self.context)
+            self.warmed = True
 
     def execute(self, budget, observation_control):
         self.context.budget = budget
@@ -200,9 +210,11 @@ def serve_bindings(*, api_version, role, callbacks, metadata):
         elif role == "dataset_materializer":
             callbacks = {"materialize": lambda context: _invoke(selected[0], context)}
         elif role == "problem_preparer":
-            callbacks = {"materialize": lambda context: _invoke(
-                selected[0], _read_function_data(context.dataset_dir), context
-            )}
+            callbacks = {
+                "materialize": lambda context: _invoke(
+                    selected[0], _read_function_data(context.dataset_dir), context
+                )
+            }
         else:
             callbacks = {
                 "evaluate": lambda context: _invoke(
@@ -215,6 +227,7 @@ def serve_bindings(*, api_version, role, callbacks, metadata):
     allowed = (
         {
             "prepare",
+            "warmup",
             "execute",
             "result",
             "statistics",
@@ -260,17 +273,24 @@ def serve_bindings(*, api_version, role, callbacks, metadata):
     elif role == "problem_preparer":
 
         def worker(dataset, contract, parameters, output):
-            context = _context(dict(
-                method="materialize", dataset_dir=dataset, problem_contract_id=contract,
-                problem_parameters=parameters, output_dir=output,
-            ))
+            context = _context(
+                dict(
+                    method="materialize",
+                    dataset_dir=dataset,
+                    problem_contract_id=contract,
+                    problem_parameters=parameters,
+                    output_dir=output,
+                )
+            )
             value = _invoke(callbacks["materialize"], context)
             if isinstance(value, binding.Dataset):
                 return _draft(output, "dataset", value.data, value.files)
             return _draft(output, "dataset", value)
     elif role == "problem_evaluator":
 
-        def worker(dataset, contract, parameters, semantics, result, metrics, problem_dir=None):
+        def worker(
+            dataset, contract, parameters, semantics, result, metrics, problem_dir=None
+        ):
             context = _context(
                 dict(
                     method="evaluate",

@@ -23,8 +23,8 @@ Usage:
   metewand [--output FORMAT] init [PATH] [--language python|r] [--empty] [--dry-run]
   metewand [--output FORMAT] scaffold <component> NAME [OPTIONS]
   metewand [--output FORMAT] schema [SCHEMA]
-  metewand [--output FORMAT] check [--manifest PATH] [--workers]
-  metewand [--output FORMAT] plan [--manifest PATH]
+  metewand [--output FORMAT] check [--manifest PATH] [--experiment NAME] [--workers]
+  metewand [--output FORMAT] plan [--manifest PATH] [--experiment NAME]
   metewand [--output FORMAT] lock [--manifest PATH] [--check]
   metewand [--output FORMAT] run [--manifest PATH] --output-dir PATH [--locked]
   metewand [--output FORMAT] status [--manifest PATH] [--output-dir PATH]
@@ -55,8 +55,8 @@ Options:
   -V, --version    Print the package version.
 ";
 
-const CHECK_HELP: &str = "Usage: metewand [--output FORMAT] check [--manifest PATH] [--workers]\n\nValidate the manifest, contracts, schemas, source bundles, and logical compatibility. With --workers, launch trusted local workers to verify declared capabilities and evaluate problem reference cases in temporary storage.\n";
-const PLAN_HELP: &str = "Usage: metewand [--output FORMAT] plan [--manifest PATH]\n\nPrint the deterministic unresolved logical plan without downloads, builds, worker launches, or filesystem writes.\n";
+const CHECK_HELP: &str = "Usage: metewand [--output FORMAT] check [--manifest PATH] [--experiment NAME] [--workers]\n\nValidate the manifest, contracts, schemas, source bundles, and logical compatibility. With --workers, launch trusted local workers to verify declared capabilities and evaluate problem reference cases in temporary storage.\n";
+const PLAN_HELP: &str = "Usage: metewand [--output FORMAT] plan [--manifest PATH] [--experiment NAME]\n\nPrint the deterministic unresolved logical plan without downloads, builds, worker launches, or filesystem writes.\n";
 const SCHEMA_HELP: &str = "Usage: metewand [--output FORMAT] schema [SCHEMA]\n\nWithout SCHEMA, list the stable public schema names and identifiers.\n";
 
 pub fn main() -> ExitCode {
@@ -265,15 +265,27 @@ fn check_command(arguments: &[OsString]) -> Result<CommandResult, CommandError> 
         .filter(|argument| *argument != "--workers")
         .cloned()
         .collect::<Vec<_>>();
+    let (remaining, experiments) = experiment_arguments(&remaining)?;
     let manifest = manifest_argument(&remaining)?;
     let repository =
         check_repository(&manifest).map_err(|error| CommandError::repository("check", &error))?;
     let mut result = CommandResult::check(&repository);
+    repository
+        .logical_plan()
+        .map_err(|error| CommandError::planning("check", &error))?
+        .select_experiments(
+            &experiments,
+            repository.manifest.default_experiment.as_ref(),
+        )
+        .map_err(|message| CommandError::usage("invalid_experiment_selection", message))?;
     if workers == 1 {
         #[cfg(any(unix, windows))]
         {
-            let report = crate::runtime::run::check_repository_workers(&repository)
-                .map_err(|error| CommandError::worker_check(&error))?;
+            let report = crate::runtime::run::check_repository_workers_for_experiments(
+                &repository,
+                &experiments,
+            )
+            .map_err(|error| CommandError::worker_check(&error))?;
             result.set_worker_check(report);
         }
         #[cfg(not(any(unix, windows)))]
@@ -289,13 +301,45 @@ fn plan_command(arguments: &[OsString]) -> Result<CommandResult, CommandError> {
     if arguments == ["-h"] || arguments == ["--help"] {
         return Ok(CommandResult::help(PLAN_HELP));
     }
-    let manifest = manifest_argument(arguments)?;
+    let (remaining, experiments) = experiment_arguments(arguments)?;
+    let manifest = manifest_argument(&remaining)?;
     let repository =
         check_repository(&manifest).map_err(|error| CommandError::repository("plan", &error))?;
     let plan = repository
         .logical_plan()
-        .map_err(|error| CommandError::planning("plan", &error))?;
+        .map_err(|error| CommandError::planning("plan", &error))?
+        .select_experiments(
+            &experiments,
+            repository.manifest.default_experiment.as_ref(),
+        )
+        .map_err(|message| CommandError::usage("invalid_experiment_selection", message))?;
     Ok(CommandResult::plan(&repository, &plan))
+}
+
+fn experiment_arguments(
+    arguments: &[OsString],
+) -> Result<(Vec<OsString>, Vec<String>), CommandError> {
+    let mut remaining = Vec::new();
+    let mut experiments = Vec::new();
+    let mut arguments = arguments.iter();
+    while let Some(argument) = arguments.next() {
+        if argument == "--experiment" {
+            let name = arguments
+                .next()
+                .and_then(|name| name.to_str())
+                .filter(|name| !name.is_empty())
+                .ok_or_else(|| {
+                    CommandError::usage(
+                        "missing_experiment_name",
+                        "--experiment requires a nonempty name",
+                    )
+                })?;
+            experiments.push(name.to_owned());
+        } else {
+            remaining.push(argument.clone());
+        }
+    }
+    Ok((remaining, experiments))
 }
 
 fn manifest_argument(arguments: &[OsString]) -> Result<PathBuf, CommandError> {

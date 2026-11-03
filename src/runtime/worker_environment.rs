@@ -60,6 +60,18 @@ pub fn worker_environment_template() -> BTreeMap<String, String> {
     variables
 }
 
+/// Resolves literal local settings without overriding launch-owned channels.
+pub(crate) fn resolve_local_environment(
+    variables: &BTreeMap<String, String>,
+) -> Result<BTreeMap<String, String>, WorkerEnvironmentError> {
+    for name in variables.keys() {
+        if name.eq_ignore_ascii_case("PATH") || name.to_ascii_uppercase().starts_with("METEWAND_") {
+            return Err(WorkerEnvironmentError::ReservedVariable { name: name.clone() });
+        }
+    }
+    resolve_worker_environment(variables)
+}
+
 /// Validates an allowlist and fills in the mandatory worker settings.
 ///
 /// # Errors

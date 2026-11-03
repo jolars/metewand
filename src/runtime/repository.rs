@@ -415,6 +415,14 @@ fn build_planning_catalog(
         records.insert(record.id.clone(), record);
         schema_ids.insert(path.clone(), id);
     }
+    for definition in manifest.environments.values() {
+        if let EnvironmentDefinition::Local {
+            environment_variables,
+        } = definition
+        {
+            crate::runtime::worker_environment::resolve_local_environment(environment_variables)?;
+        }
+    }
     let environment_definitions = manifest
         .environments
         .iter()
@@ -622,7 +630,17 @@ fn environment_record(
     definition: &EnvironmentDefinition,
 ) -> EnvironmentDefinitionRecord {
     let kind = match definition {
-        EnvironmentDefinition::Local {} => EnvironmentDefinitionKind::Local,
+        EnvironmentDefinition::Local {
+            environment_variables,
+        } => {
+            if environment_variables.is_empty() {
+                EnvironmentDefinitionKind::Local
+            } else {
+                EnvironmentDefinitionKind::LocalWithVariables {
+                    environment_variables: environment_variables.clone(),
+                }
+            }
+        }
         EnvironmentDefinition::Uv {
             project,
             lockfile,
@@ -920,6 +938,10 @@ fn contained_path(root: &Path, path: &Path) -> Result<PathBuf, RepositoryCheckEr
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum RepositoryCheckError {
+    /// A local environment attempts to override runtime-owned settings.
+    #[error(transparent)]
+    WorkerEnvironment(#[from] crate::runtime::worker_environment::WorkerEnvironmentError),
+
     /// The manifest path could not be resolved.
     #[error("failed to access manifest `{}`: {source}", path.display())]
     ManifestAccess {
