@@ -1,152 +1,97 @@
-# Metewand Python package
+# Metewand for Python <img src="https://raw.githubusercontent.com/jolars/metewand/refs/heads/main/assets/logo.png" align="right" width="160" alt="A green measuring rod with brass ends" />
 
-Define benchmarks with ordinary functions and small scientific result objects.
-The package requires Python 3.11 or later and has no third-party runtime
-dependencies. The separate CLI supplies worker adapters, measures execution,
-validates outputs, computes file hashes, and publishes canonical artifacts.
+Write reproducible computational benchmarks with ordinary Python functions.
+Define how to generate data, run your methods, and evaluate their answers, then
+declare the comparison in YAML. The Metewand CLI runs each method in a separate
+process and saves timings, metrics, failures, and provenance.
 
-## Install and run
+This package provides the Python functions and result objects you need to write
+a benchmark. The CLI checks and runs it on Linux, macOS, and native Windows x64.
 
-From a checkout, install the CLI and package in the selected worker environment:
+## Install
+
+You need Python 3.11 or later and Git. Install the package from GitHub in a
+virtual environment:
 
 ```sh
-cargo install --locked --path .
 python3 -m venv .venv
 . .venv/bin/activate
-python3 -m pip install ./packages/python
+python3 -m pip install "metewand @ git+https://github.com/jolars/metewand.git@main#subdirectory=packages/python"
+```
+
+On Windows, use `python` in place of `python3` and activate the environment with
+`.\.venv\Scripts\Activate.ps1` in PowerShell. Keep the environment active when
+running benchmarks so workers can find your installed packages.
+
+Install the separate **Metewand CLI** by following [getting
+started](https://metewand.org/guide/getting-started#install). Installing the
+Python package does not install the CLI.
+
+The base package has no third-party runtime dependencies. To include NumPy and
+SciPy helpers for dense and sparse arrays, install the `arrays` extra:
+
+```sh
+python3 -m pip install "metewand[arrays] @ git+https://github.com/jolars/metewand.git@main#subdirectory=packages/python"
+```
+
+These commands install the development version. For a reproducible benchmark,
+replace `main` with a commit hash and pin your scientific dependencies.
+
+## Try a benchmark
+
+With the CLI and Python package installed, create and run a starter:
+
+```sh
 metewand init my-benchmark
+
 cd my-benchmark
+
 metewand check --workers
 metewand run --output-dir run
 ```
 
-On Windows, activate the environment with `.\.venv\Scripts\Activate.ps1`.
-Building the CLI from source requires Rust's MSVC toolchain and Visual Studio
-C++ build tools; installing the Python package does not. See
-[getting started](https://metewand.org/guide/getting-started) for binary CLI
-installation, platform requirements, and local NTFS storage requirements.
+The starter creates `benchmark.py` and `metewand.yaml`. It generates seeded
+integers, compares Python's built-in sum with a loop, and independently checks
+each answer. Metewand prints timings and absolute errors and saves the results
+in `run/`.
 
-The package and CLI have independent releases. Compatibility follows **binding
-API version 1**, rather than equal release numbers. Upgrade the CLI without
-reinstalling a compatible package. Pin scientific dependencies and source
-revisions when retaining benchmark evidence.
+## Write your own comparison
 
-## Author benchmarks
-
-Ordinary functions use `generate(context)`, `solve(data, context)`, and
-`evaluate(data, result, context)`. Select them in YAML with
-`function: benchmark.py:solve`. Evaluators may return plain metric dictionaries
-when no scientific rules are declared; otherwise return
-`Evaluation(metrics, verdict)`.
-
-For separate preparation and solving, register functions:
+Replace the generated functions with your data, methods, and metrics. A method
+and its evaluator can be as small as:
 
 ```python
-from metewand import read_json, serve_implementation
+def builtin_sum(data, context):
+    return {"total": sum(data["values"])}
 
-
-def prepare(context):
-    return read_json(context.dataset_dir / "data.json")
-
-
-def execute(state, context):
-    return {"answer": sum(state["values"])}
-
-
-serve_implementation(prepare=prepare, execute=execute,
-                     reset=lambda state, context: None)
+def evaluate(data, result, context):
+    expected = sum(data["values"])
+    return {"absolute_error": abs(result["total"] - expected)}
 ```
 
-Select `protocol-transport: socket` for lifecycle workers. Context supplies
-`parameters`, `problem_parameters`, `seed`, `semantics`, assigned directories,
-and optional `observation_control`. Optional fields can be added without
-changing signatures. Path fields are `pathlib.Path` values. The CLI never sets
-scientific random generators automatically.
+Select functions in YAML with entries such as
+`function: benchmark.py:builtin_sum`. The `context` argument supplies your
+parameters, a seed, and input and output directories. Use `context.seed` to seed
+your random generator when generating data or running randomized methods.
 
-Problems can declare a shared `preparation` function taking `(data, context)`.
-It receives the verified dataset and resolved `context.problem_parameters`.
-Return a JSON object or `Dataset`; implementations and evaluators receive its
-cached artifact in `context.problem_dir`. For file-only datasets, register
-`serve_problem_preparer(materialize)` and read `context.dataset_dir` directly.
-See the [shared preparation example](../../examples/problem-preparation).
+Return dictionaries for ordinary JSON data and metrics. For benchmarks with an
+accuracy target, use `Evaluation(metrics, verdict)` to report whether the method
+reached it. Use `Dataset`, `Result`, and `Artifact` when you also need to return
+files. The CLI records and checks those files alongside the JSON output.
 
-Cooperative solvers can register `execute_stream(state, context)` and use
-`context.stream.checkpoint(progress, snapshot)` to pause for an independently
-evaluated decision. The CLI supplies this helper within binding API 1. See the
-[streaming example](../../examples/streaming-profile) for bounded policies,
-result snapshots, stopping, and clean-state retries.
+Follow the [authoring guide](https://metewand.org/guide/authoring/) for
+parameter sweeps, repeated measurements, reference checks, and result exports.
+If your methods need separate setup and solve steps, see the [Python
+example](https://github.com/jolars/metewand/tree/main/examples/python-package).
+For progress measurements during a solve, see the [streaming
+example](https://github.com/jolars/metewand/tree/main/examples/streaming-profile)
+or [buffered profile
+example](https://github.com/jolars/metewand/tree/main/examples/buffered-profile).
 
-Optional `result(output, context)` converts solver output after diagnostic solve
-timing. `statistics(output, context)` returns diagnostics. `reset(state,
-context)` releases slot state, and `shutdown(state, context)` releases resources.
-Execution consumes preparation even when it fails; the original preparation
-state remains available for cleanup.
+## Project status
 
-An optional `warmup(state, context)` callback warms the first prepared state
-once per worker. The CLI calls `reset` when supplied and prepares fresh state
-before execution. It runs inside preparation, so `execute_only` excludes it.
-This is separate from execution-policy `warmup-runs`, which repeat the selected
-workload.
+Metewand is under active development. The Python package and CLI have separate
+releases; their version numbers do not need to match.
 
-Use `stream_callback` for a solver that accepts a Boolean callback:
-
-```python
-with stream_callback(
-    context.stream,
-    lambda: write_result(solver.get_result(), context.stream.output_dir),
-    work_field="iterations",
-) as checkpoint:
-    solver.run(checkpoint)
-```
-
-It counts checks, stops at the orchestrator's decision, and captures a terminal
-result when the solver finishes naturally. Exceptions retain partial evidence.
-
-Install `metewand[arrays]` for optional NumPy and SciPy helpers:
-
-```python
-from metewand.arrays import read_array, write_array
-
-artifact = write_array(context.output_dir, "coefficients", coefficients)
-result = Result({"coefficients": str(artifact.path)}, [artifact])
-coefficients = read_array(context.result_dir, "coefficients.npy")
-```
-
-Dense arrays use `.npy`; sparse arrays retain their format in `.npz`. The
-helpers reject object arrays and never enable pickle. The base package and
-importing `metewand.arrays` require neither optional dependency.
-
-`Dataset(data, files)` and `Result(data, files)` describe JSON data and completed
-files. Write files beneath `context.output_dir`, close them, and declare them
-with `Artifact(path, media_type, representation)`. The CLI owns envelopes,
-inventories, canonicalization, and hashes. Native workers may still implement
-the public process protocol and write completed artifacts directly.
-
-For configuration-dependent support, register `check_applicability(context)`
-and declare `capabilities: [one_shot, applicability]`. Return a dictionary with
-`outcome` (`applicable` or `not_applicable`), nonempty `code` and `reason`, and
-optional `details`. The callback can inspect `context.dataset_dir` and
-`context.dataset_manifest` before preparation and must preserve those inputs.
-
-Buffered workers register `execute_buffered(state, context)` and use the
-CLI-provided `context.observer` for `observe`, `record`, `finish`, or native
-buffer adoption. Observer implementations and profile policy handling ship with
-the CLI. No per-point process exchange is added.
-
-The pre-MVP migration replaces implementation subclasses with named callbacks,
-positional arguments with contexts, and manifest writers with output values.
-Protocol, canonicalization, and observer implementation classes are no longer
-exported from the package. Constructors and JSON utilities work without the CLI;
-serving requires its adapter and never downloads code.
-
-See the [authoring guide](https://metewand.org/guide/authoring/),
-[Python example](../../examples/python-package), and
-[buffered profile example](../../examples/buffered-profile). Package tests run with:
-
-```sh
-python -m unittest discover -s packages/python/tests -v
-```
-
-The runtime's adapter tests retain canonicalization, identity, lifecycle, and
-profile conformance coverage. CI checks installed wheels and source distributions
-on Linux, macOS, and Windows.
+See the [main repository](https://github.com/jolars/metewand) for project news,
+citation information, and contributor instructions.
