@@ -26,7 +26,7 @@ use crate::protocol::{WorkerIdentity, WorkerRole};
 use crate::runtime::worker_session::{PhaseTimeouts, WorkerSession};
 use crate::runtime::{
     local_worker::{LocalWorkerLaunchError, launch_trusted_local_worker},
-    worker_environment::WorkerEnvironmentError,
+    worker_environment::{WorkerEnvironmentError, resolve_local_environment},
     worker_process::{PROTOCOL_READ_FD_ENV, PROTOCOL_WRITE_FD_ENV, WorkerLogLimits},
 };
 use serde_json::json;
@@ -72,6 +72,15 @@ fn fixture_worker() {
 #[test]
 fn trusted_local_launch_uses_a_private_directory_and_only_allowlisted_environment() {
     let private_root = TempDir::new().unwrap();
+    let mut environment_variables = resolve_local_environment(&BTreeMap::from([(
+        "EXTRA_CACHE".to_owned(),
+        "{worker}/cache/custom path/café".to_owned(),
+    )]))
+    .unwrap();
+    environment_variables.extend([
+        (FIXTURE_MODE.to_owned(), "1".to_owned()),
+        ("METEWAND_ALLOWED".to_owned(), "present".to_owned()),
+    ]);
     let launch = ResolvedLaunchRecord {
         environment: record_id::<ResolvedEnvironmentRecord>(1),
         program: env::current_exe().unwrap().to_str().unwrap().to_owned(),
@@ -80,14 +89,7 @@ fn trusted_local_launch_uses_a_private_directory_and_only_allowlisted_environmen
             "runtime_tests::local_worker_launch::fixture_worker".to_owned(),
             "--nocapture".to_owned(),
         ],
-        environment_variables: BTreeMap::from([
-            (FIXTURE_MODE.to_owned(), "1".to_owned()),
-            ("METEWAND_ALLOWED".to_owned(), "present".to_owned()),
-            (
-                "EXTRA_CACHE".to_owned(),
-                "{worker}/cache/custom path/café".to_owned(),
-            ),
-        ]),
+        environment_variables,
         working_directory: WorkerWorkingDirectory::PrivateRunDirectory,
     };
 

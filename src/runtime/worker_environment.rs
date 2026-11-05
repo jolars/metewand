@@ -60,7 +60,7 @@ pub fn worker_environment_template() -> BTreeMap<String, String> {
     variables
 }
 
-/// Resolves literal local settings without overriding launch-owned channels.
+/// Validates local settings while retaining runtime path templates for launch.
 pub(crate) fn resolve_local_environment(
     variables: &BTreeMap<String, String>,
 ) -> Result<BTreeMap<String, String>, WorkerEnvironmentError> {
@@ -69,7 +69,7 @@ pub(crate) fn resolve_local_environment(
             return Err(WorkerEnvironmentError::ReservedVariable { name: name.clone() });
         }
     }
-    resolve_worker_environment(variables)
+    resolve_environment_template(variables)
 }
 
 /// Validates an allowlist and fills in the mandatory worker settings.
@@ -77,6 +77,25 @@ pub(crate) fn resolve_local_environment(
 /// # Errors
 /// Returns an error for malformed entries or conflicting runtime-owned values.
 pub fn resolve_worker_environment(
+    allowlist: &BTreeMap<String, String>,
+) -> Result<BTreeMap<String, String>, WorkerEnvironmentError> {
+    let variables = resolve_environment_template(allowlist)?;
+    #[cfg(windows)]
+    let variables = {
+        let mut variables = variables;
+        let root = system_root()?;
+        let root = root.to_str().ok_or(WorkerEnvironmentError::InvalidPath)?;
+        for value in variables.values_mut() {
+            if value.contains("{system_root}") {
+                *value = value.replace("{system_root}", root);
+            }
+        }
+        variables
+    };
+    Ok(variables)
+}
+
+fn resolve_environment_template(
     allowlist: &BTreeMap<String, String>,
 ) -> Result<BTreeMap<String, String>, WorkerEnvironmentError> {
     let mut variables = worker_environment_template();
@@ -115,16 +134,6 @@ pub fn resolve_worker_environment(
             return Err(WorkerEnvironmentError::ReservedVariable { name: name.clone() });
         }
         variables.insert(name.clone(), value.clone());
-    }
-    #[cfg(windows)]
-    {
-        let root = system_root()?;
-        let root = root.to_str().ok_or(WorkerEnvironmentError::InvalidPath)?;
-        for value in variables.values_mut() {
-            if value.contains("{system_root}") {
-                *value = value.replace("{system_root}", root);
-            }
-        }
     }
     Ok(variables)
 }
@@ -245,6 +254,26 @@ mod tests {
     use super::*;
 
     #[test]
+    fn local_environment_keeps_runtime_paths_symbolic_until_launch() {
+        for settings in [
+            BTreeMap::new(),
+            BTreeMap::from([
+                ("OMP_NUM_THREADS".to_owned(), "2".to_owned()),
+                ("EXTRA_CACHE".to_owned(), "{worker}/cache/custom".to_owned()),
+            ]),
+        ] {
+            let resolved = resolve_local_environment(&settings).unwrap();
+            let mut expected = worker_environment_template();
+            expected.extend(settings.clone());
+            assert_eq!(resolved, expected);
+            assert_eq!(
+                resolve_worker_environment(&resolved).unwrap(),
+                resolve_worker_environment(&settings).unwrap()
+            );
+        }
+    }
+
+    #[test]
     fn worker_directory_templates_require_normalized_logical_paths() {
         for relative in [
             "",
@@ -287,6 +316,8 @@ mod windows_tests {
         for values in [
             [("Path", "one"), ("PATH", "two")],
             [("home", "outside"), ("OTHER", "value")],
+            [("SystemRoot", "outside"), ("OTHER", "value")],
+            [("windir", "outside"), ("OTHER", "value")],
             [("metewand_protocol_read_handle", "12"), ("OTHER", "value")],
         ] {
             let variables = values
@@ -294,6 +325,7 @@ mod windows_tests {
                 .map(|(k, v)| (k.to_owned(), v.to_owned()))
                 .collect();
             assert!(resolve_worker_environment(&variables).is_err());
+            assert!(resolve_local_environment(&variables).is_err());
         }
     }
 }
