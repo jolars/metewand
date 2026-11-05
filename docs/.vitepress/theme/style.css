@@ -17,17 +17,3 @@
   font-family: var(--vp-font-family-mono);
   letter-spacing: -0.04em;
 }
-
-.VPHero .text {
-  max-width: 900px;
-}
-
-.VPHero .tagline {
-  max-width: 760px;
-}
-
-.VPHome .vp-doc {
-  max-width: 800px;
-  margin: 0 auto;
-  padding: 0 24px 64px;
-}
