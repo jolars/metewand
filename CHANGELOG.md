@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.4.0](https://github.com/jolars/metewand/compare/v0.3.0...v0.4.0) (2026-11-05)
+
+### Features
+
+- simplify benchmark authoring ([`1b29eb5`](https://github.com/jolars/metewand/commit/1b29eb59648f48b462744b3d2860ecde6287e4f7))
+- add shared problem preparation ([`fbd1959`](https://github.com/jolars/metewand/commit/fbd195973b49950f98ab7549c2c29eab4c1749a8)), closes [#17](https://github.com/jolars/metewand/issues/17)
+- add worker timeouts and explicit checkpoint schedules ([`e12831e`](https://github.com/jolars/metewand/commit/e12831e111ce208a0be1d85a065a9d15c7874571))
+
+### Bug Fixes
+
+- preserve Windows worker environment templates ([`7205589`](https://github.com/jolars/metewand/commit/7205589e87a9b031cab8b79a62e52f8cd375dda1))
+- allow output outside nonrecursive source globs ([`348e77b`](https://github.com/jolars/metewand/commit/348e77b42b91af894706728a22af37d06f2cb6d7)), fixes [#16](https://github.com/jolars/metewand/issues/16)
+- check formatting of shared Rust modules ([`6ba13be`](https://github.com/jolars/metewand/commit/6ba13bea3553fadb222ef65ba63d954d36fb8bf6)), fixes [#14](https://github.com/jolars/metewand/issues/14)
+- bind worker deadlines to resolved identities ([`794ca43`](https://github.com/jolars/metewand/commit/794ca431978a89278af85e0b04abc5b1cc0d0291)), closes [#12](https://github.com/jolars/metewand/issues/12)
+
 ## [0.3.0](https://github.com/jolars/metewand/compare/v0.2.0...v0.3.0) (2026-11-02)
 
 ### Breaking changes

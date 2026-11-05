@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/jolars/metewand/compare/metewand-v0.3.0...metewand-v0.4.0) (2026-11-05)
+
+### Features
+
+- simplify benchmark authoring ([`1b29eb5`](https://github.com/jolars/metewand/commit/1b29eb59648f48b462744b3d2860ecde6287e4f7))
+- add shared problem preparation ([`fbd1959`](https://github.com/jolars/metewand/commit/fbd195973b49950f98ab7549c2c29eab4c1749a8)), closes [#17](https://github.com/jolars/metewand/issues/17)
+
 ## [0.3.0](https://github.com/jolars/metewand/compare/metewand-v0.2.0...metewand-v0.3.0) (2026-11-02)
 
 ### Breaking changes
