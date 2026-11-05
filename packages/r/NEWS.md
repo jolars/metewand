@@ -1,3 +1,9 @@
+# metewand 0.3.0
+
+## Features
+
+- add shared problem preparation ([`fbd1959`](https://github.com/jolars/metewand/commit/fbd195973b49950f98ab7549c2c29eab4c1749a8)), closes [#17](https://github.com/jolars/metewand/issues/17)
+
 # metewand 0.2.0
 
 ## Breaking changes
