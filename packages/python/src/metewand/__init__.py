@@ -13,7 +13,7 @@ from ._helpers import stream_callback
 try:
     __version__ = version("metewand")
 except PackageNotFoundError:
-    __version__ = "0.3.0"
+    __version__ = "0.4.0"
 
 BINDING_API_VERSION = 1
 

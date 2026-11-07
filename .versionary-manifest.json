@@ -1,38 +1,38 @@
 {
   "manifest-version": 1,
-  "baseline-sha": "3867ac182c991561b5bc95ec6b868b7592a995bc",
+  "baseline-sha": "7205589e87a9b031cab8b79a62e52f8cd375dda1",
   "release-targets": [
     {
       "path": ".",
-      "version": "0.3.0",
-      "tag": "v0.3.0"
+      "version": "0.4.0",
+      "tag": "v0.4.0"
     },
     {
       "path": "packages/python",
-      "version": "0.3.0",
-      "tag": "metewand-v0.3.0"
+      "version": "0.4.0",
+      "tag": "metewand-v0.4.0"
     },
     {
       "path": "packages/r",
-      "version": "0.2.0",
-      "tag": "metewand-r-v0.2.0"
+      "version": "0.3.0",
+      "tag": "metewand-r-v0.3.0"
     }
   ],
   "pending-release-targets": [
     {
       "path": ".",
-      "version": "0.3.0",
-      "tag": "v0.3.0"
+      "version": "0.4.0",
+      "tag": "v0.4.0"
     },
     {
       "path": "packages/python",
-      "version": "0.3.0",
-      "tag": "metewand-v0.3.0"
+      "version": "0.4.0",
+      "tag": "metewand-v0.4.0"
     },
     {
       "path": "packages/r",
-      "version": "0.2.0",
-      "tag": "metewand-r-v0.2.0"
+      "version": "0.3.0",
+      "tag": "metewand-r-v0.3.0"
     }
   ]
 }
