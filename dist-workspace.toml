@@ -25,5 +25,9 @@ install-updater = false
 # Python's metewand-vX.Y.Z tags have their own publication workflow.
 tag-namespace = "v"
 
+[dist.github-custom-runners]
+# Use a supported ARM runner instead of cargo-dist's macOS 14 default.
+aarch64-apple-darwin = "macos-15"
+
 [dist.github-action-commits]
 "actions/checkout" = "v7"
