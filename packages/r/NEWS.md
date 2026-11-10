@@ -1,3 +1,9 @@
+# metewand 0.4.0
+
+## Features
+
+- support primary computation timing ([`92fba38`](https://github.com/jolars/metewand/commit/92fba38893970d3d6bcd3f196d1bdac78591271b))
+
 # metewand 0.3.0
 
 ## Features
