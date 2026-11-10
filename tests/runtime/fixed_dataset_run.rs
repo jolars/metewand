@@ -911,6 +911,7 @@ fn finalized_one_shot_has_independent_hash_complete_directories() {
     let published = finalize_fixed_dataset(
         &result,
         PublicationRequest {
+            primary_time: crate::core::manifest::PrimaryTime::TimedWallTime,
             root: store.path(),
             attempt_slot: record_id(2),
             observation_slot: record_id(3),
@@ -1045,6 +1046,7 @@ fn a_missed_completion_target_keeps_an_observation_in_a_failed_attempt() {
     let published = finalize_fixed_dataset(
         &result,
         PublicationRequest {
+            primary_time: crate::core::manifest::PrimaryTime::TimedWallTime,
             root: store.path(),
             attempt_slot: record_id(2),
             observation_slot: record_id(3),
@@ -1080,6 +1082,7 @@ fn changed_private_outputs_cannot_be_published() {
             finalize_fixed_dataset(
                 &result,
                 PublicationRequest {
+                    primary_time: crate::core::manifest::PrimaryTime::TimedWallTime,
                     root: store.path(),
                     attempt_slot: record_id(2),
                     observation_slot: record_id(3),
@@ -1118,6 +1121,7 @@ fn a_metrics_symlink_cannot_be_published_even_if_its_bytes_match() {
         finalize_fixed_dataset(
             &result,
             PublicationRequest {
+                primary_time: crate::core::manifest::PrimaryTime::TimedWallTime,
                 root: store.path(),
                 attempt_slot: record_id(2),
                 observation_slot: record_id(3),
@@ -1151,6 +1155,7 @@ fn an_attempt_publication_failure_leaves_only_a_complete_observation() {
         finalize_fixed_dataset(
             &result,
             PublicationRequest {
+                primary_time: crate::core::manifest::PrimaryTime::TimedWallTime,
                 root: store.path(),
                 attempt_slot: record_id(2),
                 observation_slot: record_id(3),
@@ -1195,6 +1200,7 @@ fn publication_retains_role_scoped_log_prefixes_and_truncation_provenance() {
     let published = finalize_fixed_dataset(
         &result,
         PublicationRequest {
+            primary_time: crate::core::manifest::PrimaryTime::TimedWallTime,
             root: store.path(),
             attempt_slot: record_id(2),
             observation_slot: record_id(3),

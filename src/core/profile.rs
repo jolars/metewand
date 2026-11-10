@@ -629,6 +629,14 @@ pub enum ExecutorBasis {
     ExecutorObserved,
 }
 
+/// Source of the selected comparison clock for a clean-state profile point.
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum FreshMeasurementBasis {
+    ExecutorObserved,
+    WorkerReported,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ControlSchedule {
@@ -753,7 +761,7 @@ pub struct FreshControl {
 #[serde(deny_unknown_fields)]
 pub struct FreshObservationRecord {
     pub delivery: FreshDelivery,
-    pub measurement_basis: ExecutorBasis,
+    pub measurement_basis: FreshMeasurementBasis,
     pub measurement_index: u64,
     pub schedule_index: u64,
     pub observation_control: Value,

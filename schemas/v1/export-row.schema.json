@@ -47,6 +47,15 @@
             }
           ]
         },
+        "primary_time_ns": {
+          "anyOf": [
+            { "$ref": "common.schema.json#/$defs/safe_nonnegative_integer" },
+            { "type": "null" }
+          ]
+        },
+        "primary_time_status": {
+          "enum": ["complete", "partial", "unavailable"]
+        },
         "timed_wall_time_ns": {
           "anyOf": [
             {

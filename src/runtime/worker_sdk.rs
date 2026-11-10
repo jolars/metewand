@@ -96,7 +96,7 @@ pub enum ServeError {
 
 /// An implementation whose algorithm and state belong entirely to the adapter.
 pub trait Implementation {
-    /// Solver output converted and serialized after diagnostic solve timing.
+    /// Solver output converted and serialized after implementation timing.
     type Output: Serialize;
 
     /// Declares whether the optional support callback is implemented.
@@ -124,7 +124,7 @@ pub trait Implementation {
     /// Return a failure when preparation cannot complete.
     fn prepare(&mut self, request: &PrepareRequest) -> WorkerResult<()>;
 
-    /// Runs the solver. Only this callback contributes to diagnostic implementation time.
+    /// Runs the solver. Only this callback contributes to implementation time.
     ///
     /// # Errors
     /// Return a failure when solving cannot complete.

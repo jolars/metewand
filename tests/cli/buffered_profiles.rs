@@ -39,6 +39,30 @@ fn stage() -> TempDir {
     );
     stage
 }
+
+#[test]
+fn buffered_profiles_keep_their_declared_instrumented_clock() {
+    let stage = stage();
+    let path = stage.path().join("metewand.yaml");
+    let source = fs::read_to_string(&path)
+        .unwrap()
+        .replace(
+            "primary-time: timed_wall_time",
+            "primary-time: implementation_time",
+        )
+        .replace(
+            "timing-scope: prepare_and_execute",
+            "timing-scope: execute_only",
+        );
+    fs::write(path, source).unwrap();
+    let output = invoke(stage.path(), &["check", "--output", "json"]);
+    assert!(!output.status.success());
+    let message = String::from_utf8(output.stdout).unwrap();
+    assert!(
+        message.contains("buffered and streaming profiles use their declared profile clocks"),
+        "{message}"
+    );
+}
 fn invoke(root: &Path, args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_metewand"))
         .current_dir(root)

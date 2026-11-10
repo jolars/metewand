@@ -172,13 +172,16 @@ serve_bindings <- function(api_version, role, callbacks, metadata, codec) {
       prepared <<- FALSE
       context$output_dir <<- request$result_dir
       context["observation_control"] <<- list(request$observation_control)
+      started <- proc.time()[["elapsed"]]
       output <- callbacks$execute(state, context)
+      elapsed <- round((proc.time()[["elapsed"]] - started) * 1e9)
+      if (!.integer(elapsed, 9007199254740991)) elapsed <- NULL
       statistics <- if (is.function(callbacks$statistics)) callbacks$statistics(output, context) else .object(list())
       if (is.null(statistics)) statistics <- .object(list())
       value <- if (is.function(callbacks$result)) callbacks$result(output, context) else output
       if (!inherits(value, "metewand_result")) value <- metewand::result(value)
       response <- list(draft = .draft(request$result_dir, "result", value$data, value$files),
-                       statistics = .object(statistics), implementation_time_ns = NULL)
+                       statistics = .object(statistics), implementation_time_ns = elapsed)
       if (!is.null(request$observation_control)) response$observation_control <- request$observation_control
       return(response)
     } else if (method == "check_applicability" && role == "implementation" && is.function(callbacks$check_applicability)) {

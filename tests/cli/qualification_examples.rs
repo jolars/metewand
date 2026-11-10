@@ -98,8 +98,7 @@ fn adopter_evaluators_check_analytic_references_and_malformed_results() {
     assert!(output.status.success(), "{output:?}");
 }
 
-#[test]
-fn overhead_worker_keeps_primary_time_and_local_diagnostics_in_all_scopes() {
+fn overhead_worker_comparison(primary_time: &str) {
     let root = tempfile::tempdir().unwrap();
     let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/overhead");
     fs::create_dir(root.path().join("reference")).unwrap();
@@ -134,6 +133,23 @@ fn overhead_worker_keeps_primary_time_and_local_diagnostics_in_all_scopes() {
         .replace("measurement-repetitions: 11", "measurement-repetitions: 1")
         .replace("grid: [0, 1000000, 10000000]", "grid: [1000000]")
         .replace("grid: [0, 1000000]", "grid: [4096]");
+    let manifest = if primary_time == "implementation_time" {
+        manifest
+            .replace(
+                "primary-time: timed_wall_time",
+                "primary-time: implementation_time",
+            )
+            .replace(
+                "timing-scope: prepare_and_execute",
+                "timing-scope: execute_only",
+            )
+            .replace(
+                "timing-scope: cold_end_to_end",
+                "timing-scope: execute_only",
+            )
+    } else {
+        manifest
+    };
     fs::write(root.path().join("metewand.yaml"), manifest).unwrap();
     let output = Command::new(env!("CARGO_BIN_EXE_metewand"))
         .current_dir(root.path())
@@ -166,6 +182,7 @@ fn overhead_worker_keeps_primary_time_and_local_diagnostics_in_all_scopes() {
         assert!(total >= work + encoding + writing);
         assert!(document["timing"]["timed_wall_time_ns"].as_u64().unwrap() >= total);
         assert_eq!(document["timing"]["implementation_time_ns"], work);
+        assert_eq!(document["timing"]["primary_time"], primary_time);
         scopes.push(
             document["provenance"]["data"]["context"]["timing_scope"]
                 .as_str()
@@ -174,8 +191,29 @@ fn overhead_worker_keeps_primary_time_and_local_diagnostics_in_all_scopes() {
         );
     }
     scopes.sort();
-    assert_eq!(
-        scopes,
-        ["cold_end_to_end", "execute_only", "prepare_and_execute"]
-    );
+    if primary_time == "implementation_time" {
+        assert_eq!(scopes, ["execute_only"; 3]);
+        for row in report["data"]["comparison"].as_array().unwrap() {
+            assert_eq!(row["primary_time"], "implementation_time");
+            assert!(
+                row["primary_time_ns"].as_u64().unwrap()
+                    < row["timed_wall_time_ns"].as_u64().unwrap()
+            );
+        }
+    } else {
+        assert_eq!(
+            scopes,
+            ["cold_end_to_end", "execute_only", "prepare_and_execute"]
+        );
+    }
+}
+
+#[test]
+fn overhead_worker_keeps_primary_time_and_local_diagnostics_in_all_scopes() {
+    overhead_worker_comparison("timed_wall_time");
+}
+
+#[test]
+fn overhead_worker_can_select_implementation_primary_time() {
+    overhead_worker_comparison("implementation_time");
 }

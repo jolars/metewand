@@ -674,7 +674,7 @@ pub struct ArtifactReference<T> {
 /// Timings and resource measurements attached to one observation.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ObservationTimingRecord {
-    /// Authoritative executor-observed comparison time.
+    /// Selected comparison clock, whose source remains explicit.
     pub primary_time: PrimaryTime,
     /// Wall time over the execution policy's selected timing scope.
     pub timed_wall_time: Duration,

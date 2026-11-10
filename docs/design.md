@@ -118,11 +118,27 @@ The execution policy selects an envelope that the problem contract permits:
   | `execute_only`        | Execution and result serialization, with contract-authorized untimed preparation. |
 
 Dataset construction and independent evaluation remain outside these scopes. The
-default is `prepare_and_execute` with executor-observed wall time. In-worker
-solve timing is additional diagnostic evidence.
+default is `prepare_and_execute` with executor-observed wall time.
 
-Scientific wall-time limits apply to the selected envelope. Operational phase
-deadlines bound worker exchanges separately. Resource measurements distinguish
+For one-shot and fresh-sequence solver comparisons, an execution policy can
+select `primary-time: implementation_time` with `timing-scope: execute_only`.
+This selects the worker's elapsed time around its execute callback, excluding
+Metewand's result conversion, serialization, file writing, and transport. The
+problem must authorize execute-only timing and describe allowed untimed
+preparation. Method-specific setup belongs inside the callback when the
+comparison charges that work. Conversion or serialization performed by the
+callback itself remains included.
+
+Both callback time and the executor's outer wall time remain recorded. Reports
+identify the selected clock, and fresh points label worker-reported timing
+separately from executor-observed timing. A missing selected callback measurement
+fails the attempt without falling back to another clock. Buffered and streaming
+profiles retain their separately declared trajectory clocks.
+
+Scientific wall-time limits apply to the executor-observed envelope even when
+callback time is primary. Fresh-sequence cumulative limits also charge that
+envelope. Operational phase deadlines bound worker exchanges separately.
+Resource measurements distinguish
 complete, partial, and unavailable evidence. Missing evidence never becomes a
 measured zero or a stronger guarantee.
 

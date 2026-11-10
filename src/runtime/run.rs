@@ -798,6 +798,21 @@ fn execute(
             );
         }
     };
+    if candidate.reuse_key.policy.primary_time
+        == crate::core::manifest::PrimaryTime::ImplementationTime
+        && result.implementation_time_ns.is_none()
+    {
+        worker.discard();
+        return failed_attempt(
+            measurement,
+            execution,
+            started_at,
+            "missing_implementation_time",
+            "The selected primary clock requires the worker to report implementation_time_ns."
+                .into(),
+            &measurements,
+        );
+    }
     if let (Some(policy), Some(fresh)) = (&candidate.fresh_profile, &measurement.fresh) {
         result.completion =
             if let (Some(metric), Some(threshold)) = (&policy.metric, policy.threshold) {
@@ -829,7 +844,13 @@ fn execute(
         result.execution_provenance["profile_observation"] =
             serde_json::to_value(crate::core::profile::FreshObservationRecord {
                 delivery: crate::core::profile::FreshDelivery::FreshSequence,
-                measurement_basis: crate::core::profile::ExecutorBasis::ExecutorObserved,
+                measurement_basis: if candidate.reuse_key.policy.primary_time
+                    == crate::core::manifest::PrimaryTime::ImplementationTime
+                {
+                    crate::core::profile::FreshMeasurementBasis::WorkerReported
+                } else {
+                    crate::core::profile::FreshMeasurementBasis::ExecutorObserved
+                },
                 measurement_index: measurement.scheduling.comparison_block.measurement_index,
                 schedule_index: fresh.schedule_index,
                 observation_control: fresh.observation_control.clone(),
@@ -845,6 +866,7 @@ fn execute(
     let (published, attempt_directory, observation_directory) = execution.publish_result(
         &result,
         PublicationRequest {
+            primary_time: candidate.reuse_key.policy.primary_time,
             root: &output_root,
             attempt_slot: measurement.attempt_slot.id,
             observation_slot: measurement.observation_slot.id,

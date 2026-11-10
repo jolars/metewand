@@ -388,10 +388,7 @@ fn timing_scope(value: TimingScope) -> &'static str {
 }
 
 fn primary_time(value: PrimaryTime) -> &'static str {
-    match value {
-        PrimaryTime::TimedWallTime => "timed_wall_time",
-        PrimaryTime::CpuTime => "cpu_time",
-    }
+    value.as_str()
 }
 
 fn run_order(value: RunOrder) -> &'static str {

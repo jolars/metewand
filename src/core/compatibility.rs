@@ -7,7 +7,7 @@ use thiserror::Error;
 use crate::core::{
     manifest::{
         DatasetDefinition, ExperimentDefinition, ImplementationCapability, Manifest, Name,
-        ObservationKind, TimingScope,
+        ObservationKind, PrimaryTime, TimingScope,
     },
     problem_contract::{ProblemContract, ScientificBudget},
     schema::SchemaCatalog,
@@ -81,6 +81,15 @@ fn validate_compatibility(
     }
 
     for (execution_policy, policy) in &manifest.execution_policies {
+        if policy.resolved_primary_time() == PrimaryTime::ImplementationTime
+            && policy.resolved_timing_scope() != TimingScope::ExecuteOnly
+        {
+            return Err(
+                ManifestCompatibilityError::ImplementationTimeRequiresExecuteOnly {
+                    execution_policy: execution_policy.clone(),
+                },
+            );
+        }
         let worker_reuse = policy.resolved_worker_reuse();
         let warmup_runs = policy.resolved_warmup_runs();
         if warmup_runs > 0 && !worker_reuse {
@@ -169,6 +178,13 @@ fn validate_compatibility(
                         "missing binding for {implementation}"
                     ))
                 })?;
+                if execution_policy.resolved_primary_time() == PrimaryTime::ImplementationTime
+                    && !matches!(binding, crate::core::profile::ProfileBinding::Fresh(_))
+                {
+                    return Err(ManifestCompatibilityError::InvalidProfile(
+                        "implementation_time is available for one-shot and fresh-sequence execution; buffered and streaming profiles use their declared profile clocks".into(),
+                    ));
+                }
                 if let Some(schemas) = schemas
                     && let Some(metric) = &profile.policy.metric
                     && !schemas.has_numeric_property(contract.metric_schema.as_path(), metric)
@@ -337,6 +353,11 @@ fn required_scientific_budget(kind: ObservationKind) -> ScientificBudget {
 #[derive(Debug, Error, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum ManifestCompatibilityError {
+    /// The callback clock must not silently exclude contract-required preparation.
+    #[error(
+        "execution policy `{execution_policy}`: implementation_time requires timing-scope: execute_only"
+    )]
+    ImplementationTimeRequiresExecuteOnly { execution_policy: Name },
     #[error("invalid profile: {0}")]
     InvalidProfile(String),
     /// Compact contract parameters and a problem definition both supply defaults.

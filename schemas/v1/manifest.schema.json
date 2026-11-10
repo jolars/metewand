@@ -522,7 +522,7 @@
         },
         "primary-time": {
           "type": "string",
-          "enum": ["timed_wall_time", "cpu_time"]
+          "enum": ["timed_wall_time", "implementation_time", "cpu_time"]
         },
         "run-order": {
           "type": "string",

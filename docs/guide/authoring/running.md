@@ -63,9 +63,41 @@ declare its `allowed-timing-scopes` and define what preparation may do outside
 the timer. Separate lifecycle callbacks are useful when you need precise
 preparation boundaries.
 
-In-worker `implementation_time_ns`, when present, measures the solve callback.
-It supplements the primary executor-observed time. Linux CPU and peak-memory
-measurements cover the implementation process, so their evidence is partial.
+To compare solver computation without Metewand's result serialization, select
+the callback clock explicitly:
+
+```yaml
+execution-policies:
+  solver:
+    timing-scope: execute_only
+    primary-time: implementation_time
+    timeout: 30 s
+```
+
+Select `execution-policy: solver` in the experiment. The problem must permit
+`execute_only` and define the preparation allowed outside
+the timer. The worker measures only its execute callback. Put method-specific
+setup there when the comparison charges it. With lifecycle workers, return the
+solver object from `execute` and convert it to JSON-compatible values in the
+optional `result` callback. Conversion performed inside `execute` still counts.
+Metewand's subsequent result conversion, encoding, writing, and transport stay
+outside callback time.
+
+Python, R, and Rust adapters report `implementation_time_ns`. R uses elapsed
+`proc.time()`, whose resolution depends on the platform; nanosecond units do not
+imply nanosecond resolution. A custom worker must report its callback measurement.
+A missing measurement fails the attempt with `missing_implementation_time`.
+
+This primary clock is available for one-shot and fresh-sequence execution.
+Buffered and streaming profiles use their declared trajectory clocks. The
+executor's `timed_wall_time_ns` remains recorded, and scientific timeouts and
+fresh-sequence cumulative budgets continue to use that outer wall clock,
+including result writing. Reports and exports expose the selected clock through
+`primary_time`, `primary_time_ns`, and `primary_time_status`; JSONL rows keep the
+clock name in `compatibility.primary_time`.
+
+Linux CPU and peak-memory measurements cover the implementation process, so
+their evidence is partial.
 These measurements are unavailable on macOS and Windows; missing values are
 not zero. Wall time is available on all three platforms.
 
@@ -330,7 +362,9 @@ For plotting or retaining a documentation snapshot, choose `--format json`. Its
 dictionary, method names, effective settings, repetition indices, profile
 controls, and separate timing coordinates. `implementation_time_ns` is the
 worker's fit timer; `timed_wall_time_ns` is the executor's timer. Profile clocks
-remain separate. The snapshot also includes attempts, registered slots,
+remain separate. `primary_time_ns` selects the configured comparison clock
+without substituting another measurement when it is unavailable. The snapshot
+also includes attempts, registered slots,
 applicability, profile progress, and a `completeness` result.
 
 Each observation's `provenance_id` selects recorded evidence in the snapshot's

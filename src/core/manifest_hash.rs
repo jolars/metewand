@@ -734,10 +734,7 @@ fn timing_scope(scope: TimingScope) -> &'static str {
 }
 
 fn primary_time(primary_time: PrimaryTime) -> &'static str {
-    match primary_time {
-        PrimaryTime::TimedWallTime => "timed_wall_time",
-        PrimaryTime::CpuTime => "cpu_time",
-    }
+    primary_time.as_str()
 }
 
 fn run_order(run_order: RunOrder) -> &'static str {

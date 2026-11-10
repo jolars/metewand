@@ -98,7 +98,7 @@ fn r_sdk_contracts_and_roles_complete_a_validated_chain() {
         let response = implementation
             .execute(result.path().to_str().unwrap())
             .unwrap();
-        assert!(response.implementation_time_ns().is_none());
+        assert!(response.implementation_time_ns().is_some());
         assert_eq!(response.statistics(), &json!({"input_count": 3}));
         let validated = validator
             .validate_execution_result(result.path(), &response, Path::new("schemas/result.json"))

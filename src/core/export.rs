@@ -100,6 +100,8 @@ pub struct TidyRow {
     /// Unavailable annotations remain null rather than being guessed from names.
     pub metric_unit: Option<String>,
     pub metric_direction: Option<String>,
+    pub primary_time_ns: Option<u64>,
+    pub primary_time_status: String,
     pub timed_wall_time_ns: Option<u64>,
     pub timed_wall_time_status: String,
     pub implementation_time_ns: Option<u64>,
@@ -111,6 +113,17 @@ pub struct TidyRow {
 }
 
 impl ExportRecord {
+    /// Selects the declared clock without substituting another measurement.
+    #[must_use]
+    pub fn primary_measurement(&self) -> (Option<u64>, String) {
+        match self.compatibility.primary_time.as_deref() {
+            Some("timed_wall_time") => self.measurement("timed_wall_time_ns"),
+            Some("implementation_time") => self.measurement("implementation_time_ns"),
+            Some("cpu_time") => self.measurement("cpu_time_ns"),
+            _ => (None, "unavailable".to_owned()),
+        }
+    }
+
     /// Preserves unavailable and partial accounting when projecting a quantity.
     #[must_use]
     pub fn measurement(&self, key: &str) -> (Option<u64>, String) {
@@ -163,6 +176,7 @@ impl ExportRecord {
                     self.measurement("timed_wall_time_ns");
                 let (cpu_time_ns, cpu_time_status) = self.measurement("cpu_time_ns");
                 let (peak_rss_bytes, peak_rss_status) = self.measurement("peak_rss_bytes");
+                let (primary_time_ns, primary_time_status) = self.primary_measurement();
                 let profile = self.profile.as_ref();
                 let provisional = metric_name
                     .as_ref()
@@ -194,6 +208,8 @@ impl ExportRecord {
                     },
                     metric_unit: None,
                     metric_direction: None,
+                    primary_time_ns,
+                    primary_time_status,
                     timed_wall_time_ns,
                     timed_wall_time_status,
                     implementation_time_ns: self.timing["implementation_time_ns"].as_u64(),

@@ -645,6 +645,8 @@ fn csv(rows: &[TidyRow]) -> Result<Vec<u8>, ExportError> {
         "compatibility_id",
         "timing_scope",
         "primary_time",
+        "primary_time_ns",
+        "primary_time_status",
         "environment_class",
         "control_class",
         "control_evidence",

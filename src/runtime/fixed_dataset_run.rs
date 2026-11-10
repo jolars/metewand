@@ -168,7 +168,7 @@ pub struct FixedDatasetResult {
     pub completion: CompletionStatus,
     /// Orchestrator wall time covering the complete selected timing envelope.
     pub timed_wall_time: Duration,
-    /// Optional worker-reported time, retained only as a diagnostic.
+    /// Worker-reported callback time, available as an explicit primary clock.
     pub implementation_time_ns: Option<u64>,
     /// Implementation-owned diagnostic statistics.
     pub statistics: Value,

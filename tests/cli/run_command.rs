@@ -36,6 +36,222 @@ fn repository() -> TempDir {
     root
 }
 
+fn implementation_timing_repository() -> TempDir {
+    let root = repository();
+    replace(
+        root.path(),
+        "metewand.yaml",
+        "primary-time: \"timed_wall_time\"",
+        "primary-time: \"implementation_time\"",
+    );
+    replace(
+        root.path(),
+        "metewand.yaml",
+        "timing-scope: \"prepare_and_execute\"",
+        "timing-scope: \"execute_only\"",
+    );
+    replace(
+        root.path(),
+        "problem.yaml",
+        "allowed-timing-scopes: [\"prepare_and_execute\"]",
+        "allowed-timing-scopes: [\"prepare_and_execute\", \"execute_only\"]",
+    );
+    root
+}
+
+#[test]
+fn implementation_primary_time_preserves_zero_and_outer_wall_time() {
+    let root = implementation_timing_repository();
+    replace(
+        root.path(),
+        "worker.py",
+        "implementation_time_ns=None",
+        "implementation_time_ns=0",
+    );
+    let output = metewand(
+        root.path(),
+        &["run", "--output-dir", "run", "--output", "json"],
+    );
+    assert!(output.status.success(), "{output:?}");
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    public_schema_catalog()
+        .unwrap()
+        .validate(PublicSchema::RunOutput.repository_path(), &report)
+        .unwrap();
+    let row = &report["data"]["comparison"][0];
+    assert_eq!(row["primary_time"], "implementation_time");
+    assert_eq!(row["primary_time_ns"], 0);
+    assert_eq!(row["primary_time_status"], "complete");
+    assert!(row["timed_wall_time_ns"].as_u64().unwrap() > 0);
+    let observation = document(
+        &root
+            .path()
+            .join("run")
+            .join(
+                report["data"]["attempts"][0]["observation_directory"]
+                    .as_str()
+                    .unwrap(),
+            )
+            .join("observation.json"),
+    );
+    assert_eq!(observation["timing"]["primary_time"], "implementation_time");
+    assert_eq!(observation["timing"]["implementation_time_ns"], 0);
+    assert_eq!(
+        observation["timing"]["timed_wall_time_ns"],
+        row["timed_wall_time_ns"]
+    );
+
+    let status = metewand(root.path(), &["status", "--output-dir", "run"]);
+    assert!(status.status.success(), "{status:?}");
+    let text = String::from_utf8(status.stdout).unwrap();
+    assert!(text.contains("Primary (ms)"), "{text}");
+    assert!(text.contains("implementation_time"), "{text}");
+
+    let output = metewand(
+        root.path(),
+        &[
+            "export",
+            "--output-dir",
+            "run",
+            "--destination",
+            "tables",
+            "--format",
+            "jsonl",
+        ],
+    );
+    assert!(output.status.success(), "{output:?}");
+    let rows = fs::read_to_string(root.path().join("tables/results.jsonl")).unwrap();
+    let row = rows
+        .lines()
+        .map(|line| serde_json::from_str::<Value>(line).unwrap())
+        .find(|row| row["record_type"] == "observation")
+        .unwrap();
+    assert_eq!(row["primary_time_ns"], 0);
+    assert_eq!(row["primary_time_status"], "complete");
+    assert_eq!(row["compatibility"]["primary_time"], "implementation_time");
+
+    for format in ["csv", "json"] {
+        let output = metewand(
+            root.path(),
+            &[
+                "export",
+                "--output-dir",
+                "run",
+                "--destination",
+                format,
+                "--format",
+                format,
+            ],
+        );
+        assert!(output.status.success(), "{output:?}");
+    }
+    let snapshot = document(&root.path().join("json/results.json"));
+    public_schema_catalog()
+        .unwrap()
+        .validate(PublicSchema::AnalysisSnapshot.repository_path(), &snapshot)
+        .unwrap();
+    assert_eq!(
+        snapshot["observations"][0]["primary_time"],
+        "implementation_time"
+    );
+    assert_eq!(snapshot["observations"][0]["primary_time_ns"], 0);
+    let output = Command::new("python3")
+        .args(["-c", "import csv,json,sys; print(json.dumps(next(r for r in csv.DictReader(open(sys.argv[1], newline='')) if r['record_type'] == 'observation')))"])
+        .arg(root.path().join("csv/results.csv")).output().unwrap();
+    assert!(output.status.success(), "{output:?}");
+    let row: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(row["primary_time"], "implementation_time");
+    assert_eq!(row["primary_time_ns"], "0");
+
+    for args in [
+        vec![
+            "archive",
+            "create",
+            "--output-dir",
+            "run",
+            "--destination",
+            "results.tar.gz",
+        ],
+        vec!["archive", "verify", "--archive", "results.tar.gz"],
+        vec![
+            "archive",
+            "import",
+            "--archive",
+            "results.tar.gz",
+            "--destination",
+            "imported",
+        ],
+        vec!["status", "--output-dir", "imported", "--output", "json"],
+    ] {
+        let output = metewand(root.path(), &args);
+        assert!(output.status.success(), "{args:?}: {output:?}");
+        if args[0] == "status" {
+            let status: Value = serde_json::from_slice(&output.stdout).unwrap();
+            assert_eq!(status["data"]["comparison"][0]["primary_time_ns"], 0);
+            assert_eq!(
+                status["data"]["comparison"][0]["primary_time"],
+                "implementation_time"
+            );
+        }
+    }
+}
+
+#[test]
+fn implementation_primary_time_fails_without_a_worker_measurement() {
+    let root = implementation_timing_repository();
+    let output = metewand(
+        root.path(),
+        &["run", "--output-dir", "run", "--output", "json"],
+    );
+    assert_eq!(output.status.code(), Some(5), "{output:?}");
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let attempt = &report["data"]["attempts"][0];
+    assert_eq!(attempt["status"], "failed");
+    assert_eq!(attempt["diagnostic"]["code"], "missing_implementation_time");
+    assert!(attempt["observation_id"].is_null());
+    let row = &report["data"]["comparison"][0];
+    assert_eq!(row["primary_time"], "implementation_time");
+    assert!(row["primary_time_ns"].is_null());
+    assert_eq!(row["primary_time_status"], "unavailable");
+    assert!(row["timed_wall_time_ns"].as_u64().unwrap() > 0);
+}
+
+#[test]
+fn implementation_primary_time_keeps_serialization_under_the_wall_timeout() {
+    let root = implementation_timing_repository();
+    replace(
+        root.path(),
+        "metewand.yaml",
+        "primary-time: \"implementation_time\"",
+        "primary-time: \"implementation_time\"\ntimeout: 100 ms",
+    );
+    replace(
+        root.path(),
+        "worker.py",
+        "implementation_time_ns=None",
+        "implementation_time_ns=0",
+    );
+    replace(
+        root.path(),
+        "worker.py",
+        "            write_json(\n                Path(request[\"result_dir\"])",
+        "            import time\n            time.sleep(1)\n            write_json(\n                Path(request[\"result_dir\"])",
+    );
+    let output = metewand(
+        root.path(),
+        &["run", "--output-dir", "run", "--output", "json"],
+    );
+    assert_eq!(output.status.code(), Some(5), "{output:?}");
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        report["data"]["attempts"][0]["diagnostic"]["code"],
+        "scientific_timeout"
+    );
+    let row = &report["data"]["comparison"][0];
+    assert_eq!(row["primary_time_status"], "unavailable");
+    assert_eq!(row["timed_wall_time_status"], "partial");
+}
+
 fn metewand(root: &Path, args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_metewand"))
         .current_dir(root)

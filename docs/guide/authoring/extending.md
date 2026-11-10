@@ -189,7 +189,7 @@ corresponding capability.
 
 | Approach | Use it when | Recorded coordinate |
 | --- | --- | --- |
-| Fresh sequence | You can rerun a solver from clean state at a finite schedule of iteration limits or tolerances. | Executor-observed time for each independent point. |
+| Fresh sequence | You can rerun a solver from clean state at a finite schedule of iteration limits or tolerances. | The selected primary clock for each independent point, with executor wall time retained. |
 | Buffered profile | You can instrument one trajectory and capture bounded local measurements and result snapshots. | An instrumented clock with a problem-authorized scope, plus executor time. |
 | Streaming profile | Your solver can pause for independent evaluation at bounded checkpoints. | Executor-observed active time, excluding checkpoint pauses, plus elapsed and evaluation time. |
 
@@ -197,6 +197,11 @@ Fresh sequences work with black-box solvers and stop according to independent
 evaluation and configured limits. Buffered profiles retain provisional local
 trace values and independently evaluated snapshots separately. Instrumented
 time and wall time remain different measurements.
+
+Fresh sequences can select `primary-time: implementation_time` with authorized
+execute-only timing to exclude framework result serialization. Those observations
+use `measurement_basis: worker_reported`. Their cumulative budget still charges
+executor wall time, including result writing, across resume and retries.
 
 Streaming profiles publish each evaluated checkpoint before the worker receives
 `continue` or `stop`. Their active clock includes snapshot serialization and

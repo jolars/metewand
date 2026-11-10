@@ -171,11 +171,7 @@ fn reference_contracts_admit_correct_workers_and_reject_three_classes_of_bad_res
                     let response = implementation
                         .execute(result.path().to_str().unwrap())
                         .unwrap();
-                    assert_eq!(
-                        response.implementation_time_ns().is_some(),
-                        language == "python",
-                        "{context}"
-                    );
+                    assert!(response.implementation_time_ns().is_some(), "{context}");
                     let validated = validator.validate_execution_result(
                         result.path(),
                         &response,

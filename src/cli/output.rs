@@ -1745,7 +1745,7 @@ fn render_comparison(rows: &[crate::core::comparison::ComparisonRow]) -> String 
     }
     let mut output = String::from("\nComparison (individual measurements)\n");
     output.push_str(
-        "Method | Rep (impl:measurement) | Retry | Status | Completion | Wall (ms) | Parameters | Metrics\n",
+        "Method | Rep (impl:measurement) | Retry | Status | Completion | Primary (ms) | Wall (ms) | Parameters | Metrics\n",
     );
     let mut previous = None;
     for row in rows {
@@ -1755,13 +1755,14 @@ fn render_comparison(rows: &[crate::core::comparison::ComparisonRow]) -> String 
             &row.problem,
             &row.case,
             &row.timing_scope,
+            &row.primary_time,
             &row.parameters["dataset"],
             &row.parameters["problem"],
         );
         if previous != Some(settings) {
             writeln!(
                 output,
-                "  experiment: {}; dataset: {}; problem: {}; case: {}; timing: {}",
+                "  experiment: {}; dataset: {}; problem: {}; case: {}; timing: {}; primary: {}",
                 row.experiment.as_deref().unwrap_or("unavailable"),
                 row.dataset.as_deref().unwrap_or("unavailable"),
                 row.problem.as_deref().unwrap_or("unavailable"),
@@ -1770,7 +1771,8 @@ fn render_comparison(rows: &[crate::core::comparison::ComparisonRow]) -> String 
                 } else {
                     "unavailable"
                 }),
-                row.timing_scope.as_deref().unwrap_or("unavailable")
+                row.timing_scope.as_deref().unwrap_or("unavailable"),
+                row.primary_time.as_deref().unwrap_or("unavailable")
             )
             .expect("string write");
             writeln!(
@@ -1795,9 +1797,18 @@ fn render_comparison(rows: &[crate::core::comparison::ComparisonRow]) -> String 
         } else {
             duration
         };
+        let primary_duration = row
+            .primary_time_ns
+            .map(|n| format!("{:.3}", n as f64 / 1_000_000.0))
+            .unwrap_or_else(|| "unavailable".to_owned());
+        let primary_duration = if row.primary_time_status == "partial" {
+            format!("{primary_duration} (partial)")
+        } else {
+            primary_duration
+        };
         writeln!(
             output,
-            "{method} | {repetition} | {} | {} | {} | {duration} | {} | {}",
+            "{method} | {repetition} | {} | {} | {} | {primary_duration} | {duration} | {} | {}",
             row.retry_index,
             row.status,
             row.completion.as_deref().unwrap_or("unavailable"),
@@ -2073,10 +2084,7 @@ fn optional_value(value: Option<u64>) -> String {
 }
 
 fn primary_time(value: PrimaryTime) -> &'static str {
-    match value {
-        PrimaryTime::TimedWallTime => "timed_wall_time",
-        PrimaryTime::CpuTime => "cpu_time",
-    }
+    value.as_str()
 }
 
 fn run_order(value: RunOrder) -> &'static str {

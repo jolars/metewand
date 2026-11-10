@@ -63,7 +63,7 @@
           "const": "fresh_sequence"
         },
         "measurement_basis": {
-          "const": "executor_observed"
+          "enum": ["executor_observed", "worker_reported"]
         },
         "measurement_index": {
           "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"

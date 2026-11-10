@@ -318,8 +318,10 @@ worker_error <- function(code, message, details = NULL) {
 #' Select `protocol-transport: socket` for lifecycle workers. Ordinary function
 #' launches select managed transport automatically. Standard output and standard
 #' error remain log channels. The CLI owns timing, protocol negotiation,
-#' artifact finalization, and publication. R diagnostic solve time is
-#' unavailable.
+#' artifact finalization, and publication. Implementation time covers only
+#' `execute`, excluding the optional result callback and serialization. The R
+#' adapter uses elapsed `proc.time()`; nanosecond units do not imply nanosecond
+#' clock resolution.
 #'
 #' Serving requires a Metewand CLI that supports binding API version 1; package
 #' and CLI release numbers need not match.

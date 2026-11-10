@@ -165,6 +165,7 @@ pub(super) fn execute(
                     .publish_profile_observation(
                         result,
                         PublicationRequest {
+                            primary_time: candidate.reuse_key.policy.primary_time,
                             root: &root,
                             attempt_slot: measurement.attempt_slot.id,
                             observation_slot: measurement.observation_slots[ordinal].id,

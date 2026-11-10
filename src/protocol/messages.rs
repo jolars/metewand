@@ -1320,7 +1320,7 @@ impl ExecuteResponse {
         self
     }
 
-    /// Returns the worker's optional diagnostic implementation-call time.
+    /// Returns the worker's optional elapsed implementation-call time.
     #[must_use]
     pub const fn implementation_time_ns(&self) -> Option<u64> {
         self.implementation_time_ns

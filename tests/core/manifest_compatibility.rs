@@ -140,6 +140,60 @@ fn accepts_compatible_dataset_backed_experiments() {
 }
 
 #[test]
+fn implementation_primary_time_requires_authorized_untimed_preparation() {
+    for scope in ["prepare_and_execute", "cold_end_to_end", "execute_only"] {
+        let manifest = parse(
+            &COMPLETE_MANIFEST
+                .replace(
+                    "primary-time: \"timed_wall_time\"",
+                    "primary-time: implementation_time",
+                )
+                .replace(
+                    "timing-scope: \"prepare_and_execute\"",
+                    &format!("timing-scope: {scope}"),
+                ),
+        );
+        let contracts = contracts_for(
+            &manifest,
+            "regression",
+            contract(
+                false,
+                "allowed-timing-scopes: [\"cold_end_to_end\", \"prepare_and_execute\", \"execute_only\"]",
+            ),
+        );
+        let result = validate_manifest_compatibility(&manifest, &contracts);
+        if scope == "execute_only" {
+            result.unwrap();
+        } else {
+            assert!(matches!(
+                result,
+                Err(ManifestCompatibilityError::ImplementationTimeRequiresExecuteOnly { .. })
+            ));
+        }
+    }
+    let manifest = parse(
+        &COMPLETE_MANIFEST
+            .replace(
+                "primary-time: \"timed_wall_time\"",
+                "primary-time: implementation_time",
+            )
+            .replace(
+                "timing-scope: \"prepare_and_execute\"",
+                "timing-scope: execute_only",
+            ),
+    );
+    let contracts = contracts_for(
+        &manifest,
+        "regression",
+        contract(false, "allowed-timing-scopes: [\"prepare_and_execute\"]"),
+    );
+    assert!(matches!(
+        validate_manifest_compatibility(&manifest, &contracts),
+        Err(ManifestCompatibilityError::UnsupportedTimingScope { .. })
+    ));
+}
+
+#[test]
 fn requires_every_problem_contract_to_be_loaded() {
     let manifest = parse(COMPLETE_MANIFEST);
 

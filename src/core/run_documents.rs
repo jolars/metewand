@@ -24,8 +24,11 @@ use crate::core::{
 pub fn observation_document(
     record: &RunObservationRecord,
 ) -> Result<CanonicalValue, RunDocumentError> {
-    if record.timing.primary_time != PrimaryTime::TimedWallTime {
-        return Err(RunDocumentError::UnsupportedPrimaryTime);
+    match record.timing.primary_time {
+        PrimaryTime::TimedWallTime => {}
+        PrimaryTime::ImplementationTime if record.timing.implementation_time.is_some() => {}
+        PrimaryTime::ImplementationTime => return Err(RunDocumentError::MissingImplementationTime),
+        PrimaryTime::CpuTime => return Err(RunDocumentError::UnsupportedPrimaryTime),
     }
     let mut value = json!({
         "schema_version": PUBLIC_SCHEMA_VERSION,
@@ -35,7 +38,7 @@ pub fn observation_document(
         "result": artifact(&record.result),
         "metrics": artifact(&record.metrics),
         "timing": {
-            "primary_time": "timed_wall_time",
+            "primary_time": record.timing.primary_time.as_str(),
             "timed_wall_time_ns": nanoseconds(record.timing.timed_wall_time)?,
             "implementation_time_ns": record.timing.implementation_time.map(nanoseconds).transpose()?,
             "evaluation_time_ns": nanoseconds(record.timing.evaluation_time)?,
@@ -186,9 +189,12 @@ fn leap_year(year: u32) -> bool {
 /// Failure to represent a typed execution record in the public JSON contract.
 #[derive(Debug, Error)]
 pub enum RunDocumentError {
-    /// Gate 1 public observations support only wall time as primary time.
-    #[error("Gate 1 observation documents require timed_wall_time")]
+    /// No supported complete measurement is available for the selected clock.
+    #[error("observation documents support timed_wall_time or implementation_time")]
     UnsupportedPrimaryTime,
+    /// Selecting implementation time requires an actual worker measurement.
+    #[error("primary implementation time requires implementation_time_ns")]
+    MissingImplementationTime,
     /// A record contains a noncanonical value.
     #[error(transparent)]
     Canonical(#[from] CanonicalJsonError),

@@ -432,6 +432,20 @@ construction and independent evaluation stay outside the primary interval.
 Continuous cold and prepare-and-execute timing includes integrity and durable
 coordination between preparation and execution; provenance labels that overhead.
 
+One-shot and fresh-sequence policies may select `implementation_time` as primary
+with contract-authorized `execute_only` timing. Preserve the worker's callback
+measurement separately from the executor envelope. Missing selected measurements
+fail the attempt; zero is a valid measurement. Wall-time limits and fresh budget
+accounting always use the executor envelope, including result writing. Fresh
+observations identify the selected clock as `worker_reported` when applicable.
+Buffered and streaming policies retain their own profile clocks.
+
+This opt-in primary clock extends the existing version-1 policy and observation
+schemas. Its policy spelling enters existing identities, so it cannot share an
+identity or compatibility class with wall timing. Existing default policies and
+canonical vectors retain their meaning. The wire protocol and binding API
+already carry callback time and need no version change.
+
 Measurement payloads distinguish `complete`, `partial`, and `unavailable`.
 Nanoseconds and bytes are safe integers. Linux CPU and peak-RSS evidence is
 partial because it covers the implementation process without descendants. Peak

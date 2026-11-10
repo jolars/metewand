@@ -19,7 +19,7 @@
       "properties": {
         "primary_time": {
           "type": "string",
-          "const": "timed_wall_time"
+          "enum": ["timed_wall_time", "implementation_time"]
         },
         "timed_wall_time_ns": {
           "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
@@ -54,7 +54,17 @@
         "cpu_time_ns",
         "peak_rss_bytes"
       ],
-      "additionalProperties": false
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": { "properties": { "primary_time": { "const": "implementation_time" } } },
+          "then": {
+            "properties": {
+              "implementation_time_ns": { "$ref": "common.schema.json#/$defs/safe_nonnegative_integer" }
+            }
+          }
+        }
+      ]
     },
     "validity": {
       "type": "object",

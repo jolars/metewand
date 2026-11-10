@@ -14,6 +14,29 @@ use serde_json::Value;
 const CONFORMANCE_CASES: &str = include_str!("../../schemas/v1/fixtures/conformance.json");
 
 #[test]
+fn implementation_primary_time_requires_a_nonnull_measurement() {
+    let cases: ConformanceCases = serde_json::from_str(CONFORMANCE_CASES).unwrap();
+    let mut observation = cases
+        .valid
+        .into_iter()
+        .find(|case| case.schema == "observation")
+        .unwrap()
+        .instance;
+    observation["timing"]["primary_time"] = serde_json::json!("implementation_time");
+    observation["timing"]["implementation_time_ns"] = Value::Null;
+    let catalog = public_schema_catalog().unwrap();
+    assert!(
+        catalog
+            .validate(PublicSchema::Observation.repository_path(), &observation)
+            .is_err()
+    );
+    observation["timing"]["implementation_time_ns"] = serde_json::json!(0);
+    catalog
+        .validate(PublicSchema::Observation.repository_path(), &observation)
+        .unwrap();
+}
+
+#[test]
 fn native_path_boundaries_accept_windows_and_preserve_unix_records() {
     let catalog = public_schema_catalog().unwrap();
     for directory in [

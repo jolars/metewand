@@ -98,6 +98,38 @@ fn fixed_only(root: &Path) {
 }
 
 #[test]
+fn fresh_points_can_select_implementation_time_without_changing_budget_accounting() {
+    let stage = stage(false);
+    fixed_only(stage.path());
+    edit(stage.path(), "metewand.yaml", |s| {
+        s.replace(
+            "primary-time: timed_wall_time",
+            "primary-time: implementation_time",
+        )
+        .replace(
+            "timing-scope: prepare_and_execute",
+            "timing-scope: execute_only",
+        )
+    });
+    let (output, report) = run(stage.path(), &[]);
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(report["summary"]["accepted_attempts"], 4);
+    let mut wall_sum = 0;
+    for row in report["comparison"].as_array().unwrap() {
+        assert_eq!(row["primary_time"], "implementation_time");
+        assert_eq!(row["primary_time_status"], "complete");
+        assert!(row["primary_time_ns"].is_u64());
+        assert_eq!(row["profile"]["measurement_basis"], "worker_reported");
+        wall_sum += row["timed_wall_time_ns"].as_u64().unwrap();
+    }
+    assert_eq!(report["fresh_sequences"][0]["consumed_time_ns"], wall_sum);
+    let (output, resumed) = run(stage.path(), &["--resume"]);
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(resumed["summary"]["attempt_slots"], 0);
+    assert_eq!(resumed["fresh_sequences"], report["fresh_sequences"]);
+}
+
+#[test]
 fn fresh_points_stop_on_independent_metrics_and_export_skipped_slots() {
     let stage = stage(false);
     edit(stage.path(), "metewand.yaml", |s| {

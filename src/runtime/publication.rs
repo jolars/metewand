@@ -39,6 +39,8 @@ use crate::runtime::{
 /// Resolved identities and contextual provenance for one durable publication.
 #[derive(Debug)]
 pub struct PublicationRequest<'a> {
+    /// Selected comparison clock; wall time is retained independently.
+    pub primary_time: PrimaryTime,
     /// Existing absolute directory that will own `observations` and `attempts`.
     pub root: &'a Path,
     /// Resolved measured attempt slot selected by the caller.
@@ -256,7 +258,7 @@ pub(crate) fn prepare_fixed_dataset(
             sha256: metrics_digest,
         },
         timing: ObservationTimingRecord {
-            primary_time: PrimaryTime::TimedWallTime,
+            primary_time: request.primary_time,
             timed_wall_time: result.timed_wall_time,
             implementation_time: result.implementation_time_ns.map(Duration::from_nanos),
             evaluation_time: result.evaluation_time,

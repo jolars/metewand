@@ -269,9 +269,9 @@ pub(super) fn resolve(
                 "max_concurrency must be a positive safe integer",
             ));
         }
-        if policy.primary_time != PrimaryTime::TimedWallTime {
+        if policy.primary_time == PrimaryTime::CpuTime {
             return Err(unsupported(format!(
-                "execution policy `{}` requires timing outside the trusted local path; use wall timing",
+                "execution policy `{}` requires timing outside the trusted local path; use wall or implementation timing",
                 policy.name,
             )));
         }

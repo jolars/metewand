@@ -721,8 +721,21 @@ impl fmt::Display for TimingScope {
 pub enum PrimaryTime {
     /// Executor-observed elapsed wall time.
     TimedWallTime,
+    /// Worker-reported elapsed time around the implementation callback.
+    ImplementationTime,
     /// Executor-observed process-tree CPU time.
     CpuTime,
+}
+
+impl PrimaryTime {
+    /// Stable spelling used in policies, identities, and observation records.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::TimedWallTime => "timed_wall_time",
+            Self::ImplementationTime => "implementation_time",
+            Self::CpuTime => "cpu_time",
+        }
+    }
 }
 
 /// Ordering of logical run blocks.

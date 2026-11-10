@@ -97,6 +97,26 @@ impl Inspection {
                         .or_else(|| document["timing"][key]["value"].as_u64())
                         .or_else(|| provenance["measurements"][key]["value"].as_u64())
                 };
+                let timing_status = |key: &str| {
+                    if document["timing"][key].is_u64() {
+                        "complete".to_owned()
+                    } else {
+                        document["timing"][key]["status"]
+                            .as_str()
+                            .or_else(|| provenance["measurements"][key]["status"].as_str())
+                            .unwrap_or("unavailable")
+                            .to_owned()
+                    }
+                };
+                let primary_time = document["timing"]["primary_time"]
+                    .as_str()
+                    .or_else(|| context["execution_policy"]["primary_time"].as_str());
+                let primary_key = match primary_time {
+                    Some("timed_wall_time") => Some("timed_wall_time_ns"),
+                    Some("implementation_time") => Some("implementation_time_ns"),
+                    Some("cpu_time") => Some("cpu_time_ns"),
+                    _ => None,
+                };
                 let diagnostic = attempt
                     .diagnostic_id
                     .as_ref()
@@ -134,18 +154,13 @@ impl Inspection {
                     completion: observation.map(|o| o.completion.clone()),
                     selected: observation.map(|o| o.selected),
                     metrics,
+                    primary_time: primary_time.map(str::to_owned),
+                    primary_time_ns: primary_key.and_then(timing),
+                    primary_time_status: primary_key
+                        .map(timing_status)
+                        .unwrap_or_else(|| "unavailable".to_owned()),
                     timed_wall_time_ns: timing("timed_wall_time_ns"),
-                    timed_wall_time_status: if document["timing"]["timed_wall_time_ns"].is_u64() {
-                        "complete".to_owned()
-                    } else {
-                        document["timing"]["timed_wall_time_ns"]["status"]
-                            .as_str()
-                            .or_else(|| {
-                                provenance["measurements"]["timed_wall_time_ns"]["status"].as_str()
-                            })
-                            .unwrap_or("unavailable")
-                            .to_owned()
-                    },
+                    timed_wall_time_status: timing_status("timed_wall_time_ns"),
                     timing_scope: context["timing_scope"].as_str().map(str::to_owned),
                     instrumented_time_ns: document["profile"]["instrumented_time_ns"].as_u64(),
                     instrumented_scope: document["profile"]["instrumented_scope"]

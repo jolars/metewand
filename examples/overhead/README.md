@@ -33,10 +33,13 @@ The worker diagnoses computation, result encoding, result file writing, and
 elapsed work through result writing and diagnostic assembly separately. Encoding includes allocating the payload,
 building the result envelope, canonical validation, and JSON encoding. Writing
 covers the result file write and close; it does not include durable publication.
-`implementation_time_ns` covers scalar control lookup and the controlled computation. These worker
-clock readings remain diagnostics.
+`implementation_time_ns` covers scalar control lookup and the controlled
+computation. The retained comparison uses it as a diagnostic. An execute-only
+policy can select `primary-time: implementation_time` to make that callback
+measurement primary while retaining the complete worker interval separately.
 
-`timed_wall_time_ns` is always authoritative. `execute_only` covers the execute
+`timed_wall_time_ns` governs wall-time limits regardless of the selected primary
+clock. `execute_only` covers the execute
 exchange and complete result writing. `prepare_and_execute` also includes the
 continuous preparation exchange and intervening integrity checks. Cold timing
 includes worker launch and handshake. Noncold runs reuse workers and perform
