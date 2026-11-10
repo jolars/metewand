@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.5.0](https://github.com/jolars/metewand/compare/v0.4.0...v0.5.0) (2026-11-10)
+
+### Features
+
+- support primary computation timing ([`92fba38`](https://github.com/jolars/metewand/commit/92fba38893970d3d6bcd3f196d1bdac78591271b))
+
 ## [0.4.0](https://github.com/jolars/metewand/compare/v0.3.0...v0.4.0) (2026-11-05)
 
 ### Features
