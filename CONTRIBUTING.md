@@ -602,7 +602,10 @@ model abrupt process death, not storage hardware losing power.
 
 ## Machine output and exports
 
-Human and machine output use the same typed records. Machine formats use the
+Human and machine output use the same typed records. The default human plan
+summarizes selected experiments; `plan --verbose` renders full identities,
+parameters, and slots. JSON and JSONL retain the complete versioned plan
+independently of the human verbosity flag. Machine formats use the
 versioned `machine-output` envelope; JSONL run events flush in order, while JSON
 returns a terminal envelope. Worker logs do not enter the command stream. Use
 `metewand schema NAME` to inspect an embedded schema offline.

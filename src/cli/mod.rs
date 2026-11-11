@@ -25,7 +25,7 @@ Usage:
   metewand [--output FORMAT] scaffold <component> NAME [OPTIONS]
   metewand [--output FORMAT] schema [SCHEMA]
   metewand [--output FORMAT] check [--manifest PATH] [--experiment NAME] [--workers]
-  metewand [--output FORMAT] plan [--manifest PATH] [--experiment NAME]
+  metewand [--output FORMAT] plan [--manifest PATH] [--experiment NAME] [--verbose]
   metewand [--output FORMAT] lock [--manifest PATH] [--check]
   metewand [--output FORMAT] run [--manifest PATH] --output-dir PATH [--locked]
   metewand [--output FORMAT] status [--manifest PATH] [--output-dir PATH]
@@ -40,7 +40,7 @@ Commands:
   scaffold Add one dataset, problem, or implementation without scientific defaults.
   schema  List public schemas, or print one exact versioned document.
   check   Validate a benchmark repository; optionally verify workers.
-  plan    Print the expanded logical plan without side effects.
+  plan    Summarize the logical plan without side effects.
   lock    Prepare or verify exact Nix environments and worker launches.
   run     Execute trusted local workers and publish validated outcomes.
   status  Inspect planned slots, durable attempts, and resumable state.
@@ -59,7 +59,7 @@ Options:
 ";
 
 const CHECK_HELP: &str = "Usage: metewand [--output FORMAT] check [--manifest PATH] [--experiment NAME] [--workers]\n\nValidate the manifest, contracts, schemas, source bundles, and logical compatibility. With --workers, launch trusted local workers to verify declared capabilities and evaluate problem reference cases in temporary storage.\n";
-const PLAN_HELP: &str = "Usage: metewand [--output FORMAT] plan [--manifest PATH] [--experiment NAME]\n\nPrint the deterministic unresolved logical plan without downloads, builds, worker launches, or filesystem writes.\n";
+const PLAN_HELP: &str = "Usage: metewand [--output FORMAT] plan [--manifest PATH] [--experiment NAME] [--verbose]\n\nSummarize the deterministic unresolved logical plan without downloads, builds, worker launches, or filesystem writes. Use --verbose for expanded identities, parameters, and slots. Use --output json or --output jsonl for the complete structured plan.\n";
 const SCHEMA_HELP: &str = "Usage: metewand [--output FORMAT] schema [SCHEMA]\n\nWithout SCHEMA, list the stable public schema names and identifiers.\n";
 
 pub fn main() -> ExitCode {
@@ -305,7 +305,28 @@ fn plan_command(arguments: &[OsString]) -> Result<CommandResult, CommandError> {
     if arguments == ["-h"] || arguments == ["--help"] {
         return Ok(CommandResult::help(PLAN_HELP));
     }
-    let (remaining, experiments) = experiment_arguments(arguments)?;
+    let mut remaining = Vec::new();
+    let mut verbose = false;
+    let mut arguments = arguments.iter();
+    while let Some(argument) = arguments.next() {
+        if argument == "--verbose" {
+            if verbose {
+                return Err(CommandError::usage(
+                    "duplicate_verbose_flag",
+                    "`--verbose` may be supplied once",
+                ));
+            }
+            verbose = true;
+        } else {
+            remaining.push(argument.clone());
+            if matches!(argument.to_str(), Some("--manifest" | "--experiment"))
+                && let Some(value) = arguments.next()
+            {
+                remaining.push(value.clone());
+            }
+        }
+    }
+    let (remaining, experiments) = experiment_arguments(&remaining)?;
     let manifest = manifest_argument(&remaining)?;
     let repository =
         check_repository(&manifest).map_err(|error| CommandError::repository("plan", &error))?;
@@ -317,7 +338,7 @@ fn plan_command(arguments: &[OsString]) -> Result<CommandResult, CommandError> {
             repository.manifest.default_experiment.as_ref(),
         )
         .map_err(|message| CommandError::usage("invalid_experiment_selection", message))?;
-    Ok(CommandResult::plan(&repository, &plan))
+    Ok(CommandResult::plan(&repository, &plan, verbose))
 }
 
 fn experiment_arguments(

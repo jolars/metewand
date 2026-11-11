@@ -1,7 +1,21 @@
 # Run and analyze the comparison
 
-Use `metewand plan` after each manifest change to inspect the expanded settings.
+Use `metewand plan` after each manifest change to review the experiment summary.
 Start with a small run before increasing the grid or repetition counts.
+
+The default output shows selected experiments, their problem, dataset and
+implementation names, expanded counts, concurrency, and timing settings. It
+summarizes long name lists and omits individual identities and slots. To inspect
+the full expansion or consume it in a script, use:
+
+```sh
+metewand plan --verbose
+metewand plan --output json > plan.json
+metewand plan --output jsonl > plan.jsonl
+```
+
+`--verbose` expands human output. JSON and JSONL always contain the complete
+versioned plan, regardless of `--verbose`.
 
 ## Select a named experiment
 

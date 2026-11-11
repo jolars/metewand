@@ -138,8 +138,8 @@ impl CommandResult {
         }
     }
 
-    pub fn plan(repository: &CheckedRepository, plan: &LogicalPlan) -> Self {
-        Self::Plan(Box::new(PlanResult::new(repository, plan)))
+    pub fn plan(repository: &CheckedRepository, plan: &LogicalPlan, verbose: bool) -> Self {
+        Self::Plan(Box::new(PlanResult::new(repository, plan, verbose)))
     }
 
     pub fn render_human(&self) -> String {
@@ -570,6 +570,8 @@ impl CheckResult {
 
 #[derive(Debug, Serialize)]
 pub struct PlanResult {
+    #[serde(skip)]
+    verbose: bool,
     command: &'static str,
     benchmark: String,
     manifest_hash: String,
@@ -582,7 +584,7 @@ pub struct PlanResult {
 }
 
 impl PlanResult {
-    fn new(repository: &CheckedRepository, plan: &LogicalPlan) -> Self {
+    fn new(repository: &CheckedRepository, plan: &LogicalPlan, verbose: bool) -> Self {
         let definitions = PlanDefinitions {
             environments: repository
                 .planning_catalog
@@ -735,7 +737,11 @@ impl PlanResult {
                         }
                     })
                     .collect();
+                let declaration = repository.manifest.experiments.iter().find(|definition| definition.name == experiment.name).expect("planned experiment has a declaration");
                 PlanExperiment {
+                    problem: declaration.problem.to_string(),
+                    datasets: declaration.datasets.iter().map(ToString::to_string).collect(),
+                    implementations: declaration.implementations.iter().map(ToString::to_string).collect(),
                     name: experiment.name.to_string(),
                     scheduling_seed: experiment.scheduling_seed.value,
                     max_concurrency: experiment.execution_policy.record.max_concurrency,
@@ -747,6 +753,7 @@ impl PlanResult {
             .collect();
 
         Self {
+            verbose,
             command: "plan",
             benchmark: repository.manifest.name.to_string(),
             manifest_hash: repository.manifest_hash.to_string(),
@@ -776,6 +783,76 @@ impl PlanResult {
     }
 
     fn render_human(&self) -> String {
+        if self.verbose {
+            return self.render_verbose();
+        }
+        let mut output = format!("Plan for benchmark `{}`\n\n", self.benchmark);
+        writeln!(
+            output,
+            "Summary: {}, {}, {}, {}.",
+            count(self.summary.logical_candidates, "logical candidate"),
+            count(self.summary.logical_specifications, "logical specification"),
+            count(self.summary.observation_slots, "observation slot"),
+            count(self.summary.attempt_slots, "attempt slot")
+        )
+        .expect("string write");
+        for experiment in &self.experiments {
+            let specifications = experiment
+                .candidates
+                .iter()
+                .flat_map(|candidate| &candidate.specifications)
+                .collect::<Vec<_>>();
+            let observations = specifications
+                .iter()
+                .map(|specification| specification.observation_slots.len())
+                .sum();
+            let attempts = specifications
+                .iter()
+                .map(|specification| specification.attempt_slots.len())
+                .sum();
+            writeln!(output, "\nExperiment `{}`\n  Problem: {}\n  Datasets: {}\n  Implementations: {}\n  {}, {}, {}, {}\n  Maximum concurrent attempts: {}",
+                experiment.name, experiment.problem,
+                plan_names(&experiment.datasets, "unit (no dataset)"),
+                plan_names(&experiment.implementations, "none"),
+                count(experiment.candidates.len(), "logical candidate"),
+                count(specifications.len(), "logical specification"),
+                count(observations, "observation slot"), count(attempts, "attempt slot"),
+                experiment.max_concurrency).expect("string write");
+            if let Some(control) = self
+                .requirements
+                .controls
+                .iter()
+                .find(|control| control.experiment == experiment.name)
+            {
+                writeln!(
+                    output,
+                    "  Timing: {}; primary: {}; warmups: {}; order: {}",
+                    control.timing_scope,
+                    control.primary_time,
+                    control.warmup_runs,
+                    control.run_order
+                )
+                .expect("string write");
+            }
+            let unchecked = experiment
+                .candidates
+                .iter()
+                .filter(|candidate| candidate.applicability.is_some())
+                .count();
+            if unchecked > 0 {
+                writeln!(
+                    output,
+                    "  Applicability: {} require a worker check",
+                    count(unchecked, "candidate")
+                )
+                .expect("string write");
+            }
+        }
+        writeln!(output, "\nCapabilities are declared, not verified. No workers were launched or files written.\nUse --verbose for expanded details or --output json for the complete structured plan.").expect("string write");
+        output
+    }
+
+    fn render_verbose(&self) -> String {
         let mut output = format!(
             "Plan for benchmark `{}`\nManifest hash: {}\n\nDefinition identities:\n",
             self.benchmark, self.manifest_hash
@@ -910,6 +987,22 @@ impl PlanResult {
         .expect("writing to a string cannot fail");
         output
     }
+}
+
+fn plan_names(names: &[String], empty: &str) -> String {
+    if names.is_empty() {
+        return empty.to_owned();
+    }
+    let mut text = names
+        .iter()
+        .take(6)
+        .map(String::as_str)
+        .collect::<Vec<_>>()
+        .join(", ");
+    if names.len() > 6 {
+        write!(text, ", and {} more", names.len() - 6).expect("string write");
+    }
+    text
 }
 
 #[derive(Debug, Serialize)]
@@ -1159,6 +1252,12 @@ struct ControlRequirement {
 
 #[derive(Debug, Serialize)]
 struct PlanExperiment {
+    #[serde(skip)]
+    problem: String,
+    #[serde(skip)]
+    datasets: Vec<String>,
+    #[serde(skip)]
+    implementations: Vec<String>,
     name: String,
     scheduling_seed: u64,
     max_concurrency: u64,

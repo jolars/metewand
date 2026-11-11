@@ -71,7 +71,7 @@ fn compact_implementation_parameters_preserve_plans_and_apply_defaults() {
     }
     let human = Command::new(env!("CARGO_BIN_EXE_metewand"))
         .current_dir(benchmark.path())
-        .arg("plan")
+        .args(["plan", "--verbose"])
         .output()
         .unwrap();
     assert!(human.status.success(), "{human:?}");

@@ -253,7 +253,7 @@ fn check_validates_the_repository_without_launching_workers_or_writing() {
 #[test]
 fn plan_identity_changes_when_a_transitive_worker_source_changes() {
     let repository = repository();
-    let before = metewand(repository.path(), ["plan"]);
+    let before = metewand(repository.path(), ["plan", "--verbose"]);
     assert!(before.status.success(), "{}", stderr(&before));
 
     write(
@@ -261,7 +261,7 @@ fn plan_identity_changes_when_a_transitive_worker_source_changes() {
         "worker.sh",
         "#!/bin/sh\ntouch worker-launched-v2\n",
     );
-    let after = metewand(repository.path(), ["plan"]);
+    let after = metewand(repository.path(), ["plan", "--verbose"]);
     assert!(after.status.success(), "{}", stderr(&after));
 
     assert_ne!(
@@ -321,7 +321,7 @@ fn plan_identity_tracks_transitive_schema_and_contract_fixture_content() {
 }
 "#,
     );
-    let baseline = metewand(repository.path(), ["plan"]);
+    let baseline = metewand(repository.path(), ["plan", "--verbose"]);
     assert!(baseline.status.success(), "{}", stderr(&baseline));
     let baseline_id = candidate_id(&stdout(&baseline)).to_owned();
 
@@ -334,7 +334,7 @@ fn plan_identity_tracks_transitive_schema_and_contract_fixture_content() {
 }
 "#,
     );
-    let changed_schema = metewand(repository.path(), ["plan"]);
+    let changed_schema = metewand(repository.path(), ["plan", "--verbose"]);
     assert!(
         changed_schema.status.success(),
         "{}",
@@ -348,7 +348,7 @@ fn plan_identity_tracks_transitive_schema_and_contract_fixture_content() {
         "fixtures/result.json",
         "{\"answer\": 1}\n",
     );
-    let changed_fixture = metewand(repository.path(), ["plan"]);
+    let changed_fixture = metewand(repository.path(), ["plan", "--verbose"]);
     assert!(
         changed_fixture.status.success(),
         "{}",
@@ -379,7 +379,7 @@ fn plan_reports_identified_slots_with_declared_capabilities_and_no_side_effects(
     let repository = repository();
     let before = files(repository.path());
 
-    let output = metewand(repository.path(), ["plan"]);
+    let output = metewand(repository.path(), ["plan", "--verbose"]);
 
     assert!(output.status.success(), "{}", stderr(&output));
     let output_text = stdout(&output);
@@ -620,5 +620,40 @@ fn plan_exposes_resolved_local_environment_and_one_shot_defaults() {
         plan["data"]["experiments"][0]["candidates"][0]["parameters"]["implementation"],
         serde_json::json!({})
     );
+    assert_eq!(files(repository.path()), before);
+}
+
+#[test]
+fn plan_default_is_bounded_and_verbose_preserves_complete_machine_output() {
+    let repository = repository();
+    write(
+        repository.path(),
+        "metewand.yaml",
+        &MANIFEST.replace("measurement-repetitions: 2", "measurement-repetitions: 200"),
+    );
+    let before = files(repository.path());
+    let output = metewand(repository.path(), ["plan"]);
+    assert!(output.status.success(), "{}", stderr(&output));
+    let text = stdout(&output);
+    assert!(text.lines().count() < 30, "{text}");
+    for expected in [
+        "read-only-fixture",
+        "main",
+        "sum",
+        "reference",
+        "200 observation slots",
+        "200 attempt slots",
+        "--verbose",
+        "--output json",
+    ] {
+        assert!(text.contains(expected), "missing {expected}: {text}");
+    }
+    assert!(!text.contains("mw1-"));
+    let verbose = metewand(repository.path(), ["plan", "--verbose"]);
+    assert!(verbose.status.success(), "{}", stderr(&verbose));
+    assert!(stdout(&verbose).contains("mw1-logical-attempt-slot-"));
+    let json = metewand(repository.path(), ["plan", "--output", "json"]);
+    let detailed_json = metewand(repository.path(), ["plan", "--verbose", "--output", "json"]);
+    assert_eq!(machine_output(&json), machine_output(&detailed_json));
     assert_eq!(files(repository.path()), before);
 }
