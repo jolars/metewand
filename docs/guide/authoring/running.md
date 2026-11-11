@@ -19,20 +19,30 @@ versioned plan, regardless of `--verbose`.
 
 ## Select a named experiment
 
-Keep full, smoke, and example experiments in one manifest. Set
+Each experiment names a comparison to run. Keep full, smoke, and example
+experiments in one manifest. Set
 `default-experiment: full` at the top level to choose the usual run. Without
 that setting, commands select every experiment as before.
 
 ```sh
-metewand plan --experiment smoke
-metewand check --experiment smoke --workers
-metewand run --experiment smoke --output-dir outputs/smoke
+metewand plan smoke
+metewand check smoke --workers
+metewand run smoke
 ```
 
-Repeat `--experiment` to select a union in manifest order. Explicit selection
-overrides the default; `--select` narrows the resulting plan. Selection belongs
-to the invocation, so repeat it when resuming. Static checks validate the entire
-manifest. Worker checks launch only workers needed by the selected experiments.
+`metewand run --experiment smoke` is equivalent. Supply several names, such as
+`metewand run smoke full`, or repeat `--experiment` to select a union in manifest
+order. The two spellings can be mixed. Explicit selection overrides the default;
+`--select` narrows the resulting plan. Selection belongs to the invocation, so
+repeat it when resuming. Static checks validate the entire manifest. Worker
+checks launch only workers needed by the selected experiments.
+
+Names select experiments in the current manifest. For independent benchmarks
+with separate manifests, use `--manifest`, for example:
+
+```sh
+metewand run --manifest benchmarks/gaussian-regression/metewand.yaml
+```
 
 ## Declare worker variables
 

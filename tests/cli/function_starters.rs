@@ -78,18 +78,23 @@ experiments:
     assert_eq!(selected["summary"]["logical_candidates"], 2);
     let run = starter.json(&["run", "--experiment", "smoke", "--output-dir", "run"], 0);
     assert_eq!(run["summary"]["accepted_attempts"], 1);
-    let resumed = starter.json(
-        &[
-            "run",
-            "--experiment",
-            "smoke",
-            "--output-dir",
-            "run",
-            "--resume",
-        ],
-        0,
-    );
+    let positional_check = starter.json(&["check", "smoke", "--workers"], 0);
+    assert_eq!(positional_check, checked);
+    let resumed = starter.json(&["run", "smoke", "--output-dir", "run", "--resume"], 0);
     assert_eq!(resumed["summary"]["attempt_slots"], 0);
+    let path = starter.project.join("metewand.yaml");
+    let manifest = fs::read_to_string(&path).unwrap();
+    fs::write(
+        &path,
+        manifest.replace("default-experiment: smoke", "default-experiment: full"),
+    )
+    .unwrap();
+    let positional_run = starter.json(&["run", "--output-dir", "positional", "smoke"], 0);
+    assert_eq!(positional_run["summary"]["accepted_attempts"], 1);
+    assert_eq!(
+        positional_run["comparison"][0]["metrics"],
+        run["comparison"][0]["metrics"]
+    );
     let attempts = fs::read_dir(starter.project.join("run/artifacts")).unwrap();
     let receipt = attempts
         .filter_map(Result::ok)
@@ -106,8 +111,6 @@ experiments:
     let unknown = starter.invoke(&["run", "--experiment", "missing", "--output-dir", "missing"]);
     assert!(!unknown.status.success());
     assert!(!starter.project.join("missing").exists());
-    let path = starter.project.join("metewand.yaml");
-    let manifest = fs::read_to_string(&path).unwrap();
     for name in ["PATH", "HOME", "METEWAND_PROTOCOL_TRANSPORT"] {
         fs::write(
             &path,

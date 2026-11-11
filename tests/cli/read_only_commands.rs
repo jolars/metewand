@@ -251,6 +251,137 @@ fn check_validates_the_repository_without_launching_workers_or_writing() {
 }
 
 #[test]
+fn positional_experiments_match_explicit_selection_without_side_effects() {
+    let repository = repository();
+    let manifest = MANIFEST.replace("name: \"main\"", "name: gaussian-regression").replace(
+        "execution-policies:\n",
+        "  - name: logistic-regression\n    problem: sum\n    implementations: [reference]\n    seed: 11\nexecution-policies:\n",
+    );
+    write(
+        repository.path(),
+        "metewand.yaml",
+        &format!("{manifest}\ndefault-experiment: logistic-regression\n"),
+    );
+    let before = files(repository.path());
+
+    for command in ["check", "plan"] {
+        let explicit = metewand(
+            repository.path(),
+            [
+                command,
+                "--experiment",
+                "gaussian-regression",
+                "--output",
+                "json",
+            ],
+        );
+        assert!(explicit.status.success(), "{explicit:?}");
+        for arguments in [
+            vec![command, "gaussian-regression"],
+            vec![
+                command,
+                "--manifest",
+                "metewand.yaml",
+                "gaussian-regression",
+            ],
+            vec![
+                command,
+                "gaussian-regression",
+                "--manifest",
+                "metewand.yaml",
+            ],
+        ] {
+            let output = metewand(
+                repository.path(),
+                arguments.into_iter().chain(["--output", "json"]),
+            );
+            assert!(output.status.success(), "{output:?}");
+            assert_eq!(output.stdout, explicit.stdout);
+        }
+        let explicit_union = metewand(
+            repository.path(),
+            [
+                command,
+                "--experiment",
+                "logistic-regression",
+                "--experiment",
+                "gaussian-regression",
+                "--output",
+                "json",
+            ],
+        );
+        let mixed = metewand(
+            repository.path(),
+            [
+                command,
+                "logistic-regression",
+                "--manifest",
+                "metewand.yaml",
+                "--experiment",
+                "gaussian-regression",
+                "logistic-regression",
+                "--output",
+                "json",
+            ],
+        );
+        assert!(mixed.status.success(), "{mixed:?}");
+        assert_eq!(mixed.stdout, explicit_union.stdout);
+        if command == "plan" {
+            let plan = machine_output(&mixed);
+            assert_eq!(
+                plan["data"]["experiments"][0]["name"],
+                "gaussian-regression"
+            );
+            assert_eq!(
+                plan["data"]["experiments"][1]["name"],
+                "logistic-regression"
+            );
+        }
+    }
+    assert_eq!(files(repository.path()), before);
+}
+
+#[test]
+fn invalid_positional_experiments_fail_before_execution_or_writes() {
+    let repository = repository();
+    let before = files(repository.path());
+    for command in ["check", "plan", "run"] {
+        let explicit = metewand(
+            repository.path(),
+            [command, "--experiment", "missing", "--output", "json"],
+        );
+        let positional = metewand(repository.path(), [command, "missing", "--output", "json"]);
+        assert!(!positional.status.success(), "{positional:?}");
+        assert_eq!(positional.status.code(), explicit.status.code());
+        assert_eq!(positional.stdout, explicit.stdout);
+        for (name, flag, code) in [
+            ("", None, "invalid_experiment_name"),
+            ("main", Some("--typo"), "unexpected_argument"),
+        ] {
+            let arguments = [command, name]
+                .into_iter()
+                .chain(flag)
+                .chain(["--output", "json"]);
+            let output = metewand(repository.path(), arguments);
+            assert_eq!(output.status.code(), Some(2), "{output:?}");
+            assert_eq!(machine_output(&output)["data"]["code"], code);
+        }
+    }
+    assert_eq!(files(repository.path()), before);
+}
+
+#[test]
+fn help_advertises_positional_experiment_selection() {
+    let directory = TempDir::new().unwrap();
+    for command in [None, Some("check"), Some("plan"), Some("run")] {
+        let output = metewand(directory.path(), command.into_iter().chain(["--help"]));
+        assert!(output.status.success(), "{output:?}");
+        assert!(stdout(&output).contains("[EXPERIMENT]..."));
+        assert!(stdout(&output).contains("--experiment"));
+    }
+}
+
+#[test]
 fn plan_identity_changes_when_a_transitive_worker_source_changes() {
     let repository = repository();
     let before = metewand(repository.path(), ["plan", "--verbose"]);

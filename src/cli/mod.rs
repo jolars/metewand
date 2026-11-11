@@ -11,7 +11,14 @@ mod presentation;
 #[cfg(any(unix, windows))]
 mod progress;
 
-use std::{env, ffi::OsString, io, io::Write as _, path::PathBuf, process::ExitCode};
+use std::{
+    env,
+    ffi::{OsStr, OsString},
+    io,
+    io::Write as _,
+    path::PathBuf,
+    process::ExitCode,
+};
 
 use crate::core::public_schemas::{PUBLIC_SCHEMAS, PublicSchema};
 use crate::runtime::repository::check_repository;
@@ -29,10 +36,10 @@ Usage:
   metewand [--output FORMAT] init [PATH] [--language python|r] [--empty] [--dry-run]
   metewand [--output FORMAT] scaffold <component> NAME [OPTIONS]
   metewand [--output FORMAT] schema [SCHEMA]
-  metewand [--output FORMAT] check [--manifest PATH] [--experiment NAME] [--workers]
-  metewand [--output FORMAT] plan [--manifest PATH] [--experiment NAME] [--verbose]
+  metewand [--output FORMAT] check [EXPERIMENT]... [--manifest PATH] [--experiment NAME] [--workers]
+  metewand [--output FORMAT] plan [EXPERIMENT]... [--manifest PATH] [--experiment NAME] [--verbose]
   metewand [--output FORMAT] lock [--manifest PATH] [--check]
-  metewand [--output FORMAT] run [--manifest PATH] [--output-dir PATH] [--locked] [--verbose]
+  metewand [--output FORMAT] run [EXPERIMENT]... [--manifest PATH] [--output-dir PATH] [--locked] [--verbose]
   metewand [--output FORMAT] status [--manifest PATH] [--output-dir PATH]
   metewand [--output FORMAT] explain <id> [--manifest PATH] [--output-dir PATH]
   metewand [--output FORMAT] export --output-dir PATH --destination PATH [--format json|jsonl|csv] [--require-complete]
@@ -58,13 +65,14 @@ Commands:
 Options:
   --output FORMAT  Write human, json, or jsonl output (default: human).
   --manifest PATH  Use PATH instead of ./metewand.yaml.
+  --experiment NAME  Select a named comparison (repeatable; or use positional names).
   --output-dir PATH  Select a run directory (run defaults to .metewand beside the manifest).
   -h, --help       Print help.
   -V, --version    Print the package version.
 ";
 
-const CHECK_HELP: &str = "Usage: metewand [--output FORMAT] check [--manifest PATH] [--experiment NAME] [--workers]\n\nValidate the manifest, contracts, schemas, source bundles, and logical compatibility. With --workers, launch trusted local workers to verify declared capabilities and evaluate problem reference cases in temporary storage.\n";
-const PLAN_HELP: &str = "Usage: metewand [--output FORMAT] plan [--manifest PATH] [--experiment NAME] [--verbose]\n\nSummarize the deterministic unresolved logical plan without downloads, builds, worker launches, or filesystem writes. Use --verbose for expanded identities, parameters, and slots. Use --output json or --output jsonl for the complete structured plan.\n";
+const CHECK_HELP: &str = "Usage: metewand [--output FORMAT] check [EXPERIMENT]... [--manifest PATH] [--experiment NAME] [--workers]\n\nValidate the manifest, contracts, schemas, source bundles, and logical compatibility. Positional names and repeated --experiment flags select named comparisons in manifest order, overriding default-experiment. Without a selection or default, select every experiment. Static checks validate the entire manifest. With --workers, launch only workers needed by the selected experiments to verify declared capabilities and evaluate problem reference cases in temporary storage.\n";
+const PLAN_HELP: &str = "Usage: metewand [--output FORMAT] plan [EXPERIMENT]... [--manifest PATH] [--experiment NAME] [--verbose]\n\nSummarize the deterministic unresolved logical plan without downloads, builds, worker launches, or filesystem writes. Positional names and repeated --experiment flags select named comparisons in manifest order, overriding default-experiment. Without a selection or default, select every experiment. Use --verbose for expanded identities, parameters, and slots. Use --output json or --output jsonl for the complete structured plan.\n";
 const SCHEMA_HELP: &str = "Usage: metewand [--output FORMAT] schema [SCHEMA]\n\nWithout SCHEMA, list the stable public schema names and identifiers.\n";
 
 pub fn main() -> ExitCode {
@@ -365,11 +373,32 @@ fn experiment_arguments(
                     )
                 })?;
             experiments.push(name.to_owned());
+        } else if argument == "--manifest" {
+            remaining.push(argument.clone());
+            remaining.extend(arguments.next().cloned());
+        } else if let Some(name) = positional_experiment(argument)? {
+            experiments.push(name);
         } else {
             remaining.push(argument.clone());
         }
     }
     Ok((remaining, experiments))
+}
+
+fn positional_experiment(argument: &OsStr) -> Result<Option<String>, CommandError> {
+    if argument.as_encoded_bytes().starts_with(b"-") {
+        return Ok(None);
+    }
+    let name = argument
+        .to_str()
+        .filter(|name| !name.is_empty())
+        .ok_or_else(|| {
+            CommandError::usage(
+                "invalid_experiment_name",
+                "experiment names must be nonempty UTF-8 strings",
+            )
+        })?;
+    Ok(Some(name.to_owned()))
 }
 
 fn manifest_argument(arguments: &[OsString]) -> Result<PathBuf, CommandError> {

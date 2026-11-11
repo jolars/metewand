@@ -78,6 +78,11 @@ Follow the [authoring guide](docs/guide/authoring/index.md) or adapt the
 [running and analyzing comparisons](docs/guide/authoring/running.md) for repeated
 measurements and exports.
 
+For an existing benchmark repository, open the directory containing
+`metewand.yaml` and run `metewand plan`, then `metewand run`. Select a named
+comparison with `metewand run gaussian-regression` when the manifest declares
+that experiment.
+
 ## Project status and development
 
 Metewand is under active development. The current runner executes trusted local

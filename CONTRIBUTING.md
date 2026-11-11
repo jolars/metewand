@@ -124,7 +124,9 @@ contributes to execution policy and resolved identity. Dispatch and event order
 remain deterministic, and batches do not cross experiment boundaries.
 
 Named experiment selection filters an already expanded plan, preserving logical
-identities and manifest order. Without an explicit selection, commands use
+identities and manifest order. Positional names and repeated `--experiment`
+flags select the same union in `check`, `plan`, and `run`; `--manifest` selects
+the manifest independently. Without an explicit selection, commands use
 `default-experiment` when declared. Worker checks visit only selected
 dependencies. Local `environment-variables` are literal, validated worker
 settings, not ambient inheritance. Empty settings retain the original local

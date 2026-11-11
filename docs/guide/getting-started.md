@@ -76,6 +76,30 @@ dependencies. On Windows, the runner resolves the default `python3` launch to
 `python.exe` when needed. If you use Nix, `devenv shell` provides the
 repository's development tools.
 
+## Run an existing benchmark
+
+If someone shares a benchmark repository, install the dependencies described in
+its README and open the directory containing `metewand.yaml`. Review and run
+the comparison with:
+
+```sh
+metewand plan
+metewand run
+```
+
+A repository can declare several named comparisons, called **experiments**.
+Select one by name:
+
+```sh
+metewand plan gaussian-regression
+metewand run gaussian-regression
+```
+
+Without a name, Metewand runs the manifest's `default-experiment` if configured,
+otherwise every experiment. Results go in `.metewand/` beside the manifest.
+Repeat the same run command to continue unfinished work. Use `metewand status`
+to inspect the results.
+
 ## Create a benchmark
 
 Choose a new directory:
