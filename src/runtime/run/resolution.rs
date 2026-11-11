@@ -274,6 +274,7 @@ pub(super) fn resolve(
     output: &Path,
     cache_directory: Option<&Path>,
     locked: Option<&crate::runtime::lockfile::VerifiedLock>,
+    progress: &mut impl FnMut(&super::RunProgress) -> io::Result<()>,
 ) -> Result<ResolvedRun, RunError> {
     for experiment in &plan.experiments {
         let policy = &experiment.execution_policy.record;
@@ -331,6 +332,10 @@ pub(super) fn resolve(
             configuration
         })?,
     })?;
+    progress(&super::RunProgress::Preparing(super::PreparationProgress {
+        phase: super::PreparationPhase::ResolvingWorkers,
+        component: repository.manifest.name.to_string(),
+    }))?;
     // Resolve every launch and fixed dataset before any acquisition or worker runs.
     let mut prepared = Vec::new();
     for experiment in &plan.experiments {
@@ -476,6 +481,18 @@ pub(super) fn resolve(
     {
         let key = candidate.dataset_configuration.id;
         if let std::collections::btree_map::Entry::Vacant(entry) = datasets.entry(key) {
+            let name = repository
+                .planning_catalog
+                .dataset_definitions
+                .iter()
+                .find(|(_, id)| **id == candidate.dataset_configuration.record.definition)
+                .expect("checked dataset")
+                .0
+                .to_string();
+            progress(&super::RunProgress::Preparing(super::PreparationProgress {
+                phase: super::PreparationPhase::PreparingDataset,
+                component: name,
+            }))?;
             let (snapshot, output_schema, provenance) = match dataset_plan {
                 DatasetPlan::Ready(snapshot, schema) => {
                     snapshot.verify()?;
@@ -584,6 +601,10 @@ pub(super) fn resolve(
             && let std::collections::btree_map::Entry::Vacant(entry) =
                 preparations.entry(preparation_key)
         {
+            progress(&super::RunProgress::Preparing(super::PreparationProgress {
+                phase: super::PreparationPhase::PreparingProblem,
+                component: experiment.name.to_string(),
+            }))?;
             let dataset = &datasets[&key];
             entry.insert(resolve_preparation(
                 repository,
@@ -595,6 +616,26 @@ pub(super) fn resolve(
                 private_root.path(),
                 timeouts,
             )?);
+        }
+        if candidate
+            .implementation_capabilities
+            .iter()
+            .any(|capability| {
+                capability.capability
+                    == crate::core::manifest::ImplementationCapability::Applicability
+            })
+        {
+            let implementation = repository
+                .planning_catalog
+                .implementation_definitions
+                .iter()
+                .find(|(_, id)| **id == candidate.implementation_configuration.record.definition)
+                .expect("checked implementation")
+                .0;
+            progress(&super::RunProgress::Preparing(super::PreparationProgress {
+                phase: super::PreparationPhase::CheckingApplicability,
+                component: format!("{} / {implementation}", experiment.name),
+            }))?;
         }
         candidates.push(resolve_candidate(
             repository,

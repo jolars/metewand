@@ -500,3 +500,21 @@ fn a_contract_permission_enables_execute_only_timing() {
     assert!(root.path().join("run").is_dir());
     assert!(root.path().join("cache").is_dir());
 }
+
+#[test]
+fn human_progress_identifies_dataset_preparation_before_execution_events() {
+    let root = repository();
+    let output = metewand(root.path(), &["run", "--output-dir", "progress-run"]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let text = String::from_utf8(output.stderr).unwrap();
+    let preparation = text
+        .find("Preparing dataset (generate or verify cached data): numbers")
+        .expect("named dataset preparation");
+    let execution = text.find("pending attempts").expect("execution starts");
+    assert!(preparation < execution, "{text}");
+    assert!(!text.contains('\x1b'));
+}

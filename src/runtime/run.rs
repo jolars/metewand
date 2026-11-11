@@ -103,6 +103,34 @@ pub fn run_repository_with_cache(
     )
 }
 
+/// Transient display metadata, excluded from machine events and persisted evidence.
+#[derive(Clone, Debug)]
+#[allow(
+    dead_code,
+    reason = "Native examples compile the runtime without the CLI observer."
+)]
+pub(crate) enum RunProgress {
+    Preparing(PreparationProgress),
+    Scheduled(Vec<crate::core::records::RecordId<crate::core::records::LogicalAttemptSlotRecord>>),
+}
+
+/// Transient preparation feedback, excluded from persisted run evidence.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct PreparationProgress {
+    pub phase: PreparationPhase,
+    pub component: String,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum PreparationPhase {
+    VerifyingEnvironments,
+    ResolvingWorkers,
+    PreparingDataset,
+    PreparingProblem,
+    CheckingApplicability,
+    OpeningRunStore,
+}
+
 /// Executes a selected, bounded invocation, optionally resuming durable history.
 /// Accepted slots are never reserved again. Explicit retries get new identities.
 pub fn run_repository_with_options(
@@ -111,7 +139,27 @@ pub fn run_repository_with_options(
     output_directory: &Path,
     cache_directory: Option<&Path>,
     options: &RunOptions,
+    event_sink: impl FnMut(&RunEvent) -> io::Result<()>,
+) -> Result<RunReport, RunError> {
+    run_repository_with_progress(
+        repository,
+        plan,
+        output_directory,
+        cache_directory,
+        options,
+        event_sink,
+        |_| Ok(()),
+    )
+}
+
+pub(crate) fn run_repository_with_progress(
+    repository: &CheckedRepository,
+    plan: &LogicalPlan,
+    output_directory: &Path,
+    cache_directory: Option<&Path>,
+    options: &RunOptions,
     mut event_sink: impl FnMut(&RunEvent) -> io::Result<()>,
+    mut progress: impl FnMut(&RunProgress) -> io::Result<()>,
 ) -> Result<RunReport, RunError> {
     let plan = plan
         .clone()
@@ -146,6 +194,10 @@ pub fn run_repository_with_options(
             }
         })
         .transpose()?;
+    progress(&RunProgress::Preparing(PreparationProgress {
+        phase: PreparationPhase::VerifyingEnvironments,
+        component: repository.manifest.name.to_string(),
+    }))?;
     let locked = options
         .locked
         .then(|| crate::runtime::lockfile::VerifiedLock::load(repository, &plan))
@@ -165,7 +217,12 @@ pub fn run_repository_with_options(
         &output_directory,
         cache_directory.as_deref(),
         locked.as_ref(),
+        &mut progress,
     )?;
+    progress(&RunProgress::Preparing(PreparationProgress {
+        phase: PreparationPhase::OpeningRunStore,
+        component: output_directory.display().to_string(),
+    }))?;
     for candidate in &resolved.candidates {
         candidate.validate_destination(&output_directory)?;
     }
@@ -309,6 +366,20 @@ pub fn run_repository_with_options(
     }
     selection::rebuild_batches(&mut resolved, schedule)?;
     let attempt_slots = resolved.schedule.len();
+    let display_bound = options
+        .max_attempts
+        .and_then(|n| usize::try_from(n).ok())
+        .unwrap_or(usize::MAX);
+    progress(&RunProgress::Scheduled(
+        resolved
+            .schedule
+            .iter()
+            .take(display_bound)
+            .map(|&(candidate, measurement)| {
+                resolved.candidates[candidate].measurements[measurement].logical_slot
+            })
+            .collect(),
+    ))?;
     let mut events = Vec::new();
     emit(
         &mut events,

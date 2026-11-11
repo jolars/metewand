@@ -5,7 +5,7 @@ use std::{io, io::Write as _};
 
 use crate::cli::output::{CommandError, CommandResult, OutputFormat};
 
-const HELP: &str = "Usage: metewand [--output FORMAT] run [--manifest PATH] --output-dir PATH [--cache-dir PATH] [--experiment NAME] [--select ID] [--max-attempts N] [--resume] [--retry] [--locked]\n\nWith --locked, verify prepared Nix, uv, and Linux Docker OCI and Apptainer SIF environments and worker launches against metewand.lock without building or fetching software. Execute the selected supported logical plan using trusted local workers, fixed or unit datasets, and contract-authorized cold_end_to_end, prepare_and_execute, or execute_only wall timing. Publish results in a new directory whose parent exists. Use --resume to reopen a durable run and fill unsatisfied slots. Failed or active slots require --retry to authorize one new immutable attempt per slot. Repeated --experiment flags select named experiments in manifest order, overriding default-experiment. Repeat the selection when resuming. Repeated --select flags select the union of stable candidate, run, observation, slot, and recorded attempt IDs. --max-attempts bounds new attempts in this invocation. Accepted slots are always skipped. Optional --cache-dir assigns a separate Metewand-owned directory for verified dataset construction reuse; its parent must exist. Execution policies default to max-concurrency: 1; a larger positive bound opts into concurrent attempts. JSON Lines output streams versioned events; JSON output includes the same events in one terminal document.\n";
+const HELP: &str = "Usage: metewand [--output FORMAT] run [--manifest PATH] --output-dir PATH [--cache-dir PATH] [--experiment NAME] [--select ID] [--max-attempts N] [--resume] [--retry] [--locked]\n\nWith --locked, verify prepared Nix, uv, and Linux Docker OCI and Apptainer SIF environments and worker launches against metewand.lock without building or fetching software. Execute the selected supported logical plan using trusted local workers, fixed or unit datasets, and contract-authorized cold_end_to_end, prepare_and_execute, or execute_only wall timing. Publish results in a new directory whose parent exists. Use --resume to reopen a durable run and fill unsatisfied slots. Failed or active slots require --retry to authorize one new immutable attempt per slot. Repeated --experiment flags select named experiments in manifest order, overriding default-experiment. Repeat the selection when resuming. Repeated --select flags select the union of stable candidate, run, observation, slot, and recorded attempt IDs. --max-attempts bounds new attempts in this invocation. Accepted slots are always skipped. Optional --cache-dir assigns a separate Metewand-owned directory for verified dataset construction reuse; its parent must exist. Execution policies default to max-concurrency: 1; a larger positive bound opts into concurrent attempts. Human output reports preparation and live execution progress on stderr, with color on interactive terminals (disable with NO_COLOR). Redirected stderr uses plain progress lines and periodic heartbeats. JSON Lines output streams versioned events after preparation; JSON output includes the same events in one terminal document. Machine formats disable human progress.\n";
 
 pub fn command(
     arguments: &[OsString],
@@ -154,32 +154,45 @@ fn execute(
     options: &crate::core::run_output::RunOptions,
     output_format: OutputFormat,
 ) -> Result<CommandResult, CommandError> {
+    use crate::cli::progress::Progress;
+    let progress = Progress::new(output_format == OutputFormat::Human, options.max_attempts);
+    progress
+        .stage("Checking manifest", manifest.display().to_string())
+        .map_err(|e| CommandError::output_write(e.to_string()))?;
     let repository = crate::runtime::repository::check_repository(manifest)
         .map_err(|error| CommandError::repository("run", &error))?;
+    progress
+        .stage("Planning benchmark", repository.manifest.name.to_string())
+        .map_err(|e| CommandError::output_write(e.to_string()))?;
     let plan = repository
         .logical_plan()
         .map_err(|error| CommandError::planning("run", &error))?;
-    let report = crate::runtime::run::run_repository_with_options(
+    progress
+        .labels(&repository, &plan)
+        .map_err(|e| CommandError::output_write(e.to_string()))?;
+    let report = crate::runtime::run::run_repository_with_progress(
         &repository,
         &plan,
         output_directory,
         cache_directory,
         options,
-        |event| {
-            let rendered =
-                crate::cli::output::render_event(event, output_format).map_err(io::Error::other)?;
-            match output_format {
-                OutputFormat::JsonLines => {
-                    let mut stdout = io::stdout().lock();
-                    stdout.write_all(rendered.as_bytes())?;
-                    stdout.flush()
-                }
-                OutputFormat::Human => io::stderr().write_all(rendered.as_bytes()),
-                OutputFormat::Json => Ok(()),
+        |event| match output_format {
+            OutputFormat::JsonLines => {
+                let rendered = crate::cli::output::render_event(event, output_format)
+                    .map_err(io::Error::other)?;
+                let mut stdout = io::stdout().lock();
+                stdout.write_all(rendered.as_bytes())?;
+                stdout.flush()
             }
+            OutputFormat::Human => progress.event(event),
+            OutputFormat::Json => Ok(()),
         },
+        |preparation| progress.runtime(preparation),
     )
     .map_err(|error| CommandError::execution(&error))?;
+    progress
+        .finish()
+        .map_err(|e| CommandError::output_write(e.to_string()))?;
     Ok(CommandResult::Run(Box::new(report)))
 }
 

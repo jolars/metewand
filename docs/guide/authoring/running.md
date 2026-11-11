@@ -328,9 +328,30 @@ completion, and failures. It reports individual measurements. In a toy Python
 benchmark, serialization and orchestration costs can be substantial relative to
 the solver's work.
 
+Human runs report preparation immediately, including environment verification,
+source staging, dataset generation or cache verification, shared problem inputs,
+and applicability checks. Execution messages identify the experiment, dataset,
+implementation, repetition, and measurement. The display counts pending work for
+this invocation, so resume skips and `--max-attempts` are reflected in progress.
+Failures include their diagnostic codes.
+
+Interactive terminals show an overall progress bar and a separate bar for each
+combination of experiment, dataset, and implementation as it runs. Bars show completed and
+pending attempts and percentages, refresh each second, and stay visible across
+interleaved measurements. The display also shows elapsed time, active attempts,
+and failures. Bar totals come from the actual pending schedule after resume and
+selection; `--max-attempts` bounds the displayed work for this invocation. Colors distinguish preparation,
+accepted results, failures, and other outcomes. Set `NO_COLOR` to disable color.
+With redirected stderr or `TERM=dumb`, progress uses plain lines and emits a
+heartbeat every ten seconds during long tasks. No progress escape sequences
+enter redirected logs. Progress goes to stderr; the final comparison goes to
+stdout. Preparation messages and heartbeats are transient display information,
+not persisted scientific evidence.
+
 For structured output, use `--output json`. Use `--output jsonl` to stream
-versioned events as execution advances. Human progress goes to standard error;
-worker logs stay separate from the command's machine output.
+versioned execution events after preparation completes. These modes disable the
+human display entirely. Worker logs stay separate from the command's machine
+output.
 
 ## Resume and diagnose
 

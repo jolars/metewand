@@ -607,7 +607,12 @@ summarizes selected experiments; `plan --verbose` renders full identities,
 parameters, and slots. JSON and JSONL retain the complete versioned plan
 independently of the human verbosity flag. Machine formats use the
 versioned `machine-output` envelope; JSONL run events flush in order, while JSON
-returns a terminal envelope. Worker logs do not enter the command stream. Use
+returns a terminal envelope. Human run progress uses a CLI-owned renderer with
+transient runtime preparation callbacks and the existing typed execution events.
+Terminal refreshes run on a separate thread; plain logs receive periodic
+heartbeats. Send only outcome metadata to the renderer, excluding large profile
+payloads. Preparation feedback and elapsed display time never enter identities,
+persisted evidence, or machine event sequences. Worker logs do not enter the command stream. Use
 `metewand schema NAME` to inspect an embedded schema offline.
 
 Export reads committed evidence and verified artifacts. A disposable

@@ -3072,3 +3072,85 @@ fn reset_control_loss_replaces_the_worker_and_repeats_warmups() {
         attempts[2]["provenance"]["data"]["implementation_statistics"]["pid"]
     );
 }
+
+#[test]
+fn human_progress_starts_before_workers_finish_and_uses_readable_labels() {
+    let root = repository();
+    let worker = root.path().join("worker.py");
+    let source = fs::read_to_string(&worker).unwrap();
+    fs::write(&worker, format!("import time\ntime.sleep(1)\n{source}")).unwrap();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_metewand"))
+        .current_dir(root.path())
+        .args(["run", "--output-dir", "run"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut stderr = BufReader::new(child.stderr.take().unwrap());
+    let mut first = String::new();
+    stderr.read_line(&mut first).unwrap();
+    assert!(first.contains("Checking"), "{first}");
+    assert!(child.try_wait().unwrap().is_none());
+    let mut rest = String::new();
+    std::io::Read::read_to_string(&mut stderr, &mut rest).unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(output.status.success(), "{rest}");
+    for expected in ["numbers", "reference", "1/1", "accepted"] {
+        assert!(rest.contains(expected), "missing {expected}: {rest}");
+    }
+    assert!(!rest.contains("mw1-"), "{rest}");
+    assert!(!rest.contains('\x1b'));
+    assert!(!rest.contains('\r'));
+}
+
+#[test]
+fn terminal_progress_bars_respect_no_color_and_dumb_terminals() {
+    let root = repository();
+    let script = r#"
+import os, pty, re, subprocess, sys
+for name, no_color, term in [('color', False, 'xterm'), ('no-color', True, 'xterm'), ('dumb', False, 'dumb')]:
+    master, slave = pty.openpty()
+    settings = dict(os.environ, TERM=term)
+    settings.pop('NO_COLOR', None)
+    if no_color:
+        settings['NO_COLOR'] = '1'
+    process = subprocess.Popen([sys.argv[1], 'run', '--output-dir', name], cwd=sys.argv[2], env=settings, stdout=subprocess.DEVNULL, stderr=slave)
+    os.close(slave)
+    chunks=[]
+    try:
+        while True:
+            try:
+                chunk=os.read(master, 8192)
+            except OSError:
+                break
+            if not chunk:
+                break
+            chunks.append(chunk)
+    finally:
+        os.close(master)
+    text=b''.join(chunks)
+    assert process.wait() == 0, repr(text)
+    assert b'[============] 1/1 (100%)' in text, repr(text)
+    assert b'reference' in text and b'numbers' in text, repr(text)
+    colored = re.search(rb'\x1b\[[0-9;]+m', text) is not None
+    assert colored == (not no_color and term != 'dumb'), repr(text)
+    if term == 'dumb':
+        assert b'\x1b[' not in text, repr(text)
+    else:
+        assert b'\x1b[2K' in text, repr(text)
+"#;
+    let output = Command::new("python3")
+        .args([
+            "-c",
+            script,
+            env!("CARGO_BIN_EXE_metewand"),
+            root.path().to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}

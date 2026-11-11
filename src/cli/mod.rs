@@ -7,6 +7,8 @@ mod export;
 mod inspection;
 mod locking;
 mod output;
+#[cfg(any(unix, windows))]
+mod progress;
 
 use std::{env, ffi::OsString, io, io::Write as _, path::PathBuf, process::ExitCode};
 
