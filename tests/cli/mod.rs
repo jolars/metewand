@@ -33,3 +33,5 @@ mod streaming_profiles;
 mod support;
 mod worker_checks;
 mod yaml_configuration;
+
+mod bundling;

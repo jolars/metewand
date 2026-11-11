@@ -1,5 +1,6 @@
 mod archive;
 mod authoring;
+mod bundling;
 mod cache;
 mod execution;
 mod export;
@@ -31,6 +32,7 @@ Usage:
   metewand [--output FORMAT] explain <id> [--manifest PATH] [--output-dir PATH]
   metewand [--output FORMAT] export --output-dir PATH --destination PATH [--format json|jsonl|csv] [--require-complete]
   metewand [--output FORMAT] cache <operation> --cache-dir PATH [OPTIONS]
+  metewand [--output FORMAT] bundle --destination PATH --base-image IMAGE [OPTIONS]
   metewand [--output FORMAT] archive <operation> [OPTIONS]
 
 Commands:
@@ -45,6 +47,7 @@ Commands:
   explain Explain a stable identity and its recorded relationships.
   export  Export verified history or rebuild the disposable JSONL index.
   cache   Verify exact objects, manage roots, or collect unused cache objects.
+  bundle  Generate a portable whole-benchmark Docker build context.
   archive Create, verify, or import portable result evidence.
 
 Options:
@@ -208,6 +211,7 @@ fn run(arguments: &[OsString], output_format: OutputFormat) -> Result<CommandRes
         "export" => export::command(&arguments[1..]),
         "cache" => cache::command(&arguments[1..]),
         "archive" => archive::command(&arguments[1..]),
+        "bundle" => bundling::command(&arguments[1..]),
         _ => Err(CommandError::usage(
             "unknown_command",
             format!("unknown command `{command}`"),

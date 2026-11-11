@@ -25,3 +25,5 @@ example's README for its working directory and dependencies.
 The [full example collection](https://github.com/jolars/metewand/tree/main/examples)
 also includes dataset-free problems, raw protocol workers, real-package
 comparisons, external data providers, and release-overhead measurements.
+
+- [Bundled benchmark](https://github.com/jolars/metewand/tree/main/examples/bundled-benchmark): run a complete benchmark in one image with mounted results.

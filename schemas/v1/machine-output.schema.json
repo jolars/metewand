@@ -223,6 +223,37 @@
           }
         }
       }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "result"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "command": {
+                "const": "bundle"
+              }
+            },
+            "required": [
+              "command"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "data"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "$ref": "bundle-output.schema.json"
+          }
+        }
+      }
     }
   ],
   "$defs": {

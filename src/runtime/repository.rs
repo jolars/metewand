@@ -61,6 +61,8 @@ pub struct CheckedRepository {
     pub resources: RepositoryResources,
     /// Number of repository schema documents in the offline catalog.
     pub schema_count: usize,
+    /// Actual schema files read, excluding virtual inline documents.
+    pub schema_files: BTreeSet<PathBuf>,
     /// Number of distinct declared source bundles inspected.
     pub source_bundle_count: usize,
 }
@@ -139,8 +141,12 @@ pub fn check_repository(manifest_path: &Path) -> Result<CheckedRepository, Repos
         problem_contracts.insert(name.clone(), contract);
     }
 
-    let schema_documents =
-        load_schema_documents(&root, schema_roots(&manifest, problem_contracts.values()))?;
+    let mut schema_files = BTreeSet::new();
+    let schema_documents = load_schema_documents(
+        &root,
+        schema_roots(&manifest, problem_contracts.values()),
+        &mut schema_files,
+    )?;
     let schemas = SchemaCatalog::try_new(
         schema_documents
             .iter()
@@ -182,6 +188,7 @@ pub fn check_repository(manifest_path: &Path) -> Result<CheckedRepository, Repos
         planning_catalog,
         resources,
         schema_count: schema_documents.len(),
+        schema_files,
         source_bundle_count,
     })
 }
@@ -227,6 +234,7 @@ fn schema_roots<'a>(
 fn load_schema_documents(
     root: &Path,
     declarations: Vec<&SchemaDeclaration>,
+    file_paths: &mut BTreeSet<PathBuf>,
 ) -> Result<BTreeMap<PathBuf, CanonicalValue>, RepositoryCheckError> {
     let mut documents = BTreeMap::new();
     let mut pending = BTreeSet::new();
@@ -254,6 +262,7 @@ fn load_schema_documents(
                     continue;
                 }
             };
+            file_paths.insert(path.clone());
             let value = CanonicalValue::from_slice(&bytes).map_err(|source| {
                 RepositoryCheckError::InvalidSchemaJson {
                     path: path.clone(),

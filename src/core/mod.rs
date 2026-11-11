@@ -2,6 +2,7 @@
 
 pub mod applicability;
 pub mod archive;
+pub mod bundling;
 pub mod cache;
 pub mod canonical;
 pub mod comparison;

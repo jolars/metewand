@@ -23,6 +23,8 @@ pub mod authoring;
 pub mod buffered;
 pub mod build_evidence;
 #[cfg(any(unix, windows))]
+pub mod bundling;
+#[cfg(any(unix, windows))]
 pub mod datamonger;
 #[cfg(any(unix, windows))]
 pub mod dataset_materialization;

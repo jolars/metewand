@@ -23,6 +23,8 @@ static CATALOG: Mutex<Option<SchemaCatalog>> = Mutex::new(None);
 /// A public versioned schema entry point.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum PublicSchema {
+    BundleManifest,
+    BundleOutput,
     /// Exact prepared environments and worker launches.
     Lockfile,
     LockfileV1,
@@ -94,7 +96,9 @@ pub enum PublicSchema {
 }
 
 /// Every public schema entry point in stable presentation order.
-pub const PUBLIC_SCHEMAS: [PublicSchema; 38] = [
+pub const PUBLIC_SCHEMAS: [PublicSchema; 40] = [
+    PublicSchema::BundleManifest,
+    PublicSchema::BundleOutput,
     PublicSchema::Lockfile,
     PublicSchema::LockfileV1,
     PublicSchema::LockfileV2,
@@ -140,6 +144,8 @@ impl PublicSchema {
     #[must_use]
     pub const fn slug(self) -> &'static str {
         match self {
+            Self::BundleManifest => "bundle-manifest",
+            Self::BundleOutput => "bundle-output",
             Self::Lockfile => "lockfile",
             Self::LockfileV1 => "lockfile-v1",
             Self::LockfileV2 => "lockfile-v2",
@@ -193,6 +199,8 @@ impl PublicSchema {
     #[must_use]
     pub fn repository_path(self) -> &'static Path {
         Path::new(match self {
+            Self::BundleManifest => "schemas/v1/bundle-manifest.schema.json",
+            Self::BundleOutput => "schemas/v1/bundle-output.schema.json",
             Self::Lockfile => "schemas/v3/lockfile.schema.json",
             Self::LockfileV2 => "schemas/v2/lockfile.schema.json",
             Self::LockfileV1 => "schemas/v1/lockfile.schema.json",
@@ -242,6 +250,8 @@ impl PublicSchema {
     #[must_use]
     pub const fn id(self) -> &'static str {
         match self {
+            Self::BundleManifest => "metewand://schemas/v1/bundle-manifest.schema.json",
+            Self::BundleOutput => "metewand://schemas/v1/bundle-output.schema.json",
             Self::Lockfile => "metewand://schemas/v3/lockfile.schema.json",
             Self::LockfileV2 => "metewand://schemas/v2/lockfile.schema.json",
             Self::LockfileV1 => "metewand://schemas/v1/lockfile.schema.json",
@@ -301,6 +311,8 @@ impl PublicSchema {
     #[must_use]
     pub const fn source(self) -> &'static str {
         match self {
+            Self::BundleManifest => include_str!("../../schemas/v1/bundle-manifest.schema.json"),
+            Self::BundleOutput => include_str!("../../schemas/v1/bundle-output.schema.json"),
             Self::Lockfile => include_str!("../../schemas/v3/lockfile.schema.json"),
             Self::LockfileV2 => include_str!("../../schemas/v2/lockfile.schema.json"),
             Self::LockfileV1 => include_str!("../../schemas/v1/lockfile.schema.json"),

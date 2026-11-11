@@ -72,6 +72,7 @@ pub enum CommandResult {
     Export(Box<ExportReport>),
     Cache(Box<CacheReport>),
     Archive(Box<ArchiveReport>),
+    Bundle(Box<crate::core::bundling::BundleReport>),
 }
 
 impl CommandResult {
@@ -143,6 +144,17 @@ impl CommandResult {
 
     pub fn render_human(&self) -> String {
         match self {
+            Self::Bundle(report) => format!(
+                "{} Docker context: {}\nRunner: {}\nChange to the context directory, then:\n{}\n",
+                if report.dry_run {
+                    "Would create"
+                } else {
+                    "Created"
+                },
+                report.destination,
+                report.bundle.runner_version,
+                report.next_steps.join("\n")
+            ),
             Self::Scaffold(report) => {
                 let mut output = String::new();
                 for entry in &report.paths {
@@ -328,6 +340,7 @@ impl Serialize for CommandResult {
             #[cfg(any(unix, windows))]
             Self::Lock(result) => result.serialize(serializer),
             Self::Archive(result) => result.serialize(serializer),
+            Self::Bundle(result) => result.serialize(serializer),
         }
     }
 }
@@ -1396,6 +1409,17 @@ pub struct CommandError {
 }
 
 impl CommandError {
+    pub fn bundling(error: &std::io::Error) -> Self {
+        let mut result = Self::usage("bundle_failed", error.to_string());
+        if !matches!(
+            error.kind(),
+            std::io::ErrorKind::InvalidInput | std::io::ErrorKind::InvalidData
+        ) {
+            result.exit_code = EXIT_IO;
+        }
+        result
+    }
+
     #[cfg(any(unix, windows))]
     pub fn archive(error: &crate::runtime::archive::ArchiveError) -> Self {
         use crate::runtime::archive::ArchiveError;

@@ -2307,6 +2307,62 @@
           ]
         }
       }
+    },
+    {
+      "name": "bundle-manifest-v1",
+      "schema": "bundle-manifest",
+      "instance": {
+        "schema_version": 1,
+        "runner_version": "0.5.0",
+        "builder_image": "rust@sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "base_image": "python@sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "manifest": "benchmark/metewand.yaml",
+        "entries": [
+          {
+            "kind": "directory",
+            "path": "benchmark/empty"
+          },
+          {
+            "kind": "file",
+            "path": "Dockerfile",
+            "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+            "size_bytes": 1,
+            "executable": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "bundle-output-v1",
+      "schema": "bundle-output",
+      "instance": {
+        "command": "bundle",
+        "dry_run": false,
+        "destination": "/context",
+        "bundle": {
+          "schema_version": 1,
+          "runner_version": "0.5.0",
+          "builder_image": "rust@sha256:0000000000000000000000000000000000000000000000000000000000000000",
+          "base_image": "python@sha256:0000000000000000000000000000000000000000000000000000000000000000",
+          "manifest": "benchmark/metewand.yaml",
+          "entries": [
+            {
+              "kind": "directory",
+              "path": "benchmark/empty"
+            },
+            {
+              "kind": "file",
+              "path": "Dockerfile",
+              "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+              "size_bytes": 1,
+              "executable": false
+            }
+          ]
+        },
+        "next_steps": [
+          "docker build ."
+        ]
+      }
     }
   ],
   "invalid": [
@@ -5305,6 +5361,16 @@
           ]
         }
       }
+    },
+    {
+      "name": "bundle-manifest-missing-fields",
+      "schema": "bundle-manifest",
+      "instance": {}
+    },
+    {
+      "name": "bundle-output-missing-fields",
+      "schema": "bundle-output",
+      "instance": {}
     }
   ]
 }

@@ -962,3 +962,25 @@ With local rootful Linux Docker available, run the registry-backed integration:
 ```sh
 compute run -- cargo test --test integration --locked cli_tests::locked_oci:: -- --ignored
 ```
+
+## Whole-benchmark bundles
+
+`metewand bundle` generates a local-input Docker context without fetching or
+executing code. Core owns the version-1 inventory and report types; runtime
+collects inputs, checks copied identities, and publishes the new context without
+replacement. The repository checker records actual file-backed schema inputs
+separately from virtual inline entries. Generated metadata stays outside the
+copied benchmark tree so it cannot change source glob expansion.
+
+Bundle schemas do not change manifest, identity, execution, or run-store
+versions. The inventory excludes itself and orders paths by UTF-8 bytes. It binds
+file hashes, lengths, executable flags, and explicit empty directories. The
+Docker build compiles an exact released runner with its packaged Cargo lockfile
+in a digest-pinned Rust 1.98 musl builder. Authors own dependency recipes and base
+images. Existing execution provenance retains its current meaning.
+
+Run the Docker bundling smoke test with:
+
+```sh
+compute run -- cargo test --test integration --locked cli_tests::bundling:: -- --ignored
+```

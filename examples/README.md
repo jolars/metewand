@@ -34,3 +34,5 @@ Further examples demonstrate [generated datasets](generated-dataset) and an
 optional [Datamonger source adapter](datamonger). See the
 [authoring guide](../docs/guide/authoring/index.md) to create your own benchmark and the
 [run guide](../docs/guide/authoring/running.md) for output and execution policies.
+
+- [Bundled benchmark](bundled-benchmark): generate a whole-benchmark Docker context with explicit dependencies and mounted output.

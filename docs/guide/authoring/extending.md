@@ -256,3 +256,40 @@ control limitations; it does not provide archival isolation or container CPU and
 memory accounting. Required controls that it cannot enforce cause an explicit
 failure. See the [Docker example](https://github.com/jolars/metewand/tree/main/examples/locked-oci)
 for image preparation and the supported configuration.
+
+## Bundle the whole benchmark
+
+Use `metewand bundle` to generate a portable Docker build context for a complete
+benchmark. All workers run as processes inside one image, with results written
+to `/output/run`. Mount an existing host output parent at `/output` when running
+that image. Append `--resume` to resume the same stored run.
+
+```sh
+metewand bundle --destination ../benchmark-context \
+  --base-image REGISTRY/IMAGE@sha256:DIGEST \
+  --recipe install.sh --include requirements.txt --dry-run
+```
+
+Remove `--dry-run` to create the context, then run `docker build` explicitly.
+The destination must be new, outside the manifest directory, with an existing
+parent. Recipe paths and repeated `--include` patterns are relative to the
+manifest. The optional recipe runs as root with `/bin/sh -eu` in `/benchmark`
+during the build. Install bindings and scientific dependencies where isolated
+workers can find them; ambient Python and R search paths are not inherited.
+Without a recipe, the supplied base image must already contain those dependencies.
+
+The command copies declared source bundles, datasets, contracts, schemas, and
+reference artifacts. It preserves manifest bytes and logical identities. Include
+additional dependency files explicitly. Symlinks, special files, remote dataset
+sources, and nonlocal environments are unsupported. Supply a local-worker
+manifest rather than flattening existing Nix, uv, renv, or OCI environments.
+
+The runner defaults to this CLI's exact package version. Use `--runner-version`
+with an exact `MAJOR.MINOR.PATCH` release when bundling from an unreleased
+checkout. Generation performs no downloads or worker execution. Docker builds
+may fetch dependencies; pin them in your recipe. The context inventory and
+command output have separate version-1 schemas. Bundling retains the current
+trusted execution guarantees.
+
+See the [bundled benchmark example](https://github.com/jolars/metewand/tree/main/examples/bundled-benchmark)
+for build, mounted-output, resume, and inspection commands.
