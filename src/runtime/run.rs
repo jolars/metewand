@@ -6,7 +6,7 @@ mod profile;
 
 pub use check::{
     ReferenceCaseCheck, WorkerCheck, WorkerCheckError, WorkerCheckReport, check_repository_workers,
-    check_repository_workers_for_experiments,
+    check_repository_workers_for_experiments, check_repository_workers_for_plan,
 };
 pub(crate) mod resolution;
 mod selection;
@@ -168,6 +168,9 @@ pub(crate) fn run_repository_with_progress(
             &options.experiments,
             repository.manifest.default_experiment.as_ref(),
         )
+        .map_err(RunError::Selection)?;
+    let plan = plan
+        .filter_candidates(&options.filters, &repository.planning_catalog)
         .map_err(RunError::Selection)?;
     let plan = selection::preselect(&plan, options)?;
     let (output_directory, resume) = destination(output_directory)?;

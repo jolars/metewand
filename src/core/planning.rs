@@ -1,6 +1,9 @@
 //! Deterministic expansion of manifest parameter matrices.
 
-use std::{collections::BTreeMap, fmt};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fmt,
+};
 
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
@@ -154,6 +157,17 @@ pub struct LogicalPlan {
     pub experiments: Vec<LogicalExperimentPlan>,
 }
 
+/// Invocation filters that preserve the identities of expanded candidates.
+#[derive(Clone, Debug, Default)]
+pub struct CandidateFilters {
+    /// Dataset-name union; an empty list accepts every dataset.
+    pub datasets: Vec<String>,
+    /// Problem-name union; an empty list accepts every problem.
+    pub problems: Vec<String>,
+    /// Implementation-name union; an empty list accepts every implementation.
+    pub implementations: Vec<String>,
+}
+
 impl LogicalPlan {
     /// Selects named experiments without rebuilding their identities or order.
     pub fn select_experiments(
@@ -180,6 +194,66 @@ impl LogicalPlan {
         if !selected.is_empty() {
             self.experiments
                 .retain(|experiment| selected.iter().any(|name| experiment.name.as_str() == name));
+        }
+        Ok(self)
+    }
+
+    /// Intersects name filters with this plan without changing candidate order.
+    /// Unknown names and an empty filtered selection are invocation errors.
+    pub fn filter_candidates(
+        mut self,
+        filters: &CandidateFilters,
+        catalog: &LogicalPlanningCatalog,
+    ) -> Result<Self, String> {
+        if filters.datasets.is_empty()
+            && filters.problems.is_empty()
+            && filters.implementations.is_empty()
+        {
+            return Ok(self);
+        }
+        let mut datasets = BTreeSet::new();
+        for name in &filters.datasets {
+            let definition = catalog
+                .dataset_definitions
+                .iter()
+                .find(|(definition, _)| {
+                    matches!(definition, DatasetConfigurationDefinition::Named(declared) if declared.as_str() == name)
+                })
+                .map(|(_, id)| *id)
+                .ok_or_else(|| format!("dataset `{name}` is not declared"))?;
+            datasets.insert(definition);
+        }
+        let mut problems = BTreeSet::new();
+        for name in &filters.problems {
+            let definition = catalog
+                .problem_definitions
+                .get(name.as_str())
+                .ok_or_else(|| format!("problem `{name}` is not declared"))?;
+            problems.insert(*definition);
+        }
+        let mut implementations = BTreeSet::new();
+        for name in &filters.implementations {
+            let definition = catalog
+                .implementation_definitions
+                .get(name.as_str())
+                .ok_or_else(|| format!("implementation `{name}` is not declared"))?;
+            implementations.insert(*definition);
+        }
+        for experiment in &mut self.experiments {
+            experiment.candidates.retain(|candidate| {
+                (datasets.is_empty()
+                    || datasets.contains(&candidate.dataset_configuration.record.definition))
+                    && (problems.is_empty()
+                        || problems.contains(&candidate.problem_configuration.record.definition))
+                    && (implementations.is_empty()
+                        || implementations
+                            .contains(&candidate.implementation_configuration.record.definition))
+            });
+        }
+        self.experiments
+            .retain(|experiment| !experiment.candidates.is_empty());
+        if self.experiments.is_empty() {
+            return Err("name filters match no candidates in the selected experiments".into());
         }
         Ok(self)
     }

@@ -750,8 +750,14 @@ impl PlanResult {
                 let declaration = repository.manifest.experiments.iter().find(|definition| definition.name == experiment.name).expect("planned experiment has a declaration");
                 PlanExperiment {
                     problem: declaration.problem.to_string(),
-                    datasets: declaration.datasets.iter().map(ToString::to_string).collect(),
-                    implementations: declaration.implementations.iter().map(ToString::to_string).collect(),
+                    datasets: declaration.datasets.iter().filter(|name| {
+                        let id = repository.planning_catalog.dataset_definitions[&DatasetConfigurationDefinition::Named((*name).clone())];
+                        experiment.candidates.iter().any(|candidate| candidate.dataset_configuration.record.definition == id)
+                    }).map(ToString::to_string).collect(),
+                    implementations: declaration.implementations.iter().filter(|name| {
+                        let id = repository.planning_catalog.implementation_definitions[*name];
+                        experiment.candidates.iter().any(|candidate| candidate.implementation_configuration.record.definition == id)
+                    }).map(ToString::to_string).collect(),
                     name: experiment.name.to_string(),
                     scheduling_seed: experiment.scheduling_seed.value,
                     max_concurrency: experiment.execution_policy.record.max_concurrency,

@@ -20,6 +20,7 @@ use std::{
     process::ExitCode,
 };
 
+use crate::core::planning::CandidateFilters;
 use crate::core::public_schemas::{PUBLIC_SCHEMAS, PublicSchema};
 use crate::runtime::repository::check_repository;
 
@@ -36,10 +37,10 @@ Usage:
   metewand [--output FORMAT] init [PATH] [--language python|r] [--empty] [--dry-run]
   metewand [--output FORMAT] scaffold <component> NAME [OPTIONS]
   metewand [--output FORMAT] schema [SCHEMA]
-  metewand [--output FORMAT] check [EXPERIMENT]... [--manifest PATH] [--experiment NAME] [--workers]
-  metewand [--output FORMAT] plan [EXPERIMENT]... [--manifest PATH] [--experiment NAME] [--verbose]
+  metewand [--output FORMAT] check [EXPERIMENT]... [--manifest PATH] [--experiment NAME] [--implementation NAME] [--dataset NAME] [--problem NAME] [--workers]
+  metewand [--output FORMAT] plan [EXPERIMENT]... [--manifest PATH] [--experiment NAME] [--implementation NAME] [--dataset NAME] [--problem NAME] [--verbose]
   metewand [--output FORMAT] lock [--manifest PATH] [--check]
-  metewand [--output FORMAT] run [EXPERIMENT]... [--manifest PATH] [--output-dir PATH] [--locked] [--verbose]
+  metewand [--output FORMAT] run [EXPERIMENT]... [--manifest PATH] [--output-dir PATH] [--implementation NAME] [--dataset NAME] [--problem NAME] [--locked] [--verbose]
   metewand [--output FORMAT] status [--manifest PATH] [--output-dir PATH]
   metewand [--output FORMAT] explain <id> [--manifest PATH] [--output-dir PATH]
   metewand [--output FORMAT] export --output-dir PATH --destination PATH [--format json|jsonl|csv] [--require-complete]
@@ -66,13 +67,16 @@ Options:
   --output FORMAT  Write human, json, or jsonl output (default: human).
   --manifest PATH  Use PATH instead of ./metewand.yaml.
   --experiment NAME  Select a named comparison (repeatable; or use positional names).
+  --implementation NAME  Filter solver names in check, plan, or run (repeatable).
+  --dataset NAME  Filter dataset names in check, plan, or run (repeatable).
+  --problem NAME  Filter problem names in check, plan, or run (repeatable).
   --output-dir PATH  Select a run directory (run defaults to .metewand beside the manifest).
   -h, --help       Print help.
   -V, --version    Print the package version.
 ";
 
-const CHECK_HELP: &str = "Usage: metewand [--output FORMAT] check [EXPERIMENT]... [--manifest PATH] [--experiment NAME] [--workers]\n\nValidate the manifest, contracts, schemas, source bundles, and logical compatibility. Positional names and repeated --experiment flags select named comparisons in manifest order, overriding default-experiment. Without a selection or default, select every experiment. Static checks validate the entire manifest. With --workers, launch only workers needed by the selected experiments to verify declared capabilities and evaluate problem reference cases in temporary storage.\n";
-const PLAN_HELP: &str = "Usage: metewand [--output FORMAT] plan [EXPERIMENT]... [--manifest PATH] [--experiment NAME] [--verbose]\n\nSummarize the deterministic unresolved logical plan without downloads, builds, worker launches, or filesystem writes. Positional names and repeated --experiment flags select named comparisons in manifest order, overriding default-experiment. Without a selection or default, select every experiment. Use --verbose for expanded identities, parameters, and slots. Use --output json or --output jsonl for the complete structured plan.\n";
+const CHECK_HELP: &str = "Usage: metewand [--output FORMAT] check [EXPERIMENT]... [--manifest PATH] [--experiment NAME] [--implementation NAME] [--dataset NAME] [--problem NAME] [--workers]\n\nValidate the manifest, contracts, schemas, source bundles, and logical compatibility. Positional names and repeated --experiment flags select named comparisons in manifest order, overriding default-experiment. Without a selection or default, select every experiment. Filter that selection with exact --implementation, --dataset, and --problem names. Repeat a filter for a union of names; different filters intersect. Unknown names or filters matching no candidates are errors. Static checks validate the entire manifest. With --workers, launch only workers needed by the selected candidates to verify declared capabilities and evaluate problem reference cases in temporary storage.\n";
+const PLAN_HELP: &str = "Usage: metewand [--output FORMAT] plan [EXPERIMENT]... [--manifest PATH] [--experiment NAME] [--implementation NAME] [--dataset NAME] [--problem NAME] [--verbose]\n\nSummarize the deterministic unresolved logical plan without downloads, builds, worker launches, or filesystem writes. Positional names and repeated --experiment flags select named comparisons in manifest order, overriding default-experiment. Without a selection or default, select every experiment. Filter that selection with exact --implementation, --dataset, and --problem names. Repeat a filter for a union of names; different filters intersect. Unknown names or filters matching no candidates are errors. Use --verbose for expanded identities, parameters, and slots. Use --output json or --output jsonl for the complete structured plan.\n";
 const SCHEMA_HELP: &str = "Usage: metewand [--output FORMAT] schema [SCHEMA]\n\nWithout SCHEMA, list the stable public schema names and identifiers.\n";
 
 pub fn main() -> ExitCode {
@@ -282,12 +286,12 @@ fn check_command(arguments: &[OsString]) -> Result<CommandResult, CommandError> 
         .filter(|argument| *argument != "--workers")
         .cloned()
         .collect::<Vec<_>>();
-    let (remaining, experiments) = experiment_arguments(&remaining)?;
+    let (remaining, experiments, filters) = experiment_arguments(&remaining)?;
     let manifest = manifest_argument(&remaining)?;
     let repository =
         check_repository(&manifest).map_err(|error| CommandError::repository("check", &error))?;
     let mut result = CommandResult::check(&repository);
-    repository
+    let plan = repository
         .logical_plan()
         .map_err(|error| CommandError::planning("check", &error))?
         .select_experiments(
@@ -295,14 +299,14 @@ fn check_command(arguments: &[OsString]) -> Result<CommandResult, CommandError> 
             repository.manifest.default_experiment.as_ref(),
         )
         .map_err(|message| CommandError::usage("invalid_experiment_selection", message))?;
+    let plan = plan
+        .filter_candidates(&filters, &repository.planning_catalog)
+        .map_err(|message| CommandError::usage("invalid_candidate_selection", message))?;
     if workers == 1 {
         #[cfg(any(unix, windows))]
         {
-            let report = crate::runtime::run::check_repository_workers_for_experiments(
-                &repository,
-                &experiments,
-            )
-            .map_err(|error| CommandError::worker_check(&error))?;
+            let report = crate::runtime::run::check_repository_workers_for_plan(&repository, &plan)
+                .map_err(|error| CommandError::worker_check(&error))?;
             result.set_worker_check(report);
         }
         #[cfg(not(any(unix, windows)))]
@@ -332,14 +336,18 @@ fn plan_command(arguments: &[OsString]) -> Result<CommandResult, CommandError> {
             verbose = true;
         } else {
             remaining.push(argument.clone());
-            if matches!(argument.to_str(), Some("--manifest" | "--experiment"))
-                && let Some(value) = arguments.next()
+            if matches!(
+                argument.to_str(),
+                Some(
+                    "--manifest" | "--experiment" | "--implementation" | "--dataset" | "--problem"
+                )
+            ) && let Some(value) = arguments.next()
             {
                 remaining.push(value.clone());
             }
         }
     }
-    let (remaining, experiments) = experiment_arguments(&remaining)?;
+    let (remaining, experiments, filters) = experiment_arguments(&remaining)?;
     let manifest = manifest_argument(&remaining)?;
     let repository =
         check_repository(&manifest).map_err(|error| CommandError::repository("plan", &error))?;
@@ -351,14 +359,18 @@ fn plan_command(arguments: &[OsString]) -> Result<CommandResult, CommandError> {
             repository.manifest.default_experiment.as_ref(),
         )
         .map_err(|message| CommandError::usage("invalid_experiment_selection", message))?;
+    let plan = plan
+        .filter_candidates(&filters, &repository.planning_catalog)
+        .map_err(|message| CommandError::usage("invalid_candidate_selection", message))?;
     Ok(CommandResult::plan(&repository, &plan, verbose))
 }
 
 fn experiment_arguments(
     arguments: &[OsString],
-) -> Result<(Vec<OsString>, Vec<String>), CommandError> {
+) -> Result<(Vec<OsString>, Vec<String>, CandidateFilters), CommandError> {
     let mut remaining = Vec::new();
     let mut experiments = Vec::new();
+    let mut filters = CandidateFilters::default();
     let mut arguments = arguments.iter();
     while let Some(argument) = arguments.next() {
         if argument == "--experiment" {
@@ -373,6 +385,8 @@ fn experiment_arguments(
                     )
                 })?;
             experiments.push(name.to_owned());
+        } else if let Some(names) = candidate_filter_values(argument, &mut filters) {
+            names.push(candidate_filter_name(argument, arguments.next())?);
         } else if argument == "--manifest" {
             remaining.push(argument.clone());
             remaining.extend(arguments.next().cloned());
@@ -382,7 +396,35 @@ fn experiment_arguments(
             remaining.push(argument.clone());
         }
     }
-    Ok((remaining, experiments))
+    Ok((remaining, experiments, filters))
+}
+
+fn candidate_filter_values<'a>(
+    argument: &OsStr,
+    filters: &'a mut CandidateFilters,
+) -> Option<&'a mut Vec<String>> {
+    match argument.to_str()? {
+        "--dataset" => Some(&mut filters.datasets),
+        "--problem" => Some(&mut filters.problems),
+        "--implementation" => Some(&mut filters.implementations),
+        _ => None,
+    }
+}
+
+fn candidate_filter_name(
+    argument: &OsStr,
+    value: Option<&OsString>,
+) -> Result<String, CommandError> {
+    value
+        .and_then(|value| value.to_str())
+        .filter(|value| !value.is_empty() && !value.starts_with('-'))
+        .map(str::to_owned)
+        .ok_or_else(|| {
+            CommandError::usage(
+                "missing_filter_name",
+                format!("{} requires a nonempty name", argument.to_string_lossy()),
+            )
+        })
 }
 
 fn positional_experiment(argument: &OsStr) -> Result<Option<String>, CommandError> {

@@ -78,9 +78,7 @@ Publication-archive claims require the enforced controls described in the
 
 ## Tooling
 
-- [ ] Add CLI filters for implementation and dataset names and parameter values
-  (such as the response model), alongside `--select ID`. Support comparisons
-  such as APG and hybrid on one logistic dataset without copying candidate IDs
-  or adding a named experiment. Define how filters compose with `--experiment`
-  and `--select`, including their behavior when resuming a run.
+- [ ] Extend CLI name filters with parameter values (such as the response model)
+  so a comparison can select part of a dataset, problem, or implementation grid
+  alongside `--select ID`.
 - [ ] Add an optional MCP adapter over the CLI.

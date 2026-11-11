@@ -371,6 +371,36 @@ fn invalid_positional_experiments_fail_before_execution_or_writes() {
 }
 
 #[test]
+fn invalid_name_filters_fail_before_execution_or_writes() {
+    let repository = repository();
+    let before = files(repository.path());
+    for command in ["check", "plan", "run"] {
+        for flag in ["--implementation", "--dataset", "--problem"] {
+            for value in [None, Some(""), Some("--workers"), Some("typo")] {
+                let output = metewand(
+                    repository.path(),
+                    [command, "--output", "json", flag].into_iter().chain(value),
+                );
+                assert_eq!(output.status.code(), Some(2), "{output:?}");
+                let diagnostic = machine_output(&output);
+                if value == Some("typo") {
+                    assert!(
+                        diagnostic["data"]["message"]
+                            .as_str()
+                            .unwrap()
+                            .contains("is not declared"),
+                        "{diagnostic}"
+                    );
+                } else {
+                    assert_eq!(diagnostic["data"]["code"], "missing_filter_name");
+                }
+            }
+        }
+    }
+    assert_eq!(files(repository.path()), before);
+}
+
+#[test]
 fn help_advertises_positional_experiment_selection() {
     let directory = TempDir::new().unwrap();
     for command in [None, Some("check"), Some("plan"), Some("run")] {
@@ -378,6 +408,9 @@ fn help_advertises_positional_experiment_selection() {
         assert!(output.status.success(), "{output:?}");
         assert!(stdout(&output).contains("[EXPERIMENT]..."));
         assert!(stdout(&output).contains("--experiment"));
+        for flag in ["--implementation", "--dataset", "--problem"] {
+            assert!(stdout(&output).contains(flag), "{output:?}");
+        }
     }
 }
 

@@ -128,7 +128,16 @@ identities and manifest order. Positional names and repeated `--experiment`
 flags select the same union in `check`, `plan`, and `run`; `--manifest` selects
 the manifest independently. Without an explicit selection, commands use
 `default-experiment` when declared. Worker checks visit only selected
-dependencies. Local `environment-variables` are literal, validated worker
+dependencies. Repeated `--implementation`, `--dataset`, and `--problem` names
+form unions within each filter and intersect across filters after experiment
+selection. Reject unknown names and empty filtered plans before execution.
+Worker checks use candidate dependencies, including when only part of an
+experiment is selected. Run ID selectors narrow the filtered plan further and
+reject excluded IDs. All selectors belong to the invocation and must be repeated
+to resume the same subset. Filtering expanded records preserves canonical
+identities, seeds, scheduling priorities, and compatibility version 1.
+
+Local `environment-variables` are literal, validated worker
 settings, not ambient inheritance. Empty settings retain the original local
 environment identity.
 

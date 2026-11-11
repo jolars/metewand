@@ -17,6 +17,8 @@ pub struct RunOptions {
     pub selected_ids: Vec<String>,
     /// Named experiment union, or the manifest default when empty.
     pub experiments: Vec<String>,
+    /// Name filters applied after experiment selection and before stable IDs.
+    pub filters: crate::core::planning::CandidateFilters,
     /// Maximum new attempts allocated by this invocation, including retries.
     pub max_attempts: Option<u64>,
     /// Authorize one additional attempt for selected failures or active slots.

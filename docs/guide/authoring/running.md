@@ -44,6 +44,42 @@ with separate manifests, use `--manifest`, for example:
 metewand run --manifest benchmarks/gaussian-regression/metewand.yaml
 ```
 
+## Filter solvers and datasets
+
+Use `--implementation`, `--dataset`, and `--problem` to narrow a comparison
+without editing its experiment. The same filters work in `plan`, `check`, and
+`run`, so you can preview the work before starting it:
+
+```sh
+metewand plan --problem least_squares --dataset simulated --implementation gradient_descent
+metewand check --problem least_squares --dataset simulated --implementation gradient_descent --workers
+metewand run --problem least_squares --dataset simulated --implementation gradient_descent
+```
+
+Repeat a flag to include several names. For example, this runs both methods on
+the simulated dataset:
+
+```sh
+metewand run --dataset simulated --implementation gradient_descent --implementation coordinate_descent
+```
+
+Likewise, repeat `--dataset` once for each dataset you want to include. Filters
+match exact, case-sensitive manifest names. Values within one flag form a union;
+different flags intersect. Unknown names and combinations that match no
+candidates produce an error before execution.
+
+Metewand selects experiments first, honoring `default-experiment` unless you
+supply positional names or `--experiment`. Name filters then narrow that plan.
+They retain each selected definition's parameter grids and repetitions. On
+`run`, repeated `--select ID` flags narrow it further; an ID excluded by the
+experiment or name filters is an error. Static checking still validates the
+entire manifest, while `check --workers` launches only workers needed by the
+filtered candidates.
+
+Filters belong to the invocation. Repeat them when resuming the same subset,
+or broaden them to execute more of the comparison. Candidate and slot identities
+stay unchanged, so accepted measurements remain reusable in a broader run.
+
 ## Declare worker variables
 
 Local workers receive an isolated environment. Declare numerical-library

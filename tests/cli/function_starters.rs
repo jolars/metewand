@@ -20,6 +20,176 @@ struct Starter {
 }
 
 #[test]
+fn name_filters_select_workers_and_resume_with_stable_slots() {
+    let starter = Starter::new("python");
+    fs::write(
+        starter.project.join("benchmark.py"),
+        r#"
+def generate(context): return {"values": [1, 2]}
+def solve(data, context): return {"total": sum(data["values"])}
+def evaluate(data, result, context): return {"error": abs(result["total"] - sum(data["values"]))}
+"#,
+    )
+    .unwrap();
+    fs::write(
+        starter.project.join("unavailable.py"),
+        "raise RuntimeError('unselected worker imported')\n",
+    )
+    .unwrap();
+    fs::write(
+        starter.project.join("metewand.yaml"),
+        r#"
+version: 1
+name: filters
+default-experiment: full
+datasets:
+  first:
+    function: benchmark.py:generate
+    parameters: {size: {type: integer, default: 2}}
+  second:
+    function: benchmark.py:generate
+    parameters: {size: {type: integer, default: 3}}
+  unavailable: {function: unavailable.py:generate}
+problems:
+  sum:
+    result: {total: number}
+    metrics: {error: number}
+    evaluator: {function: benchmark.py:evaluate}
+  other:
+    result: {total: number}
+    metrics: {error: number}
+    evaluator: {function: unavailable.py:evaluate}
+implementations:
+  alpha:
+    function: benchmark.py:solve
+    problem-contracts: [sum, other]
+    parameters: {steps: {type: integer, default: 1}}
+  beta:
+    function: benchmark.py:solve
+    problem-contracts: [sum, other]
+    parameters: {steps: {type: integer, default: 2}}
+  unavailable: {function: unavailable.py:solve, problem-contracts: [sum, other]}
+experiments:
+  - {name: full, problem: sum, datasets: [first, second, unavailable], implementations: [alpha, beta, unavailable], seed: 7}
+  - {name: other, problem: other, datasets: [first], implementations: [alpha], seed: 7}
+"#,
+    )
+    .unwrap();
+    let baseline = starter.json(&["plan"], 0);
+    let expected = baseline["experiments"][0]["candidates"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|candidate| {
+            candidate["parameters"]["dataset"]["size"] == 3
+                && candidate["parameters"]["implementation"]["steps"] == 1
+        })
+        .unwrap();
+    let filters = [
+        "--problem",
+        "sum",
+        "--implementation",
+        "alpha",
+        "--dataset",
+        "second",
+    ];
+    let args = |command| std::iter::once(command).chain(filters).collect::<Vec<_>>();
+    let selected = starter.json(&args("plan"), 0);
+    assert_eq!(selected["summary"]["logical_candidates"], 1);
+    assert_eq!(selected["experiments"][0]["candidates"][0], *expected);
+    assert_eq!(
+        starter.json(
+            &[
+                "plan",
+                "--implementation",
+                "alpha",
+                "--verbose",
+                "--manifest",
+                "metewand.yaml",
+                "--dataset",
+                "second",
+                "--problem",
+                "sum",
+            ],
+            0,
+        ),
+        selected
+    );
+    let human = starter.invoke(&args("plan"));
+    let human = String::from_utf8(human.stdout).unwrap();
+    assert!(human.contains("second"), "{human}");
+    assert!(!human.contains("unavailable"), "{human}");
+    let mut check = args("check");
+    check.push("--workers");
+    let checked = starter.json(&check, 0);
+    assert_eq!(checked["worker_launches"], 3);
+    assert_eq!(checked["workers"].as_array().unwrap().len(), 3);
+    let excluded = &baseline["experiments"][0]["candidates"][0];
+    let mut invalid = args("run");
+    invalid.extend([
+        "--select",
+        excluded["id"].as_str().unwrap(),
+        "--output-dir",
+        "excluded",
+    ]);
+    let diagnostic = starter.json(&invalid, 2);
+    assert!(
+        diagnostic["message"]
+            .as_str()
+            .unwrap()
+            .contains("matches no measured slot")
+    );
+    assert!(!starter.project.join("excluded").exists());
+    let mut run = args("run");
+    run.extend(["--select", expected["id"].as_str().unwrap()]);
+    let first = starter.json(&run, 0);
+    assert_eq!(first["summary"]["accepted_attempts"], 1);
+    assert_eq!(
+        first["attempts"][0]["logical_slot_id"],
+        expected["specifications"][0]["attempt_slots"][0]
+    );
+    let repeated = starter.json(&run, 0);
+    assert_eq!(repeated["summary"]["attempt_slots"], 0);
+    let mut recorded = args("run");
+    recorded.extend([
+        "--select",
+        first["attempts"][0]["attempt_id"].as_str().unwrap(),
+    ]);
+    let repeated = starter.json(&recorded, 0);
+    assert_eq!(repeated["summary"]["attempt_slots"], 0);
+    let broader = starter.json(
+        &[
+            "run",
+            "full",
+            "other",
+            "--problem",
+            "sum",
+            "--dataset",
+            "second",
+            "--dataset",
+            "first",
+            "--dataset",
+            "first",
+            "--implementation",
+            "beta",
+            "--implementation",
+            "alpha",
+        ],
+        0,
+    );
+    assert_eq!(broader["summary"]["accepted_attempts"], 3);
+    assert!(
+        broader["attempts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|attempt| {
+                attempt["logical_slot_id"] != first["attempts"][0]["logical_slot_id"]
+            })
+    );
+}
+
+#[test]
 fn named_experiments_isolate_workers_and_record_explicit_environment() {
     let starter = Starter::new("python");
     fs::write(starter.project.join("benchmark.py"), r#"

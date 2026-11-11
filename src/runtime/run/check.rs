@@ -3,7 +3,10 @@
 use std::{fs, io, path::Path};
 
 use crate::core::{
-    canonical::CanonicalValue, manifest::DatasetDefinition, schema::SchemaValidationError,
+    canonical::CanonicalValue,
+    manifest::DatasetDefinition,
+    planning::{DatasetConfigurationDefinition, LogicalPlan},
+    schema::SchemaValidationError,
 };
 use crate::protocol::{
     Capability, EvaluationVerdict, ExecuteResponse, MaterializeResponse, RequestId, WorkerRole,
@@ -127,33 +130,36 @@ pub fn check_repository_workers_for_experiments(
     repository: &CheckedRepository,
     experiments: &[String],
 ) -> Result<WorkerCheckReport, WorkerCheckError> {
-    verify_repository(repository)?;
-    let timeouts = resolve_worker_timeouts(repository)?;
     let plan = repository
         .logical_plan()?
         .select_experiments(experiments, repository.manifest.default_experiment.as_ref())
         .map_err(WorkerCheckError::Conformance)?;
-    let selected = repository
-        .manifest
+    check_repository_workers_for_plan(repository, &plan)
+}
+
+/// Checks only dependencies of the already selected logical candidates.
+pub fn check_repository_workers_for_plan(
+    repository: &CheckedRepository,
+    plan: &LogicalPlan,
+) -> Result<WorkerCheckReport, WorkerCheckError> {
+    verify_repository(repository)?;
+    let timeouts = resolve_worker_timeouts(repository)?;
+    let candidates = plan
         .experiments
         .iter()
-        .filter(|definition| {
-            plan.experiments
-                .iter()
-                .any(|experiment| experiment.name == definition.name)
-        })
+        .flat_map(|experiment| &experiment.candidates)
         .collect::<Vec<_>>();
-    let datasets = selected
+    let datasets = candidates
         .iter()
-        .flat_map(|experiment| experiment.datasets.iter())
+        .map(|candidate| candidate.dataset_configuration.record.definition)
         .collect::<std::collections::BTreeSet<_>>();
-    let implementations = selected
+    let implementations = candidates
         .iter()
-        .flat_map(|experiment| experiment.implementations.iter())
+        .map(|candidate| candidate.implementation_configuration.record.definition)
         .collect::<std::collections::BTreeSet<_>>();
-    let problems = selected
+    let problems = candidates
         .iter()
-        .map(|experiment| &experiment.problem)
+        .map(|candidate| candidate.problem_configuration.record.definition)
         .collect::<std::collections::BTreeSet<_>>();
     let executor =
         crate::runtime::executor::LocalProcessExecutor::new(std::time::Duration::from_millis(100));
@@ -163,7 +169,10 @@ pub fn check_repository_workers_for_experiments(
     let private = TempDir::new()?;
     let mut resolved = Vec::new();
     for (name, dataset) in &repository.manifest.datasets {
-        if !datasets.contains(name) {
+        if !datasets.contains(
+            &repository.planning_catalog.dataset_definitions
+                [&DatasetConfigurationDefinition::Named(name.clone())],
+        ) {
             continue;
         }
         if let DatasetDefinition::Generated(dataset) = dataset {
@@ -176,7 +185,8 @@ pub fn check_repository_workers_for_experiments(
         }
     }
     for (name, implementation) in &repository.manifest.implementations {
-        if !implementations.contains(name) {
+        if !implementations.contains(&repository.planning_catalog.implementation_definitions[name])
+        {
             continue;
         }
         let capabilities = implementation
@@ -206,7 +216,7 @@ pub fn check_repository_workers_for_experiments(
         ));
     }
     for (name, problem) in &repository.manifest.problems {
-        if !problems.contains(name) {
+        if !problems.contains(&repository.planning_catalog.problem_definitions[name]) {
             continue;
         }
         if let Some(preparation) = &problem.preparation {

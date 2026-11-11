@@ -6,7 +6,7 @@ use std::{
 use crate::core::{
     manifest::{ImplementationCapability, Manifest, Name, parse_manifest},
     planning::{
-        DatasetConfigurationDefinition, LogicalPlan, LogicalPlanningCatalog,
+        CandidateFilters, DatasetConfigurationDefinition, LogicalPlan, LogicalPlanningCatalog,
         expand_manifest_logical_plan, identify_builtin_unit_dataset_definition,
     },
     problem_contract::{ProblemContract, ScientificBudget, parse_problem_contract},
@@ -170,6 +170,124 @@ fn catalog() -> LogicalPlanningCatalog {
             id::<EnvironmentDefinitionRecord>(5),
         )]),
     }
+}
+
+#[test]
+fn name_filters_preserve_expanded_records_and_manifest_order() {
+    let mut fixture = manifest(MANIFEST);
+    fixture.datasets.insert(
+        name("second"),
+        manifest(MANIFEST).datasets.remove("fixed").unwrap(),
+    );
+    fixture.experiments[0].datasets.push(name("second"));
+    let mut smoke = manifest(MANIFEST).experiments.remove(0);
+    smoke.name = name("smoke");
+    smoke.datasets = vec![name("second")];
+    smoke.implementations = vec![name("alpha")];
+    smoke.seed = 18;
+    fixture.experiments.push(smoke);
+    let mut catalog = catalog();
+    catalog
+        .dataset_definitions
+        .insert(DatasetConfigurationDefinition::Named(name("second")), id(6));
+    let plan =
+        expand_manifest_logical_plan(&fixture, &contracts(&fixture), &schemas(), &catalog).unwrap();
+    let filters = CandidateFilters {
+        datasets: vec!["second".into(), "fixed".into(), "second".into()],
+        implementations: vec!["beta".into(), "alpha".into(), "beta".into()],
+        problems: vec!["regression".into()],
+    };
+    assert_eq!(
+        plan.clone().filter_candidates(&filters, &catalog).unwrap(),
+        plan
+    );
+    let filters = CandidateFilters {
+        datasets: vec!["second".into()],
+        ..filters
+    };
+    let mut expected = plan.clone();
+    expected.experiments[0].candidates.drain(..2);
+    assert_eq!(
+        plan.clone().filter_candidates(&filters, &catalog).unwrap(),
+        expected
+    );
+    let filters = CandidateFilters {
+        implementations: vec!["beta".into()],
+        ..filters
+    };
+    let mut expected = plan.clone();
+    expected.experiments.truncate(1);
+    expected.experiments[0].candidates = vec![plan.experiments[0].candidates[3].clone()];
+    let selected = plan
+        .clone()
+        .select_experiments(&["smoke".into(), "main".into(), "smoke".into()], None)
+        .unwrap()
+        .filter_candidates(&filters, &catalog)
+        .unwrap();
+    assert_eq!(selected, expected);
+    assert!(
+        plan.select_experiments(&[], Some(&name("smoke")))
+            .unwrap()
+            .filter_candidates(&filters, &catalog)
+            .unwrap_err()
+            .contains("match no candidates")
+    );
+}
+
+#[test]
+fn name_filters_reject_unknown_names_and_empty_intersections() {
+    let fixture = manifest(MANIFEST);
+    let mut catalog = catalog();
+    let plan =
+        expand_manifest_logical_plan(&fixture, &contracts(&fixture), &schemas(), &catalog).unwrap();
+    assert_eq!(
+        plan.clone()
+            .filter_candidates(&CandidateFilters::default(), &catalog)
+            .unwrap(),
+        plan
+    );
+    for (filters, expected) in [
+        (
+            CandidateFilters {
+                datasets: vec!["typo".into()],
+                ..Default::default()
+            },
+            "dataset `typo` is not declared",
+        ),
+        (
+            CandidateFilters {
+                problems: vec!["typo".into()],
+                ..Default::default()
+            },
+            "problem `typo` is not declared",
+        ),
+        (
+            CandidateFilters {
+                implementations: vec!["beta".into(), "typo".into()],
+                ..Default::default()
+            },
+            "implementation `typo` is not declared",
+        ),
+    ] {
+        assert_eq!(
+            plan.clone()
+                .filter_candidates(&filters, &catalog)
+                .unwrap_err(),
+            expected
+        );
+    }
+    catalog.problem_definitions.insert(name("unused"), id(9));
+    assert_eq!(
+        plan.filter_candidates(
+            &CandidateFilters {
+                problems: vec!["unused".into()],
+                ..Default::default()
+            },
+            &catalog,
+        )
+        .unwrap_err(),
+        "name filters match no candidates in the selected experiments"
+    );
 }
 
 #[test]
