@@ -523,6 +523,12 @@ interpreter does not establish build evidence for imported native libraries.
 
 ## Durability and recovery
 
+The CLI defaults to `.metewand/` beside the checked manifest for execution and,
+when that directory exists, inspection. Explicit relative `--output-dir` paths
+remain relative to the working directory. Selecting the default path does not
+change persisted layouts or canonical identities. Preflight and read-only
+inspection never create the default directory.
+
 The authoritative layouts are
 [v1.sql](src/runtime/run_store/v1.sql),
 [v2.sql](src/runtime/run_store/v2.sql), and

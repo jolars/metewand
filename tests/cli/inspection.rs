@@ -111,18 +111,25 @@ fn status_reports_pending_slots_and_explains_every_planned_identity_without_writ
 #[test]
 fn status_preserves_history_and_explains_committed_artifacts_without_the_repository() {
     let root = repository();
-    let (code, report) = command(
-        root.path(),
-        &["run", "--output-dir", "run", "--max-attempts", "1"],
-    );
+    let (code, report) = command(root.path(), &["run", "--max-attempts", "1"]);
     assert_eq!(code, 0, "{report}");
-    let before = snapshot(&root.path().join("run"));
+    let before = snapshot(&root.path().join(".metewand"));
+    let (code, status) = command(root.path(), &["status"]);
+    assert_eq!(code, 0, "{status}");
+    assert_eq!(status["data"]["summary"]["satisfied_slots"], 1);
+    assert_eq!(status["data"]["summary"]["pending_slots"], 2);
+    let attempt = &report["data"]["attempts"][0];
+    let id = attempt["attempt_id"].as_str().unwrap();
+    let (code, explanation) = command(root.path(), &["explain", id]);
+    assert_eq!(code, 0, "{explanation}");
+    assert_eq!(explanation["data"]["subject"]["id"], id);
+    assert_eq!(snapshot(&root.path().join(".metewand")), before);
     let (code, status) = command(
         root.path(),
         &[
             "status",
             "--output-dir",
-            "run",
+            ".metewand",
             "--manifest",
             "metewand.yaml",
         ],
@@ -131,20 +138,20 @@ fn status_preserves_history_and_explains_committed_artifacts_without_the_reposit
     assert_eq!(status["data"]["summary"]["satisfied_slots"], 1);
     assert_eq!(status["data"]["summary"]["pending_slots"], 2);
     fs::remove_file(root.path().join("metewand.yaml")).unwrap();
-    let attempt = &report["data"]["attempts"][0];
     for id in [
         attempt["attempt_id"].as_str().unwrap(),
         attempt["resolved_slot_id"].as_str().unwrap(),
         attempt["observation_id"].as_str().unwrap(),
     ] {
-        let (code, explanation) = command(root.path(), &["explain", id, "--output-dir", "run"]);
+        let (code, explanation) =
+            command(root.path(), &["explain", id, "--output-dir", ".metewand"]);
         assert_eq!(code, 0, "{explanation}");
         assert_eq!(explanation["data"]["subject"]["id"], id);
     }
-    let (code, status) = command(root.path(), &["status", "--output-dir", "run"]);
+    let (code, status) = command(root.path(), &["status", "--output-dir", ".metewand"]);
     assert_eq!(code, 0, "{status}");
     assert_eq!(status["data"]["attempts"].as_array().unwrap().len(), 1);
-    assert_eq!(snapshot(&root.path().join("run")), before);
+    assert_eq!(snapshot(&root.path().join(".metewand")), before);
 }
 
 #[test]

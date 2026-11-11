@@ -51,7 +51,7 @@ With the CLI and Python worker package
 metewand init my-benchmark
 cd my-benchmark
 metewand check --workers
-metewand run --output-dir run
+metewand run
 ```
 
 The generated `benchmark.py` compares Python's built-in sum with a loop on seeded
@@ -67,7 +67,9 @@ experiments:
     seed: 7
 ```
 
-Metewand prints timings and absolute errors and saves the results in `run/`.
+Metewand prints timings and absolute errors and saves the results in `.metewand/`
+beside the manifest. Repeating `metewand run` resumes that history. Use
+`--output-dir PATH` for a separate run.
 Replace the generated functions and edit the configuration to compare your own
 methods. For R, start with `metewand init my-benchmark --language r`.
 

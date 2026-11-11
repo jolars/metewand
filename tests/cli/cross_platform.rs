@@ -218,6 +218,96 @@ fn inspect_and_export(directory: &Path) {
 }
 
 #[test]
+fn default_run_directory_resumes_and_explicit_output_starts_an_independent_run() {
+    let directory = stage("python-package");
+    python_package(directory.path());
+    let store = directory.path().join(".metewand");
+    let pending = successful(directory.path(), &["status"]);
+    assert_eq!(pending["summary"]["pending_slots"], 2);
+    assert!(!store.exists());
+
+    let output = Command::new(env!("CARGO_BIN_EXE_metewand"))
+        .current_dir(directory.path())
+        .arg("run")
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    assert!(
+        String::from_utf8(output.stdout)
+            .unwrap()
+            .contains(".metewand")
+    );
+    assert!(store.join("run.sqlite3").is_file());
+
+    let complete = successful(directory.path(), &["run"]);
+    assert_accepted(&complete, 0);
+    assert_eq!(
+        Path::new(complete["output_directory"].as_str().unwrap()),
+        fs::canonicalize(&store).unwrap()
+    );
+    let status = successful(directory.path(), &["status"]);
+    assert_eq!(status["summary"]["satisfied_slots"], 2);
+    assert_eq!(status["attempts"].as_array().unwrap().len(), 2);
+    let id = status["attempts"][0]["id"].as_str().unwrap();
+    let explanation = successful(directory.path(), &["explain", id]);
+    assert_eq!(explanation["subject"]["id"], id);
+
+    let independent = successful(
+        directory.path(),
+        &["run", "--output-dir", "separate", "--max-attempts", "1"],
+    );
+    assert_accepted(&independent, 1);
+    let separate = successful(directory.path(), &["status", "--output-dir", "separate"]);
+    assert_eq!(separate["attempts"].as_array().unwrap().len(), 1);
+    let status = successful(directory.path(), &["status"]);
+    assert_eq!(status["attempts"].as_array().unwrap().len(), 2);
+}
+
+#[test]
+fn default_run_directory_follows_the_manifest_outside_the_working_directory() {
+    let directory = TempDir::new().unwrap();
+    let project = directory.path().join("benchmark");
+    copy(&repository().join("examples/python-package"), &project);
+    python_package(&project);
+    let first = successful(
+        directory.path(),
+        &[
+            "run",
+            "--manifest",
+            "benchmark/metewand.yaml",
+            "--max-attempts",
+            "1",
+        ],
+    );
+    assert_accepted(&first, 1);
+    assert!(project.join(".metewand/run.sqlite3").is_file());
+    assert!(!directory.path().join(".metewand").exists());
+    let resumed = successful(&project, &["run"]);
+    assert_accepted(&resumed, 1);
+    let status = successful(
+        directory.path(),
+        &["status", "--manifest", "benchmark/metewand.yaml"],
+    );
+    assert_eq!(status["summary"]["satisfied_slots"], 2);
+
+    let independent = successful(
+        directory.path(),
+        &[
+            "run",
+            "--manifest",
+            "benchmark/metewand.yaml",
+            "--output-dir",
+            "separate",
+            "--max-attempts",
+            "1",
+        ],
+    );
+    assert_accepted(&independent, 1);
+    assert!(directory.path().join("separate/run.sqlite3").is_file());
+    assert!(!project.join("separate").exists());
+}
+
+#[test]
 fn python_generated_datasets_cache_resume_and_exports_are_portable() {
     let directory = stage("python-package");
     python_package(directory.path());

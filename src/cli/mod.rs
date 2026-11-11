@@ -20,6 +20,8 @@ use crate::cli::output::{
     CommandError, CommandResult, EXIT_SUCCESS, OutputFormat, render_diagnostic, render_result,
 };
 
+const DEFAULT_RUN_DIRECTORY: &str = ".metewand";
+
 const HELP: &str = "\
 Metewand reproducible benchmark runner
 
@@ -30,7 +32,7 @@ Usage:
   metewand [--output FORMAT] check [--manifest PATH] [--experiment NAME] [--workers]
   metewand [--output FORMAT] plan [--manifest PATH] [--experiment NAME] [--verbose]
   metewand [--output FORMAT] lock [--manifest PATH] [--check]
-  metewand [--output FORMAT] run [--manifest PATH] --output-dir PATH [--locked] [--verbose]
+  metewand [--output FORMAT] run [--manifest PATH] [--output-dir PATH] [--locked] [--verbose]
   metewand [--output FORMAT] status [--manifest PATH] [--output-dir PATH]
   metewand [--output FORMAT] explain <id> [--manifest PATH] [--output-dir PATH]
   metewand [--output FORMAT] export --output-dir PATH --destination PATH [--format json|jsonl|csv] [--require-complete]
@@ -56,7 +58,7 @@ Commands:
 Options:
   --output FORMAT  Write human, json, or jsonl output (default: human).
   --manifest PATH  Use PATH instead of ./metewand.yaml.
-  --output-dir PATH  Publish a run in a new directory (parent must exist).
+  --output-dir PATH  Select a run directory (run defaults to .metewand beside the manifest).
   -h, --help       Print help.
   -V, --version    Print the package version.
 ";

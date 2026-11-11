@@ -169,7 +169,7 @@ pub fn init_benchmark_with_options(
             setup.to_owned(),
             "metewand check --workers".to_owned(),
             "metewand plan".to_owned(),
-            "metewand run --output-dir run".to_owned(),
+            "metewand run".to_owned(),
         ]);
         steps
     };

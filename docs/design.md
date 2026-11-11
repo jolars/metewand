@@ -62,14 +62,16 @@ support separate preparation, binary data, native workers, and profiles.
 
 Static checking and planning do not import benchmark code, launch workers, or
 create run output. Worker checking explicitly authorizes imports and reference
-evaluation. Running explicitly authorizes execution and publication beneath a
-selected output directory. Authoring and maintenance commands require explicit
-mutation requests.
+evaluation. Running explicitly authorizes execution and publication beneath
+`.metewand/` beside the manifest, or a directory selected with `--output-dir`.
+Authoring and maintenance commands require explicit mutation requests.
 
 Running again with the same output directory continues its durable history.
 Matching accepted measurements are reused, and interrupted attempts restart from
 clean state after recovery. Recorded execution or scientific failures require
 an explicit retry. A new output directory starts an independent run.
+Status and explanation commands read the default run alongside the current
+manifest when it exists, without creating or recovering it.
 
 ## Scientific comparison
 

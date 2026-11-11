@@ -96,7 +96,7 @@ dependencies or running benchmark code.
 metewand check
 metewand plan
 metewand check --workers
-metewand run --output-dir run
+metewand run
 ```
 
 `check` validates the declarations. `plan` shows the expanded comparison and
@@ -110,6 +110,10 @@ outcomes. It uses one measurement per method. The default wall time includes
 preparation, solving, and result serialization, with startup and independent
 evaluation outside that interval.
 
+Metewand saves the run in `.metewand/` beside `metewand.yaml`. Add `.metewand/`
+to your repository's `.gitignore`. Use `--output-dir PATH` to choose another
+directory.
+
 The starter declares no accuracy target, so completion is `not_required`.
 Successful execution means the result passed the configured checks; it does
 not establish convergence.
@@ -117,18 +121,18 @@ not establish convergence.
 ## Inspect and export
 
 ```sh
-metewand status --output-dir run
-metewand export --output-dir run --format csv --destination tables
+metewand status
+metewand export --output-dir .metewand --format csv --destination tables
 ```
 
 `tables/` contains `results.csv` and `export.json`, which records the export's
 lineage. Keep the run directory as the original evidence.
 
 Destination parents must exist. Export destinations must be new directories.
-To continue an interrupted run, repeat the run command with the same directory:
+To continue an interrupted run, repeat the run command:
 
 ```sh
-metewand run --output-dir run
+metewand run
 ```
 
 Metewand preserves matching accepted measurements and restarts interrupted
@@ -161,7 +165,7 @@ R CMD INSTALL --library=SITE_LIBRARY packages/r
 metewand init my-r-benchmark --language r
 cd my-r-benchmark
 metewand check --workers
-metewand run --output-dir run
+metewand run
 ```
 
 Replace `SITE_LIBRARY` with the path printed by `Rscript --vanilla -e 'cat(.Library)'`.

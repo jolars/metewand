@@ -389,6 +389,16 @@ fn run_rejects_destinations_captured_by_source_directories_or_globs() {
             assert!(!root.path().join("run").exists());
         }
     }
+
+    let root = repository_with_worker_sources("'**/*.py'");
+    let output = metewand(root.path(), &["run", "--output", "json"]);
+    assert!(!output.status.success(), "{output:?}");
+    let diagnostic: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        diagnostic["data"]["code"], "unsupported_operation",
+        "{diagnostic}"
+    );
+    assert!(!root.path().join(".metewand").exists());
 }
 
 #[test]
@@ -893,40 +903,38 @@ fn run_rejects_unsupported_policies_before_writing_output() {
         "version: 1\ntiming-scope",
         "version: 1\nenforcement: \"required\"\ntiming-scope",
     );
-    let output = metewand(
-        root.path(),
-        &["run", "--output-dir", "run", "--output", "jsonl"],
-    );
-    assert_eq!(output.status.code(), Some(3));
-    assert_eq!(
-        envelopes(&output)[0]["data"]["causes"][0]["code"],
-        "required_control_unsupported"
-    );
-    assert!(!root.path().join("run").exists());
+    for arguments in [
+        vec!["run", "--output", "jsonl"],
+        vec!["run", "--output-dir", "run", "--output", "jsonl"],
+    ] {
+        let output = metewand(root.path(), &arguments);
+        assert_eq!(output.status.code(), Some(3));
+        assert_eq!(
+            envelopes(&output)[0]["data"]["causes"][0]["code"],
+            "required_control_unsupported"
+        );
+        assert!(!root.path().join("run").exists());
+        assert!(!root.path().join(".metewand").exists());
+    }
 }
 
 #[test]
-fn run_refuses_unrelated_directories_and_requires_an_explicit_destination() {
-    let root = repository();
-    let output = metewand(root.path(), &["run", "--output", "jsonl"]);
-    assert_eq!(output.status.code(), Some(2));
-    assert_eq!(
-        envelopes(&output)[0]["data"]["code"],
-        "missing_output_directory"
-    );
-    fs::create_dir(root.path().join("run")).unwrap();
-    fs::write(root.path().join("run/keep"), "original").unwrap();
-    let output = metewand(
-        root.path(),
-        &["run", "--output-dir", "run", "--output", "jsonl"],
-    );
-    assert_eq!(output.status.code(), Some(74));
-    assert_eq!(envelopes(&output)[0]["data"]["code"], "run_setup_failed");
-    assert_eq!(
-        fs::read_to_string(root.path().join("run/keep")).unwrap(),
-        "original"
-    );
-    assert!(!root.path().join("run/run.sqlite3").exists());
+fn run_refuses_unrelated_directories_for_default_and_explicit_destinations() {
+    for directory in [".metewand", "run"] {
+        let root = repository();
+        let path = root.path().join(directory);
+        fs::create_dir(&path).unwrap();
+        fs::write(path.join("keep"), "original").unwrap();
+        let mut arguments = vec!["run", "--output", "jsonl"];
+        if directory == "run" {
+            arguments.extend(["--output-dir", directory]);
+        }
+        let output = metewand(root.path(), &arguments);
+        assert_eq!(output.status.code(), Some(74));
+        assert_eq!(envelopes(&output)[0]["data"]["code"], "run_setup_failed");
+        assert_eq!(fs::read_to_string(path.join("keep")).unwrap(), "original");
+        assert!(!path.join("run.sqlite3").exists());
+    }
 }
 
 #[test]

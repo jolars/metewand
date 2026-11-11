@@ -309,26 +309,34 @@ example](https://github.com/jolars/metewand/tree/main/examples/locked-uv).
 ```sh
 metewand check --workers
 metewand plan
-metewand run --output-dir results
-metewand status --output-dir results
+metewand run
+metewand status
 ```
 
-The output directory's parent must exist, and its contents must stay outside the
-declared source selection. A new directory starts a run; an existing Metewand run
-directory resumes automatically. Other existing directories are rejected. The
-walkthrough includes only `benchmark.py` as worker source, so `results` beside it
-is suitable. A selection such as `benchmark/*.py` also allows
-`benchmark/outputs/run`, since neither that
-directory nor its contents can match the glob. A matched directory includes its
+`metewand run` saves its durable history in `.metewand/` beside the manifest,
+including when you select a manifest with `--manifest PATH`. Add `.metewand/` to
+your repository's `.gitignore`. Use `--output-dir PATH` to choose another run;
+relative paths are resolved from the working directory, and the parent must
+exist. A new directory starts a run; an existing Metewand run directory resumes
+automatically. Other existing directories are rejected.
+
+The run directory and its contents must stay outside the declared source
+selection. The walkthrough includes only `benchmark.py` as worker source, so
+the default directory is suitable. A selection such as `benchmark/*.py` also
+allows `benchmark/outputs/run`, since neither that directory nor its contents can
+match the glob. A matched directory includes its
 whole tree: `benchmark/output.py/run` would overlap `benchmark/*.py`. If you
-declare the whole benchmark directory or use `benchmark/**/*.py`, put output
-elsewhere. The same selection rules apply to an explicit artifact cache.
+declare the whole benchmark directory or use `benchmark/**/*.py`, choose an
+output directory outside that selection with `--output-dir`. The same selection
+rules apply to an explicit artifact cache.
 
 By default, `run` finishes with a short summary and the output directory. Add
 `--verbose` to print individual measurements, effective settings, metrics,
 completion, failures, and profile details. To inspect saved measurements without
-rerunning the benchmark, use `metewand status --output-dir results`. In a toy
-Python benchmark, serialization and orchestration costs can be substantial
+rerunning the benchmark, use `metewand status`. This inspects the current manifest
+and the default run when it exists. Use `--output-dir PATH` to inspect another run
+independently of the manifest. In a toy Python benchmark, serialization and
+orchestration costs can be substantial
 relative to the solver's work.
 
 Human runs report preparation immediately, including environment verification,
@@ -366,9 +374,9 @@ output.
 ## Resume and diagnose
 
 ```sh
-metewand run --output-dir results
-metewand run --output-dir results --retry
-metewand status --output-dir results --output json
+metewand run
+metewand run --retry
+metewand status --output json
 ```
 
 Repeat the same command to fill in remaining work. Metewand verifies the resolved
@@ -391,13 +399,14 @@ failures.
 Copy an ID from `status` to inspect its recorded evidence:
 
 ```sh
-metewand explain ID --output-dir results
+metewand explain ID
 ```
 
 Replace `ID` with a full attempt, observation, diagnostic, or other supported
-record ID. Stored inspection does not need the manifest and does not recover
-or modify the run. Use `--select ID` on `run` to narrow execution, or
-`--max-attempts 2` to bound the new attempts in one invocation.
+record ID. Use `--output-dir PATH` to inspect stored evidence without the
+manifest. Inspection does not recover or modify the run. Use `--select ID` on
+`run` to narrow execution, or `--max-attempts 2` to bound the new attempts in one
+invocation.
 
 An execution exception, malformed result, evaluator failure, scientific timeout,
 and missed accuracy target represent different problems. Read the diagnostic
@@ -406,9 +415,9 @@ before retrying: unchanged deterministic code will often fail in the same way.
 ## Export for analysis
 
 ```sh
-metewand export --output-dir results --format json --require-complete --destination analysis
-metewand export --output-dir results --format csv --destination tables
-metewand export --output-dir results --destination jsonl-tables
+metewand export --output-dir .metewand --format json --require-complete --destination analysis
+metewand export --output-dir .metewand --format csv --destination tables
+metewand export --output-dir .metewand --destination jsonl-tables
 ```
 
 Each new destination contains the selected results file and `export.json`.
@@ -466,7 +475,7 @@ pending slots may remain. Creation reads committed evidence and leaves the run
 unchanged; it does not recover interrupted attempts.
 
 ```sh
-metewand archive create --output-dir results --destination results.tar.gz
+metewand archive create --output-dir .metewand --destination results.tar.gz
 metewand archive verify --archive results.tar.gz
 metewand archive import --archive results.tar.gz --destination imported
 metewand status --output-dir imported

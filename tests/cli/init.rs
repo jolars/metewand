@@ -61,7 +61,7 @@ fn default_starters_have_two_files_and_preflight_both_destinations() {
                 .as_array()
                 .unwrap()
                 .iter()
-                .any(|s| s.as_str().unwrap().contains("metewand run"))
+                .any(|s| s.as_str() == Some("metewand run"))
         );
     }
 }

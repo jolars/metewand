@@ -5,7 +5,7 @@ use std::{io, io::Write as _};
 
 use crate::cli::output::{CommandError, CommandResult, OutputFormat};
 
-const HELP: &str = "Usage: metewand [--output FORMAT] run [--manifest PATH] --output-dir PATH [--cache-dir PATH] [--experiment NAME] [--select ID] [--max-attempts N] [--resume] [--retry] [--locked] [--verbose]\n\nWith --locked, verify prepared Nix, uv, and Linux Docker OCI and Apptainer SIF environments and worker launches against metewand.lock without building or fetching software. Execute the selected supported logical plan using trusted local workers, fixed or unit datasets, and contract-authorized cold_end_to_end, prepare_and_execute, or execute_only wall timing. Create a run or resume an existing durable run in the selected directory; its parent must exist. Matching accepted measurements are always skipped. Interrupted attempts restart automatically after recovery, once their ownership leases expire. Recorded failures or active slots require --retry to authorize one new immutable attempt per slot. Use a new output directory for an independent run. --resume remains accepted as a compatibility alias for the default behavior. Repeated --experiment flags select named experiments in manifest order, overriding default-experiment. Repeat the selection when resuming. Repeated --select flags select the union of stable candidate, run, observation, slot, and recorded attempt IDs. --max-attempts bounds new attempts in this invocation. Optional --cache-dir assigns a separate Metewand-owned directory for verified dataset construction reuse; its parent must exist. Execution policies default to max-concurrency: 1; a larger positive bound opts into concurrent attempts. Human output reports preparation and live execution progress on stderr, with spinners, progress bars, and completed sections that fold into summaries on interactive terminals (disable color with NO_COLOR). Redirected stdout or stderr uses plain progress lines and periodic heartbeats. JSON Lines output streams versioned events after preparation; JSON output includes the same events in one terminal document. Human output ends with a short summary. Use --verbose for individual measurements, settings, metrics, and profile details. Use status --output-dir PATH to inspect saved measurements without rerunning. Machine formats disable human progress and always include complete records.\n";
+const HELP: &str = "Usage: metewand [--output FORMAT] run [--manifest PATH] [--output-dir PATH] [--cache-dir PATH] [--experiment NAME] [--select ID] [--max-attempts N] [--resume] [--retry] [--locked] [--verbose]\n\nWith --locked, verify prepared Nix, uv, and Linux Docker OCI and Apptainer SIF environments and worker launches against metewand.lock without building or fetching software. Execute the selected supported logical plan using trusted local workers, fixed or unit datasets, and contract-authorized cold_end_to_end, prepare_and_execute, or execute_only wall timing. Create a run or resume an existing durable run in .metewand beside the manifest by default. Use --output-dir PATH to select another directory; relative paths resolve from the working directory, and the parent must exist. Matching accepted measurements are always skipped. Interrupted attempts restart automatically after recovery, once their ownership leases expire. Recorded failures or active slots require --retry to authorize one new immutable attempt per slot. Use a new output directory for an independent run. --resume remains accepted as a compatibility alias for the default behavior. Repeated --experiment flags select named experiments in manifest order, overriding default-experiment. Repeat the selection when resuming. Repeated --select flags select the union of stable candidate, run, observation, slot, and recorded attempt IDs. --max-attempts bounds new attempts in this invocation. Optional --cache-dir assigns a separate Metewand-owned directory for verified dataset construction reuse; its parent must exist. Execution policies default to max-concurrency: 1; a larger positive bound opts into concurrent attempts. Human output reports preparation and live execution progress on stderr, with spinners, progress bars, and completed sections that fold into summaries on interactive terminals (disable color with NO_COLOR). Redirected stdout or stderr uses plain progress lines and periodic heartbeats. JSON Lines output streams versioned events after preparation; JSON output includes the same events in one terminal document. Human output ends with a short summary. Use --verbose for individual measurements, settings, metrics, and profile details. Use status to inspect saved measurements in the default run, or status --output-dir PATH for another directory, without rerunning. Machine formats disable human progress and always include complete records.\n";
 
 pub fn command(
     arguments: &[OsString],
@@ -142,16 +142,10 @@ pub fn command(
             ));
         }
     }
-    let output_directory = output_directory.ok_or_else(|| {
-        CommandError::usage(
-            "missing_output_directory",
-            "`run` requires an explicit `--output-dir PATH`",
-        )
-    })?;
     let manifest = manifest.unwrap_or_else(|| PathBuf::from("metewand.yaml"));
     execute(
         &manifest,
-        &output_directory,
+        output_directory.as_deref(),
         cache_directory.as_deref(),
         &options,
         output_format,
@@ -162,7 +156,7 @@ pub fn command(
 #[cfg(any(unix, windows))]
 fn execute(
     manifest: &std::path::Path,
-    output_directory: &std::path::Path,
+    output_directory: Option<&std::path::Path>,
     cache_directory: Option<&std::path::Path>,
     options: &crate::core::run_output::RunOptions,
     output_format: OutputFormat,
@@ -175,6 +169,8 @@ fn execute(
         .map_err(|e| CommandError::output_write(e.to_string()))?;
     let repository = crate::runtime::repository::check_repository(manifest)
         .map_err(|error| CommandError::repository("run", &error))?;
+    let default_output_directory = repository.root.join(super::DEFAULT_RUN_DIRECTORY);
+    let output_directory = output_directory.unwrap_or(&default_output_directory);
     progress
         .stage("Planning benchmark", repository.manifest.name.to_string())
         .map_err(|e| CommandError::output_write(e.to_string()))?;
@@ -216,7 +212,7 @@ fn execute(
 #[cfg(not(any(unix, windows)))]
 fn execute(
     _: &std::path::Path,
-    _: &std::path::Path,
+    _: Option<&std::path::Path>,
     _: Option<&std::path::Path>,
     _: &crate::core::run_output::RunOptions,
     _: OutputFormat,

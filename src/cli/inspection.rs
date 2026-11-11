@@ -2,8 +2,8 @@ use std::{ffi::OsString, path::PathBuf};
 
 use crate::cli::output::{CommandError, CommandResult};
 
-const STATUS_HELP: &str = "Usage: metewand [--output FORMAT] status [--manifest PATH] [--output-dir PATH]\n\nInspect measured slots, immutable retry history, selected observations, and failure diagnostics without running workers or recovering a store. Without --output-dir, inspect ./metewand.yaml. With --output-dir, inspect committed run history or an imported archive collection independently of repository inputs; add --manifest to compare it with the current logical plan.\n";
-const EXPLAIN_HELP: &str = "Usage: metewand [--output FORMAT] explain <id> [--manifest PATH] [--output-dir PATH]\n\nExplain an exact stable definition, configuration, run, slot, attempt, observation, artifact, applicability, or diagnostic ID. Inspect ./metewand.yaml by default, or committed history and imported archive collections with --output-dir. Add --manifest to inspect both. Lookup never downloads inputs, launches workers, initializes a store, or performs recovery.\n";
+const STATUS_HELP: &str = "Usage: metewand [--output FORMAT] status [--manifest PATH] [--output-dir PATH]\n\nInspect measured slots, immutable retry history, selected observations, and failure diagnostics without running workers or recovering a store. Without --output-dir, inspect the manifest (./metewand.yaml by default) and its .metewand run directory when present. Inspection never creates that directory. With --output-dir, inspect committed run history or an imported archive collection independently of repository inputs; add --manifest to compare it with the current logical plan.\n";
+const EXPLAIN_HELP: &str = "Usage: metewand [--output FORMAT] explain <id> [--manifest PATH] [--output-dir PATH]\n\nExplain an exact stable definition, configuration, run, slot, attempt, observation, artifact, applicability, or diagnostic ID. Inspect the manifest (./metewand.yaml by default) and its .metewand run directory when present, or committed history and imported archive collections with --output-dir. Add --manifest to inspect both. Lookup never downloads inputs, launches workers, initializes a store, or performs recovery.\n";
 
 pub fn command(
     command: &'static str,
@@ -96,7 +96,7 @@ pub fn command(
 fn inspect(
     command: &'static str,
     manifest: Option<PathBuf>,
-    output_directory: Option<PathBuf>,
+    mut output_directory: Option<PathBuf>,
     id: Option<String>,
 ) -> Result<CommandResult, CommandError> {
     let mut inspection = crate::runtime::inspection::Inspection::default();
@@ -109,6 +109,14 @@ fn inspect(
         inspection
             .add_repository(&repository, &plan)
             .map_err(|error| CommandError::inspection(&error))?;
+        if output_directory.is_none() {
+            let default = repository.root.join(super::DEFAULT_RUN_DIRECTORY);
+            match default.symlink_metadata() {
+                Ok(_) => output_directory = Some(default),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => return Err(CommandError::inspection(&error.into())),
+            }
+        }
     }
     if let Some(output_directory) = output_directory {
         inspection

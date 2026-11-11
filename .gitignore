@@ -12,6 +12,9 @@ devenv.local.yaml
 # Rust
 /target
 
+# Benchmark runs
+.metewand/
+
 # Python
 __pycache__/
 *.py[cod]
