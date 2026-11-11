@@ -15,7 +15,7 @@ cargo run --locked -p metewand -- check --manifest "$benchmark_dir/metewand.yaml
 cargo run --locked -p metewand -- plan --manifest "$benchmark_dir/metewand.yaml" --output json
 cargo run --locked -p metewand -- run --manifest "$benchmark_dir/metewand.yaml" --output-dir "$benchmark_dir/run" --output json
 cargo run --locked -p metewand -- status --output-dir "$benchmark_dir/run"
-cargo run --locked -p metewand -- run --manifest "$benchmark_dir/metewand.yaml" --output-dir "$benchmark_dir/run" --resume
+cargo run --locked -p metewand -- run --manifest "$benchmark_dir/metewand.yaml" --output-dir "$benchmark_dir/run"
 cargo run --locked -p metewand -- export --output-dir "$benchmark_dir/run" --destination "$benchmark_dir/jsonl" --format jsonl
 cargo run --locked -p metewand -- export --output-dir "$benchmark_dir/run" --destination "$benchmark_dir/csv" --format csv
 ```
@@ -45,5 +45,5 @@ examples, not performance comparisons of Basin or clustlasso-cd.
 
 See [buffered profiles](../../docs/guide/authoring/extending.md#move-from-final-answers-to-profiles) for policy,
 clock, collection, independent evaluation, and retry rules. An interrupted run
-retains already published snapshots. Use `--resume --retry` to authorize a new
-complete trajectory for an unsatisfied slot.
+retains already published snapshots. Repeat `run` to start a new complete
+trajectory for an interrupted slot. Recorded failures require `--retry`.

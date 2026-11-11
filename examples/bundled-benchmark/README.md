@@ -16,7 +16,7 @@ docker run --rm --network none --user "$(id -u):$(id -g)" \
 ```
 
 Results remain in `output/run` after the container exits. Repeat the run command
-with `--resume` after the image name to resume. To inspect stored results:
+to resume automatically. To inspect stored results:
 
 ```sh
 docker run --rm --network none --entrypoint /usr/local/bin/metewand \

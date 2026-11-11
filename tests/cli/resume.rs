@@ -166,7 +166,7 @@ fn candidate_run_observation_and_slot_filters_preserve_identities_and_form_a_uni
 }
 
 #[test]
-fn bounded_execution_resumes_without_repeating_accepted_slots() {
+fn repeated_run_resumes_without_repeating_accepted_slots() {
     let root = repository();
     let (code, first) = run(root.path(), &["--max-attempts", "1"]);
     assert_eq!(code, 0, "{first}");
@@ -177,7 +177,7 @@ fn bounded_execution_resumes_without_repeating_accepted_slots() {
         .join("run")
         .join(attempt["attempt_directory"].as_str().unwrap());
     let bytes = fs::read(directory.join("attempt.json")).unwrap();
-    let (code, second) = run(root.path(), &["--resume"]);
+    let (code, second) = run(root.path(), &[]);
     assert_eq!(code, 0, "{second}");
     assert_eq!(second["data"]["attempts"].as_array().unwrap().len(), 2);
     for next in second["data"]["attempts"].as_array().unwrap() {
@@ -185,7 +185,7 @@ fn bounded_execution_resumes_without_repeating_accepted_slots() {
     }
     assert_eq!(fs::read(directory.join("attempt.json")).unwrap(), bytes);
     verify_finalized_directory(&directory).unwrap();
-    let (code, third) = run(root.path(), &["--resume"]);
+    let (code, third) = run(root.path(), &[]);
     assert_eq!(code, 0, "{third}");
     assert_eq!(third["data"]["attempts"], serde_json::json!([]));
 }
@@ -327,13 +327,19 @@ fn retries_require_authorization_and_preserve_failed_attempt_bytes() {
         .join("run")
         .join(attempt["attempt_directory"].as_str().unwrap());
     let original = fs::read(directory.join("attempt.json")).unwrap();
-    let (_, resumed) = run(root.path(), &["--resume"]);
+    let (_, resumed) = run(root.path(), &[]);
     assert_eq!(resumed["data"]["summary"]["failed_attempts"], 2);
+    assert!(
+        resumed["data"]["attempts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|next| next["resolved_slot_id"] != attempt["resolved_slot_id"])
+    );
     fs::remove_file(marker).unwrap();
     let (code, retry) = run(
         root.path(),
         &[
-            "--resume",
             "--retry",
             "--select",
             attempt["attempt_id"].as_str().unwrap(),
@@ -509,32 +515,80 @@ fn concurrent_retry_candidates_publish_one_acceptance_and_one_superseded_outcome
 }
 
 #[test]
-fn expired_interrupted_attempt_is_recovered_and_requires_an_explicit_retry() {
+fn interrupted_attempt_is_recovered_and_restarted_by_default() {
+    for recover_before_run in [false, true] {
+        let root = gated_repository();
+        let mut first = spawn_run(root.path(), &[]);
+        wait_for_workers(root.path(), 1);
+        first.kill().unwrap();
+        first.wait().unwrap();
+        fs::write(root.path().join("release"), "release").unwrap();
+        let db = rusqlite::Connection::open(root.path().join("run/run.sqlite3")).unwrap();
+        let interrupted: String = db
+            .query_row("SELECT id FROM attempts", [], |r| r.get(0))
+            .unwrap();
+        // Release the dead owner's lease so recovery does not need a wall-clock wait.
+        db.execute("UPDATE leases SET released_at_ns = acquired_at_ns WHERE purpose = 'reservation' AND released_at_ns IS NULL", []).unwrap();
+        if recover_before_run {
+            let mut store =
+                crate::runtime::run_store::RunStore::open(&root.path().join("run")).unwrap();
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos() as u64;
+            assert_eq!(store.recover(|| now).unwrap().terminals.len(), 1);
+            let output = Command::new(env!("CARGO_BIN_EXE_metewand"))
+                .current_dir(root.path())
+                .args(["status", "--output-dir", "run", "--output", "json"])
+                .output()
+                .unwrap();
+            assert!(output.status.success(), "{output:?}");
+            let status: Value = serde_json::from_slice(&output.stdout).unwrap();
+            assert_eq!(status["data"]["summary"]["pending_slots"], 3);
+            assert_eq!(status["data"]["summary"]["retry_required_slots"], 0);
+        }
+        let (code, retried) = run(root.path(), &["--select", &interrupted]);
+        assert_eq!(code, 0, "{retried}");
+        assert_eq!(retried["data"]["summary"]["accepted_attempts"], 1);
+        assert_ne!(retried["data"]["attempts"][0]["attempt_id"], interrupted);
+        assert_eq!(
+            db.query_row(
+                "SELECT failure_code FROM attempts WHERE retry_index = 0",
+                [],
+                |r| r.get::<_, String>(0)
+            )
+            .unwrap(),
+            "interrupted_attempt"
+        );
+        let original: String = db.query_row("SELECT relative_path FROM artifacts WHERE id = (SELECT final_artifact_id FROM attempts WHERE retry_index = 0)", [], |r| r.get(0)).unwrap();
+        let directory = root.path().join("run").join(original);
+        let bytes = fs::read(directory.join("outcome.json")).unwrap();
+        let (code, completed) = run(root.path(), &["--select", &interrupted]);
+        assert_eq!(code, 0, "{completed}");
+        assert_eq!(completed["data"]["attempts"], serde_json::json!([]));
+        assert_eq!(fs::read(directory.join("outcome.json")).unwrap(), bytes);
+        verify_finalized_directory(&directory).unwrap();
+    }
+}
+
+#[test]
+fn repeated_run_leaves_a_live_attempt_with_its_owner() {
     let root = gated_repository();
-    let mut first = spawn_run(root.path(), &[]);
+    let first = spawn_run(root.path(), &[]);
     wait_for_workers(root.path(), 1);
-    first.kill().unwrap();
-    first.wait().unwrap();
+    let db = rusqlite::Connection::open(root.path().join("run/run.sqlite3")).unwrap();
+    let active: String = db
+        .query_row("SELECT id FROM attempts", [], |r| r.get(0))
+        .unwrap();
+    let (code, repeated) = run(root.path(), &["--select", &active]);
     fs::write(root.path().join("release"), "release").unwrap();
-    let mut store = crate::runtime::run_store::RunStore::open(&root.path().join("run")).unwrap();
-    let future = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_nanos() as u64
-        + 31_000_000_000;
-    let recovered = store.recover(|| future).unwrap();
-    assert_eq!(recovered.terminals.len(), 1);
-    assert!(
-        matches!(&recovered.terminals[0].outcome, crate::runtime::run_store::TerminalOutcome::Failed { code, .. } if code == "interrupted_attempt")
+    let completed = first.wait_with_output().unwrap();
+    assert!(completed.status.success(), "{completed:?}");
+    assert_eq!(code, 0, "{repeated}");
+    assert_eq!(repeated["data"]["attempts"], serde_json::json!([]));
+    assert_eq!(
+        db.query_row("SELECT count(*) FROM attempts", [], |r| r.get::<_, i64>(0))
+            .unwrap(),
+        1
     );
-    let interrupted = recovered.terminals[0].id.to_string();
-    let (_, skipped) = run(root.path(), &["--resume", "--select", &interrupted]);
-    assert_eq!(skipped["data"]["attempts"], serde_json::json!([]));
-    let (code, retried) = run(
-        root.path(),
-        &["--resume", "--retry", "--select", &interrupted],
-    );
-    assert_eq!(code, 0, "{retried}");
-    assert_eq!(retried["data"]["summary"]["accepted_attempts"], 1);
-    assert_ne!(retried["data"]["attempts"][0]["attempt_id"], interrupted);
 }

@@ -539,7 +539,12 @@ filesystems are unsupported. Windows writable roots must be on local NTFS.
 Reserve and transition attempts in short immediate transactions with ownership,
 lease, and expected-revision checks. Never hold a transaction across worker
 execution, hashing, synchronization, or rename. Leases last 30 seconds and renew
-every five seconds. Expired owners require explicit recovery.
+every five seconds. Running with an existing output directory performs recovery
+before scheduling. Recover only expired or released owners; retain live owners.
+Default reservations permit a new attempt after the latest attempt was recovered
+as `interrupted_attempt`, provided no attempt still owns the slot. Recheck this
+authorization under the reservation transaction so concurrent invocations cannot
+both restart the same interrupted work. Other recorded failures require `--retry`.
 
 Publish complete immutable artifacts before terminal acceptance. Synchronize
 files and, on Unix, directories, and use atomic no-replace rename. Windows

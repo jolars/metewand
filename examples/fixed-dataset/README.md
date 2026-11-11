@@ -9,7 +9,8 @@ cargo run --locked -p metewand -- run \
   --output jsonl
 ```
 
-Choose a new output directory for every invocation. This example uses the raw
+Repeat the command to resume the same run, or choose a new output directory for
+an independent run. This example uses the raw
 version-1 worker protocol over dedicated pipes, with no package or third-party
 Python dependencies. The implementation returns `{"answer":8}`; the independent
 evaluator returns `{"absolute_error":0}`. Progress events and the final report

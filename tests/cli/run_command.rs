@@ -906,7 +906,7 @@ fn run_rejects_unsupported_policies_before_writing_output() {
 }
 
 #[test]
-fn run_refuses_existing_output_and_requires_an_explicit_destination() {
+fn run_refuses_unrelated_directories_and_requires_an_explicit_destination() {
     let root = repository();
     let output = metewand(root.path(), &["run", "--output", "jsonl"]);
     assert_eq!(output.status.code(), Some(2));
@@ -926,6 +926,7 @@ fn run_refuses_existing_output_and_requires_an_explicit_destination() {
         fs::read_to_string(root.path().join("run/keep")).unwrap(),
         "original"
     );
+    assert!(!root.path().join("run/run.sqlite3").exists());
 }
 
 #[test]

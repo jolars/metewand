@@ -70,15 +70,16 @@ benchmark="$stage/basin"
 "$metewand_bin" plan --manifest "$benchmark/metewand.yaml"
 "$metewand_bin" run --manifest "$benchmark/metewand.yaml" --output-dir "$benchmark/run" --max-attempts 1
 "$metewand_bin" status --output-dir "$benchmark/run"
-"$metewand_bin" run --manifest "$benchmark/metewand.yaml" --output-dir "$benchmark/run" --resume
+"$metewand_bin" run --manifest "$benchmark/metewand.yaml" --output-dir "$benchmark/run"
 "$metewand_bin" export --output-dir "$benchmark/run" --destination "$benchmark/jsonl"
 "$metewand_bin" export --output-dir "$benchmark/run" --format csv --destination "$benchmark/csv"
 ```
 
 Use `--select ID` with an exact candidate, slot, or observation ID from `plan`
 to execute a selection. Use `explain ID --output-dir PATH` for recorded evidence.
-An interrupted unsatisfied slot requires `--resume --retry`; accepted slots
-remain protected. These are ordinary benchmark manifests. Routine execution,
+Repeat `run` to resume remaining work and restart interrupted attempts;
+matching accepted measurements remain protected. Recorded failures require
+`--retry`. These are ordinary benchmark manifests. Routine execution,
 inspection, and export need no example-specific driver or internal store access.
 
 The optional qualification harness automates the public commands, observes a

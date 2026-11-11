@@ -17,7 +17,7 @@ compute run -- cargo run --locked -p metewand -- run --manifest "$benchmark_dir/
 compute run -- cargo run --locked -p metewand -- status --output-dir "$benchmark_dir/run"
 compute run -- cargo run --locked -p metewand -- export --output-dir "$benchmark_dir/run" --destination "$benchmark_dir/jsonl" --format jsonl
 compute run -- cargo run --locked -p metewand -- export --output-dir "$benchmark_dir/run" --destination "$benchmark_dir/csv" --format csv
-compute run -- cargo run --locked -p metewand -- run --manifest "$benchmark_dir/metewand.yaml" --output-dir "$benchmark_dir/run" --resume
+compute run -- cargo run --locked -p metewand -- run --manifest "$benchmark_dir/metewand.yaml" --output-dir "$benchmark_dir/run"
 ```
 
 Expect three accepted attempts and thirteen independently evaluated checkpoints.
@@ -65,6 +65,6 @@ unavailable. These are local development guarantees.
 
 A timeout, invalid later result, or worker failure retains earlier published
 checkpoints. Inspect and export partial curves with their attempt IDs and
-selection status. Use `--resume --retry` to authorize a complete clean-state
+selection status. Use `--retry` to authorize a complete clean-state
 retry. Acceptance selects one producing attempt atomically. Retained checkpoints
 do not restore solver state or combine with a retry's trajectory.

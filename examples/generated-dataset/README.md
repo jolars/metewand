@@ -19,8 +19,9 @@ Metewand validates the manifest,
 records the construction identity and separate output hash in attempt
 provenance, and materializes each dataset configuration once per run. Each
 attempt receives a private copy of that instance. Add
-`--cache-dir /tmp/metewand-artifacts` and choose a new output directory on each
-invocation to reuse the verified construction across runs. See
+`--cache-dir /tmp/metewand-artifacts` to reuse the verified construction across
+independent runs with different output directories. Repeat the same run command
+to resume its remaining measurements. See
 [sources and artifacts](../../CONTRIBUTING.md#sources-and-artifacts) for cache
 ownership and retention.
 

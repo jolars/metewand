@@ -36,11 +36,11 @@ impl AttemptPhase {
     }
 }
 
-/// Explicit authorization to allocate one retry, rechecked under the write lock.
+/// Authorization to allocate an attempt, rechecked under the write lock.
 #[derive(Clone, Copy, Debug)]
 pub enum RetryAuthorization {
     FirstAttempt,
-    /// Authorizes one atomically allocated attempt, including a retry if requested.
+    /// Restarts interrupted work by default; other retries require authorization.
     Next {
         retry: bool,
     },
@@ -221,7 +221,9 @@ impl RunStore {
         };
         match authorization {
             RetryAuthorization::Next { retry: true } if next as u64 <= MAX_SAFE_INTEGER => (),
-            RetryAuthorization::Next { retry: false } if next == 0 => (),
+            RetryAuthorization::Next { retry: false }
+                if next as u64 <= MAX_SAFE_INTEGER
+                    && (next == 0 || resumable_interruption(&tx, &slot.to_string())?) => {}
             RetryAuthorization::Next { retry: false } => {
                 return Err(RunStoreError::RetryNotAuthorized);
             }
@@ -570,6 +572,17 @@ fn insert_lease(
         params![lease.id, lease.owner_token, attempt, purpose, now, timestamp(lease.expires_at_ns)?])?;
     Ok(())
 }
+
+pub(super) fn resumable_interruption(db: &Connection, slot: &str) -> Result<bool, RunStoreError> {
+    Ok(db.query_row(
+        "SELECT coalesce((SELECT failure_code = 'interrupted_attempt' FROM attempts
+         WHERE slot_id = ?1 ORDER BY retry_index DESC LIMIT 1), 0)
+         AND NOT EXISTS(SELECT 1 FROM attempts WHERE slot_id = ?1 AND finished_at_ns IS NULL)",
+        [slot],
+        |row| row.get(0),
+    )?)
+}
+
 fn satisfied(db: &Connection, slot: &str) -> Result<bool, RunStoreError> {
     Ok(db.query_row(
         "SELECT EXISTS(SELECT 1 FROM attempts WHERE slot_id = ?1 AND state = 'accepted')",

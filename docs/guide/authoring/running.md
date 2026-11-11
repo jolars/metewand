@@ -27,7 +27,6 @@ that setting, commands select every experiment as before.
 metewand plan --experiment smoke
 metewand check --experiment smoke --workers
 metewand run --experiment smoke --output-dir outputs/smoke
-metewand run --experiment smoke --output-dir outputs/smoke --resume
 ```
 
 Repeat `--experiment` to select a union in manifest order. Explicit selection
@@ -314,10 +313,12 @@ metewand run --output-dir results
 metewand status --output-dir results
 ```
 
-The output directory must be new, its parent must exist, and its contents must
-stay outside the declared source selection. The walkthrough includes only
-`benchmark.py` as worker source, so `results` beside it is suitable. A selection
-such as `benchmark/*.py` also allows `benchmark/outputs/run`, since neither that
+The output directory's parent must exist, and its contents must stay outside the
+declared source selection. A new directory starts a run; an existing Metewand run
+directory resumes automatically. Other existing directories are rejected. The
+walkthrough includes only `benchmark.py` as worker source, so `results` beside it
+is suitable. A selection such as `benchmark/*.py` also allows
+`benchmark/outputs/run`, since neither that
 directory nor its contents can match the glob. A matched directory includes its
 whole tree: `benchmark/output.py/run` would overlap `benchmark/*.py`. If you
 declare the whole benchmark directory or use `benchmark/**/*.py`, put output
@@ -365,15 +366,27 @@ output.
 ## Resume and diagnose
 
 ```sh
-metewand run --output-dir results --resume
-metewand run --output-dir results --resume --retry
+metewand run --output-dir results
+metewand run --output-dir results --retry
 metewand status --output-dir results --output json
 ```
 
-Resume skips accepted slots. `--retry` authorizes one additional attempt for
-each selected failed slot during that invocation. It preserves the earlier
-attempts. A worker killed during execution can require its ownership lease to
-expire before recovery, currently up to 30 seconds.
+Repeat the same command to fill in remaining work. Metewand verifies the resolved
+identities and skips matching accepted measurements. Changes to sources, inputs,
+environments, or policies create new identities for affected measurements. Use a
+new output directory for an independent run of the same benchmark. `--resume`
+remains accepted as a compatibility alias for the default behavior.
+
+Press Ctrl+C before shutting down, then repeat the command when you return.
+Metewand recovers interrupted attempts and starts them again from clean state,
+preserving their earlier evidence. Recovery may need the old ownership lease to
+expire, currently up to 30 seconds. Attempts still owned by another process are
+left alone unless you explicitly request a retry.
+
+Recorded execution or scientific failures require `--retry`. It authorizes one
+additional attempt for each selected failed slot during that invocation and
+preserves earlier attempts. A repeated command does not automatically retry those
+failures.
 
 Copy an ID from `status` to inspect its recorded evidence:
 

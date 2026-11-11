@@ -407,7 +407,7 @@ fn render_status(report: &StatusReport) -> String {
         if attempt.recovery_required {
             writeln!(
                 output,
-                "    reservation lease expired; explicit resume must recover this attempt"
+                "    reservation lease expired; run again to recover this attempt"
             )
             .expect("string write");
         }
@@ -422,10 +422,17 @@ fn render_status(report: &StatusReport) -> String {
         )
         .expect("string write");
     }
-    if summary.retry_required_slots > 0 || summary.recovery_required_slots > 0 {
+    if summary.recovery_required_slots > 0 {
         writeln!(
             output,
-            "Use `run --resume --retry --output-dir PATH` to authorize another immutable attempt."
+            "Use `run --output-dir PATH` to recover interrupted attempts."
+        )
+        .expect("string write");
+    }
+    if summary.retry_required_slots > 0 {
+        writeln!(
+            output,
+            "Use `run --retry --output-dir PATH` to authorize another immutable attempt."
         )
         .expect("string write");
     }

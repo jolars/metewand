@@ -19,9 +19,7 @@ pub struct RunOptions {
     pub experiments: Vec<String>,
     /// Maximum new attempts allocated by this invocation, including retries.
     pub max_attempts: Option<u64>,
-    /// Reopen an existing durable output directory.
-    pub resume: bool,
-    /// Explicitly authorize one additional attempt per selected unsatisfied slot.
+    /// Authorize one additional attempt for selected failures or active slots.
     pub retry: bool,
 }
 

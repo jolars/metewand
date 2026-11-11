@@ -169,14 +169,16 @@ Open `tables/results.csv` in your analysis tool. Compare accuracy alongside
 timing, and retain individual repetitions when assessing variation. Keep the
 run directory as the original evidence; the exported table is a view of it.
 
-Run and export destinations must be new directories whose parents exist. If a
-run is interrupted, continue it with the same manifest and output directory:
+Destination parents must exist, and export destinations must be new directories.
+If a run is interrupted, repeat the command with the same manifest and output
+directory:
 
 ```sh
-metewand run --output-dir repeated-run --resume
+metewand run --output-dir repeated-run
 ```
 
-Resume preserves accepted measurements. See [run and analyze](running.md) for
+Metewand preserves matching accepted measurements and restarts interrupted
+attempts automatically. See [run and analyze](running.md) for
 retrying failures, choosing timing scopes, and preparing reproducible environments.
 
 To build your own comparison, replace the generator and methods, update the

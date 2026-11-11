@@ -66,6 +66,11 @@ evaluation. Running explicitly authorizes execution and publication beneath a
 selected output directory. Authoring and maintenance commands require explicit
 mutation requests.
 
+Running again with the same output directory continues its durable history.
+Matching accepted measurements are reused, and interrupted attempts restart from
+clean state after recovery. Recorded execution or scientific failures require
+an explicit retry. A new output directory starts an independent run.
+
 ## Scientific comparison
 
 ### Datasets and parameters

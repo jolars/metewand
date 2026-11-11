@@ -29,7 +29,7 @@ cd "$example_dir"
 "$metewand_bin" plan
 "$metewand_bin" run --output-dir run
 "$metewand_bin" status --output-dir run
-"$metewand_bin" run --output-dir run --resume
+"$metewand_bin" run --output-dir run
 "$metewand_bin" export --output-dir run --format jsonl --destination jsonl
 "$metewand_bin" export --output-dir run --format csv --destination csv
 ```

@@ -22,6 +22,8 @@ pub struct SlotProgress {
     pub accepted: bool,
     pub attempts: u64,
     pub active: bool,
+    /// The latest attempt was interrupted, and no unfinished attempt remains.
+    pub interrupted: bool,
 }
 
 impl RunStore {
@@ -248,7 +250,9 @@ impl RunStore {
         } else {
             None
         };
-        Ok(self.connection.query_row("SELECT EXISTS(SELECT 1 FROM attempts WHERE slot_id = ?1 AND state = 'accepted'), count(*), coalesce(max(finished_at_ns IS NULL), 0) FROM attempts WHERE slot_id = ?1", [slot.to_string()], |r| Ok(SlotProgress { disposition, accepted: r.get(0)?, attempts: r.get::<_, i64>(1)? as u64, active: r.get(2)? }))?)
+        let interrupted =
+            super::attempts::resumable_interruption(&self.connection, &slot.to_string())?;
+        Ok(self.connection.query_row("SELECT EXISTS(SELECT 1 FROM attempts WHERE slot_id = ?1 AND state = 'accepted'), count(*), coalesce(max(finished_at_ns IS NULL), 0) FROM attempts WHERE slot_id = ?1", [slot.to_string()], |r| Ok(SlotProgress { disposition, accepted: r.get(0)?, attempts: r.get::<_, i64>(1)? as u64, active: r.get(2)?, interrupted }))?)
     }
 
     pub(crate) fn attempt_is_terminal(

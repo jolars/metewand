@@ -124,16 +124,17 @@ metewand export --output-dir run --format csv --destination tables
 `tables/` contains `results.csv` and `export.json`, which records the export's
 lineage. Keep the run directory as the original evidence.
 
-Run and export destinations must be new directories, and their parents must
-exist. To continue an interrupted run, reuse its directory explicitly:
+Destination parents must exist. Export destinations must be new directories.
+To continue an interrupted run, repeat the run command with the same directory:
 
 ```sh
-metewand run --output-dir run --resume
+metewand run --output-dir run
 ```
 
-Resume preserves accepted measurements. Failed attempts require `--retry`
-before another attempt is authorized. Add `--output json` to commands when
-you need machine-readable output.
+Metewand preserves matching accepted measurements and restarts interrupted
+attempts automatically. Recorded execution or scientific failures require
+`--retry`. Use a new output directory for an independent run. Add `--output json`
+to commands when you need machine-readable output.
 
 Use local disks for run and cache directories. Windows currently requires
 local NTFS. Recovery covers abrupt process death; it does not promise recovery

@@ -453,7 +453,13 @@ impl Inspection {
                 })
             {
                 SlotState::Censored
-            } else if attempts.is_empty() {
+            } else if attempts.is_empty()
+                || snapshot.tables["attempt"]
+                    .iter()
+                    .filter(|attempt| attempt["slot_id"] == id)
+                    .max_by_key(|attempt| attempt["retry_index"].as_u64())
+                    .is_some_and(|attempt| attempt["failure_code"] == "interrupted_attempt")
+            {
                 SlotState::Pending
             } else {
                 SlotState::RetryRequired

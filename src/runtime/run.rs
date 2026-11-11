@@ -57,7 +57,8 @@ use resolution::{ResolvedCandidate, ResolvedMeasurement, canonical};
 
 /// Executes the deterministic schedule with policy-bounded concurrency.
 ///
-/// `output_directory` must name a new directory beneath an existing parent.
+/// `output_directory` must name a new directory or an existing durable run store
+/// beneath an existing parent.
 /// Preflight validates the complete selection before launching any worker or
 /// creating that directory. Inputs are copied to private temporary storage;
 /// resolved identities bind their contents and normalized launch templates,
@@ -131,8 +132,8 @@ pub(crate) enum PreparationPhase {
     OpeningRunStore,
 }
 
-/// Executes a selected, bounded invocation, optionally resuming durable history.
-/// Accepted slots are never reserved again. Explicit retries get new identities.
+/// Executes a selected, bounded invocation, resuming existing durable history.
+/// Accepted slots are never reserved again. Restarted attempts get new identities.
 pub fn run_repository_with_options(
     repository: &CheckedRepository,
     plan: &LogicalPlan,
@@ -169,7 +170,7 @@ pub(crate) fn run_repository_with_progress(
         )
         .map_err(RunError::Selection)?;
     let plan = selection::preselect(&plan, options)?;
-    let output_directory = destination(output_directory, options.resume)?;
+    let (output_directory, resume) = destination(output_directory)?;
     let cache_directory = cache_directory
         .map(|path| {
             let path = if path.is_absolute() {
@@ -226,7 +227,7 @@ pub(crate) fn run_repository_with_progress(
     for candidate in &resolved.candidates {
         candidate.validate_destination(&output_directory)?;
     }
-    let mut store = if options.resume {
+    let mut store = if resume {
         Some(RunStore::open(&output_directory)?)
     } else {
         None
@@ -260,7 +261,7 @@ pub(crate) fn run_repository_with_progress(
             )));
         }
     }
-    if !options.resume {
+    if !resume {
         crate::runtime::platform_fs::create_private_directory(&output_directory)?;
         crate::runtime::platform_fs::complete_namespace_change(
             output_directory.parent().expect("destination has a parent"),
@@ -280,7 +281,7 @@ pub(crate) fn run_repository_with_progress(
         );
     }
     let mut store = store.expect("new or resumed store");
-    if options.resume {
+    if resume {
         store.recover(attempt::now)?;
     }
     for candidate in &resolved.candidates {
@@ -358,7 +359,7 @@ pub(crate) fn run_repository_with_progress(
         let progress = store.slot_progress(slot.attempt_slot.id)?;
         if progress.accepted
             || progress.disposition.is_some()
-            || (progress.attempts > 0 && !options.retry)
+            || (progress.attempts > 0 && !options.retry && !progress.interrupted)
         {
             continue;
         }
@@ -1060,11 +1061,11 @@ fn emit(
     Ok(())
 }
 
-fn destination(path: &Path, resume: bool) -> Result<PathBuf, RunError> {
+fn destination(path: &Path) -> Result<(PathBuf, bool), RunError> {
     let name = path.file_name().ok_or_else(|| {
         io::Error::new(
             io::ErrorKind::InvalidInput,
-            "output directory must name a new child directory",
+            "output directory must name a child directory",
         )
     })?;
     let parent = path
@@ -1077,26 +1078,29 @@ fn destination(path: &Path, resume: bool) -> Result<PathBuf, RunError> {
             "output directory must be UTF-8".to_owned(),
         ));
     }
-    match fs::symlink_metadata(&destination) {
-        Ok(metadata) if resume && metadata.is_dir() => {
+    let resume = match fs::symlink_metadata(&destination) {
+        Ok(metadata) if metadata.is_dir() => {
             let database = destination.join("run.sqlite3");
             if !fs::symlink_metadata(&database).is_ok_and(|metadata| metadata.is_file()) {
-                return Err(RunError::Selection(
-                    "resume requires an existing durable run store".into(),
-                ));
+                return Err(io::Error::new(
+                    io::ErrorKind::AlreadyExists,
+                    "existing output directory is not a Metewand run store",
+                )
+                .into());
             }
+            true
         }
         Ok(_) => {
             return Err(io::Error::new(
                 io::ErrorKind::AlreadyExists,
-                "output directory already exists; choose a new `--output-dir` path",
+                "output path exists and is not a real directory",
             )
             .into());
         }
-        Err(error) if error.kind() == io::ErrorKind::NotFound && !resume => {}
+        Err(error) if error.kind() == io::ErrorKind::NotFound => false,
         Err(error) => return Err(error.into()),
-    }
-    Ok(destination)
+    };
+    Ok((destination, resume))
 }
 
 /// A failure outside an individual worker's terminal outcome.

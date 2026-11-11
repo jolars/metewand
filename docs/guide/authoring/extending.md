@@ -262,7 +262,7 @@ for image preparation and the supported configuration.
 Use `metewand bundle` to generate a portable Docker build context for a complete
 benchmark. All workers run as processes inside one image, with results written
 to `/output/run`. Mount an existing host output parent at `/output` when running
-that image. Append `--resume` to resume the same stored run.
+that image. Repeat the command to resume the same stored run automatically.
 
 ```sh
 metewand bundle --destination ../benchmark-context \

@@ -5,7 +5,7 @@ use std::{io, io::Write as _};
 
 use crate::cli::output::{CommandError, CommandResult, OutputFormat};
 
-const HELP: &str = "Usage: metewand [--output FORMAT] run [--manifest PATH] --output-dir PATH [--cache-dir PATH] [--experiment NAME] [--select ID] [--max-attempts N] [--resume] [--retry] [--locked] [--verbose]\n\nWith --locked, verify prepared Nix, uv, and Linux Docker OCI and Apptainer SIF environments and worker launches against metewand.lock without building or fetching software. Execute the selected supported logical plan using trusted local workers, fixed or unit datasets, and contract-authorized cold_end_to_end, prepare_and_execute, or execute_only wall timing. Publish results in a new directory whose parent exists. Use --resume to reopen a durable run and fill unsatisfied slots. Failed or active slots require --retry to authorize one new immutable attempt per slot. Repeated --experiment flags select named experiments in manifest order, overriding default-experiment. Repeat the selection when resuming. Repeated --select flags select the union of stable candidate, run, observation, slot, and recorded attempt IDs. --max-attempts bounds new attempts in this invocation. Accepted slots are always skipped. Optional --cache-dir assigns a separate Metewand-owned directory for verified dataset construction reuse; its parent must exist. Execution policies default to max-concurrency: 1; a larger positive bound opts into concurrent attempts. Human output reports preparation and live execution progress on stderr, with spinners, progress bars, and completed sections that fold into summaries on interactive terminals (disable color with NO_COLOR). Redirected stdout or stderr uses plain progress lines and periodic heartbeats. JSON Lines output streams versioned events after preparation; JSON output includes the same events in one terminal document. Human output ends with a short summary. Use --verbose for individual measurements, settings, metrics, and profile details. Use status --output-dir PATH to inspect saved measurements without rerunning. Machine formats disable human progress and always include complete records.\n";
+const HELP: &str = "Usage: metewand [--output FORMAT] run [--manifest PATH] --output-dir PATH [--cache-dir PATH] [--experiment NAME] [--select ID] [--max-attempts N] [--resume] [--retry] [--locked] [--verbose]\n\nWith --locked, verify prepared Nix, uv, and Linux Docker OCI and Apptainer SIF environments and worker launches against metewand.lock without building or fetching software. Execute the selected supported logical plan using trusted local workers, fixed or unit datasets, and contract-authorized cold_end_to_end, prepare_and_execute, or execute_only wall timing. Create a run or resume an existing durable run in the selected directory; its parent must exist. Matching accepted measurements are always skipped. Interrupted attempts restart automatically after recovery, once their ownership leases expire. Recorded failures or active slots require --retry to authorize one new immutable attempt per slot. Use a new output directory for an independent run. --resume remains accepted as a compatibility alias for the default behavior. Repeated --experiment flags select named experiments in manifest order, overriding default-experiment. Repeat the selection when resuming. Repeated --select flags select the union of stable candidate, run, observation, slot, and recorded attempt IDs. --max-attempts bounds new attempts in this invocation. Optional --cache-dir assigns a separate Metewand-owned directory for verified dataset construction reuse; its parent must exist. Execution policies default to max-concurrency: 1; a larger positive bound opts into concurrent attempts. Human output reports preparation and live execution progress on stderr, with spinners, progress bars, and completed sections that fold into summaries on interactive terminals (disable color with NO_COLOR). Redirected stdout or stderr uses plain progress lines and periodic heartbeats. JSON Lines output streams versioned events after preparation; JSON output includes the same events in one terminal document. Human output ends with a short summary. Use --verbose for individual measurements, settings, metrics, and profile details. Use status --output-dir PATH to inspect saved measurements without rerunning. Machine formats disable human progress and always include complete records.\n";
 
 pub fn command(
     arguments: &[OsString],
@@ -18,6 +18,7 @@ pub fn command(
     let mut output_directory = None;
     let mut cache_directory = None;
     let mut verbose = false;
+    let mut resume = false;
     let mut options = crate::core::run_output::RunOptions::default();
     let mut arguments = arguments.iter();
     while let Some(argument) = arguments.next() {
@@ -33,7 +34,7 @@ pub fn command(
         }
         if argument == "--resume" || argument == "--retry" {
             let flag = if argument == "--resume" {
-                &mut options.resume
+                &mut resume
             } else {
                 &mut options.retry
             };

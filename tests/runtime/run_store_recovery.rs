@@ -96,7 +96,7 @@ fn orphan(store: &mut RunStore, attempt: &OwnedAttempt, outcome: TerminalOutcome
 }
 
 #[test]
-fn expired_reservations_fail_durably_and_require_an_explicit_new_retry() {
+fn expired_reservations_fail_durably_and_can_restart_by_default() {
     let _isolation = isolate_probes();
     let (root, mut store, db, attempt) = setup();
     assert!(store.recover(|| 99).unwrap().terminals.is_empty());
@@ -140,10 +140,7 @@ fn expired_reservations_fail_durably_and_require_an_explicit_new_retry() {
         store
             .reserve(
                 slot(),
-                RetryAuthorization::Retry {
-                    next_index: 1,
-                    max_index: 1
-                },
+                RetryAuthorization::Next { retry: false },
                 lease("retry", 200),
                 101
             )
@@ -151,6 +148,107 @@ fn expired_reservations_fail_durably_and_require_an_explicit_new_retry() {
             .retry_index(),
         1
     );
+}
+
+#[test]
+fn default_restart_authorization_is_rechecked_for_competing_reservations() {
+    let _isolation = isolate_probes();
+    let (_root, mut store, db, _attempt) = setup();
+    store.recover(|| 100).unwrap();
+    let mut first = store.reconnect().unwrap();
+    let mut second = store.reconnect().unwrap();
+    let barrier = std::sync::Barrier::new(2);
+    let results = std::thread::scope(|scope| {
+        let first = scope.spawn(|| {
+            barrier.wait();
+            first.reserve(
+                slot(),
+                RetryAuthorization::Next { retry: false },
+                lease("first", 200),
+                101,
+            )
+        });
+        let second = scope.spawn(|| {
+            barrier.wait();
+            second.reserve(
+                slot(),
+                RetryAuthorization::Next { retry: false },
+                lease("second", 200),
+                101,
+            )
+        });
+        [first.join().unwrap(), second.join().unwrap()]
+    });
+    assert_eq!(results.iter().filter(|r| r.is_ok()).count(), 1);
+    assert_eq!(
+        results
+            .iter()
+            .filter(|r| matches!(r, Err(RunStoreError::RetryNotAuthorized)))
+            .count(),
+        1
+    );
+    assert_eq!(count(&db, "attempts"), 2);
+}
+
+#[test]
+fn default_restart_requires_an_interrupted_latest_attempt_and_no_live_owner() {
+    let _isolation = isolate_probes();
+    let (_root, mut store, _db, attempt) = setup();
+    store.renew(&attempt, 200, 11).unwrap();
+    store
+        .reserve(
+            slot(),
+            RetryAuthorization::Next { retry: true },
+            lease("retry", 100),
+            12,
+        )
+        .unwrap();
+    store.recover(|| 100).unwrap();
+    assert!(matches!(
+        store.reserve(
+            slot(),
+            RetryAuthorization::Next { retry: false },
+            lease("blocked", 300),
+            101
+        ),
+        Err(RunStoreError::RetryNotAuthorized)
+    ));
+    store.recover(|| 200).unwrap();
+    let retry = store
+        .reserve(
+            slot(),
+            RetryAuthorization::Next { retry: false },
+            lease("restart", 300),
+            201,
+        )
+        .unwrap();
+    let retry = store
+        .advance(&retry, AttemptPhase::Finalizing, 202)
+        .unwrap();
+    store
+        .publish_finalization(
+            &retry,
+            TerminalOutcome::Failed {
+                code: "worker_crash".into(),
+                details: crate::core::canonical::CanonicalValue::try_from(
+                    serde_json::json!({"message": "worker crashed"}),
+                )
+                .unwrap(),
+            },
+            &[],
+            |_| Ok(()),
+            || 203,
+        )
+        .unwrap();
+    assert!(matches!(
+        store.reserve(
+            slot(),
+            RetryAuthorization::Next { retry: false },
+            lease("failure", 300),
+            204
+        ),
+        Err(RunStoreError::RetryNotAuthorized)
+    ));
 }
 
 #[test]
