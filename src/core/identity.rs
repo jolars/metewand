@@ -520,6 +520,10 @@ impl IdentityRecord for EnvironmentDefinitionRecord {
                 ),
                 ("output", json!(output)),
             ]),
+            EnvironmentDefinitionKind::Apptainer { image } => object([
+                ("kind", json!("apptainer")),
+                ("image", json!(image.as_str())),
+            ]),
             EnvironmentDefinitionKind::Oci { image } => {
                 object([("kind", json!("oci")), ("image", json!(image.as_str()))])
             }

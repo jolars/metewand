@@ -678,6 +678,9 @@ fn environment_record(
             output_kind: *output_kind,
             output: output.clone(),
         },
+        EnvironmentDefinition::Apptainer { image } => EnvironmentDefinitionKind::Apptainer {
+            image: image.clone(),
+        },
         EnvironmentDefinition::Oci { image } => EnvironmentDefinitionKind::Oci {
             image: image.clone(),
         },

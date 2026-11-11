@@ -67,6 +67,6 @@ mod tests {
         assert_eq!(EXECUTION_SEMANTICS_VERSION, 2);
         assert_eq!(crate::core::export::EXPORT_SCHEMA_VERSION, 1);
         assert_eq!(crate::core::cache::CACHE_MAINTENANCE_VERSION, 1);
-        assert_eq!(crate::core::lockfile::LOCKFILE_VERSION, 3);
+        assert_eq!(crate::core::lockfile::LOCKFILE_VERSION, 4);
     }
 }

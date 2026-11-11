@@ -35,3 +35,6 @@ mod worker_checks;
 mod yaml_configuration;
 
 mod bundling;
+
+#[cfg(target_os = "linux")]
+mod locked_apptainer;

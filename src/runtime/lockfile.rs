@@ -198,11 +198,12 @@ fn workers<'a>(
             EnvironmentDefinition::Nix { .. }
                 | EnvironmentDefinition::Uv { .. }
                 | EnvironmentDefinition::Oci { .. }
+                | EnvironmentDefinition::Apptainer { .. }
         ) {
             return Err(error(
                 "unsupported_locked_environment",
                 format!(
-                    "worker environment `{}` must use kind: nix, kind: uv, or kind: oci for locked execution",
+                    "worker environment `{}` must use kind: nix, kind: uv, kind: oci, or kind: apptainer for locked execution",
                     environment_name(worker)
                 ),
             ));
@@ -225,7 +226,11 @@ fn exclusions(repository: &CheckedRepository, version: u32) -> BTreeSet<PathBuf>
         .environments
         .values()
         .filter_map(|environment| {
-            if let EnvironmentDefinition::Uv { project, .. } = environment {
+            if version >= 4
+                && let EnvironmentDefinition::Apptainer { image } = environment
+            {
+                Some(image.as_path().to_path_buf())
+            } else if let EnvironmentDefinition::Uv { project, .. } = environment {
                 Some(
                     project
                         .as_path()
@@ -912,6 +917,10 @@ fn load(
             (EnvironmentDefinition::Nix { .. }, LockedEnvironment::Nix(_))
                 | (EnvironmentDefinition::Uv { .. }, LockedEnvironment::Uv(_))
                 | (EnvironmentDefinition::Oci { .. }, LockedEnvironment::Oci(_))
+                | (
+                    EnvironmentDefinition::Apptainer { .. },
+                    LockedEnvironment::Apptainer(_)
+                )
         ) {
             return Err(error(
                 "lockfile_outdated",
@@ -921,7 +930,7 @@ fn load(
         let expected_system = match entry {
             LockedEnvironment::Nix(_) => system.as_deref().unwrap_or(""),
             LockedEnvironment::Uv(_) => &crate::runtime::locked_uv::system(),
-            LockedEnvironment::Oci(_) => entry.system(),
+            LockedEnvironment::Oci(_) | LockedEnvironment::Apptainer(_) => entry.system(),
         };
         if entry.system() != expected_system {
             return Err(error(
@@ -931,6 +940,19 @@ fn load(
                     entry.system()
                 ),
             ));
+        }
+        if let LockedEnvironment::Apptainer(entry) = entry {
+            #[cfg(target_os = "linux")]
+            crate::runtime::apptainer::verify(&repository.root, entry)
+                .map_err(|e| error("apptainer_environment_changed", e))?;
+            #[cfg(not(target_os = "linux"))]
+            {
+                let _ = entry;
+                return Err(error(
+                    "unsupported_apptainer_host",
+                    "Apptainer requires Linux",
+                ));
+            }
         }
         if let LockedEnvironment::Oci(entry) = entry {
             #[cfg(target_os = "linux")]
@@ -990,12 +1012,18 @@ fn lock_with(
         return report(&path, "verified", &verified.lock);
     }
     let selected = workers(repository, plan)?;
-    let source = captured_sources(repository, LOCKFILE_VERSION)?;
-    let directory = snapshot(
-        &repository.root,
-        &source,
-        &exclusions(repository, LOCKFILE_VERSION),
-    )?;
+    let version = if selected.values().any(|worker| {
+        matches!(
+            repository.manifest.environments[environment_name(worker)],
+            EnvironmentDefinition::Apptainer { .. }
+        )
+    }) {
+        LOCKFILE_VERSION
+    } else {
+        3
+    };
+    let source = captured_sources(repository, version)?;
+    let directory = snapshot(&repository.root, &source, &exclusions(repository, version))?;
     let roots = TempDir::new()?;
     let has_nix = selected.values().any(|worker| {
         matches!(
@@ -1077,6 +1105,29 @@ fn lock_with(
                         &digest,
                     )?)
                 }
+                EnvironmentDefinition::Apptainer { image } => {
+                    #[cfg(target_os = "linux")]
+                    {
+                        LockedEnvironment::Apptainer(
+                            crate::runtime::apptainer::prepare(
+                                &repository.root,
+                                image.as_str(),
+                                &repository.planning_catalog.environment_definitions[name]
+                                    .to_string(),
+                                &digest,
+                            )
+                            .map_err(|e| error("apptainer_preparation_failed", e))?,
+                        )
+                    }
+                    #[cfg(not(target_os = "linux"))]
+                    {
+                        let _ = image;
+                        return Err(error(
+                            "unsupported_apptainer_host",
+                            "Apptainer requires Linux",
+                        ));
+                    }
+                }
                 EnvironmentDefinition::Oci { image } => {
                     #[cfg(target_os = "linux")]
                     {
@@ -1118,9 +1169,14 @@ fn lock_with(
         lock: Lockfile {
             schema_version: if environments
                 .values()
+                .any(|e| matches!(e, LockedEnvironment::Apptainer(_)))
+            {
+                4
+            } else if environments
+                .values()
                 .any(|e| matches!(e, LockedEnvironment::Oci(_)))
             {
-                LOCKFILE_VERSION
+                3
             } else {
                 2
             },
@@ -1132,7 +1188,7 @@ fn lock_with(
         _roots: None,
     };
     verified.lock.workers = resolve_workers(repository, plan, &verified)?;
-    if captured_sources(repository, LOCKFILE_VERSION)? != verified.lock.source {
+    if captured_sources(repository, version)? != verified.lock.source {
         return Err(error(
             "lockfile_outdated",
             "sources changed during environment preparation",
@@ -1218,7 +1274,7 @@ pub(crate) fn locked_program(
             return crate::runtime::locked_uv::program(environment, program);
         }
         LockedEnvironment::Nix(environment) => environment,
-        LockedEnvironment::Oci(_) => {
+        LockedEnvironment::Oci(_) | LockedEnvironment::Apptainer(_) => {
             return Err(error(
                 "invalid_locked_launch",
                 "OCI programs resolve inside the image",

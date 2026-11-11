@@ -273,6 +273,11 @@ pub enum EnvironmentDefinitionKind {
         /// Selected output name.
         output: String,
     },
+    /// A local Apptainer SIF image.
+    Apptainer {
+        /// Repository-relative image path.
+        image: RepositoryPath,
+    },
     /// An OCI image pinned by digest.
     Oci {
         /// Immutable image reference.

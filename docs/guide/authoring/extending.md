@@ -293,3 +293,28 @@ trusted execution guarantees.
 
 See the [bundled benchmark example](https://github.com/jolars/metewand/tree/main/examples/bundled-benchmark)
 for build, mounted-output, resume, and inspection commands.
+
+### Local Apptainer images
+
+On Linux with Apptainer 1.3 or newer, use an existing SIF file:
+
+```yaml
+environments:
+  container:
+    kind: apptainer
+    image: images/worker.sif
+```
+
+Run `metewand lock`, `metewand lock --check`, and `metewand run --locked` as with
+other prepared environments. The image can remain Git-ignored. Metewand verifies
+its complete SHA-256 digest separately from the source snapshot and executes it
+in place. It never pulls, builds, converts, or repairs images. Supported images
+have a native Linux amd64 or arm64 unencrypted SquashFS system partition.
+Image paths must remain inside the repository without symlinks. Keep SIF files
+outside worker source globs.
+
+All worker roles use authenticated sockets and host networking, with private
+working directories. Explicit worker transport declarations must select `socket`.
+CPU and memory accounting remain unavailable, and required controls still fail
+when the backend cannot enforce them. See the
+[Apptainer example](https://github.com/jolars/metewand/tree/main/examples/locked-apptainer).

@@ -33,7 +33,7 @@ fn lockfile_version_and_fields_are_strict() {
             .unwrap()
     );
     for invalid in [
-        json!({"schema_version": 4, "source": {"git": false, "files": {}}, "environments": {}, "workers": {}}),
+        json!({"schema_version": 5, "source": {"git": false, "files": {}}, "environments": {}, "workers": {}}),
         json!({"schema_version": 1, "source": {"git": false, "files": {}}, "environments": {}, "workers": {}, "extra": true}),
     ] {
         assert!(Lockfile::parse(&serde_json::to_vec(&invalid).unwrap()).is_err());
@@ -89,5 +89,24 @@ fn oci_lock_evidence_is_versioned_and_canonical() {
     assert_eq!(lock.environments["container"].system(), "linux/amd64");
     let mut value = serde_json::from_slice::<serde_json::Value>(bytes).unwrap();
     value["schema_version"] = json!(2);
+    assert!(Lockfile::parse(&serde_json::to_vec(&value).unwrap()).is_err());
+}
+
+#[test]
+fn apptainer_lock_round_trips_and_rejects_host_executable_evidence() {
+    let bytes = include_bytes!("../../schemas/v4/fixtures/apptainer-lockfile-v4.json");
+    let mut value: serde_json::Value = serde_json::from_slice(bytes).unwrap();
+    let lock = Lockfile::parse(&serde_json::to_vec(&value).unwrap()).unwrap();
+    assert_eq!(
+        lock.to_bytes().unwrap(),
+        CanonicalValue::try_from(value.clone())
+            .unwrap()
+            .to_canonical_bytes()
+            .unwrap()
+    );
+    assert_eq!(lock.to_bytes().unwrap(), bytes);
+    for worker in value["workers"].as_object_mut().unwrap().values_mut() {
+        worker["executable_sha256"] = "0".repeat(64).into();
+    }
     assert!(Lockfile::parse(&serde_json::to_vec(&value).unwrap()).is_err());
 }

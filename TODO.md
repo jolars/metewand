@@ -51,7 +51,8 @@ environment guarantees and the existing Nix and uv backends.
 ## Execution and isolation
 
 - [x] Add digest-pinned OCI environments and Docker execution on Linux.
-- [ ] Add apptainer, singularity, and Podman execution on Linux.
+- [x] Add Apptainer execution of local SIF images on Linux.
+- [ ] Add Singularity and Podman execution on Linux.
 - [x] Add whole-benchmark bundling. Start with a generated Dockerfile and build
   context containing a pinned Metewand runner, declared benchmark inputs, and
   explicit dependency recipes or a supplied base image. Run workers within one

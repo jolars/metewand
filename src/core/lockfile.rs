@@ -8,7 +8,7 @@ use serde_json::Value;
 use crate::core::canonical::CanonicalValue;
 
 /// Compatibility version of lockfiles and their nested evidence.
-pub const LOCKFILE_VERSION: u32 = 3;
+pub const LOCKFILE_VERSION: u32 = 4;
 
 #[derive(Clone, Debug)]
 pub struct Lockfile {
@@ -65,6 +65,17 @@ pub enum LockedEnvironment {
     Nix(LockedNixEnvironment),
     Uv(LockedUvEnvironment),
     Oci(LockedOciEnvironment),
+    Apptainer(LockedApptainerEnvironment),
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct LockedApptainerEnvironment {
+    pub definition: String,
+    pub system: String,
+    pub source_sha256: String,
+    pub image: String,
+    pub image_sha256: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -118,7 +129,7 @@ impl LockedEnvironment {
     pub fn nix(&self) -> Option<&LockedNixEnvironment> {
         match self {
             Self::Nix(e) => Some(e),
-            Self::Uv(_) | Self::Oci(_) => None,
+            Self::Uv(_) | Self::Oci(_) | Self::Apptainer(_) => None,
         }
     }
 
@@ -127,6 +138,7 @@ impl LockedEnvironment {
             Self::Nix(e) => &e.definition,
             Self::Uv(e) => &e.definition,
             Self::Oci(e) => &e.definition,
+            Self::Apptainer(e) => &e.definition,
         }
     }
 
@@ -135,6 +147,7 @@ impl LockedEnvironment {
             Self::Nix(e) => &e.source_sha256,
             Self::Uv(e) => &e.source_sha256,
             Self::Oci(e) => &e.source_sha256,
+            Self::Apptainer(e) => &e.source_sha256,
         }
     }
 
@@ -143,6 +156,7 @@ impl LockedEnvironment {
             Self::Nix(e) => &e.system,
             Self::Uv(e) => &e.system,
             Self::Oci(e) => &e.system,
+            Self::Apptainer(e) => &e.system,
         }
     }
 
@@ -150,6 +164,9 @@ impl LockedEnvironment {
     pub fn fingerprint(&self) -> Value {
         match self {
             Self::Nix(e) => serde_json::json!({"class":"locked", "backend":"nix", "evidence":e}),
+            Self::Apptainer(e) => {
+                serde_json::json!({"class":"locked", "backend":"apptainer", "evidence":e})
+            }
             Self::Oci(e) => serde_json::json!({"class":"locked", "backend":"oci", "evidence":e}),
             Self::Uv(e) => serde_json::json!({"class":"locked", "backend":"uv", "evidence":{
                 "definition":e.definition, "system":e.system,
@@ -233,7 +250,7 @@ impl Lockfile {
         let value = CanonicalValue::from_slice(bytes).map_err(|e| LockfileError(e.to_string()))?;
         let lock: Self = serde_json::from_value(value.as_json().clone())
             .map_err(|e| LockfileError(e.to_string()))?;
-        if !matches!(lock.schema_version, 1 | 2 | LOCKFILE_VERSION) {
+        if !matches!(lock.schema_version, 1 | 2 | 3 | LOCKFILE_VERSION) {
             return Err(LockfileError(format!(
                 "unsupported version {}",
                 lock.schema_version
@@ -246,6 +263,8 @@ impl Lockfile {
                     crate::core::public_schemas::PublicSchema::LockfileV1.repository_path()
                 } else if lock.schema_version == 2 {
                     crate::core::public_schemas::PublicSchema::LockfileV2.repository_path()
+                } else if lock.schema_version == 3 {
+                    crate::core::public_schemas::PublicSchema::LockfileV3.repository_path()
                 } else {
                     crate::core::public_schemas::PublicSchema::Lockfile.repository_path()
                 },
@@ -255,7 +274,7 @@ impl Lockfile {
         for worker in lock.workers.values() {
             let image_program = matches!(
                 lock.environments.get(&worker.environment),
-                Some(LockedEnvironment::Oci(_))
+                Some(LockedEnvironment::Oci(_) | LockedEnvironment::Apptainer(_))
             );
             if image_program != worker.executable_sha256.is_none() {
                 return Err(LockfileError(

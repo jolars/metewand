@@ -1,0 +1,37 @@
+version: 1
+name: locked-apptainer
+
+# One final result, with wall time including preparation.
+datasets:
+  numbers:
+    environment: container
+    function: benchmark.py:generate
+    parameters:
+      size: {type: integer, minimum: 1, default: 20}
+
+problems:
+  sum:
+    result: {total: integer}
+    metrics:
+      absolute_error: {type: integer, minimum: 0}
+    evaluator: {environment: container, function: benchmark.py:evaluate}
+
+implementations:
+  builtin:
+    environment: container
+    function: benchmark.py:builtin_sum
+  loop:
+    environment: container
+    function: benchmark.py:loop_sum
+
+experiments:
+  - name: comparison
+    problem: sum
+    datasets: [numbers]
+    implementations: [builtin, loop]
+    seed: 7
+
+environments:
+  container:
+    kind: apptainer
+    image: images/worker.sif

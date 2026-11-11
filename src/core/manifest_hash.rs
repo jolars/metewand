@@ -466,6 +466,10 @@ fn environment(environment: &EnvironmentDefinition) -> Value {
             ("output_kind", json!(nix_output_kind(*output_kind))),
             ("output", json!(output)),
         ]),
+        EnvironmentDefinition::Apptainer { image } => object([
+            ("kind", json!("apptainer")),
+            ("image", json!(image.as_str())),
+        ]),
         EnvironmentDefinition::Oci { image } => {
             object([("kind", json!("oci")), ("image", json!(image.as_str()))])
         }

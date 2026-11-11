@@ -264,6 +264,17 @@ Workers use authenticated sockets over host networking. Container CPU and memory
 accounting remain unavailable. This backend runs trusted code and does not make
 archival isolation claims.
 
+### Apptainer environments
+
+Local SIF environments use Apptainer on Linux. Explicit locking records the image
+bytes and native platform without executing image code. Locked checks verify the
+existing file without fetching or building software. Version-4 locks add SIF
+image evidence while preserving earlier lock readers and identities. Execution
+uses the invoking user, authenticated sockets, and host networking. Container
+accounting remains unavailable, and this backend runs trusted code without
+archival isolation claims.
+
+
 Isolated archival execution will add enforced
 resource, network, and input controls. These stronger guarantees must be
 verified before a run can claim them.

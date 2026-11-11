@@ -414,6 +414,15 @@
           },
           "required": ["kind", "image"],
           "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": { "const": "apptainer" },
+            "image": { "$ref": "common.schema.json#/$defs/repository_path" }
+          },
+          "required": ["kind", "image"],
+          "additionalProperties": false
         }
       ]
     },

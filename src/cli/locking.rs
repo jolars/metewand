@@ -2,7 +2,7 @@ use std::{ffi::OsString, path::PathBuf};
 
 use crate::cli::output::{CommandError, CommandResult};
 
-const HELP: &str = "Usage: metewand [--output FORMAT] lock [--manifest PATH] [--check]\n\nPrepare all planned Nix, uv, and Linux Docker OCI environments and atomically create or refresh metewand.lock beside the manifest. Native dependency locks must already be complete. OCI images must be digest-pinned; preparation pulls the native platform. uv environments use installed Python interpreters and persistent user data storage (override with METEWAND_DATA_DIR). --check verifies existing sources, closures, and launches without fetching, building, or updating the lockfile. Run prepared benchmarks with run --locked.\n";
+const HELP: &str = "Usage: metewand [--output FORMAT] lock [--manifest PATH] [--check]\n\nPrepare all planned Nix, uv, and Linux Docker OCI and Apptainer SIF environments and atomically create or refresh metewand.lock beside the manifest. Native dependency locks must already be complete. OCI images must be digest-pinned; preparation pulls the native platform. uv environments use installed Python interpreters and persistent user data storage (override with METEWAND_DATA_DIR). --check verifies existing sources, closures, and launches without fetching, building, or updating the lockfile. Run prepared benchmarks with run --locked.\n";
 
 pub fn command(arguments: &[OsString]) -> Result<CommandResult, CommandError> {
     if arguments == ["--help"] || arguments == ["-h"] {

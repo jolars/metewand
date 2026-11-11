@@ -217,7 +217,7 @@ release numbers are unnecessary. It is separate from public compatibility versio
   | Worker environment provenance                                 | 1 on Unix, 2 on Windows, 3 for containers                                        |
   | Exports and build evidence                                    | 1                                                              |
   | Portable result archives                                     | 1                                                              |
-  | Prepared environment lockfiles                               | 3 for OCI; versions 1 and 2 remain readable                                                              |
+  | Prepared environment lockfiles                               | 4 for Apptainer, 3 for OCI; versions 1–3 remain readable                                                              |
   | SQLite layout                                                 | 1 for one-shot, 2 for buffered profiles, 3 for fresh sequences and streaming |
 
 The binding API compatibility constant lives with the runtime adapters.
@@ -984,3 +984,22 @@ Run the Docker bundling smoke test with:
 ```sh
 compute run -- cargo test --test integration --locked cli_tests::bundling:: -- --ignored
 ```
+
+## Apptainer SIF execution
+
+Apptainer-containing plans write version-4 locks. Docker-containing plans without
+Apptainer continue writing version 3, and Nix/uv-only plans continue writing
+version 2. Versions 1–3 remain readable with unchanged fingerprints. SIF evidence
+binds the repository-relative image path, complete image digest, native platform,
+environment definition, and source snapshot. Declared SIF files are excluded from
+version-4 source snapshots and verified separately, including Git-ignored files.
+Normalized launches omit allocated image locations and host executable hashes.
+Wire, binding, execution, and container environment provenance versions remain
+unchanged. Apptainer versions and actual image locations appear in provenance.
+
+Metadata verification invokes only `apptainer --version`, `sif header`, and
+`sif list`. Image environment scripts run only during explicitly authorized
+execution. Foreground execution uses a clean environment, literal injected
+values, explicit staging mounts, and a PID namespace with its init process.
+Resource accounting remains unavailable. See the
+[example](examples/locked-apptainer/README.md) for the opt-in integration command.

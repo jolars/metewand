@@ -329,6 +329,8 @@ impl Drop for PipeCancellation {
 pub struct WorkerProcess {
     #[cfg(target_os = "linux")]
     docker: Option<crate::runtime::oci::Container>,
+    #[cfg(target_os = "linux")]
+    apptainer: bool,
     environment: Option<WorkerEnvironmentProvenance>,
     redactor: Redactor,
     child: Arc<Mutex<Child>>,
@@ -415,6 +417,9 @@ impl WorkerProcess {
         #[cfg(target_os = "linux")]
         let docker =
             crate::runtime::oci::attach(&mut command).map_err(WorkerProcessError::Spawn)?;
+        #[cfg(target_os = "linux")]
+        let apptainer =
+            crate::runtime::apptainer::attach(&mut command).map_err(WorkerProcessError::Spawn)?;
         let use_socket = socket.is_some();
         let (worker_request_reader, parent_request_writer) =
             protocol_pipe().map_err(WorkerProcessError::CreateRequestPipe)?;
@@ -536,6 +541,8 @@ impl WorkerProcess {
         Ok(Self {
             #[cfg(target_os = "linux")]
             docker,
+            #[cfg(target_os = "linux")]
+            apptainer,
             environment: None,
             redactor,
             group,
@@ -638,7 +645,7 @@ impl WorkerProcess {
 
     pub(crate) fn tree_source(&self) -> crate::runtime::resource_accounting::TreeSource {
         #[cfg(target_os = "linux")]
-        if self.docker.is_some() {
+        if self.docker.is_some() || self.apptainer {
             return crate::runtime::resource_accounting::TreeSource::Unavailable;
         }
         #[cfg(target_os = "linux")]
@@ -660,7 +667,7 @@ impl WorkerProcess {
 
     pub(crate) fn usage(&self) -> crate::runtime::resource_accounting::ProcessUsage {
         #[cfg(target_os = "linux")]
-        if self.docker.is_some() {
+        if self.docker.is_some() || self.apptainer {
             return crate::runtime::resource_accounting::ProcessUsage::default();
         }
         crate::runtime::resource_accounting::ProcessUsage::observe(self.id())
@@ -742,6 +749,8 @@ impl WorkerProcess {
         let Self {
             #[cfg(target_os = "linux")]
             docker,
+            #[cfg(target_os = "linux")]
+                apptainer: _,
             environment,
             child,
             group,

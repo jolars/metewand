@@ -470,6 +470,11 @@ pub enum EnvironmentDefinition {
         #[serde(deserialize_with = "deserialize_nonempty_string")]
         output: String,
     },
+    /// A local Apptainer SIF image.
+    Apptainer {
+        /// Repository-relative image path.
+        image: RepositoryPath,
+    },
     /// A content-addressed OCI image.
     Oci {
         /// Image reference ending in a SHA-256 digest.

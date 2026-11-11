@@ -2075,6 +2075,7 @@ fn environment_requirement(environment: &EnvironmentDefinition) -> &'static str 
         EnvironmentDefinition::Uv { .. } => "resolve and provision the declared uv project",
         EnvironmentDefinition::Renv { .. } => "resolve and provision the declared renv project",
         EnvironmentDefinition::Nix { .. } => "resolve and realize the declared Nix output",
+        EnvironmentDefinition::Apptainer { .. } => "verify the local SIF image",
         EnvironmentDefinition::Oci { .. } => "retrieve the pinned OCI image",
     }
 }

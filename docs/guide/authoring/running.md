@@ -205,7 +205,7 @@ prevent Nix garbage collection.
 
 Locked environments remain trusted local processes with the existing execution
 controls. They do not establish archival isolation. Dataset acquisition and
-worker network access retain their existing behavior. `renv` and OCI environments are not yet supported by the lock command.
+worker network access retain their existing behavior. `renv` environments are not yet supported by the lock command.
 
 The [locked Nix example](https://github.com/jolars/metewand/tree/main/examples/locked-nix)
 provides a pinned flake and runnable comparison.
@@ -276,7 +276,7 @@ sources, including source-only edits that leave package metadata unchanged.
 Mixed Nix and uv benchmarks verify each backend with its own requirements.
 
 Nix/uv-only Metewand locks use version 2, with backend-specific evidence.
-OCI-containing locks use version 3. Version-1 Nix
+OCI-containing locks use version 3. Apptainer-containing locks use version 4. Version-1 Nix
 locks remain readable and retain their original identities. uv identities
 normalize generated metadata and launcher paths; different built package content
 still defines different resolved evidence. Raw inventories verify exact installed

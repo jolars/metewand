@@ -29,6 +29,7 @@ pub enum PublicSchema {
     Lockfile,
     LockfileV1,
     LockfileV2,
+    LockfileV3,
     ArchiveManifest,
     ArchiveEvidence,
     ArchiveOutput,
@@ -96,12 +97,13 @@ pub enum PublicSchema {
 }
 
 /// Every public schema entry point in stable presentation order.
-pub const PUBLIC_SCHEMAS: [PublicSchema; 40] = [
+pub const PUBLIC_SCHEMAS: [PublicSchema; 41] = [
     PublicSchema::BundleManifest,
     PublicSchema::BundleOutput,
     PublicSchema::Lockfile,
     PublicSchema::LockfileV1,
     PublicSchema::LockfileV2,
+    PublicSchema::LockfileV3,
     PublicSchema::ArchiveManifest,
     PublicSchema::ArchiveEvidence,
     PublicSchema::ArchiveOutput,
@@ -146,6 +148,7 @@ impl PublicSchema {
         match self {
             Self::BundleManifest => "bundle-manifest",
             Self::BundleOutput => "bundle-output",
+            Self::LockfileV3 => "lockfile-v3",
             Self::Lockfile => "lockfile",
             Self::LockfileV1 => "lockfile-v1",
             Self::LockfileV2 => "lockfile-v2",
@@ -201,7 +204,8 @@ impl PublicSchema {
         Path::new(match self {
             Self::BundleManifest => "schemas/v1/bundle-manifest.schema.json",
             Self::BundleOutput => "schemas/v1/bundle-output.schema.json",
-            Self::Lockfile => "schemas/v3/lockfile.schema.json",
+            Self::LockfileV3 => "schemas/v3/lockfile.schema.json",
+            Self::Lockfile => "schemas/v4/lockfile.schema.json",
             Self::LockfileV2 => "schemas/v2/lockfile.schema.json",
             Self::LockfileV1 => "schemas/v1/lockfile.schema.json",
             Self::ArchiveManifest => "schemas/v1/archive-manifest.schema.json",
@@ -252,7 +256,8 @@ impl PublicSchema {
         match self {
             Self::BundleManifest => "metewand://schemas/v1/bundle-manifest.schema.json",
             Self::BundleOutput => "metewand://schemas/v1/bundle-output.schema.json",
-            Self::Lockfile => "metewand://schemas/v3/lockfile.schema.json",
+            Self::LockfileV3 => "metewand://schemas/v3/lockfile.schema.json",
+            Self::Lockfile => "metewand://schemas/v4/lockfile.schema.json",
             Self::LockfileV2 => "metewand://schemas/v2/lockfile.schema.json",
             Self::LockfileV1 => "metewand://schemas/v1/lockfile.schema.json",
             Self::ArchiveManifest => "metewand://schemas/v1/archive-manifest.schema.json",
@@ -313,7 +318,8 @@ impl PublicSchema {
         match self {
             Self::BundleManifest => include_str!("../../schemas/v1/bundle-manifest.schema.json"),
             Self::BundleOutput => include_str!("../../schemas/v1/bundle-output.schema.json"),
-            Self::Lockfile => include_str!("../../schemas/v3/lockfile.schema.json"),
+            Self::LockfileV3 => include_str!("../../schemas/v3/lockfile.schema.json"),
+            Self::Lockfile => include_str!("../../schemas/v4/lockfile.schema.json"),
             Self::LockfileV2 => include_str!("../../schemas/v2/lockfile.schema.json"),
             Self::LockfileV1 => include_str!("../../schemas/v1/lockfile.schema.json"),
             Self::ArchiveManifest => {

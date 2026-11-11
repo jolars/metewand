@@ -104,7 +104,9 @@ pub fn launch_trusted_local_worker_with_secrets(
     );
 
     #[cfg(target_os = "linux")]
-    if variables.contains_key(crate::runtime::oci::IMAGE_ENV) {
+    if variables.contains_key(crate::runtime::oci::IMAGE_ENV)
+        || variables.contains_key(crate::runtime::apptainer::IMAGE_ENV)
+    {
         variables.insert(
             "METEWAND_OCI_ROOT".into(),
             private_root.to_string_lossy().into_owned(),
@@ -147,10 +149,17 @@ pub fn launch_trusted_local_worker_with_secrets(
         if launch
             .environment_variables
             .contains_key(crate::runtime::oci::IMAGE_ENV)
+            || launch
+                .environment_variables
+                .contains_key(crate::runtime::apptainer::IMAGE_ENV)
         {
             provenance.version = 3;
             provenance.umask = None;
-            for name in [crate::runtime::oci::IMAGE_ENV, "METEWAND_OCI_SOURCE_ROOT"] {
+            for name in [
+                crate::runtime::oci::IMAGE_ENV,
+                crate::runtime::apptainer::IMAGE_ENV,
+                "METEWAND_OCI_SOURCE_ROOT",
+            ] {
                 provenance.environment_variables.remove(name);
             }
         }

@@ -2,8 +2,32 @@
   "version": 1,
   "valid": [
     {
-      "name": "OCI image evidence",
+      "name": "Apptainer valid image evidence",
       "schema": "lockfile",
+      "instance": {
+        "schema_version": 4,
+        "source": {
+          "git": false,
+          "files": {}
+        },
+        "environments": {
+          "sif": {
+            "backend": "apptainer",
+            "evidence": {
+              "definition": "mw1-environment-definition-1111111111111111111111111111111111111111111111111111111111111111",
+              "system": "linux/amd64",
+              "source_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+              "image": "images/worker.sif",
+              "image_sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+            }
+          }
+        },
+        "workers": {}
+      }
+    },
+    {
+      "name": "OCI image evidence",
+      "schema": "lockfile-v3",
       "instance": {
         "environments": {
           "container": {
@@ -2367,8 +2391,32 @@
   ],
   "invalid": [
     {
-      "name": "OCI image evidence rejects malformed image IDs",
+      "name": "Apptainer invalid image evidence",
       "schema": "lockfile",
+      "instance": {
+        "schema_version": 4,
+        "source": {
+          "git": false,
+          "files": {}
+        },
+        "environments": {
+          "sif": {
+            "backend": "apptainer",
+            "evidence": {
+              "definition": "mw1-environment-definition-1111111111111111111111111111111111111111111111111111111111111111",
+              "system": "linux/amd64",
+              "source_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+              "image": "images/worker.sif",
+              "image_sha256": "invalid"
+            }
+          }
+        },
+        "workers": {}
+      }
+    },
+    {
+      "name": "OCI image evidence rejects malformed image IDs",
+      "schema": "lockfile-v3",
       "instance": {
         "environments": {
           "container": {

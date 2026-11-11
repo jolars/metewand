@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "metewand://schemas/v4/lockfile.schema.json",
+  "x-metewand-compatibility-version": 4,
+  "title": "Prepared environment lockfile",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": 4
+    },
+    "source": {
+      "$ref": "#/$defs/source"
+    },
+    "environments": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/environment"
+      }
+    },
+    "workers": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/worker"
+      },
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^mw1-worker-definition-[0-9a-f]{64}$"
+      }
+    }
+  },
+  "required": [
+    "schema_version",
+    "source",
+    "environments",
+    "workers"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "source": {
+      "$ref": "metewand://schemas/v1/lockfile.schema.json#/$defs/source"
+    },
+    "environment": {
+      "oneOf": [
+        {
+          "$ref": "metewand://schemas/v3/lockfile.schema.json#/$defs/environment"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "backend": {
+              "const": "apptainer"
+            },
+            "evidence": {
+              "type": "object",
+              "properties": {
+                "definition": {
+                  "type": "string",
+                  "pattern": "^mw1-environment-definition-[0-9a-f]{64}$"
+                },
+                "system": {
+                  "type": "string",
+                  "enum": [
+                    "linux/amd64",
+                    "linux/arm64"
+                  ]
+                },
+                "source_sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "image": {
+                  "$ref": "metewand://schemas/v1/common.schema.json#/$defs/repository_path"
+                },
+                "image_sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                }
+              },
+              "required": [
+                "definition",
+                "system",
+                "source_sha256",
+                "image",
+                "image_sha256"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "backend",
+            "evidence"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "worker": {
+      "$ref": "metewand://schemas/v3/lockfile.schema.json#/$defs/worker"
+    }
+  }
+}
