@@ -5,7 +5,7 @@ use std::{io, io::Write as _};
 
 use crate::cli::output::{CommandError, CommandResult, OutputFormat};
 
-const HELP: &str = "Usage: metewand [--output FORMAT] run [--manifest PATH] --output-dir PATH [--cache-dir PATH] [--experiment NAME] [--select ID] [--max-attempts N] [--resume] [--retry] [--locked]\n\nWith --locked, verify prepared Nix, uv, and Linux Docker OCI and Apptainer SIF environments and worker launches against metewand.lock without building or fetching software. Execute the selected supported logical plan using trusted local workers, fixed or unit datasets, and contract-authorized cold_end_to_end, prepare_and_execute, or execute_only wall timing. Publish results in a new directory whose parent exists. Use --resume to reopen a durable run and fill unsatisfied slots. Failed or active slots require --retry to authorize one new immutable attempt per slot. Repeated --experiment flags select named experiments in manifest order, overriding default-experiment. Repeat the selection when resuming. Repeated --select flags select the union of stable candidate, run, observation, slot, and recorded attempt IDs. --max-attempts bounds new attempts in this invocation. Accepted slots are always skipped. Optional --cache-dir assigns a separate Metewand-owned directory for verified dataset construction reuse; its parent must exist. Execution policies default to max-concurrency: 1; a larger positive bound opts into concurrent attempts. Human output reports preparation and live execution progress on stderr, with color on interactive terminals (disable with NO_COLOR). Redirected stderr uses plain progress lines and periodic heartbeats. JSON Lines output streams versioned events after preparation; JSON output includes the same events in one terminal document. Machine formats disable human progress.\n";
+const HELP: &str = "Usage: metewand [--output FORMAT] run [--manifest PATH] --output-dir PATH [--cache-dir PATH] [--experiment NAME] [--select ID] [--max-attempts N] [--resume] [--retry] [--locked] [--verbose]\n\nWith --locked, verify prepared Nix, uv, and Linux Docker OCI and Apptainer SIF environments and worker launches against metewand.lock without building or fetching software. Execute the selected supported logical plan using trusted local workers, fixed or unit datasets, and contract-authorized cold_end_to_end, prepare_and_execute, or execute_only wall timing. Publish results in a new directory whose parent exists. Use --resume to reopen a durable run and fill unsatisfied slots. Failed or active slots require --retry to authorize one new immutable attempt per slot. Repeated --experiment flags select named experiments in manifest order, overriding default-experiment. Repeat the selection when resuming. Repeated --select flags select the union of stable candidate, run, observation, slot, and recorded attempt IDs. --max-attempts bounds new attempts in this invocation. Accepted slots are always skipped. Optional --cache-dir assigns a separate Metewand-owned directory for verified dataset construction reuse; its parent must exist. Execution policies default to max-concurrency: 1; a larger positive bound opts into concurrent attempts. Human output reports preparation and live execution progress on stderr, with spinners, progress bars, and completed sections that fold into summaries on interactive terminals (disable color with NO_COLOR). Redirected stdout or stderr uses plain progress lines and periodic heartbeats. JSON Lines output streams versioned events after preparation; JSON output includes the same events in one terminal document. Human output ends with a short summary. Use --verbose for individual measurements, settings, metrics, and profile details. Use status --output-dir PATH to inspect saved measurements without rerunning. Machine formats disable human progress and always include complete records.\n";
 
 pub fn command(
     arguments: &[OsString],
@@ -17,9 +17,20 @@ pub fn command(
     let mut manifest = None;
     let mut output_directory = None;
     let mut cache_directory = None;
+    let mut verbose = false;
     let mut options = crate::core::run_output::RunOptions::default();
     let mut arguments = arguments.iter();
     while let Some(argument) = arguments.next() {
+        if argument == "--verbose" {
+            if verbose {
+                return Err(CommandError::usage(
+                    "duplicate_verbose_flag",
+                    "`--verbose` may be supplied once",
+                ));
+            }
+            verbose = true;
+            continue;
+        }
         if argument == "--resume" || argument == "--retry" {
             let flag = if argument == "--resume" {
                 &mut options.resume
@@ -143,6 +154,7 @@ pub fn command(
         cache_directory.as_deref(),
         &options,
         output_format,
+        verbose,
     )
 }
 
@@ -153,6 +165,7 @@ fn execute(
     cache_directory: Option<&std::path::Path>,
     options: &crate::core::run_output::RunOptions,
     output_format: OutputFormat,
+    verbose: bool,
 ) -> Result<CommandResult, CommandError> {
     use crate::cli::progress::Progress;
     let progress = Progress::new(output_format == OutputFormat::Human, options.max_attempts);
@@ -193,7 +206,10 @@ fn execute(
     progress
         .finish()
         .map_err(|e| CommandError::output_write(e.to_string()))?;
-    Ok(CommandResult::Run(Box::new(report)))
+    Ok(CommandResult::Run {
+        report: Box::new(report),
+        verbose,
+    })
 }
 
 #[cfg(not(any(unix, windows)))]
@@ -203,6 +219,7 @@ fn execute(
     _: Option<&std::path::Path>,
     _: &crate::core::run_output::RunOptions,
     _: OutputFormat,
+    _: bool,
 ) -> Result<CommandResult, CommandError> {
     Err(CommandError::unsupported(
         "Gate 1 execution requires POSIX protocol pipes",

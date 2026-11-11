@@ -10,16 +10,24 @@ use crate::{
         run::{PreparationPhase, PreparationProgress},
     },
 };
+use futures::{
+    StreamExt,
+    channel::mpsc::{self, UnboundedReceiver, UnboundedSender},
+};
+use iocraft::prelude::*;
 use std::{
     collections::BTreeMap,
     io::{self, IsTerminal, Write},
-    sync::mpsc::{self, Sender},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
     thread::{self, JoinHandle},
     time::{Duration, Instant},
 };
 
 pub(super) struct Progress {
-    sender: Option<Sender<Message>>,
+    sender: Option<UnboundedSender<Message>>,
     thread: Option<JoinHandle<io::Result<()>>>,
 }
 
@@ -54,6 +62,7 @@ enum Message {
     Scheduled(Vec<String>),
     Labels(BTreeMap<String, Label>),
     Event(RunEvent),
+    Tick,
     Stop,
 }
 
@@ -67,27 +76,19 @@ impl Progress {
         }
         let terminal = io::stderr().is_terminal() && std::env::var("TERM").as_deref() != Ok("dumb");
         let color = terminal && std::env::var_os("NO_COLOR").is_none();
-        let (sender, receiver) = mpsc::channel();
+        let (sender, receiver) = mpsc::unbounded();
         let thread = thread::spawn(move || {
-            let mut renderer = Renderer::new(terminal, color, limit);
-            let mut output = io::stderr().lock();
-            loop {
-                match receiver.recv_timeout(Duration::from_secs(1)) {
-                    Ok(Message::Stop) | Err(mpsc::RecvTimeoutError::Disconnected) => {
-                        renderer.clear(&mut output)?;
-                        if !renderer.finished {
-                            renderer.line(&mut output, "Stopped", 33)?;
-                        }
-                        return output.flush();
-                    }
-                    Ok(message) => {
-                        renderer.update(&mut output, message)?;
-                        if renderer.terminal {
-                            renderer.tick(&mut output)?;
-                        }
-                    }
-                    Err(mpsc::RecvTimeoutError::Timeout) => renderer.tick(&mut output)?,
+            if terminal && io::stdout().is_terminal() {
+                let receiver = Arc::new(Mutex::new(Some(receiver)));
+                let closed = Arc::new(AtomicBool::new(false));
+                let mut view = element!(LiveProgress(receiver:Some(receiver),color,limit,closed:Some(closed.clone())));
+                let result = futures::executor::block_on(view.render_loop().output(Output::Stderr));
+                if result.is_ok() && !closed.load(Ordering::Acquire) {
+                    return interrupt_after_render();
                 }
+                result
+            } else {
+                futures::executor::block_on(plain_progress(receiver, limit))
             }
         });
         Self {
@@ -99,7 +100,7 @@ impl Progress {
     fn send(&self, message: Message) -> io::Result<()> {
         if let Some(sender) = &self.sender {
             sender
-                .send(message)
+                .unbounded_send(message)
                 .map_err(|_| io::Error::other("progress output closed"))?;
         }
         Ok(())
@@ -201,7 +202,7 @@ impl Progress {
 
     fn stop(&mut self) -> io::Result<()> {
         if let Some(sender) = self.sender.take() {
-            let _ = sender.send(Message::Stop);
+            let _ = sender.unbounded_send(Message::Stop);
         }
         self.thread.take().map_or(Ok(()), |thread| {
             thread
@@ -219,7 +220,7 @@ impl Drop for Progress {
     }
 }
 
-struct Renderer {
+struct ProgressModel {
     terminal: bool,
     color: bool,
     start: Instant,
@@ -236,11 +237,13 @@ struct Renderer {
     limit: Option<u64>,
     executing: bool,
     finished: bool,
-    drawn: usize,
+    closed: bool,
+    preparation_elapsed: Option<Duration>,
+    failures: Vec<String>,
     benchmarks: BTreeMap<String, BenchmarkBar>,
     last_group: Option<String>,
 }
-impl Renderer {
+impl ProgressModel {
     fn new(terminal: bool, color: bool, limit: Option<u64>) -> Self {
         Self {
             terminal,
@@ -259,35 +262,27 @@ impl Renderer {
             limit,
             executing: false,
             finished: false,
-            drawn: 0,
+            closed: false,
+            preparation_elapsed: None,
+            failures: Vec::new(),
             benchmarks: BTreeMap::new(),
             last_group: None,
         }
     }
-    fn clear(&mut self, output: &mut impl Write) -> io::Result<()> {
-        for row in 0..self.drawn {
-            write!(output, "\r\x1b[2K")?;
-            if row + 1 < self.drawn {
-                write!(output, "\x1b[1A")?;
-            }
+    fn line(&mut self, output: &mut impl Write, text: &str) -> io::Result<()> {
+        if !self.terminal {
+            let elapsed = self.start.elapsed().as_secs();
+            writeln!(
+                output,
+                "[{}:{:02}] {}",
+                elapsed / 60,
+                elapsed % 60,
+                clean(text)
+            )?;
+            output.flush()?;
         }
-        self.drawn = 0;
-        Ok(())
-    }
-    fn line(&mut self, output: &mut impl Write, text: &str, color: u8) -> io::Result<()> {
-        self.clear(output)?;
-        let elapsed = self.start.elapsed().as_secs();
-        let text = clean(text);
-        if self.color {
-            write!(output, "\x1b[{color}m")?;
-        }
-        write!(output, "[{}:{:02}] {text}", elapsed / 60, elapsed % 60)?;
-        if self.color {
-            write!(output, "\x1b[0m")?;
-        }
-        writeln!(output)?;
         self.last_line = Instant::now();
-        output.flush()
+        Ok(())
     }
     fn status(&self) -> String {
         let elapsed = self.start.elapsed().as_secs();
@@ -325,7 +320,7 @@ impl Renderer {
         );
         ordered
             .into_iter()
-            .take(terminal_height().saturating_sub(4).max(1))
+            .take(10)
             .filter_map(|group| {
                 self.benchmarks.get(&group).map(|b| {
                     format!(
@@ -342,42 +337,13 @@ impl Renderer {
             .collect()
     }
     fn tick(&mut self, output: &mut impl Write) -> io::Result<()> {
-        if self.finished {
-            return Ok(());
-        }
-        if self.terminal {
-            self.clear(output)?;
-            let mut lines = vec![self.status()];
-            if self.executing {
-                lines.extend(self.visible_bars());
-            }
-            for (row, text) in lines.iter().enumerate() {
-                if row > 0 {
-                    writeln!(output)?;
-                }
-                if self.color {
-                    write!(output, "\x1b[36m")?;
-                }
-                write!(
-                    output,
-                    "\r{}",
-                    fit(text, terminal_width().saturating_sub(2))
-                )?;
-                if self.color {
-                    write!(output, "\x1b[0m")?;
-                }
-            }
-            self.drawn = lines.len();
-            output.flush()
-        } else if self.last_line.elapsed() >= Duration::from_secs(10) {
-            self.line(output, &self.status(), 36)?;
+        if !self.finished && self.last_line.elapsed() >= Duration::from_secs(10) {
+            self.line(output, &self.status())?;
             for line in self.visible_bars() {
-                self.line(output, &line, 36)?;
+                self.line(output, &line)?;
             }
-            Ok(())
-        } else {
-            Ok(())
         }
+        Ok(())
     }
     fn update(&mut self, output: &mut impl Write, message: Message) -> io::Result<()> {
         match message {
@@ -422,20 +388,17 @@ impl Renderer {
                     return Ok(());
                 }
                 self.phase = text.clone();
-                self.line(output, &text, 36)
+                self.line(output, &text)
             }
             Message::Event(event) => match event.kind {
                 RunEventKind::RunStarted { attempt_slots } => {
                     self.executing = true;
+                    self.preparation_elapsed = Some(self.start.elapsed());
                     self.total = self.limit.map_or(attempt_slots, |limit| {
                         attempt_slots.min(usize::try_from(limit).unwrap_or(usize::MAX))
                     });
                     self.phase = "Executing benchmark".into();
-                    self.line(
-                        output,
-                        &format!("Running {} pending attempts", self.total),
-                        36,
-                    )
+                    self.line(output, &format!("Running {} pending attempts", self.total))
                 }
                 RunEventKind::AttemptStarted {
                     logical_slot_id,
@@ -456,11 +419,7 @@ impl Renderer {
                     let b = self.benchmarks.entry(label.group.clone()).or_default();
                     b.total = b.total.max(b.completed + active);
                     self.phase = label.text.clone();
-                    if !self.terminal || (b.completed == 0 && active == 1) {
-                        self.line(output, &format!("Starting {}", label.text), 36)
-                    } else {
-                        Ok(())
-                    }
+                    self.line(output, &format!("Starting {}", label.text))
                 }
                 RunEventKind::AttemptFinished { attempt } => self.update(
                     output,
@@ -477,12 +436,8 @@ impl Renderer {
                     superseded_attempts,
                 } => {
                     self.finished = true;
-                    self.line(
-                        output,
-                        &self.status(),
-                        if failed_attempts > 0 { 31 } else { 32 },
-                    )?;
-                    self.line(output,&format!("Finished: {accepted_attempts} accepted, {censored_attempts} censored, {failed_attempts} failed, {superseded_attempts} superseded"),if failed_attempts>0 {31} else {32})
+                    self.line(output, &self.status())?;
+                    self.line(output,&format!("Finished: {accepted_attempts} accepted, {censored_attempts} censored, {failed_attempts} failed, {superseded_attempts} superseded"))
                 }
             },
             Message::Outcome {
@@ -495,22 +450,22 @@ impl Renderer {
                     .remove(&slot)
                     .unwrap_or_else(|| "selected benchmark attempt".into());
                 self.completed += 1;
-                let (status, color) = match outcome {
+                let status = match outcome {
                     RunAttemptStatus::Accepted => {
                         self.accepted += 1;
-                        ("accepted", 32)
+                        "accepted"
                     }
                     RunAttemptStatus::Failed => {
                         self.failed += 1;
-                        ("failed", 31)
+                        "failed"
                     }
                     RunAttemptStatus::Censored => {
                         self.censored += 1;
-                        ("censored", 33)
+                        "censored"
                     }
                     RunAttemptStatus::Superseded => {
                         self.superseded += 1;
-                        ("superseded", 33)
+                        "superseded"
                     }
                 };
                 self.phase = self
@@ -519,6 +474,10 @@ impl Renderer {
                     .next()
                     .map(|label| label.text.clone())
                     .unwrap_or_else(|| "Finalizing and scheduling".into());
+                if let Some(d) = &diagnostic {
+                    self.failures
+                        .push(format!("{}: {} ({})", label.text, d.message, d.code));
+                }
                 let diagnostic = diagnostic
                     .as_ref()
                     .map(|d| format!(" ({}: {})", d.code, d.message))
@@ -531,41 +490,25 @@ impl Renderer {
                 self.last_group = Some(label.group.clone());
                 let benchmark_done = b.completed;
                 let benchmark_total = b.total;
-                let benchmark_failed = b.failed;
-                if self.terminal && outcome != RunAttemptStatus::Failed {
-                    if benchmark_done >= benchmark_total {
-                        let failures = if benchmark_failed > 0 {
-                            format!(", {benchmark_failed} failed")
-                        } else {
-                            String::new()
-                        };
-                        self.line(
-                            output,
-                            &format!(
-                                "{} {} — completed{failures}",
-                                bar(benchmark_done, benchmark_total),
-                                label.group
-                            ),
-                            if benchmark_failed > 0 { 31 } else { color },
-                        )
-                    } else {
-                        Ok(())
-                    }
-                } else {
-                    self.line(
-                        output,
-                        &format!(
-                            "{}/{} {status}: {}{diagnostic} {}",
-                            self.completed,
-                            self.total,
-                            label.text,
-                            bar(benchmark_done, benchmark_total)
-                        ),
-                        color,
-                    )
-                }
+                self.line(
+                    output,
+                    &format!(
+                        "{}/{} {status}: {}{diagnostic} {}",
+                        self.completed,
+                        self.total,
+                        label.text,
+                        bar(benchmark_done, benchmark_total)
+                    ),
+                )
             }
-            Message::Stop => Ok(()),
+            Message::Tick => self.tick(output),
+            Message::Stop => {
+                self.closed = true;
+                if !self.finished {
+                    self.line(output, "Stopped")?;
+                }
+                Ok(())
+            }
         }
     }
 }
@@ -582,85 +525,339 @@ fn bar(done: usize, total: usize) -> String {
         "-".repeat(12 - filled)
     )
 }
-fn fit(text: &str, width: usize) -> String {
-    let mut used = 0;
-    clean(text)
-        .chars()
-        .take_while(|c| {
-            used += if c.is_ascii() { 1 } else { 2 };
-            used <= width
-        })
-        .collect()
-}
-fn terminal_height() -> usize {
-    #[cfg(unix)]
-    {
-        let mut size = libc::winsize {
-            ws_row: 0,
-            ws_col: 0,
-            ws_xpixel: 0,
-            ws_ypixel: 0,
-        };
-        // SAFETY: ioctl writes a winsize into the valid pointer for this request.
-        if unsafe { libc::ioctl(libc::STDERR_FILENO, libc::TIOCGWINSZ, &raw mut size) } == 0
-            && size.ws_row > 0
-        {
-            return usize::from(size.ws_row);
-        }
-    }
-    24
-}
-
-fn terminal_width() -> usize {
-    #[cfg(unix)]
-    {
-        let mut size = libc::winsize {
-            ws_row: 0,
-            ws_col: 0,
-            ws_xpixel: 0,
-            ws_ypixel: 0,
-        };
-        // SAFETY: ioctl writes a winsize into the valid pointer for this request.
-        if unsafe { libc::ioctl(libc::STDERR_FILENO, libc::TIOCGWINSZ, &raw mut size) } == 0
-            && size.ws_col > 0
-        {
-            return usize::from(size.ws_col);
-        }
-    }
-    std::env::var("COLUMNS")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .filter(|width| *width > 0)
-        .unwrap_or(80)
-}
-
 fn clean(text: &str) -> String {
     text.chars().filter(|c| !c.is_control()).collect()
+}
+
+fn interrupt_after_render() -> io::Result<()> {
+    // Let iocraft restore the terminal before preserving the CLI's interrupt behavior.
+    #[cfg(unix)]
+    {
+        // SAFETY: SIGINT is a valid signal and raise has no pointer arguments.
+        unsafe {
+            libc::raise(libc::SIGINT);
+        }
+        Err(io::Error::new(
+            io::ErrorKind::Interrupted,
+            "benchmark interrupted",
+        ))
+    }
+    #[cfg(not(unix))]
+    {
+        std::process::exit(130);
+    }
+}
+
+async fn receive(receiver: &mut UnboundedReceiver<Message>) -> Message {
+    match futures::future::select(
+        receiver.next(),
+        futures_timer::Delay::new(Duration::from_millis(250)),
+    )
+    .await
+    {
+        futures::future::Either::Left((message, _)) => message.unwrap_or(Message::Stop),
+        futures::future::Either::Right(_) => Message::Tick,
+    }
+}
+
+async fn plain_progress(
+    mut receiver: UnboundedReceiver<Message>,
+    limit: Option<u64>,
+) -> io::Result<()> {
+    let mut model = ProgressModel::new(false, false, limit);
+    let mut output = io::stderr().lock();
+    loop {
+        let message = receive(&mut receiver).await;
+        let stop = matches!(message, Message::Stop);
+        model.update(&mut output, message)?;
+        if stop {
+            return Ok(());
+        }
+    }
+}
+
+#[derive(Default, Props)]
+struct LiveProgressProps {
+    receiver: Option<Arc<Mutex<Option<UnboundedReceiver<Message>>>>>,
+    color: bool,
+    limit: Option<u64>,
+    closed: Option<Arc<AtomicBool>>,
+}
+
+#[component]
+fn LiveProgress(mut hooks: Hooks, props: &LiveProgressProps) -> impl Into<AnyElement<'static>> {
+    let mut model = hooks.use_state(|| ProgressModel::new(true, props.color, props.limit));
+    let receiver = props.receiver.clone().expect("live progress receiver");
+    let closed = props.closed.clone().expect("live progress closure flag");
+    hooks.use_future(async move {
+        let mut receiver = receiver
+            .lock()
+            .expect("progress receiver lock")
+            .take()
+            .expect("progress receiver consumed once");
+        loop {
+            let message = receive(&mut receiver).await;
+            let stop = matches!(message, Message::Stop);
+            model
+                .write()
+                .update(&mut io::sink(), message)
+                .expect("terminal model writes only to a sink");
+            if stop {
+                closed.store(true, Ordering::Release);
+                break;
+            }
+        }
+    });
+    let model = model.read();
+    if model.closed {
+        hooks.use_context_mut::<SystemContext>().exit();
+    }
+    progress_view(&model)
+}
+
+fn progress_view(model: &ProgressModel) -> AnyElement<'static> {
+    let prepared = model.preparation_elapsed.is_some();
+    let stopped = model.closed && !model.finished;
+    let elapsed = model.start.elapsed().as_secs();
+    let spinner = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧"]
+        [((model.start.elapsed().as_millis() / 250) % 8) as usize];
+    let color = |c| model.color.then_some(c);
+    let mut children: Vec<AnyElement<'static>> = Vec::new();
+    let preparation = if let Some(duration) = model.preparation_elapsed {
+        format!("✓ Preparation complete · {:.1}s", duration.as_secs_f64())
+    } else if stopped {
+        "! Preparation stopped".into()
+    } else {
+        format!("{spinner} Preparation")
+    };
+    children.push(heading(
+        preparation,
+        color(if prepared { Color::Green } else { Color::Cyan }),
+    ));
+    if !prepared {
+        children.push(detail(clean(&model.phase), None));
+    }
+    if model.executing {
+        if model.finished || stopped {
+            children.push(heading(
+                format!(
+                    "{} Benchmarks · {}/{} completed · {} accepted · {} failed · {} censored · {} superseded · {}:{:02}",
+                    if stopped { "!" } else { "✓" }, model.completed, model.total,
+                    model.accepted, model.failed, model.censored, model.superseded,
+                    elapsed / 60, elapsed % 60,
+                ),
+                color(if model.failed > 0 { Color::Red } else { Color::Green }),
+            ));
+        } else {
+            children.push(heading(
+                format!(
+                    "{spinner} Benchmarks · {} active · {}:{:02} elapsed",
+                    model.active.len(),
+                    elapsed / 60,
+                    elapsed % 60
+                ),
+                color(Color::Cyan),
+            ));
+            children.push(element! {
+                ProgressRow(label: "Overall", completed: model.completed, total: model.total, color: model.color)
+            }.into());
+            let active = model
+                .active
+                .values()
+                .map(|label| label.group.clone())
+                .collect::<std::collections::BTreeSet<_>>();
+            let mut names = active.iter().cloned().collect::<Vec<_>>();
+            names.extend(
+                model
+                    .benchmarks
+                    .iter()
+                    .filter(|(name, bar)| {
+                        !active.contains(*name) && bar.completed > 0 && bar.completed < bar.total
+                    })
+                    .map(|(name, _)| name.clone()),
+            );
+            names.extend(
+                model
+                    .benchmarks
+                    .iter()
+                    .filter(|(name, bar)| {
+                        !active.contains(*name) && bar.completed >= bar.total && bar.total > 0
+                    })
+                    .map(|(name, _)| name.clone()),
+            );
+            let hidden = names.len().saturating_sub(10);
+            for name in names.into_iter().take(10) {
+                if let Some(bar) = model.benchmarks.get(&name) {
+                    if bar.completed >= bar.total {
+                        children.push(detail(
+                            format!(
+                                "✓ {name} · {}/{} · {} failed",
+                                bar.completed, bar.total, bar.failed
+                            ),
+                            color(if bar.failed > 0 {
+                                Color::Red
+                            } else {
+                                Color::Green
+                            }),
+                        ));
+                    } else {
+                        children.push(element! {
+                            ProgressRow(label: name, completed: bar.completed, total: bar.total, color: model.color)
+                        }.into());
+                    }
+                }
+            }
+            if hidden > 0 {
+                children.push(detail(
+                    format!("{hidden} more benchmark groups · see final comparison"),
+                    None,
+                ));
+            }
+        }
+    }
+    children.extend(
+        model.failures.iter().take(10).map(|message| {
+            element!(Text(content:clean(message),color:color(Color::Red))).into_any()
+        }),
+    );
+    if model.failures.len() > 10 {
+        children.push(element!(Text(content:format!("{} additional failures retained in the run output",model.failures.len()-10))).into());
+    }
+    element! {
+        View(flex_direction: FlexDirection::Column, width: 100pct, max_width: 100, padding_right: 2) {
+            #(children)
+        }
+    }
+    .into()
+}
+
+fn heading(content: String, color: Option<Color>) -> AnyElement<'static> {
+    element!(Text(content, color, weight: Weight::Bold)).into()
+}
+
+fn detail(content: String, color: Option<Color>) -> AnyElement<'static> {
+    element!(View(padding_left: 2) { Text(content, color) }).into()
+}
+
+#[derive(Default, Props)]
+struct ProgressRowProps {
+    label: String,
+    completed: usize,
+    total: usize,
+    color: bool,
+}
+
+#[component]
+fn ProgressRow(props: &ProgressRowProps) -> impl Into<AnyElement<'static>> {
+    let percent = if props.total == 0 {
+        100
+    } else {
+        (props.completed.min(props.total) as u128 * 100 / props.total as u128) as usize
+    };
+    element! {
+        View(width: 100pct, gap: 1, align_items: AlignItems::Center) {
+            View(width: 38pct, min_width: 0, padding_left: 2, flex_direction: FlexDirection::Column) {
+                Text(content: clean(&props.label))
+            }
+            View(flex_grow: 1.0_f32, flex_basis: FlexBasis::Length(0), min_width: 3) {
+                BarTrack(completed: props.completed, total: props.total, color: props.color)
+            }
+            View(width: 12, flex_shrink: 0.0_f32, flex_direction: FlexDirection::Column) {
+                Text(content: format!("{}/{}", props.completed, props.total), align: TextAlign::Right)
+            }
+            View(width: 5, flex_shrink: 0.0_f32, flex_direction: FlexDirection::Column) {
+                Text(content: format!("{percent}%"), align: TextAlign::Right)
+            }
+        }
+    }
+}
+
+#[component]
+fn BarTrack(mut hooks: Hooks, props: &ProgressRowProps) -> impl Into<AnyElement<'static>> {
+    let width = hooks
+        .use_component_rect()
+        .map_or(12, |rect| (rect.right - rect.left).max(0) as usize)
+        .saturating_sub(2);
+    let filled = if props.total == 0 {
+        width
+    } else {
+        (props.completed.min(props.total) as u128 * width as u128 / props.total as u128) as usize
+    };
+    let mut completed = MixedTextContent::new("█".repeat(filled));
+    let mut remaining = MixedTextContent::new("░".repeat(width.saturating_sub(filled)));
+    if props.color {
+        completed.color = Some(if props.completed >= props.total {
+            Color::Green
+        } else {
+            Color::Cyan
+        });
+        remaining.color = Some(Color::DarkGrey);
+    }
+    element! {
+        View(width: 100pct, height: 1, overflow_x: Overflow::Hidden) {
+            MixedText(
+                contents: vec![MixedTextContent::new("["), completed, remaining, MixedTextContent::new("]")],
+                wrap: TextWrap::NoWrap,
+            )
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     #[test]
-    fn live_terminal_redraws_and_plain_logs_avoid_escape_sequences() {
-        for (terminal, color) in [(true, true), (true, false), (false, false)] {
-            let mut renderer = Renderer::new(terminal, color, None);
-            let mut output = Vec::new();
-            renderer
-                .update(
-                    &mut output,
-                    Message::Stage("Checking manifest: benchmark".into()),
-                )
-                .unwrap();
-            renderer.tick(&mut output).unwrap();
-            renderer.clear(&mut output).unwrap();
-            let text = String::from_utf8(output).unwrap();
-            assert_eq!(text.contains('\r'), terminal);
-            assert_eq!(text.contains("\x1b[36m"), color);
-            if !terminal {
-                assert!(!text.contains('\x1b'));
-            }
-        }
+    fn completed_sections_fold_and_failures_remain_visible() {
+        let mut model = ProgressModel::new(true, false, None);
+        model.phase = "Checking manifest: benchmark.yaml".into();
+        let preparing = progress_view(&model).render(Some(80)).to_string();
+        assert!(preparing.contains("Checking manifest"));
+        model.executing = true;
+        model.preparation_elapsed = Some(Duration::from_secs(2));
+        model.total = 4;
+        model.completed = 2;
+        model.benchmarks.insert(
+            "reference / numbers".into(),
+            BenchmarkBar {
+                total: 4,
+                completed: 2,
+                failed: 0,
+            },
+        );
+        let active = progress_view(&model).render(Some(80)).to_string();
+        assert!(active.contains("Preparation complete"), "{active}");
+        assert!(!active.contains("Checking manifest"), "{active}");
+        assert!(active.contains("reference / numbers"), "{active}");
+        assert!(active.contains("50%"), "{active}");
+        model.completed = 4;
+        model.failed = 1;
+        model.accepted = 3;
+        model.finished = true;
+        model
+            .failures
+            .push("reference failed: worker exited".into());
+        let finished = progress_view(&model).render(Some(80)).to_string();
+        assert!(finished.contains("4/4 completed"), "{finished}");
+        assert!(!finished.contains("50%"), "{finished}");
+        assert!(finished.contains("reference failed"), "{finished}");
+        assert!(finished.lines().count() < 8, "{finished}");
+    }
+    #[test]
+    fn progress_columns_align_for_different_labels_and_counts() {
+        let mut view = element!(View(width:80,flex_direction:FlexDirection::Column) {
+            ProgressRow(label:"β short",completed:1_usize,total:10_usize)
+            ProgressRow(label:"longer solver name",completed:100_usize,total:100_usize)
+        });
+        let canvas = view.render(Some(80));
+        assert_eq!(canvas.height(), 2);
+        let percent_columns = (0..2)
+            .map(|y| {
+                (0..canvas.width())
+                    .find(|&x| canvas.cell(x, y).and_then(|cell| cell.text()) == Some("%"))
+                    .unwrap()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(percent_columns[0], percent_columns[1]);
     }
     #[test]
     fn counters_and_labels_cover_concurrent_outcomes_and_invocation_bounds() {
@@ -668,7 +865,7 @@ mod tests {
             records::RecordId,
             run_output::{RunAttemptOutput, RunDiagnostic},
         };
-        let mut renderer = Renderer::new(false, false, Some(2));
+        let mut renderer = ProgressModel::new(false, false, Some(2));
         let mut output = Vec::new();
         let event = |kind| {
             Message::Event(RunEvent {
@@ -747,8 +944,8 @@ mod tests {
         assert!(!text.contains("mw1-"));
     }
     #[test]
-    fn benchmark_bars_use_pending_work_and_refresh_multiple_rows() {
-        let mut renderer = Renderer::new(true, false, None);
+    fn benchmark_bars_use_pending_work_for_multiple_groups() {
+        let mut renderer = ProgressModel::new(true, false, None);
         renderer.labels.insert(
             "first".into(),
             Label {
@@ -787,19 +984,23 @@ mod tests {
         renderer
             .active
             .insert("other-active".into(), renderer.labels["other"].clone());
-        renderer.tick(&mut output).unwrap();
-        renderer.tick(&mut output).unwrap();
-        let text = String::from_utf8(output).unwrap();
-        assert!(text.contains("Run [------------] 0/3 (0%)"));
-        assert!(text.contains("[------------] 0/2 (0%) reference / numbers"));
-        assert!(text.contains("[------------] 0/1 (0%) packed / numbers"));
-        assert!(text.contains("\x1b[1A"));
+        let text = progress_view(&renderer).render(Some(80)).to_string();
+        for expected in [
+            "Overall",
+            "0/3",
+            "0/2",
+            "0/1",
+            "reference / numbers",
+            "packed / numbers",
+        ] {
+            assert!(text.contains(expected), "{text}");
+        }
         assert_eq!(bar(1, 2), "[======------] 1/2 (50%)");
         assert_eq!(bar(2, 2), "[============] 2/2 (100%)");
     }
     #[test]
     fn redirected_long_tasks_get_heartbeats() {
-        let mut renderer = Renderer::new(false, false, None);
+        let mut renderer = ProgressModel::new(false, false, None);
         renderer.phase = "Preparing dataset".into();
         renderer.last_line = Instant::now() - Duration::from_secs(11);
         let mut output = Vec::new();

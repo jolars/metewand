@@ -323,10 +323,12 @@ whole tree: `benchmark/output.py/run` would overlap `benchmark/*.py`. If you
 declare the whole benchmark directory or use `benchmark/**/*.py`, put output
 elsewhere. The same selection rules apply to an explicit artifact cache.
 
-The comparison retains method names, effective settings, repetitions, metrics,
-completion, and failures. It reports individual measurements. In a toy Python
-benchmark, serialization and orchestration costs can be substantial relative to
-the solver's work.
+By default, `run` finishes with a short summary and the output directory. Add
+`--verbose` to print individual measurements, effective settings, metrics,
+completion, failures, and profile details. To inspect saved measurements without
+rerunning the benchmark, use `metewand status --output-dir results`. In a toy
+Python benchmark, serialization and orchestration costs can be substantial
+relative to the solver's work.
 
 Human runs report preparation immediately, including environment verification,
 source staging, dataset generation or cache verification, shared problem inputs,
@@ -335,22 +337,29 @@ implementation, repetition, and measurement. The display counts pending work for
 this invocation, so resume skips and `--max-attempts` are reflected in progress.
 Failures include their diagnostic codes.
 
-Interactive terminals show an overall progress bar and a separate bar for each
-combination of experiment, dataset, and implementation as it runs. Bars show completed and
-pending attempts and percentages, refresh each second, and stay visible across
-interleaved measurements. The display also shows elapsed time, active attempts,
-and failures. Bar totals come from the actual pending schedule after resume and
-selection; `--max-attempts` bounds the displayed work for this invocation. Colors distinguish preparation,
-accepted results, failures, and other outcomes. Set `NO_COLOR` to disable color.
-With redirected stderr or `TERM=dumb`, progress uses plain lines and emits a
-heartbeat every ten seconds during long tasks. No progress escape sequences
-enter redirected logs. Progress goes to stderr; the final comparison goes to
-stdout. Preparation messages and heartbeats are transient display information,
-not persisted scientific evidence.
+Interactive terminals show preparation spinners, an overall progress bar, and a
+separate bar for each combination of experiment, dataset, and implementation.
+Bars share aligned columns and show completed attempts, totals, and percentages.
+The display also shows elapsed time and active attempts. Completed preparation
+and benchmark sections fold into summaries; failure diagnostics remain visible.
+Bar totals come from the actual pending schedule after resume and selection;
+`--max-attempts` bounds the displayed work for this invocation. Colors distinguish
+preparation, accepted results, failures, and other outcomes. Set `NO_COLOR` to
+disable color.
+
+With redirected stdout or stderr, or `TERM=dumb`, progress uses plain lines and
+emits a heartbeat every ten seconds during long tasks. No progress escape
+sequences enter redirected logs. Progress goes to stderr; the final summary and
+optional comparison go to stdout. The comparison table adapts to the terminal
+width up to 110 columns, leaves a right margin, aligns timing values to the
+right, and prints settings and metrics shared by all rows above the table.
+Preparation messages and heartbeats are transient display information, not
+persisted scientific evidence.
 
 For structured output, use `--output json`. Use `--output jsonl` to stream
 versioned execution events after preparation completes. These modes disable the
-human display entirely. Worker logs stay separate from the command's machine
+human display entirely and retain complete records regardless of `--verbose`.
+Worker logs stay separate from the command's machine
 output.
 
 ## Resume and diagnose

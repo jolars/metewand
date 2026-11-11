@@ -66,7 +66,10 @@ pub enum CommandResult {
     SchemaDocument(SchemaDocumentResult),
     Check(CheckResult),
     Plan(Box<PlanResult>),
-    Run(Box<RunReport>),
+    Run {
+        report: Box<RunReport>,
+        verbose: bool,
+    },
     Status(Box<StatusReport>),
     Explain(Box<Explanation>),
     Export(Box<ExportReport>),
@@ -202,7 +205,7 @@ impl CommandResult {
             Self::SchemaDocument(result) => result.source.to_owned(),
             Self::Check(result) => result.render_human(),
             Self::Plan(result) => result.render_human(),
-            Self::Run(result) => render_run_report(result),
+            Self::Run { report, verbose } => render_run_report(report, *verbose),
             Self::Status(result) => render_status(result),
             Self::Explain(result) => render_explanation(result),
             #[cfg(any(unix, windows))]
@@ -286,7 +289,7 @@ impl CommandResult {
         {
             return EXIT_RUN_FAILED;
         }
-        if let Self::Run(report) = self
+        if let Self::Run { report, .. } = self
             && (report.summary.failed_attempts > 0
                 || (report.summary.censored_attempts > 0 || report.summary.censored_profiles > 0))
         {
@@ -297,7 +300,7 @@ impl CommandResult {
     }
 
     pub fn diagnostics(&self) -> String {
-        let Self::Run(report) = self else {
+        let Self::Run { report, .. } = self else {
             return String::new();
         };
         report
@@ -332,7 +335,7 @@ impl Serialize for CommandResult {
             Self::SchemaDocument(result) => result.serialize(serializer),
             Self::Check(result) => result.serialize(serializer),
             Self::Plan(result) => result.serialize(serializer),
-            Self::Run(result) => result.serialize(serializer),
+            Self::Run { report, .. } => report.serialize(serializer),
             Self::Status(result) => result.serialize(serializer),
             Self::Explain(result) => result.serialize(serializer),
             Self::Export(result) => result.serialize(serializer),
@@ -1863,112 +1866,33 @@ pub fn render_event(event: &RunEvent, format: OutputFormat) -> Result<String, se
 }
 
 fn render_comparison(rows: &[crate::core::comparison::ComparisonRow]) -> String {
-    if rows.is_empty() {
-        return String::new();
-    }
-    let mut output = String::from("\nComparison (individual measurements)\n");
-    output.push_str(
-        "Method | Rep (impl:measurement) | Retry | Status | Completion | Primary (ms) | Wall (ms) | Parameters | Metrics\n",
-    );
-    let mut previous = None;
-    for row in rows {
-        let settings = (
-            &row.experiment,
-            &row.dataset,
-            &row.problem,
-            &row.case,
-            &row.timing_scope,
-            &row.primary_time,
-            &row.parameters["dataset"],
-            &row.parameters["problem"],
-        );
-        if previous != Some(settings) {
-            writeln!(
-                output,
-                "  experiment: {}; dataset: {}; problem: {}; case: {}; timing: {}; primary: {}",
-                row.experiment.as_deref().unwrap_or("unavailable"),
-                row.dataset.as_deref().unwrap_or("unavailable"),
-                row.problem.as_deref().unwrap_or("unavailable"),
-                row.case.as_deref().unwrap_or(if row.experiment.is_some() {
-                    "default"
-                } else {
-                    "unavailable"
-                }),
-                row.timing_scope.as_deref().unwrap_or("unavailable"),
-                row.primary_time.as_deref().unwrap_or("unavailable")
-            )
-            .expect("string write");
-            writeln!(
-                output,
-                "  dataset parameters: {}; problem parameters: {}",
-                row.parameters["dataset"], row.parameters["problem"]
-            )
-            .expect("string write");
-            previous = Some(settings);
-        }
-        let method = row.implementation.as_deref().unwrap_or(&row.candidate_id);
-        let repetition = match (row.implementation_repetition, row.measurement_index) {
-            (Some(i), Some(m)) => format!("{}:{}", i + 1, m + 1),
-            _ => "?".to_owned(),
-        };
-        let duration = row
-            .timed_wall_time_ns
-            .map(|n| format!("{:.3}", n as f64 / 1_000_000.0))
-            .unwrap_or_else(|| "unavailable".to_owned());
-        let duration = if row.timed_wall_time_status == "partial" {
-            format!("{duration} (partial)")
-        } else {
-            duration
-        };
-        let primary_duration = row
-            .primary_time_ns
-            .map(|n| format!("{:.3}", n as f64 / 1_000_000.0))
-            .unwrap_or_else(|| "unavailable".to_owned());
-        let primary_duration = if row.primary_time_status == "partial" {
-            format!("{primary_duration} (partial)")
-        } else {
-            primary_duration
-        };
-        writeln!(
-            output,
-            "{method} | {repetition} | {} | {} | {} | {primary_duration} | {duration} | {} | {}",
-            row.retry_index,
-            row.status,
-            row.completion.as_deref().unwrap_or("unavailable"),
-            row.parameters["implementation"],
-            row.metrics
-        )
-        .expect("string write");
-        if let Some(time) = row.instrumented_time_ns {
-            writeln!(
-                output,
-                "  instrumented: {time} ns; scope: {}",
-                row.instrumented_scope.as_deref().unwrap_or("unavailable")
-            )
-            .expect("string write");
-        }
-        if let Some(diagnostic) = &row.diagnostic {
-            writeln!(
-                output,
-                "  failure [{}]: {}",
-                diagnostic.code, diagnostic.message
-            )
-            .expect("string write");
-        }
-    }
-    output.push('\n');
-    output
+    super::presentation::comparison(rows)
 }
 
-fn render_run_report(report: &RunReport) -> String {
+fn render_run_report(report: &RunReport, verbose: bool) -> String {
+    let mut outcomes = vec![format!("{} accepted", report.summary.accepted_attempts)];
+    for (count, label) in [
+        (report.summary.failed_attempts, "failed"),
+        (report.summary.censored_attempts, "censored"),
+        (report.summary.superseded_attempts, "superseded"),
+    ] {
+        if count > 0 {
+            outcomes.push(format!("{count} {label}"));
+        }
+    }
+    if report.summary.censored_profiles > 0 {
+        outcomes.push(count(report.summary.censored_profiles, "censored profile"));
+    }
     let mut output = format!(
-        "Benchmark `{}`: {} accepted, {} failed, {} superseded.\n  output directory: {}\n",
+        "Benchmark `{}`: {}.\n  output directory: {}\n",
         report.benchmark,
-        report.summary.accepted_attempts,
-        report.summary.failed_attempts,
-        report.summary.superseded_attempts,
+        outcomes.join(", "),
         report.output_directory
     );
+    if !verbose {
+        output.push_str("Use run --verbose for individual measurements, or inspect saved results with status.\n");
+        return output;
+    }
     output.push_str(&render_comparison(&report.comparison));
     for profile in &report.fresh_sequences {
         writeln!(
@@ -2248,6 +2172,39 @@ mod tests {
     use super::{Diagnostic, OutputFormat, render_diagnostic, render_event};
     use crate::core::run_output::{RunEvent, RunEventKind};
     use serde_json::Value;
+
+    #[test]
+    fn compact_run_summary_preserves_censoring_and_failure_status() {
+        use super::CommandResult;
+        use crate::core::run_output::{RunReport, RunSummary};
+        let result = CommandResult::Run {
+            report: Box::new(RunReport {
+                command: "run",
+                benchmark: "example".into(),
+                manifest_hash: String::new(),
+                output_directory: "results".into(),
+                attempts: vec![],
+                events: vec![],
+                comparison: vec![],
+                fresh_sequences: vec![],
+                summary: RunSummary {
+                    attempt_slots: 3,
+                    accepted_attempts: 0,
+                    failed_attempts: 1,
+                    censored_attempts: 2,
+                    censored_profiles: 1,
+                    superseded_attempts: 0,
+                },
+            }),
+            verbose: false,
+        };
+        let text = result.render_human();
+        for expected in ["1 failed", "2 censored", "1 censored profile", "results"] {
+            assert!(text.contains(expected), "{text}");
+        }
+        assert_eq!(result.exit_code(), super::EXIT_RUN_FAILED);
+        assert!(text.lines().count() <= 4, "{text}");
+    }
 
     #[test]
     fn run_event_json_lines_bytes_are_stable() {

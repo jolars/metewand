@@ -1434,11 +1434,18 @@ fn human_run_output_reports_metrics_and_scientific_failure_reasons() {
                 "\"not_reached\" if error == 0",
             );
         }
-        let output = metewand(root.path(), &["run", "--output-dir", "run"]);
+        let output = metewand(root.path(), &["run", "--output-dir", "run", "--verbose"]);
         assert_eq!(output.status.code(), Some(if reached { 0 } else { 5 }));
         let human = String::from_utf8(output.stdout).unwrap();
-        assert!(human.contains("Method | Rep"), "{human}");
-        assert!(human.contains("reference | 1:1 | 0 |"), "{human}");
+        assert!(human.contains("Method") && human.contains("Rep"), "{human}");
+        let row = human
+            .lines()
+            .find(|line| line.trim_start().starts_with("reference") && line.contains('|'))
+            .expect("reference comparison row");
+        let cells = row.split('|').map(str::trim).collect::<Vec<_>>();
+        assert_eq!(cells[0], "reference");
+        assert_eq!(cells[1], "1:1");
+        assert!(human.contains("retry: 0"), "{human}");
         assert!(human.contains("{\"absolute_error\":0}"), "{human}");
         assert!(human.contains("timing: prepare_and_execute"), "{human}");
         if reached {
@@ -3107,14 +3114,15 @@ fn human_progress_starts_before_workers_finish_and_uses_readable_labels() {
 fn terminal_progress_bars_respect_no_color_and_dumb_terminals() {
     let root = repository();
     let script = r#"
-import os, pty, re, subprocess, sys
-for name, no_color, term in [('color', False, 'xterm'), ('no-color', True, 'xterm'), ('dumb', False, 'dumb')]:
+import fcntl, os, pty, re, struct, subprocess, sys, termios
+for name, no_color, term in [('color', False, 'xterm'), ('no-color', True, 'xterm'), ('dumb', False, 'dumb'), ('piped',False,'xterm')]:
     master, slave = pty.openpty()
+    fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 110, 0, 0))
     settings = dict(os.environ, TERM=term)
     settings.pop('NO_COLOR', None)
     if no_color:
         settings['NO_COLOR'] = '1'
-    process = subprocess.Popen([sys.argv[1], 'run', '--output-dir', name], cwd=sys.argv[2], env=settings, stdout=subprocess.DEVNULL, stderr=slave)
+    process = subprocess.Popen([sys.argv[1], 'run', '--output-dir', name], cwd=sys.argv[2], env=settings, stdout=subprocess.PIPE if name=='piped' else slave, stderr=slave)
     os.close(slave)
     chunks=[]
     try:
@@ -3130,14 +3138,15 @@ for name, no_color, term in [('color', False, 'xterm'), ('no-color', True, 'xter
         os.close(master)
     text=b''.join(chunks)
     assert process.wait() == 0, repr(text)
-    assert b'[============] 1/1 (100%)' in text, repr(text)
-    assert b'reference' in text and b'numbers' in text, repr(text)
-    colored = re.search(rb'\x1b\[[0-9;]+m', text) is not None
-    assert colored == (not no_color and term != 'dumb'), repr(text)
-    if term == 'dumb':
+    assert b'1/1' in text, repr(text)
+    assert b'accepted' in text, repr(text)
+    colored = re.search(rb'\x1b\[(?:[0-9;]*;)?(?:3[0-7]|9[0-7]|38;[0-9;]+)m', text) is not None
+    assert colored == (not no_color and term != 'dumb' and name != 'piped'), repr(text)
+    if term == 'dumb' or name=='piped':
         assert b'\x1b[' not in text, repr(text)
     else:
-        assert b'\x1b[2K' in text, repr(text)
+        assert b'\x1b[' in text, repr(text)
+        assert b'Preparation complete' in text and b'Benchmarks' in text, repr(text)
 "#;
     let output = Command::new("python3")
         .args([
@@ -3152,5 +3161,200 @@ for name, no_color, term in [('color', False, 'xterm'), ('no-color', True, 'xter
         output.status.success(),
         "{}",
         String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn terminal_interrupt_restores_terminal_settings() {
+    let root = repository();
+    let worker = root.path().join("worker.py");
+    let source = fs::read_to_string(&worker).unwrap();
+    fs::write(&worker, format!("import time\ntime.sleep(3)\n{source}")).unwrap();
+    let script = r#"
+import fcntl, os, pty, select, signal, struct, subprocess, sys, termios, time
+master, slave = pty.openpty()
+fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack('HHHH', 40, 110, 0, 0))
+original = termios.tcgetattr(slave)
+def session():
+    os.setsid()
+    fcntl.ioctl(0, termios.TIOCSCTTY, 0)
+process = subprocess.Popen([sys.argv[1], 'run', '--output-dir', 'interrupt'], cwd=sys.argv[2], env=dict(os.environ,TERM='xterm'), stdin=slave, stdout=slave, stderr=slave, preexec_fn=session)
+text = b''
+try:
+    deadline = time.monotonic() + 15
+    while b'Benchmarks' not in text and time.monotonic() < deadline:
+        if select.select([master], [], [], 0.1)[0]:
+            text += os.read(master, 8192)
+        if process.poll() is not None:
+            break
+    assert b'Benchmarks' in text, repr(text)
+    os.write(master, b'\x03')
+    assert process.wait(timeout=5) == -signal.SIGINT, repr(text)
+    assert termios.tcgetattr(slave) == original, 'terminal settings were not restored'
+finally:
+    if process.poll() is None:
+        os.killpg(process.pid, signal.SIGKILL)
+        process.wait()
+    os.close(master)
+    os.close(slave)
+"#;
+    let output = Command::new("python3")
+        .args([
+            "-c",
+            script,
+            env!("CARGO_BIN_EXE_metewand"),
+            root.path().to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn human_run_defaults_to_a_short_summary_and_details_are_opt_in() {
+    let root = repository();
+    replace(
+        root.path(),
+        "metewand.yaml",
+        "measurement-repetitions: 1",
+        "measurement-repetitions: 20",
+    );
+    let output = metewand(root.path(), &["run", "--output-dir", "run"]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let text = String::from_utf8(output.stdout).unwrap();
+    assert!(text.contains("20 accepted"), "{text}");
+    assert!(text.contains("output directory:"), "{text}");
+    assert!(text.contains("--verbose"), "{text}");
+    assert!(
+        !text.contains("Comparison") && !text.contains("absolute_error"),
+        "{text}"
+    );
+    assert!(text.lines().count() <= 4, "{text}");
+
+    let output = metewand(
+        root.path(),
+        &["run", "--output-dir", "run", "--resume", "--verbose"],
+    );
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let text = String::from_utf8(output.stdout).unwrap();
+    assert!(
+        text.contains("Comparison (individual measurements)"),
+        "{text}"
+    );
+    assert!(
+        text.contains("reference") && text.contains("1:20") && text.contains("absolute_error"),
+        "{text}"
+    );
+}
+
+#[test]
+fn run_verbose_preserves_machine_output_and_rejects_duplicate_flags() {
+    let root = repository();
+    for format in ["json", "jsonl"] {
+        let output = metewand(
+            root.path(),
+            &[
+                "--output",
+                format,
+                "run",
+                "--verbose",
+                "--output-dir",
+                format,
+            ],
+        );
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(output.stderr.is_empty());
+        let result = if format == "jsonl" {
+            let records = envelopes(&output);
+            assert_eq!(records.len(), 5);
+            records.last().unwrap().clone()
+        } else {
+            let result = serde_json::from_slice(&output.stdout).unwrap();
+            public_schema_catalog()
+                .unwrap()
+                .validate(PublicSchema::RunOutput.repository_path(), &result)
+                .unwrap();
+            result
+        };
+        assert_eq!(
+            result["data"]["comparison"][0]["metrics"]["absolute_error"],
+            0
+        );
+        assert_eq!(result["data"]["events"].as_array().unwrap().len(), 4);
+        assert!(result["data"].get("verbose").is_none());
+    }
+    let output = metewand(
+        root.path(),
+        &[
+            "--output",
+            "jsonl",
+            "run",
+            "--verbose",
+            "--verbose",
+            "--output-dir",
+            "duplicate",
+        ],
+    );
+    assert_eq!(output.status.code(), Some(2));
+    assert!(
+        String::from_utf8(output.stdout)
+            .unwrap()
+            .contains("duplicate_verbose_flag")
+    );
+    assert!(!root.path().join("duplicate").exists());
+    let help = metewand(root.path(), &["run", "--help"]);
+    assert!(
+        String::from_utf8(help.stdout)
+            .unwrap()
+            .contains("--verbose")
+    );
+}
+
+#[test]
+fn human_comparison_uses_aligned_columns() {
+    let root = repository();
+    let output = metewand(
+        root.path(),
+        &["run", "--output-dir", "aligned", "--verbose"],
+    );
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let text = String::from_utf8(output.stdout).unwrap();
+    let positions = |line: &str| {
+        line.char_indices()
+            .filter_map(|(index, c)| (c == '|').then_some(index))
+            .collect::<Vec<_>>()
+    };
+    let header = text
+        .lines()
+        .find(|line| line.trim_start().starts_with("Method") && line.contains('|'))
+        .unwrap();
+    let row = text
+        .lines()
+        .find(|line| line.trim_start().starts_with("reference") && line.contains('|'))
+        .unwrap();
+    assert_eq!(positions(header), positions(row), "{text}");
+    assert!(
+        text.lines().all(|line| line.chars().count() <= 110),
+        "{text}"
     );
 }

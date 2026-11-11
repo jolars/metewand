@@ -60,6 +60,10 @@ tempfile = "3.20.0"
 thiserror = "2.0.20"
 yaml-edit = "0.3.5"
 rusqlite = { version = "0.41.1", features = ["bundled"] }
+iocraft = { version = "0.9.5", features = ["unstable-output-streams"] }
+futures = "0.3"
+futures-timer = "3"
+crossterm = "0.29"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

@@ -605,11 +605,18 @@ model abrupt process death, not storage hardware losing power.
 Human and machine output use the same typed records. The default human plan
 summarizes selected experiments; `plan --verbose` renders full identities,
 parameters, and slots. JSON and JSONL retain the complete versioned plan
-independently of the human verbosity flag. Machine formats use the
+independently of the human verbosity flag. Human runs end with a compact summary;
+`run --verbose` adds individual measurements and profile details. `status` can
+inspect the complete saved comparison without execution. The run verbosity flag
+is CLI presentation state and never enters run options, identities, or machine
+records. Machine formats use the
 versioned `machine-output` envelope; JSONL run events flush in order, while JSON
-returns a terminal envelope. Human run progress uses a CLI-owned renderer with
+returns a terminal envelope. Human run progress uses iocraft components with
 transient runtime preparation callbacks and the existing typed execution events.
-Terminal refreshes run on a separate thread; plain logs receive periodic
+The CLI owns the layout and its render loop on a separate thread. Preparation
+and execution sections fold when complete; failures remain visible. Comparison
+tables also use iocraft layout. Live rendering requires terminal stdout and
+stderr; redirected output and dumb terminals receive plain logs with periodic
 heartbeats. Send only outcome metadata to the renderer, excluding large profile
 payloads. Preparation feedback and elapsed display time never enter identities,
 persisted evidence, or machine event sequences. Worker logs do not enter the command stream. Use
