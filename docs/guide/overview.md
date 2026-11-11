@@ -71,6 +71,6 @@ The [examples](examples.md) provide runnable alternatives. The
 [design](../design.md) explains the general model.
 
 Metewand is under active development. The current runner executes trusted local
-code and records development-environment evidence, or verifies prepared Nix and uv
+code and records development-environment evidence, or verifies prepared Nix, uv, and Linux Docker OCI
 environments with `run --locked`. Isolation and the Julia package are planned.
 Pin a Metewand revision when retaining benchmark runs.

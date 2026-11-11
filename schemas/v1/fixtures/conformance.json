@@ -2,6 +2,32 @@
   "version": 1,
   "valid": [
     {
+      "name": "OCI image evidence",
+      "schema": "lockfile",
+      "instance": {
+        "environments": {
+          "container": {
+            "backend": "oci",
+            "evidence": {
+              "definition": "mw1-environment-definition-0000000000000000000000000000000000000000000000000000000000000000",
+              "environment": {},
+              "image": "example@sha256:0000000000000000000000000000000000000000000000000000000000000000",
+              "image_id": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+              "layers": [],
+              "source_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+              "system": "linux/amd64"
+            }
+          }
+        },
+        "schema_version": 3,
+        "source": {
+          "files": {},
+          "git": false
+        },
+        "workers": {}
+      }
+    },
+    {
       "name": "worker phase deadlines",
       "schema": "manifest",
       "instance": {
@@ -2155,7 +2181,7 @@
     },
     {
       "name": "version-2 Nix lock retains backend evidence",
-      "schema": "lockfile",
+      "schema": "lockfile-v2",
       "instance": {
         "environments": {
           "python": {
@@ -2215,7 +2241,7 @@
     },
     {
       "name": "uv prepared runtime and package evidence",
-      "schema": "lockfile",
+      "schema": "lockfile-v2",
       "instance": {
         "schema_version": 2,
         "source": {
@@ -2284,6 +2310,32 @@
     }
   ],
   "invalid": [
+    {
+      "name": "OCI image evidence rejects malformed image IDs",
+      "schema": "lockfile",
+      "instance": {
+        "environments": {
+          "container": {
+            "backend": "oci",
+            "evidence": {
+              "definition": "mw1-environment-definition-0000000000000000000000000000000000000000000000000000000000000000",
+              "environment": {},
+              "image": "example@sha256:0000000000000000000000000000000000000000000000000000000000000000",
+              "image_id": "not-a-digest",
+              "layers": [],
+              "source_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+              "system": "linux/amd64"
+            }
+          }
+        },
+        "schema_version": 3,
+        "source": {
+          "files": {},
+          "git": false
+        },
+        "workers": {}
+      }
+    },
     {
       "name": "invalid worker timeout zero",
       "schema": "manifest",
@@ -5170,7 +5222,7 @@
     },
     {
       "name": "unknown lock backend",
-      "schema": "lockfile",
+      "schema": "lockfile-v2",
       "instance": {
         "environments": {
           "python": {

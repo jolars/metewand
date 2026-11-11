@@ -275,7 +275,8 @@ Run `metewand lock` explicitly to prepare missing state or rebuild changed local
 sources, including source-only edits that leave package metadata unchanged.
 Mixed Nix and uv benchmarks verify each backend with its own requirements.
 
-New Metewand locks use version 2, with backend-specific evidence. Version-1 Nix
+Nix/uv-only Metewand locks use version 2, with backend-specific evidence.
+OCI-containing locks use version 3. Version-1 Nix
 locks remain readable and retain their original identities. uv identities
 normalize generated metadata and launcher paths; different built package content
 still defines different resolved evidence. Raw inventories verify exact installed

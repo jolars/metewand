@@ -33,7 +33,7 @@ fn lockfile_version_and_fields_are_strict() {
             .unwrap()
     );
     for invalid in [
-        json!({"schema_version": 3, "source": {"git": false, "files": {}}, "environments": {}, "workers": {}}),
+        json!({"schema_version": 4, "source": {"git": false, "files": {}}, "environments": {}, "workers": {}}),
         json!({"schema_version": 1, "source": {"git": false, "files": {}}, "environments": {}, "workers": {}, "extra": true}),
     ] {
         assert!(Lockfile::parse(&serde_json::to_vec(&invalid).unwrap()).is_err());
@@ -79,4 +79,15 @@ fn uv_evidence_has_exact_version_two_bytes_and_strict_receipts() {
         old.to_bytes().unwrap(),
         include_bytes!("../../schemas/v2/fixtures/lockfile-v2.json")
     );
+}
+
+#[test]
+fn oci_lock_evidence_is_versioned_and_canonical() {
+    let bytes = include_bytes!("../../schemas/v3/fixtures/oci-lockfile-v3.json");
+    let lock = Lockfile::parse(bytes).unwrap();
+    assert_eq!(lock.to_bytes().unwrap(), bytes);
+    assert_eq!(lock.environments["container"].system(), "linux/amd64");
+    let mut value = serde_json::from_slice::<serde_json::Value>(bytes).unwrap();
+    value["schema_version"] = json!(2);
+    assert!(Lockfile::parse(&serde_json::to_vec(&value).unwrap()).is_err());
 }

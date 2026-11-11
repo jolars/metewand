@@ -195,12 +195,14 @@ fn workers<'a>(
     for worker in workers.values() {
         if !matches!(
             repository.manifest.environments[environment_name(worker)],
-            EnvironmentDefinition::Nix { .. } | EnvironmentDefinition::Uv { .. }
+            EnvironmentDefinition::Nix { .. }
+                | EnvironmentDefinition::Uv { .. }
+                | EnvironmentDefinition::Oci { .. }
         ) {
             return Err(error(
                 "unsupported_locked_environment",
                 format!(
-                    "worker environment `{}` must use kind: nix or kind: uv for locked execution",
+                    "worker environment `{}` must use kind: nix, kind: uv, or kind: oci for locked execution",
                     environment_name(worker)
                 ),
             ));
@@ -909,6 +911,7 @@ fn load(
             (&repository.manifest.environments[name], entry),
             (EnvironmentDefinition::Nix { .. }, LockedEnvironment::Nix(_))
                 | (EnvironmentDefinition::Uv { .. }, LockedEnvironment::Uv(_))
+                | (EnvironmentDefinition::Oci { .. }, LockedEnvironment::Oci(_))
         ) {
             return Err(error(
                 "lockfile_outdated",
@@ -918,6 +921,7 @@ fn load(
         let expected_system = match entry {
             LockedEnvironment::Nix(_) => system.as_deref().unwrap_or(""),
             LockedEnvironment::Uv(_) => &crate::runtime::locked_uv::system(),
+            LockedEnvironment::Oci(_) => entry.system(),
         };
         if entry.system() != expected_system {
             return Err(error(
@@ -927,6 +931,18 @@ fn load(
                     entry.system()
                 ),
             ));
+        }
+        if let LockedEnvironment::Oci(entry) = entry {
+            #[cfg(target_os = "linux")]
+            crate::runtime::oci::verify(entry).map_err(|e| error("oci_environment_changed", e))?;
+            #[cfg(not(target_os = "linux"))]
+            {
+                let _ = entry;
+                return Err(error(
+                    "unsupported_oci_host",
+                    "OCI execution requires Linux",
+                ));
+            }
         }
         if let LockedEnvironment::Uv(entry) = entry {
             crate::runtime::locked_uv::verify(entry)?;
@@ -1061,13 +1077,53 @@ fn lock_with(
                         &digest,
                     )?)
                 }
+                EnvironmentDefinition::Oci { image } => {
+                    #[cfg(target_os = "linux")]
+                    {
+                        crate::runtime::oci::preflight()
+                            .map_err(|e| error("docker_unavailable", e))?;
+                        crate::runtime::oci::invoke(&[
+                            "pull",
+                            "--platform",
+                            &crate::runtime::oci::platform()
+                                .map_err(|e| error("unsupported_oci_host", e))?,
+                            image.as_str(),
+                        ])
+                        .map_err(|e| error("oci_preparation_failed", e))?;
+                        LockedEnvironment::Oci(
+                            crate::runtime::oci::inspect(
+                                &crate::runtime::oci::Docker,
+                                image.as_str(),
+                                &repository.planning_catalog.environment_definitions[name]
+                                    .to_string(),
+                                &digest,
+                            )
+                            .map_err(|e| error("oci_preparation_failed", e))?,
+                        )
+                    }
+                    #[cfg(not(target_os = "linux"))]
+                    return {
+                        let _ = image;
+                        Err(error(
+                            "unsupported_oci_host",
+                            "OCI execution requires Linux",
+                        ))
+                    };
+                }
                 _ => unreachable!("checked locked backend"),
             },
         );
     }
     let mut verified = VerifiedLock {
         lock: Lockfile {
-            schema_version: LOCKFILE_VERSION,
+            schema_version: if environments
+                .values()
+                .any(|e| matches!(e, LockedEnvironment::Oci(_)))
+            {
+                LOCKFILE_VERSION
+            } else {
+                2
+            },
             source,
             environments,
             workers: BTreeMap::new(),
@@ -1162,6 +1218,12 @@ pub(crate) fn locked_program(
             return crate::runtime::locked_uv::program(environment, program);
         }
         LockedEnvironment::Nix(environment) => environment,
+        LockedEnvironment::Oci(_) => {
+            return Err(error(
+                "invalid_locked_launch",
+                "OCI programs resolve inside the image",
+            ));
+        }
     };
     let path = if let Some(app) = &environment.app_program {
         if Path::new(program).file_name() != Path::new(app).file_name() {

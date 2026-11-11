@@ -1,0 +1,7 @@
+**
+!packages
+!packages/python
+!packages/python/src
+!packages/python/src/metewand
+!packages/python/src/metewand/**
+**/__pycache__

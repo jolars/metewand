@@ -161,10 +161,18 @@ jobs:
       - run: >-
           cargo test --test integration --locked cli_tests::locked_nix:: -- --ignored
 
+  docker-oci:
+    name: locked Docker OCI execution
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --test integration --locked cli_tests::locked_oci:: -- --ignored
+
   versionary:
     name: versionary
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [fmt, clippy, test, nix-lock, crate, python-package, r-package]
+    needs: [fmt, clippy, test, nix-lock, docker-oci, crate, python-package, r-package]
     runs-on: ubuntu-latest
     permissions:
       contents: write

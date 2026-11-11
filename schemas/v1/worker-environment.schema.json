@@ -8,7 +8,8 @@
     "version": {
       "enum": [
         1,
-        2
+        2,
+        3
       ]
     },
     "working_directory": {
@@ -68,6 +69,21 @@
       "required": [
         "directory_access"
       ]
+    },
+    {
+      "properties": {
+        "version": {
+          "const": 3
+        },
+        "umask": {
+          "type": "null"
+        }
+      },
+      "not": {
+        "required": [
+          "directory_access"
+        ]
+      }
     }
   ]
 }

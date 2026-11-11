@@ -327,6 +327,8 @@ impl Drop for PipeCancellation {
 /// `PROTOCOL_*_FD_ENV` or `PROTOCOL_*_HANDLE_ENV` constants.
 #[derive(Debug)]
 pub struct WorkerProcess {
+    #[cfg(target_os = "linux")]
+    docker: Option<crate::runtime::oci::Container>,
     environment: Option<WorkerEnvironmentProvenance>,
     redactor: Redactor,
     child: Arc<Mutex<Child>>,
@@ -410,6 +412,9 @@ impl WorkerProcess {
             Arc::clone(&protocol_cancellation.0),
         )
         .map_err(WorkerProcessError::CreateRequestPipe)?;
+        #[cfg(target_os = "linux")]
+        let docker =
+            crate::runtime::oci::attach(&mut command).map_err(WorkerProcessError::Spawn)?;
         let use_socket = socket.is_some();
         let (worker_request_reader, parent_request_writer) =
             protocol_pipe().map_err(WorkerProcessError::CreateRequestPipe)?;
@@ -529,6 +534,8 @@ impl WorkerProcess {
             )
         };
         Ok(Self {
+            #[cfg(target_os = "linux")]
+            docker,
             environment: None,
             redactor,
             group,
@@ -631,6 +638,10 @@ impl WorkerProcess {
 
     pub(crate) fn tree_source(&self) -> crate::runtime::resource_accounting::TreeSource {
         #[cfg(target_os = "linux")]
+        if self.docker.is_some() {
+            return crate::runtime::resource_accounting::TreeSource::Unavailable;
+        }
+        #[cfg(target_os = "linux")]
         {
             crate::runtime::resource_accounting::TreeSource::Linux(self.id())
         }
@@ -645,6 +656,14 @@ impl WorkerProcess {
         {
             crate::runtime::resource_accounting::TreeSource::Unavailable
         }
+    }
+
+    pub(crate) fn usage(&self) -> crate::runtime::resource_accounting::ProcessUsage {
+        #[cfg(target_os = "linux")]
+        if self.docker.is_some() {
+            return crate::runtime::resource_accounting::ProcessUsage::default();
+        }
+        crate::runtime::resource_accounting::ProcessUsage::observe(self.id())
     }
 
     /// Checks whether the worker has exited without blocking.
@@ -666,6 +685,10 @@ impl WorkerProcess {
     /// Returns an error if the signal cannot be sent or the platform does not
     /// support cooperative interruption. Windows jobs use forced termination.
     pub fn interrupt(&mut self) -> Result<(), WorkerProcessError> {
+        #[cfg(target_os = "linux")]
+        if let Some(container) = &self.docker {
+            return container.signal("SIGINT").map_err(WorkerProcessError::Kill);
+        }
         #[cfg(unix)]
         {
             self.group
@@ -687,6 +710,10 @@ impl WorkerProcess {
     /// # Errors
     /// Returns an error if the signal cannot be sent.
     pub fn kill(&mut self) -> Result<(), WorkerProcessError> {
+        #[cfg(target_os = "linux")]
+        if let Some(container) = &self.docker {
+            let _ = container.signal("SIGKILL");
+        }
         #[cfg(unix)]
         {
             self.group
@@ -713,6 +740,8 @@ impl WorkerProcess {
     /// drain thread panics, or if logs remain open one second after group cleanup.
     pub fn wait(self) -> Result<WorkerProcessOutput, WorkerProcessError> {
         let Self {
+            #[cfg(target_os = "linux")]
+            docker,
             environment,
             child,
             group,
@@ -756,6 +785,18 @@ impl WorkerProcess {
         let stdout = join_log_drain(WorkerLogStream::Stdout, stdout_drain);
         let stderr = join_log_drain(WorkerLogStream::Stderr, stderr_drain);
 
+        #[cfg(target_os = "linux")]
+        let status = if let Some(container) = docker {
+            let actual = container.status().map_err(WorkerProcessError::Observe)?;
+            if !status.success() && actual.success() {
+                return Err(WorkerProcessError::Observe(io::Error::other(
+                    "Docker attach client failed",
+                )));
+            }
+            actual
+        } else {
+            status
+        };
         Ok(WorkerProcessOutput {
             environment,
             status,

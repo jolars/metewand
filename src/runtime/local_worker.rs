@@ -103,6 +103,13 @@ pub fn launch_trusted_local_worker_with_secrets(
             .map(|(name, value)| (name.clone(), value.clone())),
     );
 
+    #[cfg(target_os = "linux")]
+    if variables.contains_key(crate::runtime::oci::IMAGE_ENV) {
+        variables.insert(
+            "METEWAND_OCI_ROOT".into(),
+            private_root.to_string_lossy().into_owned(),
+        );
+    }
     let mut command = Command::new(&launch.program);
     command
         .args(&launch.args)
@@ -134,6 +141,21 @@ pub fn launch_trusted_local_worker_with_secrets(
     let mut process =
         WorkerProcess::spawn_windows(command, log_limits, Redactor::new(secrets), true)
             .map_err(LocalWorkerLaunchError::Spawn)?;
+    #[cfg(target_os = "linux")]
+    let provenance = {
+        let mut provenance = provenance;
+        if launch
+            .environment_variables
+            .contains_key(crate::runtime::oci::IMAGE_ENV)
+        {
+            provenance.version = 3;
+            provenance.umask = None;
+            for name in [crate::runtime::oci::IMAGE_ENV, "METEWAND_OCI_SOURCE_ROOT"] {
+                provenance.environment_variables.remove(name);
+            }
+        }
+        provenance
+    };
     process.retain_environment(provenance);
     process.retain_private_working_directory(private_working_directory);
     Ok(process)

@@ -8,7 +8,7 @@ use serde_json::Value;
 use crate::core::canonical::CanonicalValue;
 
 /// Compatibility version of lockfiles and their nested evidence.
-pub const LOCKFILE_VERSION: u32 = 2;
+pub const LOCKFILE_VERSION: u32 = 3;
 
 #[derive(Clone, Debug)]
 pub struct Lockfile {
@@ -64,6 +64,19 @@ pub struct LockedNixEnvironment {
 pub enum LockedEnvironment {
     Nix(LockedNixEnvironment),
     Uv(LockedUvEnvironment),
+    Oci(LockedOciEnvironment),
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct LockedOciEnvironment {
+    pub definition: String,
+    pub system: String,
+    pub source_sha256: String,
+    pub image: String,
+    pub image_id: String,
+    pub layers: Vec<String>,
+    pub environment: BTreeMap<String, String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -105,7 +118,7 @@ impl LockedEnvironment {
     pub fn nix(&self) -> Option<&LockedNixEnvironment> {
         match self {
             Self::Nix(e) => Some(e),
-            Self::Uv(_) => None,
+            Self::Uv(_) | Self::Oci(_) => None,
         }
     }
 
@@ -113,6 +126,7 @@ impl LockedEnvironment {
         match self {
             Self::Nix(e) => &e.definition,
             Self::Uv(e) => &e.definition,
+            Self::Oci(e) => &e.definition,
         }
     }
 
@@ -120,6 +134,7 @@ impl LockedEnvironment {
         match self {
             Self::Nix(e) => &e.source_sha256,
             Self::Uv(e) => &e.source_sha256,
+            Self::Oci(e) => &e.source_sha256,
         }
     }
 
@@ -127,6 +142,7 @@ impl LockedEnvironment {
         match self {
             Self::Nix(e) => &e.system,
             Self::Uv(e) => &e.system,
+            Self::Oci(e) => &e.system,
         }
     }
 
@@ -134,6 +150,7 @@ impl LockedEnvironment {
     pub fn fingerprint(&self) -> Value {
         match self {
             Self::Nix(e) => serde_json::json!({"class":"locked", "backend":"nix", "evidence":e}),
+            Self::Oci(e) => serde_json::json!({"class":"locked", "backend":"oci", "evidence":e}),
             Self::Uv(e) => serde_json::json!({"class":"locked", "backend":"uv", "evidence":{
                 "definition":e.definition, "system":e.system,
                 "source_sha256":e.source_sha256, "native_lock_sha256":e.native_lock_sha256,
@@ -200,7 +217,8 @@ impl<'de> Deserialize<'de> for Lockfile {
 pub struct LockedWorker {
     pub environment: String,
     pub program: String,
-    pub executable_sha256: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub executable_sha256: Option<String>,
     /// Canonical identity document, with stable source and directory templates.
     pub launch: Value,
 }
@@ -215,7 +233,7 @@ impl Lockfile {
         let value = CanonicalValue::from_slice(bytes).map_err(|e| LockfileError(e.to_string()))?;
         let lock: Self = serde_json::from_value(value.as_json().clone())
             .map_err(|e| LockfileError(e.to_string()))?;
-        if !matches!(lock.schema_version, 1 | LOCKFILE_VERSION) {
+        if !matches!(lock.schema_version, 1 | 2 | LOCKFILE_VERSION) {
             return Err(LockfileError(format!(
                 "unsupported version {}",
                 lock.schema_version
@@ -226,12 +244,25 @@ impl Lockfile {
             .validate(
                 if lock.schema_version == 1 {
                     crate::core::public_schemas::PublicSchema::LockfileV1.repository_path()
+                } else if lock.schema_version == 2 {
+                    crate::core::public_schemas::PublicSchema::LockfileV2.repository_path()
                 } else {
                     crate::core::public_schemas::PublicSchema::Lockfile.repository_path()
                 },
                 value.as_json(),
             )
             .map_err(|e| LockfileError(e.to_string()))?;
+        for worker in lock.workers.values() {
+            let image_program = matches!(
+                lock.environments.get(&worker.environment),
+                Some(LockedEnvironment::Oci(_))
+            );
+            if image_program != worker.executable_sha256.is_none() {
+                return Err(LockfileError(
+                    "worker executable evidence does not match its environment backend".into(),
+                ));
+            }
+        }
         Ok(lock)
     }
 

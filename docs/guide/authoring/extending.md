@@ -233,3 +233,26 @@ must be nonempty, strictly increasing, nonnegative safe integers. Both streaming
 and buffered profiles use the same schedule semantics. A terminal snapshot may
 occur between scheduled checks; unscheduled intermediate checks do not serialize
 a snapshot. Existing periodic schedules retain their representation and identity.
+
+## Run workers in a pinned image
+
+On Linux, select a prebuilt image with an immutable registry digest:
+
+```yaml
+environments:
+  container:
+    kind: oci
+    image: registry.example.org/bench@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+```
+
+Set `environment: container` on the workers that use it. Install the language
+binding package and scientific dependencies in the image. Run `metewand lock`
+to prepare images, `metewand lock --check` to verify them, and `metewand run
+--locked` to execute. Checks and locked runs never pull images.
+
+The first OCI backend uses a local, rootful Linux Docker Engine and authenticated
+protocol sockets over host networking. It records pinned software evidence and
+control limitations; it does not provide archival isolation or container CPU and
+memory accounting. Required controls that it cannot enforce cause an explicit
+failure. See the [Docker example](https://github.com/jolars/metewand/tree/main/examples/locked-oci)
+for image preparation and the supported configuration.

@@ -75,3 +75,6 @@ pub mod executor;
 
 #[cfg(any(unix, windows))]
 pub mod worker_reuse;
+
+#[cfg(target_os = "linux")]
+pub(crate) mod oci;

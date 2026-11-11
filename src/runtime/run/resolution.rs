@@ -193,10 +193,17 @@ impl ResolvedWorker {
                 .as_str()
                 .map(str::to_owned)
                 .unwrap_or_else(|| self.executable.to_string_lossy().into_owned()),
-            executable_sha256: self.provenance["locked_program"]["sha256"]
-                .as_str()
-                .map(str::to_owned)
-                .unwrap_or_else(|| self.executable_digest.clone()),
+            executable_sha256: if self.provenance["environment"]["fingerprint"]["backend"] == "oci"
+            {
+                None
+            } else {
+                Some(
+                    self.provenance["locked_program"]["sha256"]
+                        .as_str()
+                        .map(str::to_owned)
+                        .unwrap_or_else(|| self.executable_digest.clone()),
+                )
+            },
             launch: self.provenance["launch"].clone(),
         }
     }
@@ -204,6 +211,9 @@ impl ResolvedWorker {
     pub fn verify(&self) -> Result<(), RunError> {
         if let Some(sources) = &self.sources {
             sources.verify()?;
+        }
+        if self.provenance["environment"]["fingerprint"]["backend"] == "oci" {
+            return Ok(());
         }
         if file_digest(&self.executable)? != self.executable_digest {
             return Err(RunError::ChangedInput);
@@ -346,6 +356,19 @@ pub(super) fn resolve(
                 private_root.path(),
                 locked,
             )?;
+            let executor = if implementation.provenance["environment"]["fingerprint"]["backend"]
+                == "oci"
+                || evaluator.provenance["environment"]["fingerprint"]["backend"] == "oci"
+            {
+                identify_record(ExecutorDefinitionRecord {
+                    kind: serde_json::from_value(json!("docker_local")).expect("valid name"),
+                    configuration: canonical(
+                        json!({"base":executor.record.configuration.as_json(),"implementation":implementation.provenance["environment"]["fingerprint"]["backend"],"evaluator":evaluator.provenance["environment"]["fingerprint"]["backend"],"network":"host","transport":"socket","accounting":"unsupported"}),
+                    )?,
+                })?
+            } else {
+                executor.clone()
+            };
             let dataset = prepare_dataset(repository, candidate, private_root.path(), locked)?;
             let preparation = repository.manifest.problems[problem_name]
                 .preparation
@@ -390,6 +413,7 @@ pub(super) fn resolve(
                 evaluator,
                 dataset,
                 preparation,
+                executor,
             ));
         }
     }
@@ -400,7 +424,7 @@ pub(super) fn resolve(
             "artifact cache and run output must be separate directories",
         ));
     }
-    for (_, _, implementation, evaluator, dataset, preparation) in &prepared {
+    for (_, _, implementation, evaluator, dataset, preparation, _) in &prepared {
         for snapshot in implementation
             .sources
             .iter()
@@ -428,7 +452,9 @@ pub(super) fn resolve(
     let mut datasets = BTreeMap::new();
     let mut preparations = BTreeMap::new();
     let mut candidates = Vec::new();
-    for (candidate, experiment, implementation, evaluator, dataset_plan, preparation) in prepared {
+    for (candidate, experiment, implementation, evaluator, dataset_plan, preparation, executor) in
+        prepared
+    {
         let key = candidate.dataset_configuration.id;
         if let std::collections::btree_map::Entry::Vacant(entry) = datasets.entry(key) {
             let (snapshot, output_schema, provenance) = match dataset_plan {
@@ -1430,6 +1456,28 @@ pub(crate) fn resolve_worker_with_lock(
             "environment `{environment}` requires preparation with metewand lock and execution with run --locked"
         )));
     }
+    if let Some(lock) = locked
+        && let crate::core::lockfile::LockedEnvironment::Oci(image) =
+            lock.environment(environment)?
+    {
+        #[cfg(target_os = "linux")]
+        return resolve_oci_worker(
+            repository,
+            worker,
+            private_root,
+            lock,
+            image,
+            program,
+            arguments,
+            patterns,
+            transport,
+        );
+        #[cfg(not(target_os = "linux"))]
+        {
+            let _ = image;
+            return Err(unsupported("OCI execution requires Linux"));
+        }
+    }
     if transport == Some(ProtocolTransport::Stdio) {
         return Err(unsupported(
             "local workers require dedicated protocol pipes",
@@ -2038,6 +2086,165 @@ fn scientific_timeout(expression: Option<&str>) -> Result<Option<Duration>, RunE
 
 fn unsupported(message: impl Into<String>) -> RunError {
     RunError::Unsupported(message.into())
+}
+
+#[cfg(target_os = "linux")]
+#[allow(clippy::too_many_arguments)]
+fn resolve_oci_worker(
+    repository: &CheckedRepository,
+    worker: &WorkerDefinition,
+    private_root: &Path,
+    lock: &crate::runtime::lockfile::VerifiedLock,
+    image: &crate::core::lockfile::LockedOciEnvironment,
+    program: String,
+    arguments: Vec<LaunchArgument>,
+    patterns: Option<&[RepositoryPath]>,
+    transport: Option<ProtocolTransport>,
+) -> Result<ResolvedWorker, RunError> {
+    if transport.is_some_and(|t| t != ProtocolTransport::Socket) {
+        return Err(unsupported(
+            "OCI workers require protocol-transport: socket",
+        ));
+    }
+    let sources = patterns
+        .map(|p| snapshot(repository, p, private_root))
+        .transpose()?;
+    let mut program = program;
+    let mut arguments = arguments;
+    if !Path::new(&program).is_absolute() && Path::new(&program).components().count() > 1 {
+        let relative = PathBuf::from(&program);
+        let script=sources.as_ref().map(|s|s.directory.path().join(&relative)).filter(|p|p.is_file()).ok_or_else(||unsupported("relative OCI programs must be declared source scripts; image programs require a bare name or absolute path"))?;
+        let bytes = fs::read(script)?;
+        let line = std::str::from_utf8(bytes.split(|v| *v == b'\n').next().unwrap_or_default())
+            .map_err(|_| unsupported("OCI source programs require a UTF-8 shebang"))?;
+        let parts = line
+            .strip_prefix("#!")
+            .unwrap_or("")
+            .split_whitespace()
+            .collect::<Vec<_>>();
+        program = match parts.as_slice() {
+            ["/usr/bin/env", name] => (*name).to_owned(),
+            [name] => (*name).to_owned(),
+            _ => {
+                return Err(unsupported(
+                    "OCI source scripts require one image interpreter; native executables must come from the image",
+                ));
+            }
+        };
+        arguments.insert(0, LaunchArgument::Source(relative));
+    }
+    let mut actual_args = Vec::new();
+    let mut normalized_args = Vec::new();
+    for argument in arguments {
+        match argument {
+            LaunchArgument::Source(path) => {
+                let staged = sources
+                    .as_ref()
+                    .ok_or_else(|| unsupported("missing OCI worker sources"))?
+                    .directory
+                    .path()
+                    .join(&path);
+                if !staged.is_file() {
+                    return Err(unsupported("OCI source argument is absent from sources"));
+                }
+                actual_args.push(text_path(&staged)?);
+                normalized_args.push(format!("{{sources}}/{}", path.display()));
+            }
+            LaunchArgument::Literal(arg) => {
+                if arg.contains(&text_path(&repository.root)?)
+                    || arg.contains(&text_path(private_root)?)
+                {
+                    return Err(unsupported("OCI arguments cannot embed workspace paths"));
+                }
+                actual_args.push(arg.clone());
+                normalized_args.push(arg);
+            }
+        }
+    }
+    let name = crate::runtime::lockfile::environment_name(worker);
+    let environment = identify_record(ResolvedEnvironmentRecord {
+        definition: repository.planning_catalog.environment_definitions[name],
+        fingerprint: canonical(
+            crate::core::lockfile::LockedEnvironment::Oci(image.clone()).fingerprint(),
+        )?,
+    })?;
+    let mut variables = image.environment.clone();
+    variables.extend(crate::runtime::worker_environment::worker_environment_template());
+    variables
+        .entry("PATH".into())
+        .or_insert_with(|| "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin".into());
+    variables.insert(
+        crate::runtime::oci::IMAGE_ENV.into(),
+        image.image_id.clone(),
+    );
+    variables.insert("METEWAND_PROTOCOL_TRANSPORT".into(), "socket".into());
+    let language = match worker {
+        WorkerDefinition::Interpreted(w) => match w.runner {
+            InterpretedRunner::Python => Some("python"),
+            InterpretedRunner::R => Some("r"),
+            _ => None,
+        },
+        WorkerDefinition::Command(_) => {
+            if Path::new(&program)
+                .file_name()
+                .is_some_and(|p| p.to_string_lossy().starts_with("python"))
+            {
+                Some("python")
+            } else if program.ends_with("Rscript") {
+                Some("r")
+            } else {
+                None
+            }
+        }
+    };
+    if let Some(language) = language {
+        variables.insert("METEWAND_ADAPTER_LANGUAGE".into(), language.into());
+        variables.insert(
+            "METEWAND_ADAPTER_SHA256".into(),
+            crate::runtime::language_adapter::digest(language)?,
+        );
+    }
+    let normalized = identify_record(ResolvedLaunchRecord {
+        environment: environment.id,
+        program: program.clone(),
+        args: normalized_args,
+        environment_variables: variables.clone(),
+        working_directory: WorkerWorkingDirectory::PrivateRunDirectory,
+    })?;
+    let record = ResolvedWorkerRecord {
+        source_bundle: sources
+            .as_ref()
+            .map(Snapshot::artifact::<SourceBundleArtifact>)
+            .transpose()?,
+        environment: environment.id,
+        launch: normalized.id,
+    };
+    let identity = identify_record(record.clone())?
+        .id
+        .to_string()
+        .parse()
+        .expect("resolved worker ID");
+    let provenance = json!({"environment":record_document(&environment.record)?,"launch":record_document(&normalized.record)?,"worker":record_document(&record)?,"locked_program":{"program":program},"docker":crate::runtime::oci::preflight()?,"lockfile_sha256":lock.digest,"undeclared_file_access":"unsupported"});
+    variables.insert("METEWAND_OCI_SOURCE_ROOT".into(), text_path(private_root)?);
+    let resolved = ResolvedWorker {
+        launch: ResolvedLaunchRecord {
+            environment: environment.id,
+            program: program.clone(),
+            args: actual_args,
+            environment_variables: variables,
+            working_directory: WorkerWorkingDirectory::PrivateRunDirectory,
+        },
+        identity,
+        record,
+        sources,
+        executable: PathBuf::from(program),
+        executable_digest: String::new(),
+        provenance,
+    };
+    if !lock.lock.workers.is_empty() {
+        lock.verify_worker(repository, worker, &resolved.lock_record(name))?;
+    }
+    Ok(resolved)
 }
 
 #[cfg(test)]

@@ -686,6 +686,25 @@ fn inherited_pipes() -> Result<(File, File), ServeError> {
                 "Separate protocol read and write descriptors must be supplied.",
             ))
     };
+    if std::env::var("METEWAND_PROTOCOL_TRANSPORT").as_deref() == Ok("socket") {
+        use std::os::fd::{FromRawFd, IntoRawFd};
+        let port: u16 = std::env::var("METEWAND_PROTOCOL_PORT")
+            .map_err(io::Error::other)?
+            .parse()
+            .map_err(io::Error::other)?;
+        let mut socket = std::net::TcpStream::connect(("127.0.0.1", port))?;
+        socket.set_nodelay(true)?;
+        let token = std::env::var("METEWAND_PROTOCOL_TOKEN").map_err(io::Error::other)?;
+        socket.write_all(format!("{token}\n").as_bytes())?;
+        let reader = socket.try_clone()?;
+        // Each stream transfers an exclusively owned descriptor to its file.
+        return Ok(unsafe {
+            (
+                File::from_raw_fd(reader.into_raw_fd()),
+                File::from_raw_fd(socket.into_raw_fd()),
+            )
+        });
+    }
     let read = descriptor("METEWAND_PROTOCOL_READ_FD")?;
     let write = descriptor("METEWAND_PROTOCOL_WRITE_FD")?;
     if read == write {

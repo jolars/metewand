@@ -217,7 +217,7 @@ pub struct WorkerEnvironmentProvenance {
     pub working_directory: PathBuf,
     /// Realized values with secret values replaced by `{secret}`.
     pub environment_variables: BTreeMap<String, String>,
-    /// Fixed octal umask.
+    /// Octal umask, absent when the launcher cannot establish it.
     pub umask: Option<String>,
     /// Windows directory ACL policy, absent from historical Unix records.
     #[serde(skip_serializing_if = "Option::is_none")]

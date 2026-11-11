@@ -338,7 +338,7 @@ impl WorkerSession {
     pub(crate) fn process_usage(&self) -> crate::runtime::resource_accounting::ProcessUsage {
         self.process.as_ref().map_or_else(
             crate::runtime::resource_accounting::ProcessUsage::default,
-            |process| crate::runtime::resource_accounting::ProcessUsage::observe(process.id()),
+            WorkerProcess::usage,
         )
     }
     pub(crate) fn tree_source(&self) -> crate::runtime::resource_accounting::TreeSource {

@@ -253,7 +253,18 @@ build toolchain. Version-2 locks distinguish backend evidence while preserving
 version-1 Nix records and identities. Native `renv` resolution will follow
 adopter needs; Nix remains optional.
 
-Isolated archival execution will add digest-pinned environments and enforced
+### OCI environments
+
+Digest-pinned OCI environments use a local, rootful Linux Docker Engine.
+`metewand lock` pulls the native platform and records image and launch evidence.
+Checks and locked runs inspect the local Docker content store without fetching
+or building software. Verification trusts Docker's content metadata. Version-3
+locks add image-scoped launches while preserving version-1 and version-2 records.
+Workers use authenticated sockets over host networking. Container CPU and memory
+accounting remain unavailable. This backend runs trusted code and does not make
+archival isolation claims.
+
+Isolated archival execution will add enforced
 resource, network, and input controls. These stronger guarantees must be
 verified before a run can claim them.
 

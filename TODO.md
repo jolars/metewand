@@ -50,8 +50,8 @@ environment guarantees and the existing Nix and uv backends.
 
 ## Execution and isolation
 
-- [ ] Add digest-pinned OCI environments and Docker, apptainer, singularity, and
-  Podman execution on Linux.
+- [x] Add digest-pinned OCI environments and Docker execution on Linux.
+- [ ] Add apptainer, singularity, and Podman execution on Linux.
 - [ ] Enforce requested resource, network, read-only input, and process-tree
   controls, with explicit failures when required enforcement is unavailable.
 - [ ] Complete archival machine provenance and accounting, and qualify a

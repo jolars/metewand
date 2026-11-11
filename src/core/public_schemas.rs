@@ -26,6 +26,7 @@ pub enum PublicSchema {
     /// Exact prepared environments and worker launches.
     Lockfile,
     LockfileV1,
+    LockfileV2,
     ArchiveManifest,
     ArchiveEvidence,
     ArchiveOutput,
@@ -93,9 +94,10 @@ pub enum PublicSchema {
 }
 
 /// Every public schema entry point in stable presentation order.
-pub const PUBLIC_SCHEMAS: [PublicSchema; 37] = [
+pub const PUBLIC_SCHEMAS: [PublicSchema; 38] = [
     PublicSchema::Lockfile,
     PublicSchema::LockfileV1,
+    PublicSchema::LockfileV2,
     PublicSchema::ArchiveManifest,
     PublicSchema::ArchiveEvidence,
     PublicSchema::ArchiveOutput,
@@ -140,6 +142,7 @@ impl PublicSchema {
         match self {
             Self::Lockfile => "lockfile",
             Self::LockfileV1 => "lockfile-v1",
+            Self::LockfileV2 => "lockfile-v2",
             Self::ArchiveManifest => "archive-manifest",
             Self::ArchiveEvidence => "archive-evidence",
             Self::ArchiveOutput => "archive-output",
@@ -190,7 +193,8 @@ impl PublicSchema {
     #[must_use]
     pub fn repository_path(self) -> &'static Path {
         Path::new(match self {
-            Self::Lockfile => "schemas/v2/lockfile.schema.json",
+            Self::Lockfile => "schemas/v3/lockfile.schema.json",
+            Self::LockfileV2 => "schemas/v2/lockfile.schema.json",
             Self::LockfileV1 => "schemas/v1/lockfile.schema.json",
             Self::ArchiveManifest => "schemas/v1/archive-manifest.schema.json",
             Self::ArchiveEvidence => "schemas/v1/archive-evidence.schema.json",
@@ -238,7 +242,8 @@ impl PublicSchema {
     #[must_use]
     pub const fn id(self) -> &'static str {
         match self {
-            Self::Lockfile => "metewand://schemas/v2/lockfile.schema.json",
+            Self::Lockfile => "metewand://schemas/v3/lockfile.schema.json",
+            Self::LockfileV2 => "metewand://schemas/v2/lockfile.schema.json",
             Self::LockfileV1 => "metewand://schemas/v1/lockfile.schema.json",
             Self::ArchiveManifest => "metewand://schemas/v1/archive-manifest.schema.json",
             Self::ArchiveEvidence => "metewand://schemas/v1/archive-evidence.schema.json",
@@ -296,7 +301,8 @@ impl PublicSchema {
     #[must_use]
     pub const fn source(self) -> &'static str {
         match self {
-            Self::Lockfile => include_str!("../../schemas/v2/lockfile.schema.json"),
+            Self::Lockfile => include_str!("../../schemas/v3/lockfile.schema.json"),
+            Self::LockfileV2 => include_str!("../../schemas/v2/lockfile.schema.json"),
             Self::LockfileV1 => include_str!("../../schemas/v1/lockfile.schema.json"),
             Self::ArchiveManifest => {
                 include_str!("../../schemas/v1/archive-manifest.schema.json")

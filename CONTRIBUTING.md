@@ -214,10 +214,10 @@ release numbers are unnecessary. It is separate from public compatibility versio
   | Seed derivation and scheduling policy                         | 1                                                              |
   | Execution semantics                                           | 2                                                              |
   | Measurement provenance                                        | 3 for streaming, 2 for other deliveries; versions 1 and 2 remain readable |
-  | Worker environment provenance                                 | 1 on Unix, 2 on Windows                                        |
+  | Worker environment provenance                                 | 1 on Unix, 2 on Windows, 3 for containers                                        |
   | Exports and build evidence                                    | 1                                                              |
   | Portable result archives                                     | 1                                                              |
-  | Prepared environment lockfiles                               | 2; version 1 Nix remains readable                                                              |
+  | Prepared environment lockfiles                               | 3 for OCI; versions 1 and 2 remain readable                                                              |
   | SQLite layout                                                 | 1 for one-shot, 2 for buffered profiles, 3 for fresh sequences and streaming |
 
 The binding API compatibility constant lives with the runtime adapters.
@@ -375,7 +375,7 @@ It never repairs, fetches, or builds missing paths. Temporary GC roots protect
 prepared paths for the invocation. All launched worker roles use the same
 resolver, with no ambient host executable fallback. Lock evidence contributes
 to resolved environment identities; the whole lockfile digest is provenance,
-so unrelated entries do not define worker identity. Locked runs retain the
+so unrelated entries do not define worker identity. Nix and uv locked runs retain the
 trusted local executor and its reported control limitations. Existing
 development identities, execution versions, and SQLite layouts remain unchanged.
 
@@ -391,7 +391,7 @@ command boundary is injectable for focused tests. Prepared generations live
 outside source snapshots, use non-editable installs and copied package files,
 and retain separate raw integrity receipts and normalized identity evidence.
 Verification reads installed files without invoking uv or importing packages.
-New locks use version 2; the version-1 Nix serializer and fingerprint remain
+Nix/uv-only locks use version 2; the version-1 Nix serializer and fingerprint remain
 unchanged. Install uv to run the offline package integration cases explicitly:
 
 ```sh
@@ -940,3 +940,25 @@ that launches npm's pinned `workerd` through the Nix dynamic loader. Run
 `npm ci` before starting it. Outside devenv, provide a compatible executable
 through that variable if the npm binary cannot start. The test harness checks
 startup, closes even on failure, and bounds test files to 60 seconds.
+
+## Docker OCI execution
+
+OCI-containing plans write version-3 locks; Nix/uv-only preparation still writes
+version 2. Image launches bind the image configuration, ordered layer digests,
+native platform, image environment, and source snapshot. They omit the host
+executable hash. Existing Nix/uv fingerprints and canonical lock records remain
+unchanged. Container worker-environment provenance uses version 3 with an unknown
+umask. Wire, binding, and execution-semantics versions remain unchanged.
+
+Only explicit preparation pulls images. Verification inspects Docker metadata,
+without creating containers or executing worker code. Docker remains a trusted
+content store. Execution uses a shared private staging mount, host networking,
+UID/GID matching, and authenticated sockets. Container handles own cleanup across
+session failures and timeouts. Hard-crash orphan reconciliation, resource
+controls, and container accounting remain future work.
+
+With local rootful Linux Docker available, run the registry-backed integration:
+
+```sh
+compute run -- cargo test --test integration --locked cli_tests::locked_oci:: -- --ignored
+```

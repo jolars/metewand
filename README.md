@@ -79,8 +79,8 @@ measurements and exports.
 ## Project status and development
 
 Metewand is under active development. The current runner executes trusted local
-code and supports locked Nix and uv environments, streaming profiles, and
-portable result archives. Isolated execution and the Julia package remain
+code and supports locked Nix, uv, and Linux Docker OCI environments, streaming
+profiles, and portable result archives. Isolated execution and the Julia package remain
 planned. The CLI, Python package, and R package have separate release workflows.
 
 The [design](docs/design.md) describes the general model.

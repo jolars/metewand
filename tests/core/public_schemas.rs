@@ -99,7 +99,7 @@ struct ConformanceCase {
 
 #[test]
 fn publishes_the_complete_versioned_schema_set() {
-    assert_eq!(PUBLIC_SCHEMAS.len(), 37);
+    assert_eq!(PUBLIC_SCHEMAS.len(), 38);
 
     let mut slugs = BTreeSet::new();
     let mut paths = BTreeSet::new();
@@ -119,6 +119,8 @@ fn publishes_the_complete_versioned_schema_set() {
         assert_eq!(
             document.as_json()["x-metewand-compatibility-version"],
             if schema == PublicSchema::Lockfile {
+                3
+            } else if schema == PublicSchema::LockfileV2 {
                 2
             } else {
                 PUBLIC_SCHEMA_VERSION

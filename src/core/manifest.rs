@@ -929,7 +929,7 @@ impl From<InterpretedRunner> for Runner {
 pub enum ProtocolTransport {
     /// Dedicated protocol pipes.
     Pipes,
-    /// Authenticated loopback sockets for CLI-owned language adapters.
+    /// Authenticated loopback sockets for language adapters and native workers.
     Socket,
     /// Standard input and output.
     Stdio,

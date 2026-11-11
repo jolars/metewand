@@ -356,6 +356,9 @@ fn native_worker_entry() {
     println!("native worker stdout");
     eprintln!("native worker stderr");
     serve_implementation(&mut Sum::default()).unwrap();
+    if std::env::var("METEWAND_PROTOCOL_TRANSPORT").as_deref() == Ok("socket") {
+        return;
+    }
     #[cfg(unix)]
     for name in ["METEWAND_PROTOCOL_READ_FD", "METEWAND_PROTOCOL_WRITE_FD"] {
         let descriptor = std::env::var(name).unwrap().parse::<i32>().unwrap();
@@ -376,8 +379,7 @@ fn native_worker_entry() {
     }
 }
 
-#[test]
-fn native_worker_uses_dedicated_pipes_and_runtime_validation() {
+fn run_native_worker(transport: Option<&str>) {
     use crate::runtime::{
         worker_output::WorkerOutputValidator,
         worker_process::{WorkerLogLimits, WorkerProcess},
@@ -391,6 +393,9 @@ fn native_worker_uses_dedicated_pipes_and_runtime_validation() {
             "--nocapture",
         ])
         .env("METEWAND_TEST_RUST_WORKER", "1");
+    if let Some(transport) = transport {
+        command.env("METEWAND_PROTOCOL_TRANSPORT", transport);
+    }
     let process = WorkerProcess::spawn(command, WorkerLogLimits::new(4096, 4096)).unwrap();
     let timeout = Duration::from_secs(5);
     let mut session = WorkerSession::connect(
@@ -677,4 +682,15 @@ fn dataset_inventory_rejects_windows_aliases_and_native_path_escape() {
         .is_err()
     );
     assert!(!directory.path().join("dataset-manifest.json").exists());
+}
+
+#[test]
+fn native_worker_uses_dedicated_pipes_and_runtime_validation() {
+    run_native_worker(None);
+}
+
+#[cfg(unix)]
+#[test]
+fn native_worker_uses_authenticated_socket_and_runtime_validation() {
+    run_native_worker(Some("socket"));
 }

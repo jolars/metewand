@@ -16,6 +16,8 @@ mod init;
 mod inspection;
 mod local_examples;
 mod locked_nix;
+#[cfg(target_os = "linux")]
+mod locked_oci;
 mod locked_uv;
 mod problem_preparation;
 mod python_sdk;
