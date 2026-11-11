@@ -27,6 +27,35 @@ point. Exercise metric disagreement, snapshot mutation, bounds, partial
 publication, and failures in the adopter workflows. Preserve retry isolation and
 reject unreturned buffers.
 
+## Benchmark authoring
+
+The clustlasso-cd manifest motivates these improvements. Prioritize compact
+default overrides and shared profile bindings. Lower new authoring conveniences
+into the existing effective model, preserving validation and identities for
+equivalent configurations.
+
+- [ ] Allow compact `parameters` alongside `parameter-defaults`. Let explicit
+  defaults override declared defaults, validate the merged values, and
+  define their interaction with declaration grids. Continue rejecting
+  competing `parameter-schema` declarations.
+- [ ] Support a default profile binding with per-implementation overrides.
+  Validate each resolved binding's control schema and implementation
+  capabilities. Infer `max-observations` when omitted and all bindings use
+  the same finite schedule.
+- [ ] Add explicit local runtime overrides for machine settings, including
+  adapter download caches. Keep host cache paths outside scientific dataset
+  parameters, record effective settings in provenance, and retain scientific
+  overrides in identities. Distinguish adapter caches from the artifact
+  cache selected by `--cache-dir`.
+- [ ] Show the scientific timeout, worker execution watchdog, and cumulative
+  profile time limit together in `plan --verbose`. Diagnose when the
+  watchdog cuts the requested scientific budget short while retaining the
+  separate purposes of these limits.
+
+Existing grids and named cases can simplify the adopter's simulation matrix.
+Moving algorithm controls into implementation parameters belongs in the adopter
+configuration.
+
 ## Applicability
 
 - [ ] Keep excluded candidates visible in plans, status, explanation, and
@@ -54,11 +83,11 @@ environment guarantees and the existing Nix and uv backends.
 - [x] Add Apptainer execution of local SIF images on Linux.
 - [ ] Add Singularity and Podman execution on Linux.
 - [x] Add whole-benchmark bundling. Start with a generated Dockerfile and build
-  context containing a pinned Metewand runner, declared benchmark inputs, and
-  explicit dependency recipes or a supplied base image. Run workers within one
-  image and write results to a mounted output directory. Preserve separate OCI
-  worker environments in a later bundling mode rather than merging them
-  implicitly.
+  context containing a pinned Metewand runner, declared benchmark inputs,
+  and explicit dependency recipes or a supplied base image. Run workers
+  within one image and write results to a mounted output directory. Preserve
+  separate OCI worker environments in a later bundling mode rather than
+  merging them implicitly.
 - [ ] Enforce requested resource, network, read-only input, and process-tree
   controls, with explicit failures when required enforcement is unavailable.
 - [ ] Complete archival machine provenance and accounting, and qualify a
@@ -79,6 +108,6 @@ Publication-archive claims require the enforced controls described in the
 ## Tooling
 
 - [ ] Extend CLI name filters with parameter values (such as the response model)
-  so a comparison can select part of a dataset, problem, or implementation grid
-  alongside `--select ID`.
+  so a comparison can select part of a dataset, problem, or implementation
+  grid alongside `--select ID`.
 - [ ] Add an optional MCP adapter over the CLI.
