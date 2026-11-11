@@ -57,15 +57,9 @@ or drawing statistical conclusions.
 ## Choose a starting point
 
 Follow [getting started](getting-started.md) to install the CLI and run a small
-benchmark. Then work through [authoring a benchmark](authoring/index.md), which
-builds a least-squares comparison in several parts:
-
-1. Declare the comparison.
-2. Write the data generator, methods, and evaluator.
-3. Vary parameters and request repetitions.
-4. Add scientific validation.
-5. Run, inspect, and analyze the results.
-6. Extend the benchmark with other languages, artifacts, or profiles.
+benchmark. Then read [authoring a benchmark](authoring/index.md) to run and modify the
+least-squares example, check its answers, and export measurements. Its linked
+pages explain the code and configuration in detail.
 
 The [examples](examples.md) provide runnable alternatives. The
 [design](../design.md) explains the general model.

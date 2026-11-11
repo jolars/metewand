@@ -1,6 +1,6 @@
-# 2. Write the functions
+# Write the functions
 
-Create `benchmark.py` beside the [manifest](index.md). Add the following
+Create `benchmark.py` beside the [manifest](manifest.md). Add the following
 sections to that one file. Each role runs in a separate worker process, even
 though the functions share a source file.
 
@@ -117,7 +117,7 @@ cannot detect.
 
 Returning plain metrics is sufficient when the problem declares no scientific
 rules. `context.semantics` supplies any declared rules; the last few lines will
-apply the accuracy target we add in [part 4](validation.md).
+apply the accuracy target we add in [scientific validation](validation.md).
 
 ## Check the complete benchmark
 

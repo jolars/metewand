@@ -1,4 +1,4 @@
-# 6. Extend the benchmark
+# Extend the benchmark
 
 Ordinary functions and compact declarations cover small one-shot comparisons.
 Use more explicit interfaces when the benchmark needs additional data formats,

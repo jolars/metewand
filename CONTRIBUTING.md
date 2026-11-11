@@ -892,7 +892,7 @@ npm --prefix docs run dev
 ```
 
 `docs/index.md` is the homepage. `docs/guide/` contains the overview, getting
-started, and multipart authoring guide. `docs/design.md` describes the general
+started, and authoring guide. `docs/design.md` describes the general
 design. `.vitepress/config.ts` defines navigation, search, and metadata. Keep
 local page links relative with `.md` extensions; link to schemas, fixtures,
 source, and runnable examples on GitHub. The build rejects missing page links.

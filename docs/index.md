@@ -51,8 +51,8 @@ an observation back to the inputs and policies that produced it.
 
 The [overview](guide/overview.md) introduces the model, and
 [getting started](guide/getting-started.md) runs your first benchmark.
-The six-part [authoring guide](guide/authoring/index.md) builds a least-squares
-comparison, then adds parameters, scientific checks, and repeated measurements.
+The [authoring guide](guide/authoring/index.md) walks you through running and
+modifying the least-squares example, with links to the details.
 The [examples](guide/examples.md) provide complete alternatives in Python, R,
 and native Rust.
 

@@ -11,7 +11,7 @@ your comparison in YAML. The `metewand` CLI checks and runs the benchmark on
 Linux, macOS, and native Windows x64.
 
 Read the [overview](docs/guide/overview.md), follow
-[getting started](docs/guide/getting-started.md), or work through the multipart
+[getting started](docs/guide/getting-started.md), or read the
 [authoring guide](docs/guide/authoring/index.md). The documentation is also
 available at <https://metewand.org>.
 

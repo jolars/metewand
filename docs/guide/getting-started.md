@@ -172,9 +172,9 @@ for installation details.
 
 ## Write your own comparison
 
-Continue with [authoring a benchmark](authoring/index.md) to build a
-least-squares comparison step by step. It starts with two methods and adds
-parameter sweeps, reference checks, repeated measurements, and analysis.
+Continue with [authoring a benchmark](authoring/index.md) for a hands-on tutorial
+using the least-squares example. Run it, change its settings, check accuracy,
+and export the results. Linked pages explain the details.
 
 Use `metewand init --empty` if you prefer a blank manifest. Component
 [scaffolding](authoring/extending.md#add-components) helps extend it.

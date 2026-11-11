@@ -1,4 +1,4 @@
-# 5. Run and analyze the comparison
+# Run and analyze the comparison
 
 Use `metewand plan` after each manifest change to inspect the expanded settings.
 Start with a small run before increasing the grid or repetition counts.

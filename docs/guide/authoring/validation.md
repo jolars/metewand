@@ -1,8 +1,8 @@
-# 4. Add scientific validation
+# Add scientific validation
 
 A successful process does not establish a correct or sufficiently accurate
 answer. Add explicit rules and independently justified reference cases to the
-problem from [part 1](index.md).
+problem from the [manifest walkthrough](manifest.md).
 
 ## Declare the rules
 
@@ -22,7 +22,7 @@ accuracy target. The evaluator reads these rules through `context.semantics`.
 Metewand does not infer formulas or implement the scientific meaning of a
 rule's name; your evaluator must enforce it.
 
-The evaluator from [part 2](functions.md#evaluate-the-answers-independently)
+The evaluator from [the functions page](functions.md#evaluate-the-answers-independently)
 already checks coefficient dimensions, computes metrics, and compares the
 gradient norm with the declared target. No solver changes are needed.
 
@@ -92,7 +92,7 @@ metewand status --output-dir validated-run
 Static checking validates declarations and reference shapes. Worker checking
 imports the evaluator and checks the references against its actual outputs.
 
-If you kept the iteration-limit case from [part 3](parameters.md), expect
+If you kept the iteration-limit case from [the parameters page](parameters.md), expect
 completion misses to remain visible. The run continues through the remaining
 selection and exits with code `5` if any attempt fails. Inspect the recorded
 evidence before deciding whether to change the methods, limits, or target.

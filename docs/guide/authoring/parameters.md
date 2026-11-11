@@ -1,6 +1,6 @@
-# 3. Vary parameters and add repetitions
+# Vary parameters and add repetitions
 
-Keep the functions from [part 2](functions.md). You can expand the comparison
+Keep the functions from [the functions page](functions.md). You can expand the comparison
 by editing only the manifest.
 
 ## Put settings with their owner

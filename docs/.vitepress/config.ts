@@ -65,12 +65,13 @@ export default defineConfig({
       {
         text: 'Authoring a benchmark',
         items: [
-          { text: '1. Declare the comparison', link: '/guide/authoring/' },
-          { text: '2. Write the functions', link: '/guide/authoring/functions' },
-          { text: '3. Parameters and repetitions', link: '/guide/authoring/parameters' },
-          { text: '4. Scientific validation', link: '/guide/authoring/validation' },
-          { text: '5. Run and analyze', link: '/guide/authoring/running' },
-          { text: '6. Extend the benchmark', link: '/guide/authoring/extending' },
+          { text: 'Tutorial', link: '/guide/authoring/' },
+          { text: 'Declare the comparison', link: '/guide/authoring/manifest' },
+          { text: 'Write the functions', link: '/guide/authoring/functions' },
+          { text: 'Parameters and repetitions', link: '/guide/authoring/parameters' },
+          { text: 'Scientific validation', link: '/guide/authoring/validation' },
+          { text: 'Run and analyze', link: '/guide/authoring/running' },
+          { text: 'Extend the benchmark', link: '/guide/authoring/extending' },
         ],
       },
       {
