@@ -52,6 +52,12 @@ environment guarantees and the existing Nix and uv backends.
 
 - [x] Add digest-pinned OCI environments and Docker execution on Linux.
 - [ ] Add apptainer, singularity, and Podman execution on Linux.
+- [ ] Add whole-benchmark packaging. Start with a generated Dockerfile and build
+  context containing a pinned Metewand runner, declared benchmark inputs, and
+  explicit dependency recipes or a supplied base image. Run workers within one
+  image and write results to a mounted output directory. Preserve separate OCI
+  worker environments in a later packaging mode rather than merging them
+  implicitly.
 - [ ] Enforce requested resource, network, read-only input, and process-tree
   controls, with explicit failures when required enforcement is unavailable.
 - [ ] Complete archival machine provenance and accounting, and qualify a
