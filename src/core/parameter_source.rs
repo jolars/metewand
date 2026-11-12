@@ -164,12 +164,13 @@ impl<'a> ParameterSources<'a> {
             return origin.span(&format!("{suffix}{tail}"));
         }
         if defaults.is_some_and(|defaults| defaults.as_json().pointer(pointer).is_some()) {
-            let suffix = if self.defaults.contains("/parameters") {
-                format!("/parameters/{encoded}/default{tail}")
-            } else {
-                format!("/parameter-defaults{pointer}")
-            };
-            return self.defaults.span(&suffix);
+            let suffix = format!("/parameter-defaults{pointer}");
+            if self.defaults.contains(&suffix) {
+                return self.defaults.span(&suffix);
+            }
+            return self
+                .declaration
+                .span(&format!("/parameters/{encoded}/default{tail}"));
         }
         // A missing value belongs to its declaration, even when another axis
         // or a case supplied the rest of the resolved parameter object.

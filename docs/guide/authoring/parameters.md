@@ -21,6 +21,37 @@ Replace the dataset's original `n_samples` declaration with this one to try
 both sizes. A field can have a default or a grid, but not both. Fields are
 required unless `optional: true`; unknown parameter names are rejected.
 
+## Specialize shared defaults
+
+Use `parameter-defaults` alongside compact `parameters` to change defaults while
+sharing their types and bounds:
+
+```yaml
+implementations:
+  gradient_descent:
+    function: benchmark.py:gd
+    parameters: &solver-parameters
+      iterations: {type: integer, minimum: 1, default: 200}
+  coordinate_descent:
+    function: benchmark.py:cd
+    parameters: *solver-parameters
+    parameter-defaults: {iterations: 50}
+```
+
+The methods use 200 and 50 iterations, respectively, unless the experiment
+selects other values. Explicit defaults merge over declared defaults, retaining
+fields omitted from the override. Object values merge recursively; arrays and
+explicit `null` replace earlier values. The resolved parameters must satisfy the
+declared types and bounds.
+
+Datasets and problems also accept `parameter-defaults`. A problem can override
+defaults from its inline or referenced contract. Compact `parameters` and
+`parameter-schema` remain mutually exclusive.
+
+Defaults do not replace a declaration grid or reduce its candidate count. Grids
+select values over the defaults, and experiment axes and named cases can replace
+those selections.
+
 ## Select experiment values
 
 To try two iteration limits for each method, replace the experiment with:
@@ -77,7 +108,7 @@ experiments:
           coordinate_descent: {iterations: 1}
 ```
 
-The normal case uses each method's default of 200 iterations. The second case
+The normal case uses each method's default iteration count. The second case
 uses one iteration for each. Both inherit the dataset grid if you kept it.
 After adding an accuracy target, this will show the difference between a valid
 answer and one that reaches the requested accuracy.

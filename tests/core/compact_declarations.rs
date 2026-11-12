@@ -1,6 +1,7 @@
 use std::{collections::BTreeMap, path::Path};
 
 use crate::core::{
+    compatibility::validate_manifest_compatibility,
     manifest::{DatasetDefinition, Manifest, Name, parse_manifest},
     manifest_hash::canonical_manifest_bytes,
     planning::{ConfigurationExpansionError, ExpandedExperiment, expand_manifest_configurations},
@@ -133,7 +134,6 @@ fn flat_problems_reject_competing_and_invalid_declarations() {
             document()["problems"]["sum"]["contract"].clone(),
         ),
         ("parameter-schema", json!("parameters.json")),
-        ("parameter-defaults", json!({})),
         ("result-schema", json!("result.json")),
         ("metric-schema", json!("metrics.json")),
         ("parameters", Value::Null),
@@ -273,6 +273,165 @@ fn compact_boundaries_normalize_to_explicit_schemas_and_defaults() {
         candidate.implementation.parameters.as_json(),
         &json!({"steps": 1, "runner": "scientific-setting"})
     );
+}
+
+#[test]
+fn compact_parameter_default_overrides_normalize_across_namespaces() {
+    for functions in [false, true] {
+        let mut overridden = document();
+        overridden["problems"]["sum"]["contract"]["parameters"]["scale"] =
+            json!({"type": "number", "default": 1});
+        if functions {
+            for pointer in ["/datasets/generated", "/implementations/solver"] {
+                let worker = overridden
+                    .pointer_mut(pointer)
+                    .unwrap()
+                    .as_object_mut()
+                    .unwrap();
+                worker.remove("runner");
+                worker.remove("program");
+                worker.insert("function".into(), json!("benchmark.py:run"));
+            }
+        }
+        let mut folded = overridden.clone();
+        for (definition, declaration, name, value) in [
+            ("/datasets/generated", "/datasets/generated", "rows", 20),
+            ("/problems/sum", "/problems/sum/contract", "offset", 2),
+            (
+                "/implementations/solver",
+                "/implementations/solver",
+                "steps",
+                3,
+            ),
+        ] {
+            overridden.pointer_mut(definition).unwrap()["parameter-defaults"] =
+                json!({name: value});
+            folded.pointer_mut(declaration).unwrap()["parameters"][name]["default"] = json!(value);
+        }
+        for flat in [false, true] {
+            if flat {
+                flatten_problem(&mut overridden);
+                flatten_problem(&mut folded);
+            }
+            public_schema_catalog()
+                .unwrap()
+                .validate(PublicSchema::Manifest.repository_path(), &overridden)
+                .unwrap();
+            assert_eq!(
+                canonical_manifest_bytes(&parse(&overridden)).unwrap(),
+                canonical_manifest_bytes(&parse(&folded)).unwrap()
+            );
+            assert_eq!(expand(&overridden), expand(&folded));
+            let candidate = &expand(&overridden)[0].candidates[0];
+            assert_eq!(candidate.dataset.parameters.as_json(), &json!({"rows": 20}));
+            assert_eq!(
+                candidate.problem.parameters.as_json(),
+                &json!({"offset": 2, "scale": 1})
+            );
+            assert_eq!(
+                candidate.implementation.parameters.as_json(),
+                &json!({"steps": 3, "runner": "scientific-setting"})
+            );
+        }
+    }
+}
+
+#[test]
+fn problem_default_overrides_merge_referenced_contract_defaults() {
+    let mut document = document();
+    document["problems"]["sum"]["contract"]["parameters"]["scale"] =
+        json!({"type": "number", "default": 1});
+    let contract_source =
+        serde_saphyr::to_string(&document["problems"]["sum"]["contract"]).unwrap();
+    let contract =
+        parse_problem_contract_document(Path::new("problem.yaml"), &contract_source).unwrap();
+    let (_, schemas) = contracts_and_schemas(&parse(&document));
+    document["problems"]["sum"]["contract"] = json!("problem.yaml");
+    document["problems"]["sum"]["parameter-defaults"] = json!({"offset": 2});
+    let manifest = parse(&document);
+    let contracts = BTreeMap::from([(manifest.experiments[0].problem.clone(), contract)]);
+    validate_manifest_compatibility(&manifest, &contracts).unwrap();
+    let expanded = expand_manifest_configurations(&manifest, &contracts, &schemas).unwrap();
+    assert_eq!(
+        expanded[0].candidates[0].problem.parameters.as_json(),
+        &json!({"offset": 2, "scale": 1})
+    );
+
+    document["problems"]["sum"]["parameter-defaults"]["offset"] = json!(-123);
+    let source = serde_saphyr::to_string(&document).unwrap();
+    let manifest = parse_manifest(Path::new("metewand.yaml"), &source).unwrap();
+    let error = expand_manifest_configurations(&manifest, &contracts, &schemas).unwrap_err();
+    let span = error.source_span().unwrap();
+    assert_eq!(span.path, Path::new("metewand.yaml"));
+    assert!(
+        source
+            .lines()
+            .nth(span.line - 1)
+            .unwrap()
+            .chars()
+            .skip(span.column - 1)
+            .collect::<String>()
+            .starts_with("-123"),
+        "{span:?}: {error}"
+    );
+}
+
+#[test]
+fn explicit_defaults_preserve_grid_experiment_and_case_precedence() {
+    let mut document = grid_document();
+    let baseline = expand(&document);
+    document["datasets"]["generated"]["parameter-defaults"] = json!({"rows": 99});
+    document["problems"]["sum"]["parameter-defaults"] = json!({"offset": 99});
+    document["implementations"]["solver"]["parameter-defaults"] = json!({"steps": 99});
+    assert_eq!(expand(&document), baseline);
+    document["experiments"][0]["dataset-parameters"] = json!({"generated": {"rows": 30}});
+    document["experiments"][0]["problem-parameters"] = json!({"offset": 3});
+    document["experiments"][0]["implementation-parameters"] = json!({"solver": {"steps": 3}});
+    document["experiments"][0]["cases"] = json!([
+        {"name": "inherit"},
+        {"name": "override", "dataset-parameters": {"generated": {"rows": 40}},
+         "problem-parameters": {"offset": 4}, "implementation-parameters": {"solver": {"steps": 4}}}
+    ]);
+    let expanded = expand(&document);
+    let parameters = expanded[0]
+        .candidates
+        .iter()
+        .map(|candidate| {
+            (
+                candidate.dataset.parameters.as_json()["rows"]
+                    .as_i64()
+                    .unwrap(),
+                candidate.problem.parameters.as_json()["offset"]
+                    .as_i64()
+                    .unwrap(),
+                candidate.implementation.parameters.as_json()["steps"]
+                    .as_i64()
+                    .unwrap(),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(parameters, [(30, 3, 3), (40, 4, 4)]);
+}
+
+#[test]
+fn explicit_compact_defaults_validate_values_and_locate_overrides() {
+    for (pointer, name) in [
+        ("/datasets/generated", "rows"),
+        ("/problems/sum", "offset"),
+        ("/implementations/solver", "steps"),
+    ] {
+        for (overrides, token) in [
+            (json!({name: -123}), "-123"),
+            (json!({name: "invalid-type"}), "invalid-type"),
+            (json!({"unknown/field~name": 12345}), "12345"),
+        ] {
+            let mut document = document();
+            document.pointer_mut(pointer).unwrap()["parameter-defaults"] = overrides;
+            assert_resolution_location(&document, token);
+            flatten_problem(&mut document);
+            assert_resolution_location(&document, token);
+        }
+    }
 }
 
 #[test]
@@ -929,18 +1088,12 @@ fn output_fields_cannot_supply_defaults_or_grids() {
 fn compact_and_explicit_boundaries_cannot_compete() {
     for (pointer, explicit) in [
         ("/datasets/generated", "parameter-schema"),
-        ("/datasets/generated", "parameter-defaults"),
         ("/problems/sum/contract", "parameter-schema"),
         ("/problems/sum/contract", "result-schema"),
         ("/problems/sum/contract", "metric-schema"),
-        ("/problems/sum", "parameter-defaults"),
     ] {
         let mut document = document();
-        document.pointer_mut(pointer).unwrap()[explicit] = if explicit == "parameter-defaults" {
-            json!({})
-        } else {
-            json!("schema.json")
-        };
+        document.pointer_mut(pointer).unwrap()[explicit] = json!("schema.json");
         let error = parse_manifest(Path::new("metewand.yaml"), &document.to_string()).unwrap_err();
         assert!(error.message().contains(explicit), "{error}");
     }

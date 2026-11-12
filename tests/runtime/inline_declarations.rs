@@ -425,8 +425,10 @@ fn declaration_grids_preserve_definitions_and_match_experiment_axes() {
 }
 
 #[test]
-fn referenced_compact_contract_defaults_reach_definitions_and_reject_competing_defaults() {
+fn referenced_compact_contract_defaults_merge_with_problem_overrides() {
     let mut manifest = compact_manifest();
+    manifest["problems"]["sum"]["contract"]["parameters"]["scale"] =
+        json!({"type": "integer", "default": 1});
     let root = repository(&manifest);
     let inline = check(root.path());
     write(
@@ -451,10 +453,91 @@ fn referenced_compact_contract_defaults_reach_definitions_and_reject_competing_d
     );
     manifest["problems"]["sum"]["parameter-defaults"] = json!({});
     write(root.path(), "metewand.yaml", &manifest);
-    let error = check_repository(&root.path().join("metewand.yaml"))
-        .err()
-        .unwrap();
-    assert!(error.to_string().contains("cannot be combined"), "{error}");
+    let empty_overrides = check(root.path());
+    assert_eq!(
+        referenced.planning_catalog.problem_definitions,
+        empty_overrides.planning_catalog.problem_definitions
+    );
+    assert_eq!(
+        referenced.logical_plan().unwrap(),
+        empty_overrides.logical_plan().unwrap()
+    );
+
+    manifest["problems"]["sum"]["parameter-defaults"] = json!({"offset": 3});
+    write(root.path(), "metewand.yaml", &manifest);
+    let overridden = check(root.path());
+    assert_eq!(
+        referenced.resources.problem_contracts,
+        overridden.resources.problem_contracts
+    );
+    assert_ne!(
+        referenced.planning_catalog.problem_definitions,
+        overridden.planning_catalog.problem_definitions
+    );
+    let expanded = crate::core::planning::expand_manifest_configurations(
+        &overridden.manifest,
+        &overridden.problem_contracts,
+        &overridden.schemas,
+    )
+    .unwrap();
+    let parameters = &expanded[0].candidates[0].problem.parameters;
+    assert_eq!(parameters.as_json(), &json!({"offset": 3, "scale": 1}));
+}
+
+#[test]
+fn compact_default_overrides_preserve_effective_identities() {
+    let mut manifest = compact_manifest();
+    for (definition, name, value) in [
+        ("/datasets/numbers", "rows", 20),
+        ("/problems/sum", "offset", 3),
+        ("/implementations/sum", "iterations", 2),
+    ] {
+        manifest.pointer_mut(definition).unwrap()["parameter-defaults"] = json!({name: value});
+    }
+    let root = repository(&manifest);
+    let overridden = check(root.path());
+    for (definition, declaration, name, value) in [
+        ("/datasets/numbers", "/datasets/numbers", "rows", 20),
+        ("/problems/sum", "/problems/sum/contract", "offset", 3),
+        (
+            "/implementations/sum",
+            "/implementations/sum",
+            "iterations",
+            2,
+        ),
+    ] {
+        manifest
+            .pointer_mut(definition)
+            .unwrap()
+            .as_object_mut()
+            .unwrap()
+            .remove("parameter-defaults");
+        manifest.pointer_mut(declaration).unwrap()["parameters"][name]["default"] = json!(value);
+    }
+    write(root.path(), "metewand.yaml", &manifest);
+    let folded = check(root.path());
+    assert_eq!(overridden.manifest_hash, folded.manifest_hash);
+    assert_eq!(overridden.resources.schemas, folded.resources.schemas);
+    assert_eq!(
+        overridden.resources.problem_contracts,
+        folded.resources.problem_contracts
+    );
+    assert_eq!(
+        overridden.planning_catalog.dataset_definitions,
+        folded.planning_catalog.dataset_definitions
+    );
+    assert_eq!(
+        overridden.planning_catalog.problem_definitions,
+        folded.planning_catalog.problem_definitions
+    );
+    assert_eq!(
+        overridden.planning_catalog.implementation_definitions,
+        folded.planning_catalog.implementation_definitions
+    );
+    assert_eq!(
+        overridden.logical_plan().unwrap(),
+        folded.logical_plan().unwrap()
+    );
 }
 
 #[cfg(unix)]

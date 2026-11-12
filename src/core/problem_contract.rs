@@ -189,7 +189,6 @@ pub struct ProblemContract {
     pub parameter_defaults: Option<CanonicalValue>,
     /// Default expansion axes, kept separate from the valid parameter domain.
     pub parameter_grids: ParameterAxes,
-    pub(crate) compact_parameters: bool,
     /// Dataset schemas accepted by this problem, or an empty list when the
     /// problem is dataset-free.
     pub dataset_schemas: Vec<SchemaDeclaration>,
@@ -301,7 +300,6 @@ impl<'de> Deserialize<'de> for ProblemContract {
         D: Deserializer<'de>,
     {
         let raw = RawProblemContract::deserialize(deserializer)?;
-        let compact_parameters = raw.parameters.is_some();
         let parameters = ParameterBoundary::lower(raw.parameters, raw.parameter_schema, None)
             .map_err(de::Error::custom)?;
         let parameter_schema = parameters
@@ -346,7 +344,6 @@ impl<'de> Deserialize<'de> for ProblemContract {
             parameter_schema,
             parameter_defaults: parameters.defaults,
             parameter_grids: parameters.grids,
-            compact_parameters,
             dataset_schemas: raw.dataset_schemas,
             result_schema,
             metric_schema,

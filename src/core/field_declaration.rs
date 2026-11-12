@@ -8,6 +8,7 @@ use serde_json::{Map, Value, json};
 use crate::core::{
     canonical::CanonicalValue,
     manifest::{ParameterAxes, ParameterAxis},
+    parameters::merge_parameter_defaults,
     schema::SchemaDeclaration,
 };
 
@@ -77,16 +78,14 @@ impl ParameterBoundary {
         defaults: Option<CanonicalValue>,
     ) -> Result<Self, String> {
         if let Some(parameters) = parameters {
-            if schema.is_some() || defaults.is_some() {
-                return Err(
-                    "`parameters` cannot be combined with `parameter-schema` or `parameter-defaults`"
-                        .to_owned(),
-                );
+            if schema.is_some() {
+                return Err("`parameters` cannot be combined with `parameter-schema`".to_owned());
             }
             let compiled = parameters.compile()?;
             Ok(Self {
                 schema: Some(compiled.schema),
-                defaults: compiled.defaults,
+                defaults: merge_parameter_defaults(compiled.defaults.as_ref(), defaults.as_ref())
+                    .map(|defaults| defaults.into_owned()),
                 grids: compiled.grids,
             })
         } else {

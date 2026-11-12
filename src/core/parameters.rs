@@ -1,6 +1,6 @@
 //! Structural parameter ownership and schema-backed parameter resolution.
 
-use std::{fmt, path::Path};
+use std::{borrow::Cow, fmt, path::Path};
 
 use serde_json::{Map, Value};
 use thiserror::Error;
@@ -239,6 +239,35 @@ fn validate_named_parameter_axes(
     }
 
     Ok(())
+}
+
+/// Combines definition defaults without changing their schema or expansion axes.
+pub(crate) fn merge_parameter_defaults<'a>(
+    declared: Option<&'a CanonicalValue>,
+    overrides: Option<&'a CanonicalValue>,
+) -> Option<Cow<'a, CanonicalValue>> {
+    match (declared, overrides) {
+        (Some(declared), Some(overrides)) => {
+            let mut merged = declared
+                .as_json()
+                .as_object()
+                .expect("declared parameter defaults are objects")
+                .clone();
+            merge_objects(
+                &mut merged,
+                overrides
+                    .as_json()
+                    .as_object()
+                    .expect("explicit parameter defaults are objects"),
+            );
+            Some(Cow::Owned(
+                CanonicalValue::try_from(Value::Object(merged))
+                    .expect("merging canonical objects preserves the canonical domain"),
+            ))
+        }
+        (Some(defaults), None) | (None, Some(defaults)) => Some(Cow::Borrowed(defaults)),
+        (None, None) => None,
+    }
 }
 
 /// Merges literal defaults with supplied parameters and validates the result.

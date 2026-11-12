@@ -59,14 +59,6 @@ fn validate_compatibility(
                     .to_path_buf(),
             });
         }
-        if definition.parameter_defaults.is_some() && problem_contracts[problem].compact_parameters
-        {
-            return Err(
-                ManifestCompatibilityError::CompetingProblemParameterDefaults {
-                    problem: problem.clone(),
-                },
-            );
-        }
     }
 
     for (implementation, definition) in &manifest.implementations {
@@ -360,15 +352,6 @@ pub enum ManifestCompatibilityError {
     ImplementationTimeRequiresExecuteOnly { execution_policy: Name },
     #[error("invalid profile: {0}")]
     InvalidProfile(String),
-    /// Compact contract parameters and a problem definition both supply defaults.
-    #[error(
-        "problem `{problem}`: contract `parameters` cannot be combined with problem `parameter-defaults`"
-    )]
-    CompetingProblemParameterDefaults {
-        /// Manifest-local problem name.
-        problem: Name,
-    },
-
     /// A manifest problem has no associated parsed contract.
     #[error("problem `{problem}` has no loaded contract from `{}`", contract_path.display())]
     MissingProblemContract {

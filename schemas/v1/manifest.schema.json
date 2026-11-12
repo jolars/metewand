@@ -186,8 +186,7 @@
       },
       "required": ["output-schema"],
       "allOf": [
-        { "not": { "required": ["parameters", "parameter-schema"] } },
-        { "not": { "required": ["parameters", "parameter-defaults"] } }
+        { "not": { "required": ["parameters", "parameter-schema"] } }
       ]
     },
     "fixed_dataset": {
@@ -266,7 +265,6 @@
             "parameter-defaults": { "type": "object" }
           },
           "required": ["evaluator"],
-          "not": { "required": ["parameters", "parameter-defaults"] },
           "unevaluatedProperties": false
         }
       ]
@@ -285,10 +283,6 @@
         "preparation": { "$ref": "#/$defs/preparation" }
       },
       "required": ["contract", "evaluator"],
-      "not": {
-        "required": ["parameter-defaults"],
-        "properties": { "contract": { "type": "object", "required": ["parameters"] } }
-      },
       "additionalProperties": false
     },
     "implementation_base": {
@@ -317,8 +311,7 @@
       },
       "required": ["problem-contracts", "capabilities"],
       "allOf": [
-        { "not": { "required": ["parameters", "parameter-schema"] } },
-        { "not": { "required": ["parameters", "parameter-defaults"] } }
+        { "not": { "required": ["parameters", "parameter-schema"] } }
       ]
     },
     "interpreted_implementation": {
@@ -600,14 +593,6 @@
                   "parameter-schema"
                 ]
               }
-            },
-            {
-              "not": {
-                "required": [
-                  "parameters",
-                  "parameter-defaults"
-                ]
-              }
             }
           ]
         },
@@ -654,14 +639,6 @@
                 "required": [
                   "parameters",
                   "parameter-schema"
-                ]
-              }
-            },
-            {
-              "not": {
-                "required": [
-                  "parameters",
-                  "parameter-defaults"
                 ]
               }
             }

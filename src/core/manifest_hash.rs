@@ -1,6 +1,6 @@
 //! Canonical hashing for complete, name-resolved benchmark manifests.
 
-use std::{collections::BTreeMap, fmt};
+use std::{borrow::Cow, collections::BTreeMap, fmt};
 
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
@@ -349,12 +349,16 @@ fn problem(problem: &crate::core::manifest::ProblemDefinition) -> Value {
         }
         crate::core::problem_contract::ContractDeclaration::Reference(_) => None,
     };
-    let defaults = inline.map_or(problem.parameter_defaults.as_ref(), |contract| {
-        problem.resolved_parameter_defaults(contract)
-    });
+    let defaults = match inline {
+        Some(contract) => problem.resolved_parameter_defaults(contract),
+        None => problem.parameter_defaults.as_ref().map(Cow::Borrowed),
+    };
     let mut value = object([
         ("contract", problem.contract.declaration_value()),
-        ("parameter_defaults", optional_canonical(defaults)),
+        (
+            "parameter_defaults",
+            optional_canonical(defaults.as_deref()),
+        ),
         ("evaluator", worker(&problem.evaluator)),
     ]);
     if let Some(preparation) = &problem.preparation {

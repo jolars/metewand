@@ -1,7 +1,7 @@
 //! Typed parsing for version-1 benchmark manifests.
 
 use std::{
-    borrow::Borrow,
+    borrow::{Borrow, Cow},
     collections::{BTreeMap, BTreeSet},
     fmt,
     path::{Path, PathBuf},
@@ -18,6 +18,7 @@ use crate::core::{
     MANIFEST_VERSION,
     canonical::CanonicalValue,
     field_declaration::{ParameterBoundary, ParameterDeclarations},
+    parameters::merge_parameter_defaults,
     problem_contract::{ContractDeclaration, ProblemContract},
     schema::SchemaDeclaration,
 };
@@ -388,17 +389,16 @@ impl<'de> Deserialize<'de> for ProblemPreparationDefinition {
 }
 
 impl ProblemDefinition {
-    /// Returns literal defaults from the definition or its compact contract.
-    ///
-    /// Compatibility validation rejects competing declarations before planning.
+    /// Merges compact contract defaults with definition-owned overrides.
     #[must_use]
     pub fn resolved_parameter_defaults<'a>(
         &'a self,
         contract: &'a ProblemContract,
-    ) -> Option<&'a CanonicalValue> {
-        self.parameter_defaults
-            .as_ref()
-            .or(contract.parameter_defaults.as_ref())
+    ) -> Option<Cow<'a, CanonicalValue>> {
+        merge_parameter_defaults(
+            contract.parameter_defaults.as_ref(),
+            self.parameter_defaults.as_ref(),
+        )
     }
 }
 
@@ -1419,13 +1419,6 @@ impl<'de> Visitor<'de> for ProblemDefinitionSeed<'_> {
                 ContractDeclaration::Inline(Box::new(contract))
             }
         };
-        if parameter_defaults.is_some()
-            && matches!(&contract, ContractDeclaration::Inline(contract) if contract.compact_parameters)
-        {
-            return Err(de::Error::custom(
-                "contract `parameters` cannot be combined with problem `parameter-defaults`",
-            ));
-        }
         Ok(ProblemDefinition {
             contract,
             parameter_defaults,

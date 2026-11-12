@@ -547,7 +547,7 @@ fn build_planning_catalog(
             contract: contract_ids[name],
             parameter_defaults: definition
                 .resolved_parameter_defaults(&contracts[name])
-                .cloned(),
+                .map(|defaults| defaults.into_owned()),
             evaluator,
             preparation: definition
                 .preparation

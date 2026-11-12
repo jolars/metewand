@@ -34,10 +34,11 @@ default overrides and shared profile bindings. Lower new authoring conveniences
 into the existing effective model, preserving validation and identities for
 equivalent configurations.
 
-- [ ] Allow compact `parameters` alongside `parameter-defaults`. Let explicit
-  defaults override declared defaults, validate the merged values, and
-  define their interaction with declaration grids. Continue rejecting
-  competing `parameter-schema` declarations.
+- [x] Allow compact `parameters` alongside `parameter-defaults`. Explicit
+  defaults override declared defaults before expanded-value validation.
+  Declaration grids still select values; experiment axes and cases replace
+  matching selections. Continue rejecting competing `parameter-schema`
+  declarations.
 - [ ] Support a default profile binding with per-implementation overrides.
   Validate each resolved binding's control schema and implementation
   capabilities. Infer `max-observations` when omitted and all bindings use

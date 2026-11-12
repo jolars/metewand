@@ -454,6 +454,86 @@ impl Starter {
 }
 
 #[test]
+fn compact_default_overrides_reach_workers_and_reference_evaluation() {
+    let starter = Starter::new("python");
+    fs::write(
+        starter.project.join("benchmark.py"),
+        r#"
+def generate(context):
+    assert context.parameters == {"size": 3}
+    return {"values": list(range(1, context.parameters["size"] + 1))}
+
+def solve(data, context):
+    assert context.parameters == {"steps": 3, "check_every": 1}
+    assert context.problem_parameters == {"offset": 4, "scale": 2}
+    return {"total": sum(data["values"]) * context.problem_parameters["scale"] + context.problem_parameters["offset"]}
+
+def evaluate(data, result, context):
+    assert context.problem_parameters == {"offset": 4, "scale": 2}
+    expected = sum(data["values"]) * context.problem_parameters["scale"] + context.problem_parameters["offset"]
+    return {"absolute_error": abs(result["total"] - expected)}
+"#,
+    ).unwrap();
+    fs::write(
+        starter.project.join("problem.yaml"),
+        r#"
+version: 1
+name: sum
+family: arithmetic
+parameters:
+  offset: {type: integer, default: 1}
+  scale: {type: integer, default: 2}
+dataset-schemas: [{type: object}]
+result: {total: integer}
+metrics: {absolute_error: integer}
+reference-cases:
+  - dataset: {values: [1, 2, 3]}
+    result: {total: 16}
+    expected-metrics: {absolute_error: 0}
+"#,
+    )
+    .unwrap();
+    fs::write(
+        starter.project.join("metewand.yaml"),
+        r#"
+version: 1
+name: default-overrides
+datasets:
+  numbers:
+    function: benchmark.py:generate
+    output-schema: {type: object}
+    parameters: {size: {type: integer, default: 2}}
+    parameter-defaults: {size: 3}
+problems:
+  sum:
+    contract: problem.yaml
+    parameter-defaults: {offset: 4}
+    evaluator: {function: benchmark.py:evaluate}
+implementations:
+  solver:
+    function: benchmark.py:solve
+    parameters:
+      steps: {type: integer, default: 10}
+      check_every: {type: integer, default: 1}
+    parameter-defaults: {steps: 3}
+experiments:
+  - {name: main, problem: sum, datasets: [numbers], implementations: [solver], seed: 7}
+"#,
+    )
+    .unwrap();
+    let checked = starter.json(&["check", "--workers"], 0);
+    assert_eq!(checked["reference_cases"].as_array().unwrap().len(), 1);
+    let run = starter.json(&["run", "--output-dir", "run"], 0);
+    assert_eq!(run["summary"]["accepted_attempts"], 1);
+    let comparison = &run["comparison"][0];
+    assert_eq!(comparison["metrics"]["absolute_error"], 0);
+    assert_eq!(comparison["parameters"]["dataset"]["size"], 3);
+    assert_eq!(comparison["parameters"]["problem"]["offset"], 4);
+    assert_eq!(comparison["parameters"]["problem"]["scale"], 2);
+    assert_eq!(comparison["parameters"]["implementation"]["steps"], 3);
+}
+
+#[test]
 fn python_and_r_starters_run_inspect_resume_and_export_without_scientific_boilerplate() {
     for language in ["python", "r"] {
         let starter = Starter::new(language);

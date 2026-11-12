@@ -173,19 +173,58 @@ fn invalid_compact_fields_name_the_authored_parameter() {
 
 #[test]
 fn compact_and_explicit_parameter_declarations_cannot_compete() {
-    for (key, value) in [
-        ("parameter-schema", json!({"type": "object"})),
-        ("parameter-defaults", json!({})),
-    ] {
-        let mut value_document = document(json!({}));
-        value_document["implementations"]["solver"][key] = value;
-        let error =
-            parse_manifest(Path::new("metewand.yaml"), &value_document.to_string()).unwrap_err();
-        assert!(
-            error.message().contains("parameters") && error.message().contains(key),
-            "{error}"
-        );
+    let mut document = document(json!({}));
+    document["implementations"]["solver"]["parameter-schema"] = json!({"type": "object"});
+    let error = parse_manifest(Path::new("metewand.yaml"), &document.to_string()).unwrap_err();
+    assert!(
+        error.message().contains("parameters") && error.message().contains("parameter-schema"),
+        "{error}"
+    );
+}
+
+#[test]
+fn explicit_parameter_defaults_specialize_compact_defaults() {
+    let mut document = document(json!({
+        "iterations": {"type": "integer", "minimum": 1, "default": 1000},
+        "mode": {"type": "string", "enum": ["a", "b"], "default": "a"},
+        "weights": {"type": "array", "items": "integer", "default": [1, 2]},
+        "nothing": "null"
+    }));
+    document["implementations"]["solver"]["parameter-defaults"] =
+        json!({"iterations": 100, "weights": [3], "nothing": null});
+    let manifest = parse(&document);
+    assert_eq!(
+        resolve(&manifest, json!({})).unwrap(),
+        json!({"iterations": 100, "mode": "a", "weights": [3], "nothing": null})
+    );
+    assert_eq!(
+        resolve(&manifest, json!({"iterations": 5, "weights": [4, 5]})).unwrap(),
+        json!({"iterations": 5, "mode": "a", "weights": [4, 5], "nothing": null})
+    );
+    let mut folded = document.clone();
+    folded["implementations"]["solver"]
+        .as_object_mut()
+        .unwrap()
+        .remove("parameter-defaults");
+    for (name, value) in document["implementations"]["solver"]["parameter-defaults"]
+        .as_object()
+        .unwrap()
+    {
+        let field = &mut folded["implementations"]["solver"]["parameters"][name];
+        if field.is_string() {
+            *field = json!({"type": field});
+        }
+        field["default"] = value.clone();
     }
+    assert_eq!(
+        canonical_manifest_bytes(&manifest).unwrap(),
+        canonical_manifest_bytes(&parse(&folded)).unwrap()
+    );
+    document["implementations"]["solver"]["parameter-defaults"] = json!({});
+    assert_eq!(
+        resolve(&parse(&document), json!({"nothing": null})).unwrap(),
+        json!({"iterations": 1000, "mode": "a", "weights": [1, 2], "nothing": null})
+    );
 }
 
 #[test]

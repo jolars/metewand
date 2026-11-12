@@ -995,7 +995,9 @@ fn expand_source(
     let problem_parameters = expand_resolved_parameters(
         schemas,
         contract.parameter_schema.as_path(),
-        manifest.problems[&experiment.problem].resolved_parameter_defaults(contract),
+        manifest.problems[&experiment.problem]
+            .resolved_parameter_defaults(contract)
+            .as_deref(),
         &contract.parameter_grids,
         Some(&experiment.problem_parameters),
         case.map(|case| &case.problem_parameters),

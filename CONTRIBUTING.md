@@ -95,16 +95,23 @@ for one boundary. Diagnostic source locations do not enter identities.
 
 Compact `parameters` generate closed object schemas and literal defaults or
 expansion grids. Fields require types; they are required unless optional. Result
-and metric fields never receive defaults. Declaration grids select values
-without restricting the valid domain. Experiment axes replace matching
-declaration grids; cases replace matching experiment axes. Expanded values merge
-recursively with literal defaults before validation.
+and metric fields never receive defaults. Explicit `parameter-defaults` merge
+recursively over compact field defaults, including defaults in inline or
+referenced problem contracts. Arrays and explicit `null` replace earlier values.
+Declaration grids select values without restricting the valid domain or being
+replaced by defaults. Experiment axes replace matching declaration grids; cases
+replace matching experiment axes. Expanded values merge recursively with the
+effective literal defaults before validation. Compact `parameters` still cannot
+be combined with `parameter-schema`.
 
 Resolve schema references through the offline catalog. Never retrieve schemas
 from the network. Inline schemas inherit JSON Schema 2020-12 before hashing.
 Resource identities include resolved dependencies; moving a file-backed schema
 inline can change a path-bearing identity. Equivalent compact and explicit
 normalized declarations share their identity path.
+Combining compact parameters with explicit defaults is an additive version-1
+authoring change; equivalent effective declarations retain their canonical
+records and identities.
 
 Keep configuration expansion and scheduling assertions in core tests. Logical
 planning is pure: callers supply resolved definition identities through the
