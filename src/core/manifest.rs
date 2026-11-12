@@ -938,6 +938,15 @@ pub enum WorkerDefinition {
 }
 
 impl WorkerDefinition {
+    /// Returns declared scientific source selections, when the worker has any.
+    #[must_use]
+    pub fn sources(&self) -> Option<&[RepositoryPath]> {
+        match self {
+            Self::Interpreted(worker) => Some(&worker.sources),
+            Self::Command(worker) => worker.sources.as_deref(),
+        }
+    }
+
     pub(crate) fn is_function(&self) -> bool {
         matches!(self, Self::Command(worker) if
             worker.args.starts_with(&["-m".to_owned(), "metewand".to_owned()]) ||

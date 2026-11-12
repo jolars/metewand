@@ -1,6 +1,9 @@
 {
   "version": 1,
   "valid": [
+    {"name": "explicit-local-download-cache", "schema": "runtime-config", "instance": {"version": 1, "caches": {"datamonger": "/downloads", "other": "../other"}}},
+    {"name": "empty-local-runtime-config", "schema": "runtime-config", "instance": {"version": 1, "caches": {}}},
+    {"name": "materialize-with-explicit-runtime-config", "schema": "worker-protocol-message", "instance": {"id": "1", "method": "materialize", "source_dir": "/source", "dataset_parameters": {}, "dataset_seed": 17, "output_dir": "/output", "runtime": {"version": 1, "caches": {"datamonger": "/downloads"}}}},
     {
       "name": "Apptainer valid image evidence",
       "schema": "lockfile",
@@ -2458,6 +2461,11 @@
     }
   ],
   "invalid": [
+    {"name": "runtime-config-rejects-unknown-version", "schema": "runtime-config", "instance": {"version": 2, "caches": {}}},
+    {"name": "runtime-config-rejects-scientific-overrides", "schema": "runtime-config", "instance": {"version": 1, "caches": {}, "parameters": {}}},
+    {"name": "runtime-config-rejects-empty-path", "schema": "runtime-config", "instance": {"version": 1, "caches": {"datamonger": ""}}},
+    {"name": "runtime-config-rejects-nul-path", "schema": "runtime-config", "instance": {"version": 1, "caches": {"datamonger": "bad\u0000path"}}},
+    {"name": "runtime-config-rejects-invalid-name", "schema": "runtime-config", "instance": {"version": 1, "caches": {"bad/name": "/cache"}}},
     {
       "name": "default buffered binding requires collection limits",
       "schema": "profile-observation-policy",

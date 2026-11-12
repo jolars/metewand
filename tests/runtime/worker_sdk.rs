@@ -71,13 +71,14 @@ fn materializers_write_canonical_inventories_and_validate_requests() {
     let directory = TempDir::new().unwrap();
     let request = json!({"id":"1", "method":"materialize", "source_dir":"source",
         "dataset_parameters":{"values":[1,2,3]}, "dataset_seed":17,
-        "output_dir":directory.path()});
+        "output_dir":directory.path(), "runtime":{"version":1,"caches":{"provider":"/downloads"}}});
     let mut invalid = request.clone();
     invalid["dataset_seed"] = json!(true);
     let mut output = Vec::new();
     serve_dataset_materializer_on(
         &mut |request| {
             assert_eq!(request.dataset_seed(), 17);
+            assert_eq!(request.runtime().caches()["provider"], "/downloads");
             write_json(
                 &directory.path().join("data.json"),
                 request.dataset_parameters().clone(),

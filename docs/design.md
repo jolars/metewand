@@ -87,6 +87,12 @@ computation. Implementation parameters control how a method computes its answer.
 Budgets and execution settings remain policies. Metewand preserves the author's
 classification rather than guessing from parameter names.
 
+Named download caches are explicit local runtime bindings. Their host paths
+remain outside scientific parameters, seeds, launches, and derivations, while
+provenance records effective bindings. Providers verify pinned content before
+returning scientific data. Metewand's artifact cache separately stores verified
+materialized outputs. Scientific overrides retain their normal identity rules.
+
 A problem may prepare shared inputs from the verified dataset and its resolved
 parameters. Preparation runs once per dataset and problem configuration before
 measured work. Its cached artifact has a separate content hash, and every method

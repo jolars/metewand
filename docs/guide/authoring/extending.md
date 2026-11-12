@@ -133,6 +133,64 @@ The [shared preparation example](https://github.com/jolars/metewand/tree/main/ex
 compares two methods over two path configurations and retains an early-stopped
 grid for independent evaluation.
 
+## Share download caches
+
+Workers use private home and cache directories. To reuse a provider's downloaded
+files, select named download caches in an explicit local configuration file:
+
+```yaml
+# metewand.local.yaml
+version: 1
+caches:
+  datamonger: /home/alex/.cache/datamonger/python
+```
+
+```sh
+metewand check --workers --runtime-config metewand.local.yaml
+metewand run --runtime-config metewand.local.yaml --cache-dir artifacts
+```
+
+Only the selected configuration is loaded. Relative cache paths resolve beside
+that file. Use expanded paths: `~` and environment variables are not interpolated.
+An existing cache must be a directory; a new cache needs an existing parent.
+Checking the configuration creates no directories. Keep local configuration and
+download caches outside selected source bundles, and keep download caches
+separate from run output and the artifact cache.
+Host cache bindings currently require local process materializers. Container
+materializers need cache mounts, which this interface does not yet provide.
+
+Dataset materializers receive the resolved paths separately from scientific
+parameters. For example, a Python materializer can pass a binding to Datamonger:
+
+```python
+def materialize(context):
+    cache_dir = context.runtime["caches"].get("datamonger")
+    # Pass cache_dir to the provider while keeping selectors and checksums in
+    # context.parameters. Return the verified scientific data as usual.
+```
+
+In R, use `context$runtime$caches$datamonger`. Native workers negotiate the
+`runtime_config` capability and read the optional `runtime` object on dataset
+`materialize` requests. The context supplies `version: 1` and empty `caches` when
+no bindings are selected. The CLI's Python and R adapters and native helpers
+support this extension within binding API and wire protocol version 1.
+
+The provider owns download initialization, checksum verification, and cleanup.
+`--cache-dir` instead selects Metewand's verified materialized-artifact cache.
+A download-cache path does not enter scientific parameters, seeds, normalized
+launches, or dataset derivations. Record selectors, pinned versions, decoding,
+and preprocessing as scientific inputs. Preserve the identities of thread
+settings, algorithm controls, and scientific overrides through their normal
+manifest fields. Keep host paths out of returned scientific artifacts.
+
+Attempt provenance records the invocation's effective bindings at
+`context.runtime`. Dataset construction receipts record the bindings used for
+materialization at `context.dataset_materialization.runtime`. Reusing an artifact
+retains that original receipt, even when the current invocation selects a
+different download directory. Moving an existing `cache_dir` parameter into
+runtime configuration changes the authored dataset's identities once; retained
+runs keep their original meaning.
+
 ## Include source and data deliberately
 
 Function declarations automatically include the selected source file. Add

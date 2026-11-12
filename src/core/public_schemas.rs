@@ -42,6 +42,8 @@ pub enum PublicSchema {
 
     /// Realized worker settings with redacted secret channels.
     WorkerEnvironment,
+    /// Explicit local bindings for provider-owned download caches.
+    RuntimeConfig,
     /// Envelope used for command events, results, and diagnostics.
     MachineOutput,
     /// Lifecycle events and terminal reports for the run command.
@@ -97,7 +99,7 @@ pub enum PublicSchema {
 }
 
 /// Every public schema entry point in stable presentation order.
-pub const PUBLIC_SCHEMAS: [PublicSchema; 41] = [
+pub const PUBLIC_SCHEMAS: [PublicSchema; 42] = [
     PublicSchema::BundleManifest,
     PublicSchema::BundleOutput,
     PublicSchema::Lockfile,
@@ -139,6 +141,7 @@ pub const PUBLIC_SCHEMAS: [PublicSchema; 41] = [
     PublicSchema::ManagedOutputDraft,
     PublicSchema::WorkerProtocolMessage,
     PublicSchema::WorkerEnvironment,
+    PublicSchema::RuntimeConfig,
 ];
 
 impl PublicSchema {
@@ -161,6 +164,7 @@ impl PublicSchema {
             Self::BufferedTracePoint => "buffered-trace-point",
             Self::ProfileObservation => "profile-observation",
             Self::WorkerEnvironment => "worker-environment",
+            Self::RuntimeConfig => "runtime-config",
             Self::ArtifactCacheObject => "artifact-cache-object",
             Self::DatasetCacheEntry => "dataset-cache-entry",
             Self::ArtifactCacheLease => "artifact-cache-lease",
@@ -217,6 +221,7 @@ impl PublicSchema {
             Self::BufferedTracePoint => "schemas/v1/buffered-trace-point.schema.json",
             Self::ProfileObservation => "schemas/v1/profile-observation.schema.json",
             Self::WorkerEnvironment => "schemas/v1/worker-environment.schema.json",
+            Self::RuntimeConfig => "schemas/v1/runtime-config.schema.json",
             Self::ArtifactCacheObject => "schemas/v1/artifact-cache-object.schema.json",
             Self::DatasetCacheEntry => "schemas/v1/dataset-cache-entry.schema.json",
             Self::ArtifactCacheLease => "schemas/v1/artifact-cache-lease.schema.json",
@@ -271,6 +276,7 @@ impl PublicSchema {
             Self::BufferedTracePoint => "metewand://schemas/v1/buffered-trace-point.schema.json",
             Self::ProfileObservation => "metewand://schemas/v1/profile-observation.schema.json",
             Self::WorkerEnvironment => "metewand://schemas/v1/worker-environment.schema.json",
+            Self::RuntimeConfig => "metewand://schemas/v1/runtime-config.schema.json",
             Self::ArtifactCacheObject => "metewand://schemas/v1/artifact-cache-object.schema.json",
             Self::DatasetCacheEntry => "metewand://schemas/v1/dataset-cache-entry.schema.json",
             Self::ArtifactCacheLease => "metewand://schemas/v1/artifact-cache-lease.schema.json",
@@ -343,6 +349,7 @@ impl PublicSchema {
                 include_str!("../../schemas/v1/profile-observation.schema.json")
             }
 
+            Self::RuntimeConfig => include_str!("../../schemas/v1/runtime-config.schema.json"),
             Self::WorkerEnvironment => {
                 include_str!("../../schemas/v1/worker-environment.schema.json")
             }

@@ -361,10 +361,40 @@ impl WorkerSession {
         dataset_seed: u64,
         output_dir: impl Into<String>,
     ) -> Result<MaterializeResponse, WorkerSessionError> {
+        self.materialize_with_runtime(
+            source_dir,
+            dataset_parameters,
+            dataset_seed,
+            output_dir,
+            &crate::protocol::RuntimeSettings::default(),
+        )
+    }
+
+    /// Materializes data using separately supplied, negotiated download caches.
+    pub fn materialize_with_runtime(
+        &mut self,
+        source_dir: impl Into<String>,
+        dataset_parameters: Value,
+        dataset_seed: u64,
+        output_dir: impl Into<String>,
+        runtime: &crate::protocol::RuntimeSettings,
+    ) -> Result<MaterializeResponse, WorkerSessionError> {
         self.require_role(WorkerPhase::Materialize, WorkerRole::DatasetMaterializer)?;
+        if !runtime.is_empty()
+            && !self
+                .negotiated()
+                .selected_capabilities()
+                .contains(&Capability::RuntimeConfig)
+        {
+            return Err(WorkerSessionError::CapabilityNotSelected {
+                phase: WorkerPhase::Materialize,
+                capability: Capability::RuntimeConfig,
+            });
+        }
         let id = self.begin_request(WorkerPhase::Materialize)?;
         let request =
-            MaterializeRequest::new(id, source_dir, dataset_parameters, dataset_seed, output_dir);
+            MaterializeRequest::new(id, source_dir, dataset_parameters, dataset_seed, output_dir)
+                .with_runtime(runtime.clone());
         let timeout = self.timeouts.materialize;
         self.exchange(WorkerPhase::Materialize, &request, timeout)
     }

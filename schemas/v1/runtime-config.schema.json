@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "metewand://schemas/v1/runtime-config.schema.json",
+  "x-metewand-compatibility-version": 1,
+  "title": "Explicit local download-cache bindings",
+  "type": "object",
+  "properties": {
+    "version": { "const": 1 },
+    "caches": {
+      "description": "Provider-owned download directories. Relative paths in configuration files resolve beside the file; worker requests and provenance use absolute paths. Providers must verify scientific content independently of these locations.",
+      "type": "object",
+      "propertyNames": { "pattern": "^[A-Za-z0-9_-]+$" },
+      "additionalProperties": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^[^\\u0000]+$"
+      }
+    }
+  },
+  "required": ["version", "caches"],
+  "additionalProperties": false
+}

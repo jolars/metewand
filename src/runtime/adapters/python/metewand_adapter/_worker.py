@@ -127,6 +127,8 @@ def _validate_request(request, role=None):
             "problem_parameters": "object",
             "output_dir": "string",
         }
+    if method == "materialize" and role == "dataset_materializer" and "runtime" in request:
+        fields["runtime"] = "runtime"
     if method in {"prepare", "check_applicability", "evaluate"} and "problem_dir" in request:
         fields["problem_dir"] = "string"
     if set(request) != {"id", "method"} | set(fields):
@@ -140,6 +142,22 @@ def _validate_request(request, role=None):
             valid = type(value) is str and bool(value)
         elif kind == "object":
             valid = type(value) is dict
+        elif kind == "runtime":
+            valid = (
+                type(value) is dict
+                and set(value) == {"version", "caches"}
+                and type(value["version"]) is int
+                and value["version"] == 1
+                and type(value["caches"]) is dict
+                and all(
+                    type(name) is str
+                    and re.fullmatch(r"[A-Za-z0-9_-]+", name)
+                    and type(path) is str
+                    and bool(path)
+                    and "\0" not in path
+                    for name, path in value["caches"].items()
+                )
+            )
         elif kind == "seed":
             valid = type(value) is int and 0 <= value <= MAX_SAFE_INTEGER
         elif kind == "role":
@@ -243,6 +261,8 @@ class _Dispatcher:
                 )
             self.ready = True
             capabilities = ["managed_outputs"]
+            if self.role == "dataset_materializer":
+                capabilities.append("runtime_config")
             if self.role in {"implementation", "problem_evaluator"}:
                 capabilities.append("problem_preparation")
             if self.role == "implementation":
@@ -381,6 +401,7 @@ class _Dispatcher:
                     request["dataset_parameters"],
                     request["dataset_seed"],
                     directory,
+                    **({"runtime": request["runtime"]} if "runtime" in request else {}),
                 )
             return {"draft": _completed_manifest(directory, manifest)}
         elif method == "evaluate":

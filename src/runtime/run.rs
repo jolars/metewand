@@ -7,6 +7,7 @@ mod profile;
 pub use check::{
     ReferenceCaseCheck, WorkerCheck, WorkerCheckError, WorkerCheckReport, check_repository_workers,
     check_repository_workers_for_experiments, check_repository_workers_for_plan,
+    check_repository_workers_with_runtime,
 };
 pub(crate) mod resolution;
 mod selection;
@@ -54,6 +55,13 @@ use crate::runtime::{
 };
 
 use resolution::{ResolvedCandidate, ResolvedMeasurement, canonical};
+
+/// Host storage settings supplied explicitly for this invocation.
+#[derive(Default)]
+pub(crate) struct LocalRunSettings<'a> {
+    pub cache_directory: Option<&'a Path>,
+    pub runtime: crate::protocol::RuntimeSettings,
+}
 
 /// Executes the deterministic schedule with policy-bounded concurrency.
 ///
@@ -146,7 +154,10 @@ pub fn run_repository_with_options(
         repository,
         plan,
         output_directory,
-        cache_directory,
+        &LocalRunSettings {
+            cache_directory,
+            runtime: crate::protocol::RuntimeSettings::default(),
+        },
         options,
         event_sink,
         |_| Ok(()),
@@ -157,11 +168,13 @@ pub(crate) fn run_repository_with_progress(
     repository: &CheckedRepository,
     plan: &LogicalPlan,
     output_directory: &Path,
-    cache_directory: Option<&Path>,
+    settings: &LocalRunSettings<'_>,
     options: &RunOptions,
     mut event_sink: impl FnMut(&RunEvent) -> io::Result<()>,
     mut progress: impl FnMut(&RunProgress) -> io::Result<()>,
 ) -> Result<RunReport, RunError> {
+    crate::runtime::runtime_config::validate_runtime_config(repository, &settings.runtime)
+        .map_err(|error| RunError::Unsupported(error.to_string()))?;
     let plan = plan
         .clone()
         .select_experiments(
@@ -174,7 +187,8 @@ pub(crate) fn run_repository_with_progress(
         .map_err(RunError::Selection)?;
     let plan = selection::preselect(&plan, options)?;
     let (output_directory, resume) = destination(output_directory)?;
-    let cache_directory = cache_directory
+    let cache_directory = settings
+        .cache_directory
         .map(|path| {
             let path = if path.is_absolute() {
                 path.to_owned()
@@ -220,6 +234,7 @@ pub(crate) fn run_repository_with_progress(
         &plan,
         &output_directory,
         cache_directory.as_deref(),
+        &settings.runtime,
         locked.as_ref(),
         &mut progress,
     )?;

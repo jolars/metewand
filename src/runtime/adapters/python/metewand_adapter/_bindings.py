@@ -48,6 +48,7 @@ def _context(request):
         semantics=request.get("problem_semantics", {}),
         budget=None,
         observation_control=request.get("observation_control"),
+        runtime=request.get("runtime", {"version": 1, "caches": {}}),
     )
     fields.update(request)
     for key in (
@@ -256,7 +257,7 @@ def serve_bindings(*, api_version, role, callbacks, metadata):
         worker = _Callbacks(callbacks)
     elif role == "dataset_materializer":
 
-        def worker(source, parameters, seed, output):
+        def worker(source, parameters, seed, output, runtime=None):
             context = _context(
                 dict(
                     method="materialize",
@@ -264,6 +265,7 @@ def serve_bindings(*, api_version, role, callbacks, metadata):
                     dataset_parameters=parameters,
                     dataset_seed=seed,
                     output_dir=output,
+                    runtime=runtime if runtime is not None else {"version": 1, "caches": {}},
                 )
             )
             value = _invoke(callbacks["materialize"], context)

@@ -26,6 +26,7 @@ mod r_sdk;
 mod read_only_commands;
 mod resume;
 mod run_command;
+mod runtime_config;
 mod rust_sdk;
 mod scaffold;
 mod scaffold_workers;

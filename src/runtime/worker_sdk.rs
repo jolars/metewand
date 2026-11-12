@@ -289,7 +289,7 @@ pub fn serve_dataset_materializer_on(
 ) -> Result<(), ServeError> {
     serve_on(
         WorkerRole::DatasetMaterializer,
-        [],
+        [Capability::RuntimeConfig],
         reader,
         writer,
         |request, _, _| match request["method"].as_str().unwrap_or_default() {

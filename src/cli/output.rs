@@ -1529,6 +1529,14 @@ pub struct CommandError {
 }
 
 impl CommandError {
+    pub fn runtime_config(error: &crate::runtime::runtime_config::RuntimeConfigError) -> Self {
+        let mut result = Self::usage("invalid_runtime_config", error.to_string());
+        if let crate::runtime::runtime_config::RuntimeConfigError::Parse { span, .. } = error {
+            result.diagnostic = Box::new(result.diagnostic.with_source_span(span));
+        }
+        result
+    }
+
     pub fn bundling(error: &std::io::Error) -> Self {
         let mut result = Self::usage("bundle_failed", error.to_string());
         if !matches!(

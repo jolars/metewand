@@ -6,7 +6,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer, de, de::Deserializ
 use serde_json::Value;
 use thiserror::Error;
 
-use crate::protocol::{WIRE_PROTOCOL_VERSION, framing::MAX_LINE_BYTES};
+use crate::protocol::{RuntimeSettings, WIRE_PROTOCOL_VERSION, framing::MAX_LINE_BYTES};
 
 mod preparation;
 mod streaming;
@@ -128,6 +128,8 @@ pub enum WorkerRole {
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Capability {
+    /// Receives explicit named download caches during dataset materialization.
+    RuntimeConfig,
     /// Receives verified shared inputs through `problem_dir`.
     ProblemPreparation,
     /// Produces one final result per execution.
@@ -456,6 +458,8 @@ pub struct MaterializeRequest {
     dataset_seed: u64,
     #[serde(deserialize_with = "deserialize_nonempty_string")]
     output_dir: String,
+    #[serde(default, skip_serializing_if = "RuntimeSettings::is_empty")]
+    runtime: RuntimeSettings,
 }
 
 impl private::Sealed for MaterializeRequest {}
@@ -479,7 +483,21 @@ impl MaterializeRequest {
             dataset_parameters,
             dataset_seed,
             output_dir: output_dir.into(),
+            runtime: RuntimeSettings::default(),
         }
+    }
+
+    /// Supplies explicitly selected host download caches outside scientific inputs.
+    #[must_use]
+    pub fn with_runtime(mut self, runtime: RuntimeSettings) -> Self {
+        self.runtime = runtime;
+        self
+    }
+
+    /// Returns local runtime bindings, empty when none were explicitly supplied.
+    #[must_use]
+    pub const fn runtime(&self) -> &RuntimeSettings {
+        &self.runtime
     }
 
     /// Returns the request identifier.
@@ -1738,6 +1756,7 @@ pub fn validate_hello_response(
     if let Some(capability) = selected_capabilities
         .iter()
         .find(|capability| match capability {
+            Capability::RuntimeConfig => request.role != WorkerRole::DatasetMaterializer,
             Capability::ManagedOutputs => false,
             Capability::ProblemPreparation => !matches!(
                 request.role,
@@ -1756,6 +1775,7 @@ pub fn validate_hello_response(
         !matches!(
             capability,
             Capability::OneShot
+                | Capability::RuntimeConfig
                 | Capability::Applicability
                 | Capability::ProblemSemantics
                 | Capability::ProblemPreparation

@@ -45,11 +45,10 @@ equivalent configurations.
 - [x] Infer `max-observations` when omitted and all resolved bindings use finite
   `fresh_sequence` schedules with the same expanded length, including
   prefixes.
-- [ ] Add explicit local runtime overrides for machine settings, including
-  adapter download caches. Keep host cache paths outside scientific dataset
-  parameters, record effective settings in provenance, and retain scientific
-  overrides in identities. Distinguish adapter caches from the artifact
-  cache selected by `--cache-dir`.
+- [x] Add explicit local runtime configuration for named adapter download caches.
+  Keep host cache paths outside scientific dataset parameters, record effective
+  settings in provenance, and retain scientific overrides in identities.
+  Distinguish adapter caches from the artifact cache selected by `--cache-dir`.
 - [ ] Show the scientific timeout, worker execution watchdog, and cumulative
   profile time limit together in `plan --verbose`. Diagnose when the
   watchdog cuts the requested scientific budget short while retaining the

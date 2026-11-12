@@ -15,6 +15,91 @@ const WORKER_ID: &str =
     "mw1-resolved-worker-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
 #[test]
+fn local_runtime_bindings_are_optional_versioned_and_negotiated() {
+    use crate::{
+        core::public_schemas::{PublicSchema, public_schema_catalog},
+        protocol::RuntimeSettings,
+    };
+    let request = MaterializeRequest::new(
+        "1".parse().unwrap(),
+        "/source",
+        json!({"rows":2}),
+        17,
+        "/output",
+    );
+    assert_eq!(encode_message(&request).unwrap(), b"{\"dataset_parameters\":{\"rows\":2},\"dataset_seed\":17,\"id\":\"1\",\"method\":\"materialize\",\"output_dir\":\"/output\",\"source_dir\":\"/source\"}\n");
+    assert!(request.runtime().is_empty());
+    let runtime: RuntimeSettings =
+        serde_json::from_value(json!({"version":1,"caches":{"provider":"/downloads"}})).unwrap();
+    let request = request.with_runtime(runtime);
+    assert_eq!(encode_message(&request).unwrap(), b"{\"dataset_parameters\":{\"rows\":2},\"dataset_seed\":17,\"id\":\"1\",\"method\":\"materialize\",\"output_dir\":\"/output\",\"runtime\":{\"caches\":{\"provider\":\"/downloads\"},\"version\":1},\"source_dir\":\"/source\"}\n");
+    let value = serde_json::to_value(&request).unwrap();
+    let schemas = public_schema_catalog().unwrap();
+    schemas
+        .validate(
+            PublicSchema::WorkerProtocolMessage.repository_path(),
+            &value,
+        )
+        .unwrap();
+    assert_eq!(
+        decode_message::<MaterializeRequest>(value.clone()).unwrap(),
+        request
+    );
+    for invalid in [
+        json!(null),
+        json!({"version":2,"caches":{}}),
+        json!({"version":1,"caches":{"bad/name":"/cache"}}),
+        json!({"version":1,"caches":{"provider":""}}),
+        json!({"version":1,"caches":{"provider":"bad\0path"}}),
+        json!({"version":1,"caches":{},"parameters":{}}),
+    ] {
+        let mut bad = value.clone();
+        bad["runtime"] = invalid;
+        assert!(
+            decode_message::<MaterializeRequest>(bad.clone()).is_err(),
+            "{bad}"
+        );
+        assert!(
+            schemas
+                .validate(PublicSchema::WorkerProtocolMessage.repository_path(), &bad)
+                .is_err(),
+            "{bad}"
+        );
+    }
+    let hello = HelloRequest::new(
+        "0".parse().unwrap(),
+        WorkerRole::DatasetMaterializer,
+        WORKER_ID.parse().unwrap(),
+    );
+    let supported = HelloResponse::new(
+        "0".parse().unwrap(),
+        WORKER_ID.parse().unwrap(),
+        None,
+        [Capability::RuntimeConfig],
+    );
+    validate_hello_response(&hello, &supported, &[Capability::RuntimeConfig]).unwrap();
+    let unsupported =
+        HelloResponse::new("0".parse().unwrap(), WORKER_ID.parse().unwrap(), None, []);
+    assert!(matches!(
+        validate_hello_response(&hello, &unsupported, &[Capability::RuntimeConfig]),
+        Err(HandshakeError::MissingCapability {
+            capability: Capability::RuntimeConfig
+        })
+    ));
+    for role in [
+        WorkerRole::Implementation,
+        WorkerRole::ProblemPreparer,
+        WorkerRole::ProblemEvaluator,
+    ] {
+        let hello = HelloRequest::new("0".parse().unwrap(), role, WORKER_ID.parse().unwrap());
+        assert!(matches!(
+            validate_hello_response(&hello, &supported, &[Capability::RuntimeConfig]),
+            Err(HandshakeError::CapabilityRoleMismatch { .. })
+        ));
+    }
+}
+
+#[test]
 fn shared_preparation_extends_version_one_with_negotiated_private_inputs() {
     use crate::{
         core::public_schemas::{PublicSchema, public_schema_catalog},

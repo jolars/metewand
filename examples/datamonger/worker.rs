@@ -137,6 +137,7 @@ fn compare(
     };
     let (launch, materializer) = worker("dataset_materializer", None)?;
     let materialized = materialize_dataset(DatasetMaterialization {
+        runtime: &crate::protocol::RuntimeSettings::default(),
         configuration: &candidates[0].dataset_configuration.record,
         source: Some(source),
         launch: &launch,

@@ -86,6 +86,7 @@ fn generator_receives_dataset_seed_and_canonical_parameters() {
     let schemas = schemas(true);
     let run = || {
         materialize_dataset(DatasetMaterialization {
+            runtime: &crate::protocol::RuntimeSettings::default(),
             configuration: &config,
             source: None,
             launch: &launch,
@@ -143,6 +144,7 @@ fn construction_mappings_reopen_verify_and_reject_different_outputs() {
     let schemas = schemas(true);
     let build = |config: &DatasetConfigurationRecord| {
         materialize_dataset(DatasetMaterialization {
+            runtime: &crate::protocol::RuntimeSettings::default(),
             configuration: config,
             source: None,
             launch: &launch,
@@ -259,6 +261,7 @@ fn schema_failure_removes_output() {
     let schemas = schemas(false);
     assert!(matches!(
         materialize_dataset(DatasetMaterialization {
+            runtime: &crate::protocol::RuntimeSettings::default(),
             configuration: &config,
             source: None,
             launch: &launch,
@@ -301,6 +304,7 @@ if mode=='mutate': (p/'data.json').write_text('changed')
             ),
         ];
         let outcome = materialize_dataset(DatasetMaterialization {
+            runtime: &crate::protocol::RuntimeSettings::default(),
             configuration: &config,
             source: None,
             launch: &launch,
@@ -398,6 +402,7 @@ fn external_transformation_records_selection_decoding_and_independent_bytes() {
             "dataset_materializer".to_owned(),
         ];
         let output = materialize_dataset(DatasetMaterialization {
+            runtime: &crate::protocol::RuntimeSettings::default(),
             configuration: &config,
             source: Some(&source),
             launch: &launch,
@@ -492,6 +497,7 @@ fn opaque_binary_payloads_need_the_contract_checker() {
             ),
         ];
         let output = materialize_dataset(DatasetMaterialization {
+            runtime: &crate::protocol::RuntimeSettings::default(),
             configuration: &config,
             source: None,
             launch: &launch,

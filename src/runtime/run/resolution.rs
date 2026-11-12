@@ -181,6 +181,13 @@ impl Snapshot {
 }
 
 impl ResolvedWorker {
+    pub(super) fn is_container(&self) -> bool {
+        matches!(
+            self.provenance["environment"]["fingerprint"]["backend"].as_str(),
+            Some("oci" | "apptainer")
+        )
+    }
+
     pub(crate) fn lock_record(
         &self,
         environment: &crate::core::manifest::Name,
@@ -271,6 +278,7 @@ pub(super) fn resolve(
     plan: &LogicalPlan,
     output: &Path,
     cache_directory: Option<&Path>,
+    runtime: &crate::protocol::RuntimeSettings,
     locked: Option<&crate::runtime::lockfile::VerifiedLock>,
     progress: &mut impl FnMut(&super::RunProgress) -> io::Result<()>,
 ) -> Result<ResolvedRun, RunError> {
@@ -422,6 +430,11 @@ pub(super) fn resolve(
             match &dataset {
                 DatasetPlan::Ready(snapshot, _) => validate_snapshot_destination(snapshot, output)?,
                 DatasetPlan::Generated(_, materializer) => {
+                    if !runtime.is_empty() && materializer.is_container() {
+                        return Err(unsupported(
+                            "named host download caches require a local dataset materializer; container cache mounts are not supported",
+                        ));
+                    }
                     if let Some(sources) = &materializer.sources {
                         validate_snapshot_destination(sources, output)?;
                     }
@@ -441,6 +454,17 @@ pub(super) fn resolve(
     }
     let temporary_cache = private_root.path().join("artifacts");
     let cache_directory = cache_directory.unwrap_or(&temporary_cache);
+    for directory in runtime.caches().values().map(Path::new) {
+        if directory.starts_with(output)
+            || output.starts_with(directory)
+            || directory.starts_with(cache_directory)
+            || cache_directory.starts_with(directory)
+        {
+            return Err(unsupported(
+                "download caches, artifact cache, and run output must be separate directories",
+            ));
+        }
+    }
     if cache_directory.starts_with(output) || output.starts_with(cache_directory) {
         return Err(unsupported(
             "artifact cache and run output must be separate directories",
@@ -552,6 +576,7 @@ pub(super) fn resolve(
                             )
                         } else {
                             let materialized = materialize_dataset(DatasetMaterialization {
+                                runtime,
                                 configuration: &candidate.dataset_configuration.record,
                                 source: source.as_ref(),
                                 launch: &materializer.launch,
@@ -656,6 +681,9 @@ pub(super) fn resolve(
             context["runner"] = runner.clone();
             context["host_observation"] = host.clone();
             context["repository"] = checkout.clone();
+            if !runtime.is_empty() {
+                context["runtime"] = json!(runtime);
+            }
             measurement.provenance = canonical(context)?;
             if !slots.insert(measurement.attempt_slot.id) {
                 return Err(unsupported(

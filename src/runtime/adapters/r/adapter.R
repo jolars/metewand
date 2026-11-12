@@ -34,6 +34,9 @@ binding_api_version <- 1L
   if (method %in% c("prepare", "check_applicability", "evaluate") && "problem_dir" %in% names(request)) {
     fields <- c(fields, problem_dir = "string")
   }
+  if (method == "materialize" && identical(role, "dataset_materializer") && "runtime" %in% names(request)) {
+    fields <- c(fields, runtime = "runtime")
+  }
   if (method == "execute" && "observation_control" %in% names(request)) {
     fields <- c(fields, observation_control = "object")
   }
@@ -44,6 +47,10 @@ binding_api_version <- 1L
     value <- request[[key]]
     valid <- switch(fields[[key]],
       string = .nonempty_string(value), object = .is_object(value),
+      runtime = .is_object(value) && setequal(names(value), c("version", "caches")) &&
+        .integer(value$version, 1) && value$version == 1 && .is_object(value$caches) &&
+        all(grepl("^[A-Za-z0-9_-]+$", names(value$caches))) &&
+        all(vapply(value$caches, .nonempty_string, logical(1))),
       seed = .integer(value, 9007199254740991),
       role = .nonempty_string(value) && value %in% c("implementation", "dataset_materializer", "problem_preparer", "problem_evaluator"),
       worker_id = .nonempty_string(value) && grepl("^mw1-resolved-worker-[0-9a-f]{64}$", value),
@@ -77,7 +84,8 @@ binding_api_version <- 1L
                   problem_parameters = if (is.null(request$problem_parameters)) .object(list()) else request$problem_parameters,
                   seed = if (is.null(request$implementation_seed)) request$dataset_seed else request$implementation_seed,
                   semantics = if (is.null(request$problem_semantics)) .object(list()) else request$problem_semantics,
-                  budget = NULL, observation_control = request$observation_control)
+                  budget = NULL, observation_control = request$observation_control,
+                  runtime = if (is.null(request$runtime)) list(version = 1, caches = .object(list())) else request$runtime)
   for (name in names(request)) context[name] <- request[name]
   if (is.null(context$output_dir)) context$output_dir <- request$result_dir
   structure(context, class = "metewand_context")
@@ -152,6 +160,7 @@ serve_bindings <- function(api_version, role, callbacks, metadata, codec) {
       initialize()
       ready <<- TRUE
       capabilities <- list("managed_outputs")
+      if (role == "dataset_materializer") capabilities <- c(capabilities, list("runtime_config"))
       if (role %in% c("implementation", "problem_evaluator")) capabilities <- c(capabilities, list("problem_preparation"))
       if (role == "implementation") {
         capabilities <- c(capabilities, list("one_shot", "fresh_sequence"))

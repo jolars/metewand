@@ -2,6 +2,9 @@
 
 pub mod framing;
 mod messages;
+mod runtime;
+
+pub use runtime::{RUNTIME_CONFIG_VERSION, RuntimeSettings};
 
 pub use messages::{
     Acknowledgement, ApplicabilityOutcome, Capability, CheckApplicabilityRequest,

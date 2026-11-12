@@ -57,6 +57,7 @@ mod resource_accounting;
 #[cfg(any(unix, windows))]
 pub mod run;
 pub mod run_store;
+pub mod runtime_config;
 pub mod source_acquisition;
 pub mod source_bundle;
 pub mod source_resolution;

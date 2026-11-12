@@ -142,6 +142,21 @@ pub fn check_repository_workers_for_plan(
     repository: &CheckedRepository,
     plan: &LogicalPlan,
 ) -> Result<WorkerCheckReport, WorkerCheckError> {
+    check_repository_workers_with_runtime(
+        repository,
+        plan,
+        &crate::protocol::RuntimeSettings::default(),
+    )
+}
+
+/// Checks selected workers, negotiating support for explicit download caches.
+pub fn check_repository_workers_with_runtime(
+    repository: &CheckedRepository,
+    plan: &LogicalPlan,
+    runtime: &crate::protocol::RuntimeSettings,
+) -> Result<WorkerCheckReport, WorkerCheckError> {
+    crate::runtime::runtime_config::validate_runtime_config(repository, runtime)
+        .map_err(|error| WorkerCheckError::Conformance(error.to_string()))?;
     verify_repository(repository)?;
     let timeouts = resolve_worker_timeouts(repository)?;
     let candidates = plan
@@ -179,7 +194,11 @@ pub fn check_repository_workers_for_plan(
             resolved.push((
                 name.to_string(),
                 WorkerRole::DatasetMaterializer,
-                vec![],
+                if runtime.is_empty() {
+                    vec![]
+                } else {
+                    vec![Capability::RuntimeConfig]
+                },
                 resolve_worker(repository, &dataset.worker, private.path())?,
             ));
         }
@@ -240,6 +259,9 @@ pub fn check_repository_workers_for_plan(
         reference_cases: vec![],
     };
     for (name, role, capabilities, worker) in resolved {
+        if role == WorkerRole::DatasetMaterializer && !runtime.is_empty() && worker.is_container() {
+            return Err(WorkerCheckError::Conformance("named host download caches require a local dataset materializer; container cache mounts are not supported".into()));
+        }
         worker.verify()?;
         let mut session = connect(&worker, private.path(), role, &capabilities, timeouts)?;
         let negotiated = session.negotiated();

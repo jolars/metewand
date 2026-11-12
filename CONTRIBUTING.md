@@ -402,6 +402,23 @@ identities use stable path templates and content hashes; provenance records
 allocated paths. The local environment does not establish a dependency closure
 or isolation from undeclared host files.
 
+`--runtime-config PATH` on `check` and `run` selects a strict version-1 local
+configuration with named provider-owned download caches. Resolve paths beside
+the selected file without creating directories. Keep those caches outside
+selected sources, artifact storage, and run output. Dataset materializers
+negotiate `runtime_config` and receive bindings in a separate optional request
+field. Python and R contexts expose `runtime`; native callbacks use
+`MaterializeRequest::runtime()`. Never route these paths through scientific
+parameters or identity-bearing launch environment variables.
+
+The optional materialization-receipt `runtime` field records the construction's
+effective bindings. Artifact reuse retains the original receipt; invocation
+bindings separately enter attempt `context.runtime`. Both additions use version
+1, preserve the request shape when no caches are supplied, and require no
+identity, execution-semantics, or SQLite migration. Existing scientific controls
+retain their identity semantics. Moving a previously authored cache parameter
+out of the dataset is an explicit adopter change with new dataset identities.
+
 On Windows, resolve private worker directories before exposing them with
 conventional drive or UNC paths. R's expression launcher appends a forward slash
 to its temporary directory, which Windows verbatim paths do not accept.

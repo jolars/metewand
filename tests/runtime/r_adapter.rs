@@ -99,7 +99,12 @@ if (role == "implementation") {
     reset = function(state, context) stop("Unexpected reset callback."),
     shutdown = function(state, context) cat("shutdown\n"))
 } else if (role == "dataset_materializer") {
-  serve_dataset_materializer(function(context) { cat("materialize\n"); list(value = 1) })
+  serve_dataset_materializer(function(context) {
+    stopifnot(context$runtime$version == 1)
+    if (!is.null(context$runtime$caches$provider)) cat(paste0("runtime:", context$runtime$caches$provider, "\n"))
+    cat("materialize\n")
+    list(value = 1)
+  })
 } else {
   serve_evaluator(function(context) { cat("evaluate\n"); evaluation(list(error = 0), "not_required") })
 }
@@ -133,6 +138,53 @@ fn write_frame(process: &mut WorkerProcess, bytes: &[u8]) {
 
 fn hello(role: &str) -> Value {
     json!({"id":"hello", "method":"hello", "protocols":[1], "role":role, "worker_id":WORKER_ID})
+}
+
+#[test]
+fn r_materializers_validate_and_receive_separate_runtime_bindings() {
+    let library = TempDir::new().unwrap();
+    install_package(library.path());
+    let adapter = TempDir::new().unwrap();
+    let adapter_path = crate::runtime::language_adapter::stage("r", adapter.path()).unwrap();
+    let dataset = TempDir::new().unwrap();
+    let mut process = spawn("dataset_materializer", library.path(), &adapter_path);
+    let response = exchange(&mut process, &hello("dataset_materializer"));
+    assert!(
+        response["capabilities"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("runtime_config"))
+    );
+    let request = json!({"id":"1","method":"materialize","source_dir":"source", "dataset_parameters":{},
+        "dataset_seed":17,"output_dir":dataset.path(),"runtime":{"version":1,"caches":{"provider":"/downloads"}}});
+    for runtime in [
+        json!(null),
+        json!({"version":2,"caches":{}}),
+        json!({"version":true,"caches":{}}),
+        json!({"version":1,"caches":{"provider":""}}),
+        json!({"version":1,"caches":{"bad/name":"/downloads"}}),
+        json!({"version":1,"caches":{},"parameters":{}}),
+    ] {
+        let mut invalid = request.clone();
+        invalid["runtime"] = runtime;
+        let response = exchange(&mut process, &invalid);
+        assert_eq!(response["error"]["code"], "invalid_request", "{response}");
+        assert!(!dataset.path().join(".metewand-output.json").exists());
+    }
+    let response = exchange(&mut process, &request);
+    assert_eq!(response["ok"], true, "{response}");
+    let draft: Value = serde_json::from_slice(
+        &fs::read(dataset.path().join(response["draft"].as_str().unwrap())).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(draft["data"], json!({"value":1}));
+    assert_eq!(
+        exchange(&mut process, &json!({"id":"2","method":"shutdown"}))["ok"],
+        true
+    );
+    let output = process.wait().unwrap();
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(output.stdout.bytes(), b"runtime:/downloads\nmaterialize\n");
 }
 
 #[test]

@@ -166,7 +166,7 @@
     },
     "capability": {
       "type": "string",
-      "enum": ["one_shot", "applicability", "fresh_sequence", "streaming_profile", "problem_semantics", "buffered_profile", "managed_outputs", "problem_preparation"]
+      "enum": ["one_shot", "applicability", "fresh_sequence", "streaming_profile", "problem_semantics", "buffered_profile", "managed_outputs", "problem_preparation", "runtime_config"]
     },
     "path": {
       "type": "string",
@@ -260,6 +260,7 @@
         "method": { "const": "materialize" },
         "source_dir": { "$ref": "#/$defs/path" },
         "dataset_parameters": { "$ref": "#/$defs/parameters" },
+        "runtime": { "$ref": "runtime-config.schema.json" },
         "dataset_seed": { "$ref": "#/$defs/safe_nonnegative_integer" },
         "output_dir": { "$ref": "#/$defs/path" }
       },

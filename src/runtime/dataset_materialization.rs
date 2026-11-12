@@ -51,6 +51,8 @@ pub struct ContractDatasetValidator<'a> {
 
 /// Fully resolved construction inputs for one dataset configuration.
 pub struct DatasetMaterialization<'a> {
+    /// Explicit local bindings, excluded from the derivation and output bytes.
+    pub runtime: &'a crate::protocol::RuntimeSettings,
     pub configuration: &'a DatasetConfigurationRecord,
     /// Verified input to transform, or no input for a pure generator.
     pub source: Option<&'a ResolvedSource>,
@@ -292,7 +294,11 @@ pub fn materialize_dataset(
         process,
         WorkerRole::DatasetMaterializer,
         identity,
-        &[],
+        if input.runtime.is_empty() {
+            &[]
+        } else {
+            &[crate::protocol::Capability::RuntimeConfig]
+        },
         input.timeouts,
     )?;
     let sdk = session
@@ -300,11 +306,12 @@ pub fn materialize_dataset(
         .sdk()
         .map(|sdk| json!({"name": sdk.name(), "version": sdk.version()}));
     let started = Instant::now();
-    let response = session.materialize(
+    let response = session.materialize_with_runtime(
         text(source_dir)?,
         input.configuration.parameters.as_json().clone(),
         input.configuration.seed.value,
         text(directory.path())?,
+        input.runtime,
     )?;
     let materialization_time_ns = Measurement::elapsed(started.elapsed(), true);
     let materializer_output = session.shutdown()?;
@@ -351,7 +358,7 @@ pub fn materialize_dataset(
     if output_digest != before_validation {
         return Err(MaterializationError::ChangedInput);
     }
-    let provenance = CanonicalValue::try_from(json!({
+    let mut provenance = json!({
         "version":1,
         "materialization_time_ns": materialization_time_ns,
         "derivation_id": derivation.id,
@@ -366,7 +373,11 @@ pub fn materialize_dataset(
         "worker_environment": materializer_output.environment,
         "validator_environment": validator_output.as_ref().and_then(|output| output.environment.as_ref()),
         "binary_validation": input.validator.as_ref().map(|hook| json!({"command_version":DATASET_VALIDATION_COMMAND_VERSION,"contract":hook.contract,"worker":record_id(hook.worker).expect("validated identity"),"status":"accepted"})),
-    }))?;
+    });
+    if !input.runtime.is_empty() {
+        provenance["runtime"] = json!(input.runtime);
+    }
+    let provenance = CanonicalValue::try_from(provenance)?;
     Ok(MaterializedDataset {
         materialization_time_ns,
         directory,

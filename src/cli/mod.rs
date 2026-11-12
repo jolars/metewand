@@ -10,6 +10,7 @@ mod output;
 mod presentation;
 #[cfg(any(unix, windows))]
 mod progress;
+mod runtime_config;
 
 use std::{
     env,
@@ -37,10 +38,10 @@ Usage:
   metewand [--output FORMAT] init [PATH] [--language python|r] [--empty] [--dry-run]
   metewand [--output FORMAT] scaffold <component> NAME [OPTIONS]
   metewand [--output FORMAT] schema [SCHEMA]
-  metewand [--output FORMAT] check [EXPERIMENT]... [--manifest PATH] [--experiment NAME] [--implementation NAME] [--dataset NAME] [--problem NAME] [--workers]
+  metewand [--output FORMAT] check [EXPERIMENT]... [--manifest PATH] [--experiment NAME] [--implementation NAME] [--dataset NAME] [--problem NAME] [--workers] [--runtime-config PATH]
   metewand [--output FORMAT] plan [EXPERIMENT]... [--manifest PATH] [--experiment NAME] [--implementation NAME] [--dataset NAME] [--problem NAME] [--verbose]
   metewand [--output FORMAT] lock [--manifest PATH] [--check]
-  metewand [--output FORMAT] run [EXPERIMENT]... [--manifest PATH] [--output-dir PATH] [--implementation NAME] [--dataset NAME] [--problem NAME] [--locked] [--verbose]
+  metewand [--output FORMAT] run [EXPERIMENT]... [--manifest PATH] [--output-dir PATH] [--implementation NAME] [--dataset NAME] [--problem NAME] [--runtime-config PATH] [--locked] [--verbose]
   metewand [--output FORMAT] status [--manifest PATH] [--output-dir PATH]
   metewand [--output FORMAT] explain <id> [--manifest PATH] [--output-dir PATH]
   metewand [--output FORMAT] export --output-dir PATH --destination PATH [--format json|jsonl|csv] [--require-complete]
@@ -70,12 +71,13 @@ Options:
   --implementation NAME  Filter solver names in check, plan, or run (repeatable).
   --dataset NAME  Filter dataset names in check, plan, or run (repeatable).
   --problem NAME  Filter problem names in check, plan, or run (repeatable).
+  --runtime-config PATH  Select explicit local download-cache bindings (check or run).
   --output-dir PATH  Select a run directory (run defaults to .metewand beside the manifest).
   -h, --help       Print help.
   -V, --version    Print the package version.
 ";
 
-const CHECK_HELP: &str = "Usage: metewand [--output FORMAT] check [EXPERIMENT]... [--manifest PATH] [--experiment NAME] [--implementation NAME] [--dataset NAME] [--problem NAME] [--workers]\n\nValidate the manifest, contracts, schemas, source bundles, and logical compatibility. Positional names and repeated --experiment flags select named comparisons in manifest order, overriding default-experiment. Without a selection or default, select every experiment. Filter that selection with exact --implementation, --dataset, and --problem names. Repeat a filter for a union of names; different filters intersect. Unknown names or filters matching no candidates are errors. Static checks validate the entire manifest. With --workers, launch only workers needed by the selected candidates to verify declared capabilities and evaluate problem reference cases in temporary storage.\n";
+const CHECK_HELP: &str = "Usage: metewand [--output FORMAT] check [EXPERIMENT]... [--manifest PATH] [--experiment NAME] [--implementation NAME] [--dataset NAME] [--problem NAME] [--workers] [--runtime-config PATH]\n\nValidate the manifest, contracts, schemas, source bundles, and logical compatibility. Positional names and repeated --experiment flags select named comparisons in manifest order, overriding default-experiment. Without a selection or default, select every experiment. Filter that selection with exact --implementation, --dataset, and --problem names. Repeat a filter for a union of names; different filters intersect. Unknown names or filters matching no candidates are errors. Static checks validate the entire manifest. Optional --runtime-config validates a versioned local file of named provider download caches without creating directories. Relative cache paths resolve beside that file; no local configuration is discovered implicitly. With --workers, launch only workers needed by the selected candidates to verify declared capabilities and evaluate problem reference cases in temporary storage.\n";
 const PLAN_HELP: &str = "Usage: metewand [--output FORMAT] plan [EXPERIMENT]... [--manifest PATH] [--experiment NAME] [--implementation NAME] [--dataset NAME] [--problem NAME] [--verbose]\n\nSummarize the deterministic unresolved logical plan without downloads, builds, worker launches, or filesystem writes. Positional names and repeated --experiment flags select named comparisons in manifest order, overriding default-experiment. Without a selection or default, select every experiment. Filter that selection with exact --implementation, --dataset, and --problem names. Repeat a filter for a union of names; different filters intersect. Unknown names or filters matching no candidates are errors. Use --verbose for expanded identities, parameters, and slots. Use --output json or --output jsonl for the complete structured plan.\n";
 const SCHEMA_HELP: &str = "Usage: metewand [--output FORMAT] schema [SCHEMA]\n\nWithout SCHEMA, list the stable public schema names and identifiers.\n";
 
@@ -271,6 +273,7 @@ fn check_command(arguments: &[OsString]) -> Result<CommandResult, CommandError> 
     if arguments == ["-h"] || arguments == ["--help"] {
         return Ok(CommandResult::help(CHECK_HELP));
     }
+    let (arguments, runtime) = runtime_config::arguments(arguments)?;
     let workers = arguments
         .iter()
         .filter(|argument| *argument == "--workers")
@@ -290,6 +293,8 @@ fn check_command(arguments: &[OsString]) -> Result<CommandResult, CommandError> 
     let manifest = manifest_argument(&remaining)?;
     let repository =
         check_repository(&manifest).map_err(|error| CommandError::repository("check", &error))?;
+    crate::runtime::runtime_config::validate_runtime_config(&repository, &runtime)
+        .map_err(runtime_config::error)?;
     let mut result = CommandResult::check(&repository);
     let plan = repository
         .logical_plan()
@@ -305,8 +310,12 @@ fn check_command(arguments: &[OsString]) -> Result<CommandResult, CommandError> 
     if workers == 1 {
         #[cfg(any(unix, windows))]
         {
-            let report = crate::runtime::run::check_repository_workers_for_plan(&repository, &plan)
-                .map_err(|error| CommandError::worker_check(&error))?;
+            let report = crate::runtime::run::check_repository_workers_with_runtime(
+                &repository,
+                &plan,
+                &runtime,
+            )
+            .map_err(|error| CommandError::worker_check(&error))?;
             result.set_worker_check(report);
         }
         #[cfg(not(any(unix, windows)))]

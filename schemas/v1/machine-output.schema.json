@@ -363,7 +363,7 @@
                     "fresh_sequence",
                     "buffered_profile",
                     "managed_outputs", "streaming_profile",
-                    "problem_semantics", "problem_preparation"
+                    "problem_semantics", "problem_preparation", "runtime_config"
                   ]
                 }
               },
@@ -377,7 +377,7 @@
                     "fresh_sequence",
                     "buffered_profile",
                     "managed_outputs", "streaming_profile",
-                    "problem_semantics", "problem_preparation"
+                    "problem_semantics", "problem_preparation", "runtime_config"
                   ]
                 }
               }

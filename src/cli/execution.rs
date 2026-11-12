@@ -5,7 +5,7 @@ use std::{io, io::Write as _};
 
 use crate::cli::output::{CommandError, CommandResult, OutputFormat};
 
-const HELP: &str = "Usage: metewand [--output FORMAT] run [EXPERIMENT]... [--manifest PATH] [--output-dir PATH] [--cache-dir PATH] [--experiment NAME] [--implementation NAME] [--dataset NAME] [--problem NAME] [--select ID] [--max-attempts N] [--resume] [--retry] [--locked] [--verbose]\n\nWith --locked, verify prepared Nix, uv, and Linux Docker OCI and Apptainer SIF environments and worker launches against metewand.lock without building or fetching software. Execute the selected supported logical plan using trusted local workers, fixed or unit datasets, and contract-authorized cold_end_to_end, prepare_and_execute, or execute_only wall timing. Create a run or resume an existing durable run in .metewand beside the manifest by default. Use --output-dir PATH to select another directory; relative paths resolve from the working directory, and the parent must exist. Matching accepted measurements are always skipped. Interrupted attempts restart automatically after recovery, once their ownership leases expire. Recorded failures or active slots require --retry to authorize one new immutable attempt per slot. Use a new output directory for an independent run. --resume remains accepted as a compatibility alias for the default behavior. Positional names and repeated --experiment flags select named comparisons in manifest order, overriding default-experiment. Without a selection or default, select every experiment. Filter that selection with exact --implementation, --dataset, and --problem names. Repeat a filter for a union of names; different filters intersect. Unknown names or filters matching no candidates are errors. Repeated --select flags further narrow the selection to the union of stable candidate, run, observation, slot, and recorded attempt IDs; an ID outside the filtered plan is an error. Repeat experiment and name filters and --select when resuming; they belong to this invocation. --max-attempts bounds new attempts in this invocation. Optional --cache-dir assigns a separate Metewand-owned directory for verified dataset construction reuse; its parent must exist. Execution policies default to max-concurrency: 1; a larger positive bound opts into concurrent attempts. Human output reports preparation and live execution progress on stderr, with spinners, progress bars, and completed sections that fold into summaries on interactive terminals (disable color with NO_COLOR). Redirected stdout or stderr uses plain progress lines and periodic heartbeats. JSON Lines output streams versioned events after preparation; JSON output includes the same events in one terminal document. Human output ends with a short summary. Use --verbose for individual measurements, settings, metrics, and profile details. Use status to inspect saved measurements in the default run, or status --output-dir PATH for another directory, without rerunning. Machine formats disable human progress and always include complete records.\n";
+const HELP: &str = "Usage: metewand [--output FORMAT] run [EXPERIMENT]... [--manifest PATH] [--output-dir PATH] [--cache-dir PATH] [--runtime-config PATH] [--experiment NAME] [--implementation NAME] [--dataset NAME] [--problem NAME] [--select ID] [--max-attempts N] [--resume] [--retry] [--locked] [--verbose]\n\nWith --locked, verify prepared Nix, uv, and Linux Docker OCI and Apptainer SIF environments and worker launches against metewand.lock without building or fetching software. Execute the selected supported logical plan using trusted local workers, fixed or unit datasets, and contract-authorized cold_end_to_end, prepare_and_execute, or execute_only wall timing. Create a run or resume an existing durable run in .metewand beside the manifest by default. Use --output-dir PATH to select another directory; relative paths resolve from the working directory, and the parent must exist. Matching accepted measurements are always skipped. Interrupted attempts restart automatically after recovery, once their ownership leases expire. Recorded failures or active slots require --retry to authorize one new immutable attempt per slot. Use a new output directory for an independent run. --resume remains accepted as a compatibility alias for the default behavior. Positional names and repeated --experiment flags select named comparisons in manifest order, overriding default-experiment. Without a selection or default, select every experiment. Filter that selection with exact --implementation, --dataset, and --problem names. Repeat a filter for a union of names; different filters intersect. Unknown names or filters matching no candidates are errors. Repeated --select flags further narrow the selection to the union of stable candidate, run, observation, slot, and recorded attempt IDs; an ID outside the filtered plan is an error. Repeat experiment and name filters and --select when resuming; they belong to this invocation. --max-attempts bounds new attempts in this invocation. Optional --cache-dir assigns a separate Metewand-owned directory for verified dataset construction reuse; its parent must exist. Use --runtime-config PATH for version-1 named provider download caches, supplied separately to dataset materializers and recorded in provenance without changing scientific identities or seeds. Relative download-cache paths resolve beside that file; Metewand creates no provider cache directories and does not discover local configuration implicitly. Execution policies default to max-concurrency: 1; a larger positive bound opts into concurrent attempts. Human output reports preparation and live execution progress on stderr, with spinners, progress bars, and completed sections that fold into summaries on interactive terminals (disable color with NO_COLOR). Redirected stdout or stderr uses plain progress lines and periodic heartbeats. JSON Lines output streams versioned events after preparation; JSON output includes the same events in one terminal document. Human output ends with a short summary. Use --verbose for individual measurements, settings, metrics, and profile details. Use status to inspect saved measurements in the default run, or status --output-dir PATH for another directory, without rerunning. Machine formats disable human progress and always include complete records.\n";
 
 pub fn command(
     arguments: &[OsString],
@@ -14,6 +14,7 @@ pub fn command(
     if arguments == ["-h"] || arguments == ["--help"] {
         return Ok(CommandResult::help(HELP));
     }
+    let (arguments, runtime) = super::runtime_config::arguments(arguments)?;
     let mut manifest = None;
     let mut output_directory = None;
     let mut cache_directory = None;
@@ -155,6 +156,7 @@ pub fn command(
         &manifest,
         output_directory.as_deref(),
         cache_directory.as_deref(),
+        runtime,
         &options,
         output_format,
         verbose,
@@ -166,6 +168,7 @@ fn execute(
     manifest: &std::path::Path,
     output_directory: Option<&std::path::Path>,
     cache_directory: Option<&std::path::Path>,
+    runtime: crate::protocol::RuntimeSettings,
     options: &crate::core::run_output::RunOptions,
     output_format: OutputFormat,
     verbose: bool,
@@ -193,7 +196,10 @@ fn execute(
         &repository,
         &plan,
         output_directory,
-        cache_directory,
+        &crate::runtime::run::LocalRunSettings {
+            cache_directory,
+            runtime,
+        },
         options,
         |event| match output_format {
             OutputFormat::JsonLines => {
@@ -224,6 +230,7 @@ fn execute(
     _: &std::path::Path,
     _: Option<&std::path::Path>,
     _: Option<&std::path::Path>,
+    _: crate::protocol::RuntimeSettings,
     _: &crate::core::run_output::RunOptions,
     _: OutputFormat,
     _: bool,
