@@ -1,8 +1,11 @@
-//! Shared iocraft layout for human comparison output.
+//! Shared iocraft layout for human summaries and comparison output.
 
-use crate::core::comparison::ComparisonRow;
+use crate::core::{comparison::ComparisonRow, run_output::RunReport};
 use iocraft::prelude::*;
-use std::io::{self, IsTerminal};
+use std::{
+    io::{self, IsTerminal},
+    time::Duration,
+};
 
 pub(super) fn width() -> usize {
     if io::stdout().is_terminal() {
@@ -30,6 +33,67 @@ fn render(mut element: AnyElement<'_>, width: usize) -> String {
     } else {
         canvas.to_string()
     }
+}
+
+pub(super) fn completion(report: &RunReport, elapsed: Duration) -> String {
+    let summary = &report.summary;
+    let (marker, state, color) = if summary.failed_attempts > 0 {
+        ("✗", "finished", Color::Red)
+    } else if summary.censored_attempts > 0
+        || summary.censored_profiles > 0
+        || summary.superseded_attempts > 0
+    {
+        ("!", "finished", Color::Yellow)
+    } else {
+        ("✓", "complete", Color::Green)
+    };
+    let mut outcomes = vec![if state == "complete" {
+        if summary.attempt_slots == 0 {
+            "no pending attempts".into()
+        } else {
+            format!(
+                "{}/{} accepted",
+                summary.accepted_attempts, summary.attempt_slots
+            )
+        }
+    } else {
+        format!("{} accepted", summary.accepted_attempts)
+    }];
+    for (count, label) in [
+        (summary.failed_attempts, "failed"),
+        (summary.censored_attempts, "censored"),
+        (summary.superseded_attempts, "superseded"),
+    ] {
+        if count > 0 {
+            outcomes.push(format!("{count} {label}"));
+        }
+    }
+    if summary.censored_profiles > 0 {
+        outcomes.push(format!(
+            "{} censored profile{}",
+            summary.censored_profiles,
+            if summary.censored_profiles == 1 {
+                ""
+            } else {
+                "s"
+            }
+        ));
+    }
+    let seconds = elapsed.as_secs();
+    let heading = format!(
+        "{marker} Benchmarks {state} · {} · {}:{:02}",
+        outcomes.join(" · "),
+        seconds / 60,
+        seconds % 60
+    );
+    render(element! {
+        View(width: 100pct, flex_direction: FlexDirection::Column) {
+            Text(content: heading, weight: Weight::Bold, color)
+            View(padding_left: 2) {
+                Text(content: format!("Results ({}): {}", report.benchmark, report.output_directory), color: Color::DarkGrey)
+            }
+        }
+    }.into(), width())
 }
 
 #[derive(Clone)]

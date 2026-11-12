@@ -29,9 +29,11 @@ compute run -- uv run --no-project --python python3 --with ./packages/python -- 
 
 If the Metewand Python package is already installed in your Python environment,
 you can omit the `uv run` prefix. The Python workers otherwise use only the
-standard library. The run ends with the accepted count, any failed or censored
-attempts, and the output directory. Inspect individual measurements afterward
-with `target/debug/metewand status --output-dir /path/to/run`.
+standard library. The run ends with one completion line containing outcome counts
+and elapsed time, followed by the benchmark name and results path. Failed,
+censored, and superseded counts appear when nonzero. Inspect individual
+measurements afterward with
+`target/debug/metewand status --output-dir /path/to/run`.
 
 Do not pipe or redirect the command when testing the live bars. JSON output and
 `TERM=dumb` also disable them. The run uses serial execution, deterministic

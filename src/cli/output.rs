@@ -69,6 +69,7 @@ pub enum CommandResult {
     Run {
         report: Box<RunReport>,
         verbose: bool,
+        elapsed: std::time::Duration,
     },
     Status(Box<StatusReport>),
     Explain(Box<Explanation>),
@@ -205,7 +206,11 @@ impl CommandResult {
             Self::SchemaDocument(result) => result.source.to_owned(),
             Self::Check(result) => result.render_human(),
             Self::Plan(result) => result.render_human(),
-            Self::Run { report, verbose } => render_run_report(report, *verbose),
+            Self::Run {
+                report,
+                verbose,
+                elapsed,
+            } => render_run_report(report, *verbose, *elapsed),
             Self::Status(result) => render_status(result),
             Self::Explain(result) => render_explanation(result),
             #[cfg(any(unix, windows))]
@@ -1882,26 +1887,8 @@ fn render_comparison(rows: &[crate::core::comparison::ComparisonRow]) -> String 
     super::presentation::comparison(rows)
 }
 
-fn render_run_report(report: &RunReport, verbose: bool) -> String {
-    let mut outcomes = vec![format!("{} accepted", report.summary.accepted_attempts)];
-    for (count, label) in [
-        (report.summary.failed_attempts, "failed"),
-        (report.summary.censored_attempts, "censored"),
-        (report.summary.superseded_attempts, "superseded"),
-    ] {
-        if count > 0 {
-            outcomes.push(format!("{count} {label}"));
-        }
-    }
-    if report.summary.censored_profiles > 0 {
-        outcomes.push(count(report.summary.censored_profiles, "censored profile"));
-    }
-    let mut output = format!(
-        "Benchmark `{}`: {}.\n  output directory: {}\n",
-        report.benchmark,
-        outcomes.join(", "),
-        report.output_directory
-    );
+fn render_run_report(report: &RunReport, verbose: bool, elapsed: std::time::Duration) -> String {
+    let mut output = super::presentation::completion(report, elapsed);
     if !verbose {
         return output;
     }
@@ -2182,14 +2169,11 @@ fn count(value: usize, noun: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{Diagnostic, OutputFormat, render_diagnostic, render_event};
-    use crate::core::run_output::{RunEvent, RunEventKind};
+    use crate::core::run_output::{RunEvent, RunEventKind, RunReport, RunSummary};
     use serde_json::Value;
 
-    #[test]
-    fn compact_run_summary_preserves_censoring_and_failure_status() {
-        use super::CommandResult;
-        use crate::core::run_output::{RunReport, RunSummary};
-        let result = CommandResult::Run {
+    fn run_result(summary: RunSummary) -> super::CommandResult {
+        super::CommandResult::Run {
             report: Box::new(RunReport {
                 command: "run",
                 benchmark: "example".into(),
@@ -2199,18 +2183,65 @@ mod tests {
                 events: vec![],
                 comparison: vec![],
                 fresh_sequences: vec![],
-                summary: RunSummary {
-                    attempt_slots: 3,
-                    accepted_attempts: 0,
-                    failed_attempts: 1,
-                    censored_attempts: 2,
-                    censored_profiles: 1,
-                    superseded_attempts: 0,
-                },
+                summary,
             }),
             verbose: false,
-        };
+            elapsed: std::time::Duration::from_secs(30),
+        }
+    }
+
+    #[test]
+    fn successful_run_summary_has_one_completion_line_and_results_path() {
+        let result = run_result(RunSummary {
+            attempt_slots: 36,
+            accepted_attempts: 36,
+            failed_attempts: 0,
+            censored_attempts: 0,
+            censored_profiles: 0,
+            superseded_attempts: 0,
+        });
+        assert_eq!(
+            result.render_human(),
+            "✓ Benchmarks complete · 36/36 accepted · 0:30\n  Results (example): results\n"
+        );
+    }
+
+    #[test]
+    fn censored_and_superseded_runs_do_not_claim_success() {
+        for (censored_attempts, censored_profiles, superseded_attempts, expected) in [
+            (1, 0, 0, "1 censored"),
+            (0, 1, 0, "1 censored profile"),
+            (0, 0, 1, "1 superseded"),
+        ] {
+            let result = run_result(RunSummary {
+                attempt_slots: 2,
+                accepted_attempts: 1,
+                failed_attempts: 0,
+                censored_attempts,
+                censored_profiles,
+                superseded_attempts,
+            });
+            let text = result.render_human();
+            assert!(text.starts_with("! Benchmarks finished ·"), "{text}");
+            assert!(text.contains(expected), "{text}");
+            assert!(!text.contains("0 failed"), "{text}");
+        }
+    }
+
+    #[test]
+    fn compact_run_summary_preserves_censoring_and_failure_status() {
+        let result = run_result(RunSummary {
+            attempt_slots: 3,
+            accepted_attempts: 0,
+            failed_attempts: 1,
+            censored_attempts: 2,
+            censored_profiles: 1,
+            superseded_attempts: 0,
+        });
         let text = result.render_human();
+        assert!(text.starts_with("✗ Benchmarks finished ·"), "{text}");
+        assert!(text.contains("  Results (example): results"), "{text}");
+        assert!(!text.contains("0 superseded"), "{text}");
         for expected in ["1 failed", "2 censored", "1 censored profile", "results"] {
             assert!(text.contains(expected), "{text}");
         }

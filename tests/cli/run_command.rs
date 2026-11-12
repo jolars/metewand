@@ -1448,9 +1448,15 @@ fn human_run_summarizes_outcomes_and_status_reports_scientific_failures() {
         let summary = String::from_utf8(output.stdout).unwrap();
         assert_eq!(summary.lines().count(), 2, "{summary}");
         assert!(
-            summary.contains(if reached { "1 accepted" } else { "1 failed" }),
+            summary.starts_with(if reached {
+                "✓ Benchmarks complete · 1/1 accepted ·"
+            } else {
+                "✗ Benchmarks finished · 0 accepted · 1 failed ·"
+            }),
             "{summary}"
         );
+        assert!(summary.contains("  Results (fixed-dataset): "), "{summary}");
+        assert!(!summary.contains("0 failed"), "{summary}");
         assert!(!summary.contains("Comparison"), "{summary}");
         if !reached {
             assert!(
@@ -3164,6 +3170,10 @@ for name, no_color, term in [('color', False, 'xterm'), ('no-color', True, 'xter
         os.close(master)
     text=b''.join(chunks)
     assert process.wait() == 0, repr(text)
+    summary = process.stdout.read() if name=='piped' else text
+    assert summary.count(b'Benchmarks complete') == 1, repr(summary)
+    assert summary.count(b'Results (fixed-dataset):') == 1, repr(summary)
+    assert b'Benchmark `fixed-dataset`' not in summary, repr(summary)
     assert b'1/1' in text, repr(text)
     assert b'accepted' in text, repr(text)
     colored = re.search(rb'\x1b\[(?:[0-9;]*;)?(?:3[0-7]|9[0-7]|38;[0-9;]+)m', text) is not None
@@ -3172,7 +3182,7 @@ for name, no_color, term in [('color', False, 'xterm'), ('no-color', True, 'xter
         assert b'\x1b[' not in text, repr(text)
     else:
         assert b'\x1b[' in text, repr(text)
-        assert b'Preparation complete' in text and b'Benchmarks' in text, repr(text)
+        assert b'Preparation complete' in text, repr(text)
 "#;
     let output = Command::new("python3")
         .args([
@@ -3256,8 +3266,8 @@ fn human_run_defaults_to_a_short_summary_and_details_are_opt_in() {
         String::from_utf8_lossy(&output.stderr)
     );
     let text = String::from_utf8(output.stdout).unwrap();
-    assert!(text.contains("20 accepted"), "{text}");
-    assert!(text.contains("output directory:"), "{text}");
+    assert!(text.contains("20/20 accepted"), "{text}");
+    assert!(text.contains("  Results (fixed-dataset):"), "{text}");
     assert!(!text.contains("--verbose"), "{text}");
     assert!(
         !text.contains("Comparison") && !text.contains("absolute_error"),
@@ -3275,6 +3285,7 @@ fn human_run_defaults_to_a_short_summary_and_details_are_opt_in() {
         String::from_utf8_lossy(&output.stderr)
     );
     let text = String::from_utf8(output.stdout).unwrap();
+    assert!(text.contains("no pending attempts"), "{text}");
     assert!(
         text.contains("Comparison (individual measurements)"),
         "{text}"
@@ -3324,6 +3335,7 @@ fn run_verbose_preserves_machine_output_and_rejects_duplicate_flags() {
         );
         assert_eq!(result["data"]["events"].as_array().unwrap().len(), 4);
         assert!(result["data"].get("verbose").is_none());
+        assert!(result["data"].get("elapsed").is_none());
     }
     let output = metewand(
         root.path(),

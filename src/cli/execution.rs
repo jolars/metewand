@@ -171,6 +171,7 @@ fn execute(
     verbose: bool,
 ) -> Result<CommandResult, CommandError> {
     use crate::cli::progress::Progress;
+    let started = std::time::Instant::now();
     let progress = Progress::new(output_format == OutputFormat::Human, options.max_attempts);
     progress
         .stage("Checking manifest", manifest.display().to_string())
@@ -214,6 +215,7 @@ fn execute(
     Ok(CommandResult::Run {
         report: Box::new(report),
         verbose,
+        elapsed: started.elapsed(),
     })
 }
 

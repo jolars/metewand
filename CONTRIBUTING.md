@@ -635,11 +635,26 @@ records. Machine formats use the
 versioned `machine-output` envelope; JSONL run events flush in order, while JSON
 returns a terminal envelope. Human run progress uses iocraft components with
 transient runtime preparation callbacks and the existing typed execution events.
+Place the overall progress row directly below the detailed rows, using bold text
+and color for emphasis. Align both sides of each completed/total counter in
+shared columns, including completed rows, and mute the slash when color is enabled.
+Append groups when their first attempt starts and preserve that order throughout
+execution. Keep spinners visible between repetitions until the group's scheduled
+work finishes. Reserve a marker column for spinners and completion marks, and
+mute completed rows.
 The CLI owns the layout and its render loop on a separate thread. Preparation
-and execution sections fold when complete; failures remain visible. Comparison
-tables also use iocraft layout. Group all measurements with the same comparison
-context together, regardless of stored candidate order, and sort methods and
-repetitions within each group. Keep this ordering in the human renderer so
+steps appear as they start, retain their order, and use aligned spinners and muted
+completion marks. Each sequential step completes before the next begins;
+interrupted preparation retains its unfinished step. Preparation folds into a
+completed line when execution starts. Execution folds away before the final
+report prints one styled completion line with the same "Benchmarks" heading, outcome counts,
+and elapsed time, followed by a muted benchmark name and results path. Print only
+nonzero failed, censored, or superseded counts, and retain failure diagnostics.
+Use the same completion layout
+for interactive and plain output; keep elapsed display time in CLI state.
+Comparison tables also use iocraft layout. Group all measurements with the same
+comparison context together, regardless of stored candidate order, and sort
+methods and repetitions within each group. Keep this ordering in the human renderer so
 machine records retain their original order. Live rendering requires terminal
 stdout and stderr; redirected output and dumb terminals receive plain logs with
 periodic heartbeats. Send only outcome metadata to the renderer, excluding large profile
