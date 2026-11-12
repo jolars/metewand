@@ -123,6 +123,22 @@ fn fresh_points_can_select_implementation_time_without_changing_budget_accountin
         wall_sum += row["timed_wall_time_ns"].as_u64().unwrap();
     }
     assert_eq!(report["fresh_sequences"][0]["consumed_time_ns"], wall_sum);
+    let explicit_plan = invoke(stage.path(), &["plan", "--output", "json"]);
+    assert!(explicit_plan.status.success(), "{explicit_plan:?}");
+    edit(stage.path(), "metewand.yaml", |source| {
+        let mut document: Value = serde_saphyr::from_str(&source).unwrap();
+        for policy in document["observation-policies"]
+            .as_object_mut()
+            .unwrap()
+            .values_mut()
+        {
+            policy.as_object_mut().unwrap().remove("max-observations");
+        }
+        serde_json::to_string_pretty(&document).unwrap()
+    });
+    let inferred_plan = invoke(stage.path(), &["plan", "--output", "json"]);
+    assert!(inferred_plan.status.success(), "{inferred_plan:?}");
+    assert_eq!(data(&inferred_plan), data(&explicit_plan));
     let (output, resumed) = run(stage.path(), &["--resume"]);
     assert!(output.status.success(), "{output:?}");
     assert_eq!(resumed["summary"]["attempt_slots"], 0);

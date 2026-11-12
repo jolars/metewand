@@ -328,11 +328,7 @@ fn default_profile_bindings_reject_partial_overrides_and_missing_bounds() {
         *invalid.pointer_mut(pointer).unwrap() = value;
         invalids.push(invalid);
     }
-    for key in [
-        "max-observations",
-        "max-trace-points",
-        "max-checkpoint-bytes",
-    ] {
+    for key in ["max-trace-points", "max-checkpoint-bytes"] {
         let mut invalid = valid.clone();
         if key == "max-checkpoint-bytes" {
             invalid["observation-policies"]["accuracy"]["default-binding"] = streaming();
@@ -355,4 +351,186 @@ fn default_profile_bindings_reject_partial_overrides_and_missing_bounds() {
             "{invalid}"
         );
     }
+}
+
+fn assert_observation_limit_inference(mut source: Value, expected: u64) {
+    source["observation-policies"]["accuracy"]["max-observations"] = json!(expected);
+    let explicit = parse(&source);
+    source["observation-policies"]["accuracy"]
+        .as_object_mut()
+        .unwrap()
+        .remove("max-observations");
+    let inferred = parse(&source);
+    assert_eq!(
+        inferred.observation_policies["accuracy"]
+            .profile
+            .as_ref()
+            .unwrap()
+            .policy
+            .max_observations,
+        expected
+    );
+    assert_eq!(
+        canonical_manifest_bytes(&inferred).unwrap(),
+        canonical_manifest_bytes(&explicit).unwrap()
+    );
+    assert_eq!(plan(&inferred), plan(&explicit));
+    public_schema_catalog()
+        .unwrap()
+        .validate(PublicSchema::Manifest.repository_path(), &source)
+        .unwrap();
+}
+
+#[test]
+fn fresh_observation_limits_infer_explicit_linear_and_geometric_lengths_with_prefixes() {
+    for schedule in [
+        json!({"kind": "explicit", "controls": [{"tolerance": 1.0}, {"tolerance": 0.1}]}),
+        json!({"kind": "linear", "field": "tolerance", "start": 0.1, "step": -0.01, "count": 1, "prefix": [{"initial": true}]}),
+        json!({"kind": "geometric", "field": "tolerance", "start": 0.1, "ratio": 0.1, "count": 1, "prefix": [{"initial": true}]}),
+    ] {
+        for shared_default in [true, false] {
+            let mut source = document();
+            let mut binding = fresh();
+            binding["schedule"] = schedule.clone();
+            if shared_default {
+                source["observation-policies"]["accuracy"]["default-binding"] = binding;
+            } else {
+                source["observation-policies"]["accuracy"]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("default-binding");
+                source["observation-policies"]["accuracy"]["implementations"]["alpha"] = binding;
+            }
+            assert_observation_limit_inference(source, 2);
+        }
+    }
+    let mut source = document();
+    source["observation-policies"]["accuracy"]["default-binding"] = fresh();
+    source["observation-policies"]["accuracy"]
+        .as_object_mut()
+        .unwrap()
+        .remove("implementations");
+    assert_observation_limit_inference(source, 2);
+}
+
+#[test]
+fn fresh_observation_limits_ignore_defaults_replaced_for_every_selected_implementation() {
+    let mut longer = fresh();
+    longer["schedule"]["controls"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"tolerance": 0.0001}));
+    for default in [longer, buffered(), streaming()] {
+        let mut source = document();
+        source["observation-policies"]["accuracy"]["default-binding"] = default;
+        source["observation-policies"]["accuracy"]["implementations"]["alpha"] = fresh();
+        assert_observation_limit_inference(source, 2);
+    }
+}
+
+#[test]
+fn fresh_observation_limits_require_unambiguous_nonempty_safe_schedules() {
+    let mut fresh_source = document();
+    fresh_source["observation-policies"]["accuracy"]["default-binding"] = fresh();
+    fresh_source["observation-policies"]["accuracy"]
+        .as_object_mut()
+        .unwrap()
+        .remove("max-observations");
+    for binding in [buffered(), streaming()] {
+        let mut invalid = fresh_source.clone();
+        invalid["observation-policies"]["accuracy"]["implementations"]["beta"] = binding.clone();
+        assert!(parse_manifest(Path::new("metewand.yaml"), &invalid.to_string()).is_err());
+        invalid["observation-policies"]["accuracy"]["default-binding"] = binding;
+        invalid["observation-policies"]["accuracy"]
+            .as_object_mut()
+            .unwrap()
+            .remove("implementations");
+        assert!(parse_manifest(Path::new("metewand.yaml"), &invalid.to_string()).is_err());
+    }
+    for schedule in [
+        json!({"kind": "explicit", "controls": []}),
+        json!({"kind": "explicit", "controls": [{}]}),
+        json!({"kind": "linear", "field": "tolerance", "start": 1, "step": 1, "count": 0}),
+        json!({"kind": "linear", "field": "tolerance", "start": 1, "step": 1, "count": 9007199254740992u64}),
+        json!({"kind": "geometric", "field": "tolerance", "start": 0.1, "ratio": 0.1, "count": 2, "prefix": [{"initial": true}]}),
+    ] {
+        let mut invalid = fresh_source.clone();
+        invalid["observation-policies"]["accuracy"]["default-binding"]["schedule"] = schedule;
+        let error = parse_manifest(Path::new("metewand.yaml"), &invalid.to_string()).unwrap_err();
+        assert!(
+            error.to_string().contains("max-observations")
+                || error.to_string().contains("outside the inclusive range"),
+            "{error}"
+        );
+    }
+    for schedule in [
+        json!({"kind": "explicit", "controls": []}),
+        json!({"kind": "linear", "field": "tolerance", "start": 1, "step": 1, "count": 9007199254740991u64, "prefix": [{"initial": true}]}),
+    ] {
+        let mut invalid = fresh_source.clone();
+        invalid["observation-policies"]["accuracy"]
+            .as_object_mut()
+            .unwrap()
+            .remove("implementations");
+        invalid["observation-policies"]["accuracy"]["default-binding"]["schedule"] = schedule;
+        let error = parse_manifest(Path::new("metewand.yaml"), &invalid.to_string()).unwrap_err();
+        assert!(
+            error.to_string().contains("positive safe integer"),
+            "{error}"
+        );
+    }
+}
+
+#[test]
+fn explicit_fresh_observation_limits_keep_existing_validation_and_precedence() {
+    let mut source = document();
+    source["observation-policies"]["accuracy"]["default-binding"] = fresh();
+    source["observation-policies"]["accuracy"]["metric"] = json!("gap");
+    source["observation-policies"]["accuracy"]["direction"] = json!("at_most");
+    source["observation-policies"]["accuracy"]["threshold"] = json!(0.001);
+    source["observation-policies"]["accuracy"]["implementations"]["beta"]["schedule"]["controls"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"tolerance": 0.0001}));
+    source["observation-policies"]["accuracy"]["max-observations"] = json!(4);
+    let manifest = parse(&source);
+    assert_eq!(
+        manifest.observation_policies["accuracy"]
+            .profile
+            .as_ref()
+            .unwrap()
+            .policy
+            .max_observations,
+        4
+    );
+    plan(&manifest);
+    for limit in [json!(0), Value::Null, json!(1), json!(9007199254740992u64)] {
+        source["observation-policies"]["accuracy"]["max-observations"] = limit;
+        assert!(parse_manifest(Path::new("metewand.yaml"), &source.to_string()).is_err());
+    }
+}
+
+#[test]
+fn persisted_profile_policies_still_require_explicit_observation_limits() {
+    let policy = json!({"max-active-time": "1 s"});
+    assert!(serde_json::from_value::<crate::core::profile::ProfilePolicy>(policy.clone()).is_err());
+    let schema: Value = serde_json::from_str(include_str!(
+        "../../schemas/v1/profile-observation-policy.schema.json"
+    ))
+    .unwrap();
+    let mut persisted_schema = schema["$defs"]["policy"].clone();
+    persisted_schema["$schema"] = schema["$schema"].clone();
+    let catalog =
+        SchemaCatalog::try_new([("policy.schema.json".into(), persisted_schema)]).unwrap();
+    assert!(
+        catalog
+            .validate(Path::new("policy.schema.json"), &policy)
+            .is_err()
+    );
+    catalog
+        .validate(
+            Path::new("policy.schema.json"),
+            &json!({"max-observations": 2, "max-active-time": "1 s"}),
+        )
+        .unwrap();
 }

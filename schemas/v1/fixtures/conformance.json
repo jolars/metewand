@@ -2047,6 +2047,33 @@
       }
     },
     {
+      "name": "fresh profile infers observations including prefix points",
+      "schema": "profile-observation-policy",
+      "instance": {
+        "kind": "profile",
+        "max-active-time": "1 s",
+        "default-binding": {
+          "delivery": "fresh_sequence",
+          "controls": { "tolerance": { "type": "number", "exclusiveMinimum": 0 } },
+          "schedule": {
+            "kind": "geometric",
+            "field": "tolerance",
+            "start": 0.01,
+            "ratio": 0.1,
+            "count": 1,
+            "prefix": [{ "initial": true }]
+          }
+        },
+        "implementations": {
+          "external": {
+            "delivery": "fresh_sequence",
+            "controls": { "iterations": { "type": "integer", "minimum": 1 } },
+            "schedule": { "kind": "explicit", "controls": [{ "iterations": 10 }, { "iterations": 100 }] }
+          }
+        }
+      }
+    },
+    {
       "name": "profile default buffered binding with fresh override",
       "schema": "profile-observation-policy",
       "instance": {

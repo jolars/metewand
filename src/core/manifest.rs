@@ -183,12 +183,27 @@ struct RawManifest {
     #[serde(default)]
     execution_policies: BTreeMap<Name, ExecutionPolicyDefinition>,
     #[serde(default)]
-    observation_policies: BTreeMap<Name, ObservationPolicyDefinition>,
+    observation_policies: BTreeMap<Name, RawObservationPolicyDefinition>,
 }
 
 impl<'de> Deserialize<'de> for Manifest {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let raw = RawManifest::deserialize(deserializer)?;
+        let observation_policies = raw
+            .observation_policies
+            .into_iter()
+            .map(|(name, policy)| {
+                let implementations = raw
+                    .experiments
+                    .iter()
+                    .filter(|experiment| experiment.observation_policy == name)
+                    .flat_map(|experiment| &experiment.implementations);
+                let policy = policy.resolve(implementations).map_err(|error| {
+                    de::Error::custom(format!("observation policy `{name}`: {error}"))
+                })?;
+                Ok((name, policy))
+            })
+            .collect::<Result<_, D::Error>>()?;
         let mut manifest = Self {
             source_map: crate::core::yaml::SourceMap::default(),
             version: raw.version,
@@ -201,7 +216,7 @@ impl<'de> Deserialize<'de> for Manifest {
             environments: raw.environments,
             experiments: raw.experiments,
             execution_policies: raw.execution_policies,
-            observation_policies: raw.observation_policies,
+            observation_policies,
         };
         manifest
             .resolve_local_environments()
@@ -241,25 +256,9 @@ impl Manifest {
                         version: 1,
                         kind: ObservationKind::OneShot,
                         profile: None,
-                        default_binding: None,
                     },
                 );
                 experiment.observation_policy = name;
-            }
-        }
-        for (name, policy) in &mut self.observation_policies {
-            if let Some(default_binding) = policy.default_binding.take() {
-                let profile = policy.profile.as_mut().expect("profile default binding");
-                for experiment in &self.experiments {
-                    if &experiment.observation_policy == name {
-                        for implementation in &experiment.implementations {
-                            profile
-                                .implementations
-                                .entry(implementation.clone())
-                                .or_insert_with(|| default_binding.clone());
-                        }
-                    }
-                }
             }
         }
         for implementation in self.implementations.values_mut() {
@@ -785,11 +784,71 @@ pub struct ObservationPolicyDefinition {
     pub version: u32,
     pub kind: ObservationKind,
     pub profile: Option<crate::core::profile::ProfileDefinition>,
-    // Manifest normalization consumes this shorthand before schema resolution and hashing.
-    default_binding: Option<crate::core::profile::ProfileBinding>,
 }
 
 impl<'de> Deserialize<'de> for ObservationPolicyDefinition {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        RawObservationPolicyDefinition::deserialize(deserializer)?
+            .resolve(std::iter::empty())
+            .map_err(de::Error::custom)
+    }
+}
+
+#[derive(Debug)]
+struct RawObservationPolicyDefinition {
+    definition: ObservationPolicyDefinition,
+    default_binding: Option<crate::core::profile::ProfileBinding>,
+    infer_max_observations: bool,
+}
+
+impl RawObservationPolicyDefinition {
+    fn resolve<'a>(
+        mut self,
+        implementations: impl IntoIterator<Item = &'a Name>,
+    ) -> Result<ObservationPolicyDefinition, String> {
+        if let Some(profile) = &mut self.definition.profile {
+            if let Some(default_binding) = &self.default_binding {
+                for implementation in implementations {
+                    profile
+                        .implementations
+                        .entry(implementation.clone())
+                        .or_insert_with(|| default_binding.clone());
+                }
+            }
+            let bindings = || {
+                profile.implementations.values().chain(
+                    self.default_binding
+                        .iter()
+                        .filter(|_| profile.implementations.is_empty()),
+                )
+            };
+            if self.infer_max_observations {
+                let inference_error = || {
+                    "cannot infer max-observations: all resolved bindings must use finite fresh_sequence schedules with the same expanded length, including prefixes; set max-observations explicitly".to_owned()
+                };
+                let mut length = None;
+                for binding in bindings() {
+                    let crate::core::profile::ProfileBinding::Fresh(binding) = binding else {
+                        return Err(inference_error());
+                    };
+                    let count = binding.schedule.len();
+                    if length.is_some_and(|length| length != count) {
+                        return Err(inference_error());
+                    }
+                    length = Some(count);
+                }
+                profile.policy.max_observations = length.ok_or_else(inference_error)?;
+            }
+            profile.policy.validate()?;
+            for binding in bindings() {
+                binding.validate(&profile.policy)?;
+            }
+        }
+        Ok(self.definition)
+    }
+}
+
+impl<'de> Deserialize<'de> for RawObservationPolicyDefinition {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let mut value = serde_json::Value::deserialize(deserializer)?;
         let object = value
@@ -804,10 +863,13 @@ impl<'de> Deserialize<'de> for ObservationPolicyDefinition {
             .ok_or_else(|| de::Error::missing_field("kind"))?;
         match kind.as_str() {
             Some("one_shot") if object.is_empty() => Ok(Self {
-                version: 1,
-                kind: ObservationKind::OneShot,
-                profile: None,
+                definition: ObservationPolicyDefinition {
+                    version: 1,
+                    kind: ObservationKind::OneShot,
+                    profile: None,
+                },
                 default_binding: None,
+                infer_max_observations: false,
             }),
             Some("profile") => {
                 let default_binding: Option<crate::core::profile::ProfileBinding> = object
@@ -822,23 +884,27 @@ impl<'de> Deserialize<'de> for ObservationPolicyDefinition {
                 };
                 let implementations: BTreeMap<Name, crate::core::profile::ProfileBinding> =
                     serde_json::from_value(bindings).map_err(de::Error::custom)?;
+                let infer_max_observations = !object.contains_key("max-observations");
+                if infer_max_observations {
+                    // Only this authoring declaration may defer the bound until bindings resolve.
+                    object.insert("max-observations".into(), serde_json::json!(0));
+                }
                 let policy: crate::core::profile::ProfilePolicy =
                     serde_json::from_value(value).map_err(de::Error::custom)?;
-                policy.validate().map_err(de::Error::custom)?;
                 if implementations.is_empty() && default_binding.is_none() {
                     return Err(de::Error::custom("profile implementations cannot be empty"));
                 }
-                for binding in default_binding.iter().chain(implementations.values()) {
-                    binding.validate(&policy).map_err(de::Error::custom)?;
-                }
                 Ok(Self {
-                    version: 1,
-                    kind: ObservationKind::Profile,
-                    profile: Some(crate::core::profile::ProfileDefinition {
-                        policy,
-                        implementations,
-                    }),
+                    definition: ObservationPolicyDefinition {
+                        version: 1,
+                        kind: ObservationKind::Profile,
+                        profile: Some(crate::core::profile::ProfileDefinition {
+                            policy,
+                            implementations,
+                        }),
+                    },
                     default_binding,
+                    infer_max_observations,
                 })
             }
             _ => Err(de::Error::custom(

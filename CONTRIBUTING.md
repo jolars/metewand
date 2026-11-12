@@ -132,6 +132,14 @@ binding against its schema, problem contract, and implementation capabilities.
 This is an additive version-1 authoring change; equivalent explicit bindings
 retain their canonical manifest bytes and identities.
 
+When `max-observations` is omitted, infer it after resolving profile bindings.
+Every resolved binding must use a finite `fresh_sequence` schedule with the same
+expanded length, including prefixes. Explicit limits retain their existing
+validation and precedence. Buffered, streaming, mixed-delivery, and unequal-length
+profiles require an explicit limit. This extends version-1 authoring syntax;
+normalized policies retain their required bound, canonical bytes, and identities.
+Persisted policies keep an explicit bound, and the worker protocol is unchanged.
+
 Sequential scheduling follows plan order. Randomized scheduling preserves the
 first occurrence of each dataset configuration and, within it, each problem
 configuration. It visits implementation and measurement repetitions in index

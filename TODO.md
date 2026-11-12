@@ -42,7 +42,7 @@ equivalent configurations.
 - [x] Support a default profile binding with per-implementation overrides.
   Explicit bindings replace the default completely. Validate each resolved
   binding's schema, problem contract, and implementation capabilities.
-- [ ] Infer `max-observations` when omitted and all resolved bindings use finite
+- [x] Infer `max-observations` when omitted and all resolved bindings use finite
   `fresh_sequence` schedules with the same expanded length, including
   prefixes.
 - [ ] Add explicit local runtime overrides for machine settings, including

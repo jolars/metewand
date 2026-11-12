@@ -198,7 +198,6 @@ observation-policies:
     metric: gap
     direction: at_most
     threshold: 0.00000001
-    max-observations: 4
     max-active-time: 1 min
     default-binding:
       delivery: fresh_sequence
@@ -218,6 +217,14 @@ observation-policies:
 Each override replaces the entire binding. The default also supports buffered
 and streaming profiles, with their usual collection limits and problem-contract
 requirements. Equivalent explicit bindings produce the same identities.
+
+You can omit `max-observations` when all resolved bindings use finite fresh
+sequences with the same expanded length. The example infers four observations.
+For generated schedules, the length includes both `count` and any prefix points.
+The controls may differ between implementations. Set an explicit limit when
+schedules have different lengths or use buffered or streaming delivery.
+Explicit limits keep their existing validation and produce the same identities
+as equivalent inferred limits.
 
 | Approach | Use it when | Recorded coordinate |
 | --- | --- | --- |

@@ -26,6 +26,7 @@
       "uniqueItems": true
     },
     "max-observations": {
+      "description": "May be omitted when all resolved bindings use finite fresh_sequence schedules with the same expanded length, including prefixes. Binding resolution validates this condition.",
       "type": "integer",
       "minimum": 1,
       "maximum": 9007199254740991
@@ -417,7 +418,6 @@
     }
   },
   "required": [
-    "max-observations",
     "max-active-time",
     "kind"
   ],
