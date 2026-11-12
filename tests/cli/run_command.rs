@@ -3354,7 +3354,12 @@ try:
             break
     assert b'Benchmarks' in text, repr(text)
     os.write(master, b'\x03')
-    assert process.wait(timeout=5) == -signal.SIGINT, repr(text)
+    # Keep draining output so terminal restoration cannot block on a full PTY.
+    deadline = time.monotonic() + 5
+    while process.poll() is None and time.monotonic() < deadline:
+        if select.select([master], [], [], 0.1)[0]:
+            text += os.read(master, 8192)
+    assert process.wait(timeout=1) == -signal.SIGINT, repr(text)
     assert termios.tcgetattr(slave) == original, 'terminal settings were not restored'
 finally:
     if process.poll() is None:
