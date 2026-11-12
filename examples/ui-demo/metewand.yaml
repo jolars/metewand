@@ -1,0 +1,56 @@
+version: 1
+name: ui-demo
+
+datasets:
+  small:
+    function: benchmark.py:generate
+    parameters:
+      size: {type: integer, minimum: 1, default: 100}
+  medium:
+    function: benchmark.py:generate
+    parameters:
+      size: {type: integer, minimum: 1, default: 1000}
+  large:
+    function: benchmark.py:generate
+    parameters:
+      size: {type: integer, minimum: 1, default: 10000}
+
+problems:
+  integer_sum:
+    result:
+      total: integer
+    metrics:
+      absolute_error: {type: integer, minimum: 0, maximum: 0}
+    evaluator: {function: benchmark.py:evaluate}
+
+implementations:
+  builtin_sum:
+    function: benchmark.py:builtin_sum
+    parameters:
+      delay_seconds: {type: number, minimum: 0, default: 0.4}
+  manual_loop:
+    function: benchmark.py:manual_loop
+    parameters:
+      delay_seconds: {type: number, minimum: 0, default: 0.55}
+  reduce_sum:
+    function: benchmark.py:reduce_sum
+    parameters:
+      delay_seconds: {type: number, minimum: 0, default: 0.7}
+
+experiments:
+  - name: comparison
+    problem: integer_sum
+    datasets: [small, medium, large]
+    implementations: [builtin_sum, manual_loop, reduce_sum]
+    implementation-repetitions: 2
+    measurement-repetitions: 2
+    execution-policy: demo
+    seed: 7
+
+execution-policies:
+  demo:
+    timing-scope: prepare_and_execute
+    primary-time: timed_wall_time
+    run-order: randomized
+    max-concurrency: 1
+    worker-reuse: true

@@ -9,6 +9,7 @@ they do not provide container isolation or a locked publication environment.
 | Form | Example | Requirements | Expected observations |
 | --- | --- | --- | --- |
 | Function workers | [Least squares](least-squares) | Python 3.11+, installed in-tree package | GD/CD metrics; optional accuracy target and analytic reference cases |
+| Terminal UI | [Progress demo](ui-demo) | Python 3.11+, in-tree package; uv for the command shown | 36 measurements across three implementations and three datasets in about 30 seconds |
 | Raw command | [Fixed dataset](fixed-dataset) | Python 3, standard library only | One answer of 8 |
 | Fresh sequences | [Black-box Python and R solvers](fresh-sequence) | Python, R, and staged packages | Fixed counts and independently evaluated targets |
 | Buffered profiles | [Local observers and native traces](buffered-profile) | Python 3.11+, staged package; optional Rust worker | Fifteen evaluated snapshots from five attempts |
