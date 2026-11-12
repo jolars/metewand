@@ -124,6 +124,14 @@ parameters form a closed empty object. Unambiguous function benchmarks default
 to a local environment, one-shot execution, one measurement, and wall time over
 `prepare_and_execute`. Profile selection stays explicit.
 
+A profile's `default-binding` fills missing bindings for implementations selected
+by experiments using that observation policy. An explicit `implementations`
+binding replaces the default completely. Normalize defaults into the existing
+binding map before resolving schemas and identities, then validate each resolved
+binding against its schema, problem contract, and implementation capabilities.
+This is an additive version-1 authoring change; equivalent explicit bindings
+retain their canonical manifest bytes and identities.
+
 Sequential scheduling follows plan order. Randomized scheduling preserves the
 first occurrence of each dataset configuration and, within it, each problem
 configuration. It visits implementation and measurement repetitions in index

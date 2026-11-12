@@ -187,6 +187,38 @@ Use a profile when the question concerns progress toward a common accuracy
 target. Profile selection is explicit and requires lifecycle workers with the
 corresponding capability.
 
+Set `default-binding` on an observation policy to share a binding across the
+implementations selected by its experiments. Add complete replacements under
+`implementations` for methods that need different controls or delivery:
+
+```yaml
+observation-policies:
+  accuracy:
+    kind: profile
+    metric: gap
+    direction: at_most
+    threshold: 0.00000001
+    max-observations: 4
+    max-active-time: 1 min
+    default-binding:
+      delivery: fresh_sequence
+      controls:
+        tolerance: {type: number, exclusiveMinimum: 0}
+      schedule:
+        {kind: geometric, field: tolerance, start: 0.01, ratio: 0.01, count: 4}
+    implementations:
+      iterative:
+        delivery: fresh_sequence
+        controls:
+          iterations: {type: integer, minimum: 1}
+        schedule:
+          {kind: geometric, field: iterations, start: 10, ratio: 10, count: 4}
+```
+
+Each override replaces the entire binding. The default also supports buffered
+and streaming profiles, with their usual collection limits and problem-contract
+requirements. Equivalent explicit bindings produce the same identities.
+
 | Approach | Use it when | Recorded coordinate |
 | --- | --- | --- |
 | Fresh sequence | You can rerun a solver from clean state at a finite schedule of iteration limits or tolerances. | The selected primary clock for each independent point, with executor wall time retained. |

@@ -2033,6 +2033,47 @@
       }
     },
     {
+      "name": "profile default fresh binding",
+      "schema": "profile-observation-policy",
+      "instance": {
+        "kind": "profile",
+        "max-observations": 1,
+        "max-active-time": "1 s",
+        "default-binding": {
+          "delivery": "fresh_sequence",
+          "controls": { "tolerance": { "type": "number", "exclusiveMinimum": 0 } },
+          "schedule": { "kind": "explicit", "controls": [{ "tolerance": 0.01 }] }
+        }
+      }
+    },
+    {
+      "name": "profile default buffered binding with fresh override",
+      "schema": "profile-observation-policy",
+      "instance": {
+        "kind": "profile",
+        "max-observations": 1,
+        "max-trace-points": 2,
+        "max-buffer-bytes": 65536,
+        "terminal-reserve-bytes": 8192,
+        "max-active-time": "1 s",
+        "default-binding": {
+          "delivery": "buffered_profile",
+          "measurement-basis": "instrumented",
+          "instrumented-scope": "solver",
+          "instrumentation-schema": {},
+          "instrumentation": {},
+          "check-schedule": { "every": 1 }
+        },
+        "implementations": {
+          "external": {
+            "delivery": "fresh_sequence",
+            "control-schema": {},
+            "schedule": { "kind": "explicit", "controls": [{}] }
+          }
+        }
+      }
+    },
+    {
       "name": "buffered-manifest",
       "schema": "buffered-manifest",
       "instance": {
@@ -2390,6 +2431,40 @@
     }
   ],
   "invalid": [
+    {
+      "name": "default buffered binding requires collection limits",
+      "schema": "profile-observation-policy",
+      "instance": {
+        "kind": "profile",
+        "max-observations": 1,
+        "max-active-time": "1 s",
+        "default-binding": {
+          "delivery": "buffered_profile",
+          "measurement-basis": "instrumented",
+          "instrumented-scope": "solver",
+          "instrumentation-schema": {},
+          "instrumentation": {},
+          "check-schedule": { "every": 1 }
+        }
+      }
+    },
+    {
+      "name": "default profile binding rejects partial overrides",
+      "schema": "profile-observation-policy",
+      "instance": {
+        "kind": "profile",
+        "max-observations": 1,
+        "max-active-time": "1 s",
+        "default-binding": {
+          "delivery": "fresh_sequence",
+          "control-schema": {},
+          "schedule": { "kind": "explicit", "controls": [{}] }
+        },
+        "implementations": {
+          "external": { "delivery": "fresh_sequence" }
+        }
+      }
+    },
     {
       "name": "Apptainer invalid image evidence",
       "schema": "lockfile",

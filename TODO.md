@@ -39,10 +39,12 @@ equivalent configurations.
   Declaration grids still select values; experiment axes and cases replace
   matching selections. Continue rejecting competing `parameter-schema`
   declarations.
-- [ ] Support a default profile binding with per-implementation overrides.
-  Validate each resolved binding's control schema and implementation
-  capabilities. Infer `max-observations` when omitted and all bindings use
-  the same finite schedule.
+- [x] Support a default profile binding with per-implementation overrides.
+  Explicit bindings replace the default completely. Validate each resolved
+  binding's schema, problem contract, and implementation capabilities.
+- [ ] Infer `max-observations` when omitted and all resolved bindings use finite
+  `fresh_sequence` schedules with the same expanded length, including
+  prefixes.
 - [ ] Add explicit local runtime overrides for machine settings, including
   adapter download caches. Keep host cache paths outside scientific dataset
   parameters, record effective settings in provenance, and retain scientific

@@ -189,6 +189,24 @@ fn buffered_modes_publish_independent_snapshots_and_diagnostic_traces() {
             .iter()
             .all(|o| o["instrumented_time_ns"].is_u64())
     );
+    let path = stage.path().join("metewand.yaml");
+    let mut manifest: Value = serde_saphyr::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+    for policy in manifest["observation-policies"]
+        .as_object_mut()
+        .unwrap()
+        .values_mut()
+    {
+        let binding = policy["implementations"]
+            .as_object_mut()
+            .unwrap()
+            .remove("observer")
+            .unwrap();
+        policy["default-binding"] = binding;
+    }
+    fs::write(&path, serde_json::to_vec_pretty(&manifest).unwrap()).unwrap();
+    let default_plan = invoke(stage.path(), &["plan", "--output", "json"]);
+    assert!(default_plan.status.success(), "{default_plan:?}");
+    assert_eq!(data(&default_plan), data(&plan));
     let resume = invoke(
         stage.path(),
         &["run", "--output-dir", "run", "--resume", "--output", "json"],

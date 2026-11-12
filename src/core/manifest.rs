@@ -241,9 +241,25 @@ impl Manifest {
                         version: 1,
                         kind: ObservationKind::OneShot,
                         profile: None,
+                        default_binding: None,
                     },
                 );
                 experiment.observation_policy = name;
+            }
+        }
+        for (name, policy) in &mut self.observation_policies {
+            if let Some(default_binding) = policy.default_binding.take() {
+                let profile = policy.profile.as_mut().expect("profile default binding");
+                for experiment in &self.experiments {
+                    if &experiment.observation_policy == name {
+                        for implementation in &experiment.implementations {
+                            profile
+                                .implementations
+                                .entry(implementation.clone())
+                                .or_insert_with(|| default_binding.clone());
+                        }
+                    }
+                }
             }
         }
         for implementation in self.implementations.values_mut() {
@@ -769,6 +785,8 @@ pub struct ObservationPolicyDefinition {
     pub version: u32,
     pub kind: ObservationKind,
     pub profile: Option<crate::core::profile::ProfileDefinition>,
+    // Manifest normalization consumes this shorthand before schema resolution and hashing.
+    default_binding: Option<crate::core::profile::ProfileBinding>,
 }
 
 impl<'de> Deserialize<'de> for ObservationPolicyDefinition {
@@ -789,20 +807,28 @@ impl<'de> Deserialize<'de> for ObservationPolicyDefinition {
                 version: 1,
                 kind: ObservationKind::OneShot,
                 profile: None,
+                default_binding: None,
             }),
             Some("profile") => {
-                let bindings = object
-                    .remove("implementations")
-                    .ok_or_else(|| de::Error::missing_field("implementations"))?;
+                let default_binding: Option<crate::core::profile::ProfileBinding> = object
+                    .remove("default-binding")
+                    .map(serde_json::from_value)
+                    .transpose()
+                    .map_err(de::Error::custom)?;
+                let bindings = match object.remove("implementations") {
+                    Some(bindings) => bindings,
+                    None if default_binding.is_some() => serde_json::json!({}),
+                    None => return Err(de::Error::missing_field("implementations")),
+                };
                 let implementations: BTreeMap<Name, crate::core::profile::ProfileBinding> =
                     serde_json::from_value(bindings).map_err(de::Error::custom)?;
                 let policy: crate::core::profile::ProfilePolicy =
                     serde_json::from_value(value).map_err(de::Error::custom)?;
                 policy.validate().map_err(de::Error::custom)?;
-                if implementations.is_empty() {
+                if implementations.is_empty() && default_binding.is_none() {
                     return Err(de::Error::custom("profile implementations cannot be empty"));
                 }
-                for binding in implementations.values() {
+                for binding in default_binding.iter().chain(implementations.values()) {
                     binding.validate(&policy).map_err(de::Error::custom)?;
                 }
                 Ok(Self {
@@ -812,6 +838,7 @@ impl<'de> Deserialize<'de> for ObservationPolicyDefinition {
                         policy,
                         implementations,
                     }),
+                    default_binding,
                 })
             }
             _ => Err(de::Error::custom(

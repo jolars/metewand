@@ -21,6 +21,7 @@ mod manifest_parsing;
 mod measurements;
 mod parameter_namespaces;
 mod problem_contracts;
+mod profile_defaults;
 mod public_schemas;
 mod scheduling;
 mod schema_validation;
