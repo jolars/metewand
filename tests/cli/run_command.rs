@@ -3339,11 +3339,20 @@ fn terminal_interrupt_restores_terminal_settings() {
 import fcntl, os, pty, select, signal, struct, subprocess, sys, termios, time
 master, slave = pty.openpty()
 fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack('HHHH', 40, 110, 0, 0))
-original = termios.tcgetattr(slave)
 def session():
     os.setsid()
     fcntl.ioctl(0, termios.TIOCSCTTY, 0)
-process = subprocess.Popen([sys.argv[1], 'run', '--output-dir', 'interrupt'], cwd=sys.argv[2], env=dict(os.environ,TERM='xterm'), stdin=slave, stdout=slave, stderr=slave, preexec_fn=session)
+# Keep the session leader alive while checking settings: macOS revokes the
+# controlling terminal when its session leader exits.
+supervisor = """
+import signal, subprocess, sys, termios
+signal.signal(signal.SIGINT, lambda *_: None)
+original = termios.tcgetattr(0)
+process = subprocess.Popen([sys.argv[1], 'run', '--output-dir', 'interrupt'])
+assert process.wait() == -signal.SIGINT, 'runner did not exit on SIGINT'
+assert termios.tcgetattr(0) == original, 'terminal settings were not restored'
+"""
+process = subprocess.Popen([sys.executable, '-c', supervisor, sys.argv[1]], cwd=sys.argv[2], env=dict(os.environ,TERM='xterm'), stdin=slave, stdout=slave, stderr=slave, preexec_fn=session)
 text = b''
 try:
     deadline = time.monotonic() + 15
@@ -3359,8 +3368,7 @@ try:
     while process.poll() is None and time.monotonic() < deadline:
         if select.select([master], [], [], 0.1)[0]:
             text += os.read(master, 8192)
-    assert process.wait(timeout=1) == -signal.SIGINT, repr(text)
-    assert termios.tcgetattr(slave) == original, 'terminal settings were not restored'
+    assert process.wait(timeout=1) == 0, repr(text)
 finally:
     if process.poll() is None:
         os.killpg(process.pid, signal.SIGKILL)
