@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.6.0](https://github.com/jolars/metewand/compare/v0.5.0...v0.6.0) (2026-11-12)
+
+### Features
+
+- support default profile bindings ([`e35f1c0`](https://github.com/jolars/metewand/commit/e35f1c0e3e64bfd3d2c429f0154bd1509d12173c))
+- allow overrides for compact parameter defaults ([`48a3982`](https://github.com/jolars/metewand/commit/48a3982e8a5f3f0987af68e04cf4892eb5aa073f))
+- **ui:** nest datasets in layout ([`c5abad7`](https://github.com/jolars/metewand/commit/c5abad756ab9cc6a270052021d4f2b9f9fd0e29b))
+- randomize implementations within datasets ([`8495a73`](https://github.com/jolars/metewand/commit/8495a735c0631349c7855479b827ffd3935cd179))
+- **ui:** improve interactive output ([`bd313d1`](https://github.com/jolars/metewand/commit/bd313d1708c636b4f232614c3905bb071d67a841))
+- filter benchmark components by name ([`5b381e0`](https://github.com/jolars/metewand/commit/5b381e0d1c2d9319ad1a442ee6bc6d7b257ac13e))
+- accept positional experiment names ([`ad8a962`](https://github.com/jolars/metewand/commit/ad8a96279b1071660c50339828338cb05c7b98f6))
+- default runs to `.metewand` ([`3ed562e`](https://github.com/jolars/metewand/commit/3ed562ebb3fca93ad456b479af6156b997283090))
+- resume existing runs by default ([`f856470`](https://github.com/jolars/metewand/commit/f8564703d8a0c1b546a91a2ea85fd199cbaeed61))
+- render benchmark progress with iocraft ([`f1eb214`](https://github.com/jolars/metewand/commit/f1eb214a22747b591c908f45d5d390a70622ecc1))
+- add live benchmark progress bars ([`16d0d35`](https://github.com/jolars/metewand/commit/16d0d3591fa2f5f1d9f852537069280062cf4cd4))
+- add local Apptainer SIF execution ([`dc9cb42`](https://github.com/jolars/metewand/commit/dc9cb428ea94625912abe74d63ae33ade0151079))
+- add whole-benchmark bundles ([`355ec13`](https://github.com/jolars/metewand/commit/355ec130885e25d28357206ccc6fcf7320a1777d))
+- add digest-pinned Docker execution ([`a161893`](https://github.com/jolars/metewand/commit/a161893a96bd30914356661091fff6242dd9a50b))
+
+### Bug Fixes
+
+- **ui:** better table formatting ([`d4fd01d`](https://github.com/jolars/metewand/commit/d4fd01d2804f2362eaf627c6da7df765f6efb310))
+- summarize human plan output by default ([`462c011`](https://github.com/jolars/metewand/commit/462c011f3f4443da06eeaceac9976ad7af8e023a))
+- correct YAML for CI integration test commands ([`d162a9f`](https://github.com/jolars/metewand/commit/d162a9f3bb9daf846b4ff133cb88bfa7fcf9b313))
+- **ci:** use supported ARM macOS release runner ([`f2c2279`](https://github.com/jolars/metewand/commit/f2c22797bd4235dc3ccf03e5c65f7dec4361a059))
+
 ## [0.5.0](https://github.com/jolars/metewand/compare/v0.4.0...v0.5.0) (2026-11-10)
 
 ### Features
