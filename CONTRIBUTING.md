@@ -648,6 +648,10 @@ transient runtime preparation callbacks and the existing typed execution events.
 Place the overall progress row directly below the detailed rows, using bold text
 and color for emphasis. Align both sides of each completed/total counter in
 shared columns, including completed rows, and mute the slash when color is enabled.
+Group implementation rows under dataset configuration headings that include
+their parameter values. Show experiment headings when the pending invocation
+includes multiple experiments. Reveal sections as their first implementation
+starts, and keep count columns aligned across sections.
 Append groups when their first attempt starts and preserve that order throughout
 execution. Keep spinners visible between repetitions until the group's scheduled
 work finishes. Reserve a marker column for spinners and completion marks, and

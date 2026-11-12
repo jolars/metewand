@@ -35,12 +35,21 @@ pub(super) struct Progress {
 struct Label {
     text: String,
     group: String,
+    context: Option<Arc<GroupContext>>,
+}
+
+struct GroupContext {
+    experiment: String,
+    dataset_configuration: String,
+    dataset: String,
+    implementation: String,
 }
 impl From<&str> for Label {
     fn from(text: &str) -> Self {
         Self {
             text: text.into(),
             group: text.into(),
+            context: None,
         }
     }
 }
@@ -160,6 +169,25 @@ impl Progress {
                     })
                     .expect("checked implementation")
                     .0;
+                let parameters = candidate.dataset_configuration.record.parameters.as_json();
+                let dataset = if parameters
+                    .as_object()
+                    .is_some_and(|parameters| parameters.is_empty())
+                {
+                    dataset.to_string()
+                } else {
+                    format!("{dataset} · {parameters}")
+                };
+                let context = Arc::new(GroupContext {
+                    experiment: experiment.name.to_string(),
+                    dataset_configuration: candidate.dataset_configuration.id.to_string(),
+                    dataset,
+                    implementation: implementation.to_string(),
+                });
+                let group = format!(
+                    "{}:{}:{implementation}",
+                    experiment.name, candidate.dataset_configuration.id
+                );
                 for (repetition, specification) in candidate.specifications.iter().enumerate() {
                     for slot in &specification.attempt_slots {
                         let point = match slot.record.role {
@@ -183,14 +211,13 @@ impl Progress {
                             slot.id.to_string(),
                             Label {
                                 text: format!(
-                                    "{} / {dataset} / {implementation} / repeat {}, {point}",
+                                    "{} / {} / {implementation} / repeat {}, {point}",
                                     experiment.name,
+                                    context.dataset,
                                     repetition + 1
                                 ),
-                                group: format!(
-                                    "{implementation} / {dataset} ({})",
-                                    experiment.name
-                                ),
+                                group: group.clone(),
+                                context: Some(context.clone()),
                             },
                         );
                     }
@@ -243,6 +270,8 @@ struct ProgressModel {
     failures: Vec<String>,
     benchmarks: BTreeMap<String, BenchmarkBar>,
     group_order: Vec<String>,
+    group_contexts: BTreeMap<String, Arc<GroupContext>>,
+    multiple_experiments: bool,
 }
 impl ProgressModel {
     fn new(terminal: bool, color: bool, limit: Option<u64>) -> Self {
@@ -269,6 +298,8 @@ impl ProgressModel {
             failures: Vec::new(),
             benchmarks: BTreeMap::new(),
             group_order: Vec::new(),
+            group_contexts: BTreeMap::new(),
+            multiple_experiments: false,
         }
     }
     fn line(&mut self, output: &mut impl Write, text: &str) -> io::Result<()> {
@@ -309,8 +340,17 @@ impl ProgressModel {
     fn visible_bars(&self) -> Vec<String> {
         self.visible_groups()
             .map(|(group, b)| {
+                let label = self.group_contexts.get(group).map_or_else(
+                    || group.to_owned(),
+                    |context| {
+                        format!(
+                            "{} / {} ({})",
+                            context.implementation, context.dataset, context.experiment
+                        )
+                    },
+                );
                 format!(
-                    "{} {group}{}",
+                    "{} {label}{}",
                     bar(b.completed, b.total),
                     if b.failed > 0 {
                         format!(" ({} failed)", b.failed)
@@ -335,17 +375,31 @@ impl ProgressModel {
             Message::Scheduled(slots) => {
                 self.benchmarks.clear();
                 self.group_order.clear();
+                let mut experiments = std::collections::BTreeSet::new();
                 for slot in slots {
                     if let Some(label) = self.labels.get(&slot) {
+                        if let Some(context) = &label.context {
+                            experiments.insert(context.experiment.as_str());
+                        }
                         self.benchmarks
                             .entry(label.group.clone())
                             .or_default()
                             .total += 1;
                     }
                 }
+                self.multiple_experiments = experiments.len() > 1;
                 Ok(())
             }
             Message::Labels(labels) => {
+                self.group_contexts = labels
+                    .values()
+                    .filter_map(|label| {
+                        label
+                            .context
+                            .as_ref()
+                            .map(|context| (label.group.clone(), context.clone()))
+                    })
+                    .collect();
                 self.labels = labels;
                 Ok(())
             }
@@ -690,10 +744,43 @@ fn progress_view(model: &ProgressModel) -> AnyElement<'static> {
                 color(Color::Cyan),
             ));
             let hidden = model.group_order.len().saturating_sub(10);
+            let mut previous_experiment = None;
+            let mut previous_dataset = None;
             for (name, bar) in model.visible_groups() {
+                let (label, indent): (&str, u32) = if let Some(context) =
+                    model.group_contexts.get(name)
+                {
+                    if model.multiple_experiments
+                        && previous_experiment != Some(context.experiment.as_str())
+                    {
+                        children.push(element! {
+                            MarkedLabel(label: format!("Experiment {}", context.experiment), weight: Weight::Bold,
+                                color: color(Color::Cyan))
+                        }.into());
+                        previous_experiment = Some(context.experiment.as_str());
+                        previous_dataset = None;
+                    }
+                    let dataset_key = (
+                        context.experiment.as_str(),
+                        context.dataset_configuration.as_str(),
+                    );
+                    if previous_dataset != Some(dataset_key) {
+                        children.push(element! {
+                            MarkedLabel(label: format!("Dataset {}", context.dataset), weight: Weight::Bold,
+                                indent: if model.multiple_experiments { 2_u32 } else { 0_u32 })
+                        }.into());
+                        previous_dataset = Some(dataset_key);
+                    }
+                    (
+                        context.implementation.as_str(),
+                        if model.multiple_experiments { 4 } else { 2 },
+                    )
+                } else {
+                    (name, 0)
+                };
                 children.push(element! {
-                    ProgressRow(label: name, completed: bar.completed, total: bar.total, failed: bar.failed,
-                        spinner,
+                    ProgressRow(label, completed: bar.completed, total: bar.total, failed: bar.failed,
+                        spinner, indent,
                         counter_digits, color: model.color)
                 }.into());
             }
@@ -745,12 +832,13 @@ struct MarkedLabelProps {
     color: Option<Color>,
     marker_color: Option<Color>,
     weight: Weight,
+    indent: u32,
 }
 
 #[component]
 fn MarkedLabel(props: &MarkedLabelProps) -> impl Into<AnyElement<'static>> {
     element! {
-        View(width: 100pct, min_width: 0, padding_left: 2, gap: 1) {
+        View(width: 100pct, min_width: 0, padding_left: props.indent + 2, gap: 1) {
             View(width: 1, flex_shrink: 0.0_f32) {
                 Text(content: &props.marker, color: props.marker_color)
             }
@@ -771,6 +859,7 @@ struct ProgressRowProps {
     counter_digits: usize,
     emphasized: bool,
     spinner: String,
+    indent: u32,
 }
 
 #[component]
@@ -818,7 +907,7 @@ fn ProgressRow(props: &ProgressRowProps) -> impl Into<AnyElement<'static>> {
     element! {
         View(width: 100pct, gap: 1, align_items: AlignItems::Center) {
             View(width: 38pct, min_width: 0, flex_direction: FlexDirection::Column) {
-                MarkedLabel(label: props.label.clone(), marker, weight, color: row_color, marker_color)
+                MarkedLabel(label: props.label.clone(), marker, weight, color: row_color, marker_color, indent: props.indent)
             }
             View(flex_grow: 1.0_f32, flex_basis: FlexBasis::Length(0), min_width: 3) {
                 #(if complete {
@@ -876,6 +965,152 @@ fn BarTrack(mut hooks: Hooks, props: &ProgressRowProps) -> impl Into<AnyElement<
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn planned_dataset_parameter_combinations_have_separate_groups() {
+        let repository = crate::runtime::repository::check_repository(
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("examples/parameter-matrix/metewand.yaml"),
+        )
+        .unwrap();
+        let plan = repository.logical_plan().unwrap();
+        let (sender, mut receiver) = mpsc::unbounded();
+        let progress = Progress {
+            sender: Some(sender),
+            thread: None,
+        };
+        progress.labels(&repository, &plan).unwrap();
+        let message = futures::executor::block_on(receiver.next()).unwrap();
+        let Message::Labels(labels) = &message else {
+            panic!("expected labels")
+        };
+        let slots = labels.keys().cloned().collect();
+        let mut model = ProgressModel::new(true, false, None);
+        model.update(&mut io::sink(), message).unwrap();
+        model
+            .update(&mut io::sink(), Message::Scheduled(slots))
+            .unwrap();
+        assert_eq!(model.benchmarks.len(), 3);
+        assert!(!model.multiple_experiments);
+        let totals = model
+            .benchmarks
+            .values()
+            .map(|bar| bar.total)
+            .sum::<usize>();
+        assert_eq!(totals, 10);
+        let datasets = model
+            .group_contexts
+            .values()
+            .map(|context| context.dataset.as_str())
+            .collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(
+            datasets,
+            [
+                "numbers · {\"values\":[1,2,3]}",
+                "numbers · {\"values\":[10,10]}",
+                "numbers · {\"values\":[4,6]}"
+            ]
+            .into_iter()
+            .collect()
+        );
+    }
+
+    #[test]
+    fn hierarchy_expands_by_dataset_configuration_and_shows_experiments_only_when_multiple() {
+        let mut model = ProgressModel::new(true, false, None);
+        model.executing = true;
+        model.preparation_elapsed = Some(Duration::from_secs(1));
+        model.total = 12;
+        let labels = [
+            ("first", "main", "small", 100),
+            ("second", "main", "large", 1000),
+            ("third", "other", "small", 100),
+        ]
+        .into_iter()
+        .map(|(key, experiment, dataset_configuration, size)| {
+            (
+                key.into(),
+                Label {
+                    text: key.into(),
+                    group: key.into(),
+                    context: Some(Arc::new(GroupContext {
+                        experiment: experiment.into(),
+                        dataset_configuration: dataset_configuration.into(),
+                        dataset: format!("numbers · {{\"size\":{size}}}"),
+                        implementation: "solver".into(),
+                    })),
+                },
+            )
+        })
+        .collect();
+        model
+            .update(&mut io::sink(), Message::Labels(labels))
+            .unwrap();
+        model
+            .update(
+                &mut io::sink(),
+                Message::Scheduled(vec!["first".into(), "second".into(), "third".into()]),
+            )
+            .unwrap();
+        assert!(model.multiple_experiments);
+        model.group_order.push("first".into());
+        let initial = progress_view(&model).render(Some(100)).to_string();
+        assert!(
+            initial.contains("Experiment main")
+                && initial.contains("Dataset numbers · {\"size\":100}"),
+            "{initial}"
+        );
+        assert!(
+            !initial.contains("Experiment other") && !initial.contains("\"size\":1000"),
+            "{initial}"
+        );
+        model.group_order.extend(["second".into(), "third".into()]);
+        let expanded = progress_view(&model).render(Some(100)).to_string();
+        assert_eq!(expanded.matches("Experiment main").count(), 1, "{expanded}");
+        assert_eq!(
+            expanded.matches("Experiment other").count(),
+            1,
+            "{expanded}"
+        );
+        assert_eq!(expanded.matches("Dataset numbers").count(), 3, "{expanded}");
+        assert_eq!(
+            expanded
+                .lines()
+                .filter(|line| line.contains("solver"))
+                .count(),
+            3,
+            "{expanded}"
+        );
+        assert!(
+            expanded.find("Experiment main").unwrap() < expanded.find("Experiment other").unwrap(),
+            "{expanded}"
+        );
+        assert!(
+            expanded.find("Overall").unwrap() > expanded.rfind("solver").unwrap(),
+            "{expanded}"
+        );
+        let initial_solver = initial
+            .lines()
+            .position(|line| line.contains("solver"))
+            .unwrap();
+        assert_eq!(
+            expanded
+                .lines()
+                .position(|line| line.contains("solver"))
+                .unwrap(),
+            initial_solver
+        );
+        model
+            .update(
+                &mut io::sink(),
+                Message::Scheduled(vec!["first".into(), "second".into()]),
+            )
+            .unwrap();
+        model.group_order.extend(["first".into(), "second".into()]);
+        let single = progress_view(&model).render(Some(100)).to_string();
+        assert!(!single.contains("Experiment "), "{single}");
+        assert_eq!(single.matches("Dataset numbers").count(), 2, "{single}");
+    }
+
     #[test]
     fn preparation_rows_accumulate_then_fold_when_execution_starts() {
         for color in [true, false] {
@@ -1348,6 +1583,7 @@ mod tests {
             Label {
                 text: "first".into(),
                 group: "reference / numbers".into(),
+                context: None,
             },
         );
         renderer.labels.insert(
@@ -1355,6 +1591,7 @@ mod tests {
             Label {
                 text: "second".into(),
                 group: "reference / numbers".into(),
+                context: None,
             },
         );
         renderer.labels.insert(
@@ -1362,6 +1599,7 @@ mod tests {
             Label {
                 text: "other".into(),
                 group: "packed / numbers".into(),
+                context: None,
             },
         );
         let mut output = Vec::new();

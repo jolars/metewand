@@ -1,8 +1,8 @@
 # Terminal UI demo
 
 This benchmark takes about 30 seconds to exercise preparation spinners, the
-overall progress bar, nine dataset and implementation bars, repetition counters,
-and the final outcome summary. It compares three integer-sum implementations
+overall progress bar, three dataset sections with three implementation rows each,
+repetition counters, and the final outcome summary. It compares three integer-sum implementations
 on three seeded datasets, with two implementation repetitions and two
 measurement repetitions per pair: 36 measurements total.
 
@@ -40,6 +40,10 @@ Do not pipe or redirect the command when testing the live bars. JSON output and
 randomized implementation ordering within each dataset, and worker reuse.
 Datasets run in manifest order. Each dataset takes an extra half-second
 to generate so preparation is visible.
+
+Each dataset heading includes its parameter values. If a manifest selects
+multiple experiments, an experiment heading groups each experiment's datasets.
+Dataset configurations with different parameter values receive separate sections.
 
 The implementations deliberately sleep for 0.4, 0.55, and 0.7 seconds per
 measurement, totaling 19.8 seconds of sleep plus preparation and runner overhead.

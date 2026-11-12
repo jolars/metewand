@@ -3205,6 +3205,73 @@ fn human_progress_starts_before_workers_finish_and_uses_readable_labels() {
 }
 
 #[test]
+fn terminal_progress_groups_experiments_and_dataset_configurations() {
+    let root = TempDir::new().unwrap();
+    copy_tree(
+        &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("examples/parameter-matrix"),
+        root.path(),
+    );
+    let path = root.path().join("metewand.yaml");
+    let manifest = fs::read_to_string(&path).unwrap();
+    let experiment = manifest
+        .split_once("experiments:\n")
+        .unwrap()
+        .1
+        .split_once("execution-policies:\n")
+        .unwrap()
+        .0;
+    let second = experiment
+        .replace("name: \"main\"", "name: \"second\"")
+        .replace("seed: 7", "seed: 8");
+    fs::write(
+        path,
+        manifest.replace(
+            "execution-policies:\n",
+            &format!("{second}execution-policies:\n"),
+        ),
+    )
+    .unwrap();
+    let script = r#"
+import fcntl, os, pty, struct, subprocess, sys, termios
+master, slave = pty.openpty()
+fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack('HHHH', 50, 110, 0, 0))
+process = subprocess.Popen([sys.argv[1], 'run', '--output-dir', 'run'], cwd=sys.argv[2], env=dict(os.environ, TERM='xterm', NO_COLOR='1'), stdout=slave, stderr=slave)
+os.close(slave)
+chunks = []
+try:
+    while True:
+        try:
+            chunk = os.read(master, 8192)
+        except OSError:
+            break
+        if not chunk:
+            break
+        chunks.append(chunk)
+finally:
+    os.close(master)
+text = b''.join(chunks)
+assert process.wait() == 0, repr(text)
+for heading in [b'Experiment main', b'Experiment second', b'Dataset numbers', b'{"values":[1,2,3]}', b'{"values":[4,6]}', b'{"values":[10,10]}']:
+    assert heading in text, (heading, text)
+assert text.index(b'Experiment main') < text.index(b'Experiment second'), repr(text)
+"#;
+    let output = Command::new("python3")
+        .args([
+            "-c",
+            script,
+            env!("CARGO_BIN_EXE_metewand"),
+            root.path().to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
 fn terminal_progress_bars_respect_no_color_and_dumb_terminals() {
     let root = repository();
     let script = r#"
