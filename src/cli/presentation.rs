@@ -118,10 +118,34 @@ pub(super) fn comparison(rows: &[ComparisonRow]) -> String {
     comparison_at_width(rows, width())
 }
 
-fn comparison_at_width(mut rows: &[ComparisonRow], width: usize) -> String {
+fn comparison_at_width(rows: &[ComparisonRow], width: usize) -> String {
     if rows.is_empty() {
         return String::new();
     }
+    // Stored candidate identities do not put matching comparison contexts together.
+    let mut ordered = rows.iter().collect::<Vec<_>>();
+    ordered.sort_by_cached_key(|row| {
+        (
+            (
+                row.experiment.as_deref(),
+                row.dataset.as_deref(),
+                row.problem.as_deref(),
+                row.case.as_deref(),
+                row.timing_scope.as_deref(),
+                row.primary_time.as_deref(),
+                row.parameters["dataset"].to_string(),
+                row.parameters["problem"].to_string(),
+            ),
+            (
+                row.implementation.as_deref().unwrap_or(&row.candidate_id),
+                row.parameters["implementation"].to_string(),
+                row.implementation_repetition,
+                row.measurement_index,
+                row.retry_index,
+            ),
+        )
+    });
+    let mut rows = ordered.as_slice();
     let mut output = String::from("\nComparison (individual measurements)\n");
     while let Some(first) = rows.first() {
         let count = rows
@@ -312,10 +336,69 @@ mod tests {
     }
 
     #[test]
+    fn interleaved_comparisons_group_datasets_and_sort_measurements() {
+        let mut rows = Vec::new();
+        for dataset in ["small", "large", "medium"] {
+            for method in ["reduce_sum", "builtin_sum"] {
+                for measurement in [1, 0] {
+                    let mut row = row(method, 0);
+                    row.dataset = Some(dataset.into());
+                    row.measurement_index = Some(measurement);
+                    rows.push(row);
+                }
+            }
+        }
+        let output = comparison_at_width(&rows, 110);
+        rows.reverse();
+        assert_eq!(output, comparison_at_width(&rows, 110));
+        let groups = output
+            .split("experiment: main; dataset: ")
+            .skip(1)
+            .collect::<Vec<_>>();
+        assert_eq!(groups.len(), 3, "{output}");
+        for (group, dataset) in groups.iter().zip(["large", "medium", "small"]) {
+            assert!(group.starts_with(dataset), "{group}");
+            let measurements = group
+                .lines()
+                .filter(|line| line.contains('|') && !line.contains("Method"))
+                .map(|line| line.split('|').map(str::trim).collect::<Vec<_>>())
+                .collect::<Vec<_>>();
+            let labels = measurements
+                .iter()
+                .map(|cells| (cells[0], cells[1]))
+                .collect::<Vec<_>>();
+            assert_eq!(
+                labels,
+                [
+                    ("builtin_sum", "1:1"),
+                    ("builtin_sum", "1:2"),
+                    ("reduce_sum", "1:1"),
+                    ("reduce_sum", "1:2")
+                ],
+                "{group}"
+            );
+        }
+    }
+
+    #[test]
+    fn dataset_parameter_configurations_remain_separate() {
+        let mut small = row("builtin_sum", 0);
+        small.parameters["dataset"] = serde_json::json!({"size": 100});
+        let mut large = small.clone();
+        large.parameters["dataset"] = serde_json::json!({"size": 1000});
+        let mut repeated = small.clone();
+        repeated.measurement_index = Some(1);
+        let output = comparison_at_width(&[small, large, repeated], 110);
+        assert_eq!(output.matches("experiment: main;").count(), 2, "{output}");
+        assert_eq!(output.matches("\"size\":100}").count(), 1, "{output}");
+        assert_eq!(output.matches("\"size\":1000}").count(), 1, "{output}");
+    }
+
+    #[test]
     fn varying_settings_and_metrics_stay_with_their_measurements() {
-        let output = comparison_at_width(&[row("solver-β", 0), row("reference", 1)], 80);
-        let first = output.find("solver-β").unwrap();
-        let second = output.find("reference").unwrap();
+        let output = comparison_at_width(&[row("reference", 0), row("solver-β", 1)], 80);
+        let first = output.find("reference").unwrap();
+        let second = output.find("solver-β").unwrap();
         for (section, value) in [(&output[first..second], 0), (&output[second..], 1)] {
             let compact = section.split_whitespace().collect::<String>();
             assert!(

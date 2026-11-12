@@ -1903,7 +1903,6 @@ fn render_run_report(report: &RunReport, verbose: bool) -> String {
         report.output_directory
     );
     if !verbose {
-        output.push_str("Use run --verbose for individual measurements, or inspect saved results with status.\n");
         return output;
     }
     output.push_str(&render_comparison(&report.comparison));

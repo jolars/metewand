@@ -637,9 +637,12 @@ returns a terminal envelope. Human run progress uses iocraft components with
 transient runtime preparation callbacks and the existing typed execution events.
 The CLI owns the layout and its render loop on a separate thread. Preparation
 and execution sections fold when complete; failures remain visible. Comparison
-tables also use iocraft layout. Live rendering requires terminal stdout and
-stderr; redirected output and dumb terminals receive plain logs with periodic
-heartbeats. Send only outcome metadata to the renderer, excluding large profile
+tables also use iocraft layout. Group all measurements with the same comparison
+context together, regardless of stored candidate order, and sort methods and
+repetitions within each group. Keep this ordering in the human renderer so
+machine records retain their original order. Live rendering requires terminal
+stdout and stderr; redirected output and dumb terminals receive plain logs with
+periodic heartbeats. Send only outcome metadata to the renderer, excluding large profile
 payloads. Preparation feedback and elapsed display time never enter identities,
 persisted evidence, or machine event sequences. Worker logs do not enter the command stream. Use
 `metewand schema NAME` to inspect an embedded schema offline.

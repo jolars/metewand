@@ -1432,7 +1432,7 @@ fn scientific_completion_failure_keeps_its_valid_observation() {
 }
 
 #[test]
-fn human_run_output_reports_metrics_and_scientific_failure_reasons() {
+fn human_run_summarizes_outcomes_and_status_reports_scientific_failures() {
     for reached in [true, false] {
         let root = repository();
         if !reached {
@@ -1443,9 +1443,26 @@ fn human_run_output_reports_metrics_and_scientific_failure_reasons() {
                 "\"not_reached\" if error == 0",
             );
         }
-        let output = metewand(root.path(), &["run", "--output-dir", "run", "--verbose"]);
+        let output = metewand(root.path(), &["run", "--output-dir", "run"]);
         assert_eq!(output.status.code(), Some(if reached { 0 } else { 5 }));
-        let human = String::from_utf8(output.stdout).unwrap();
+        let summary = String::from_utf8(output.stdout).unwrap();
+        assert_eq!(summary.lines().count(), 2, "{summary}");
+        assert!(
+            summary.contains(if reached { "1 accepted" } else { "1 failed" }),
+            "{summary}"
+        );
+        assert!(!summary.contains("Comparison"), "{summary}");
+        if !reached {
+            assert!(
+                String::from_utf8(output.stderr)
+                    .unwrap()
+                    .contains("completion_target_not_reached")
+            );
+        }
+
+        let status = metewand(root.path(), &["status", "--output-dir", "run"]);
+        assert!(status.status.success(), "{status:?}");
+        let human = String::from_utf8(status.stdout).unwrap();
         assert!(human.contains("Method") && human.contains("Rep"), "{human}");
         let row = human
             .lines()
@@ -3241,12 +3258,12 @@ fn human_run_defaults_to_a_short_summary_and_details_are_opt_in() {
     let text = String::from_utf8(output.stdout).unwrap();
     assert!(text.contains("20 accepted"), "{text}");
     assert!(text.contains("output directory:"), "{text}");
-    assert!(text.contains("--verbose"), "{text}");
+    assert!(!text.contains("--verbose"), "{text}");
     assert!(
         !text.contains("Comparison") && !text.contains("absolute_error"),
         "{text}"
     );
-    assert!(text.lines().count() <= 4, "{text}");
+    assert_eq!(text.lines().count(), 2, "{text}");
 
     let output = metewand(
         root.path(),
