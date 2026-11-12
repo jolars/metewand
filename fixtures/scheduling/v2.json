@@ -1,0 +1,16 @@
+{
+  "scheduling_policy_version": 2,
+  "slots": [
+    {"slot": 0, "dataset": 9, "problem": 7, "repetition": 1, "measurement": 1, "priority": 2},
+    {"slot": 1, "dataset": 4, "problem": 8, "repetition": 0, "measurement": 0, "priority": 0},
+    {"slot": 2, "dataset": 9, "problem": 3, "repetition": 0, "measurement": 0, "priority": 1},
+    {"slot": 3, "dataset": 9, "problem": 7, "repetition": 0, "measurement": 0, "priority": 1},
+    {"slot": 4, "dataset": 4, "problem": 8, "repetition": 0, "measurement": 0, "priority": 2},
+    {"slot": 5, "dataset": 9, "problem": 7, "repetition": 0, "measurement": 0, "priority": 0},
+    {"slot": 6, "dataset": 9, "problem": 7, "repetition": 1, "measurement": 1, "priority": 0},
+    {"slot": 7, "dataset": 9, "problem": 3, "repetition": 0, "measurement": 0, "priority": 0},
+    {"slot": 8, "dataset": 9, "problem": 7, "repetition": 0, "measurement": 1, "priority": 0},
+    {"slot": 9, "dataset": 9, "problem": 7, "repetition": 1, "measurement": 0, "priority": 0}
+  ],
+  "expected_order": [5, 3, 8, 9, 6, 0, 7, 2, 1, 4]
+}

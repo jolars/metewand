@@ -3,7 +3,8 @@ use std::collections::BTreeSet;
 use crate::core::{
     SCHEDULING_POLICY_VERSION,
     manifest::RunOrder,
-    records::{ContentDigest, DerivedSeedRecord, RecordId},
+    planning::derive_attempt_scheduling_priority,
+    records::{AttemptSlotRole, ContentDigest, DerivedSeedRecord, RecordId},
     scheduling::{
         ComparisonBlock, SchedulingSlot, derive_block_scheduling_priority, schedule_slots,
     },
@@ -48,21 +49,50 @@ fn sequential_preserves_input_order_including_empty_and_singleton_schedules() {
     let slots = slots();
     for slots in [&slots[..], &slots[..1], &slots[..0]] {
         assert_eq!(
-            schedule_slots(RunOrder::Sequential, &seed(), slots),
+            schedule_slots(RunOrder::Sequential, slots),
             (0..slots.len()).collect::<Vec<_>>()
         );
     }
-    assert!(schedule_slots(RunOrder::Randomized, &seed(), &[]).is_empty());
-    assert_eq!(
-        schedule_slots(RunOrder::Randomized, &seed(), &slots[..1]),
-        [0]
-    );
+    assert!(schedule_slots(RunOrder::Randomized, &[]).is_empty());
+    assert_eq!(schedule_slots(RunOrder::Randomized, &slots[..1]), [0]);
+}
+
+#[test]
+fn randomized_execution_preserves_dataset_problem_and_repetition_order() {
+    let mut slots = slots();
+    slots.rotate_left(24);
+    let order = schedule_slots(RunOrder::Randomized, &slots);
+    let blocks = order
+        .as_chunks::<3>()
+        .0
+        .iter()
+        .map(|members| {
+            let block = slots[members[0]].comparison_block;
+            (
+                block.dataset_instance.digest()[0],
+                block.problem_configuration.digest()[0],
+                block.implementation_repetition,
+                block.measurement_index,
+            )
+        })
+        .collect::<Vec<_>>();
+    let mut expected = Vec::new();
+    for dataset in [2, 1] {
+        for problem in [3, 4] {
+            for repetition in 0..2 {
+                for measurement in 0..2 {
+                    expected.push((dataset, problem, repetition, measurement));
+                }
+            }
+        }
+    }
+    assert_eq!(blocks, expected);
 }
 
 #[test]
 fn randomized_schedules_complete_comparison_blocks_and_their_members_by_priority() {
     let slots = slots();
-    let order = schedule_slots(RunOrder::Randomized, &seed(), &slots);
+    let order = schedule_slots(RunOrder::Randomized, &slots);
     assert_eq!(order.len(), 48);
     assert_eq!(
         order.iter().copied().collect::<BTreeSet<_>>(),
@@ -78,11 +108,10 @@ fn randomized_schedules_complete_comparison_blocks_and_their_members_by_priority
                 .iter()
                 .all(|&index| slots[index].comparison_block == block)
         );
-        let priority = derive_block_scheduling_priority(&seed(), &block);
         if let Some(previous) = previous_block {
-            assert!(previous < priority);
+            assert!(previous < block);
         }
-        previous_block = Some(priority);
+        previous_block = Some(block);
         assert_eq!(
             members
                 .iter()
@@ -100,17 +129,38 @@ fn randomized_schedules_complete_comparison_blocks_and_their_members_by_priority
 
 #[test]
 fn randomized_order_depends_on_identities_and_full_seed_digest() {
-    let slots = slots();
-    let ordered_ids = |slots: &[SchedulingSlot], seed: &DerivedSeedRecord| {
-        schedule_slots(RunOrder::Randomized, seed, slots)
+    let seeded_slots = |seed: &DerivedSeedRecord| {
+        slots()
+            .into_iter()
+            .map(|mut slot| {
+                slot.scheduling_priority = derive_attempt_scheduling_priority(
+                    seed,
+                    RecordId::from_digest([12; 32]),
+                    &AttemptSlotRole::Measured {
+                        observation_slot: RecordId::from_digest(*slot.logical_slot.digest()),
+                    },
+                );
+                slot
+            })
+            .collect::<Vec<_>>()
+    };
+    let slots = seeded_slots(&seed());
+    let ordered_ids = |slots: &[SchedulingSlot]| {
+        schedule_slots(RunOrder::Randomized, slots)
             .into_iter()
             .map(|index| slots[index].logical_slot)
             .collect::<Vec<_>>()
     };
-    let expected = ordered_ids(&slots, &seed());
+    let expected = ordered_ids(&slots);
     let mut reversed = slots.clone();
-    reversed.reverse();
-    assert_eq!(ordered_ids(&reversed, &seed()), expected);
+    reversed.sort_by_key(|slot| {
+        (
+            slot.comparison_block.dataset_instance,
+            slot.comparison_block.problem_configuration,
+            std::cmp::Reverse(slot.logical_slot),
+        )
+    });
+    assert_eq!(ordered_ids(&reversed), expected);
 
     let mut extended = slots.clone();
     let mut extra = slots[0];
@@ -120,7 +170,7 @@ fn randomized_order_depends_on_identities_and_full_seed_digest() {
     extra.comparison_block.dataset_instance = RecordId::from_digest([250; 32]);
     extended.push(extra);
     assert_eq!(
-        ordered_ids(&extended, &seed())
+        ordered_ids(&extended)
             .into_iter()
             .filter(|id| id.digest()[0] < 250)
             .collect::<Vec<_>>(),
@@ -128,7 +178,7 @@ fn randomized_order_depends_on_identities_and_full_seed_digest() {
     );
     let mut changed_seed = seed();
     changed_seed.derivation_digest = ContentDigest::new([18; 32]);
-    assert_ne!(ordered_ids(&slots, &changed_seed), expected);
+    assert_ne!(ordered_ids(&seeded_slots(&changed_seed)), expected);
 }
 
 #[test]
@@ -140,20 +190,14 @@ fn equal_slot_priorities_use_typed_slot_identities_to_break_ties() {
         slot.scheduling_priority = ContentDigest::new([0; 32]);
     }
     slots.reverse();
-    assert_eq!(
-        schedule_slots(RunOrder::Randomized, &seed(), &slots),
-        [2, 1, 0]
-    );
+    assert_eq!(schedule_slots(RunOrder::Randomized, &slots), [2, 1, 0]);
 }
 
 #[test]
 fn block_priorities_match_version_one_conformance_vectors() {
     let fixture: Value =
         serde_json::from_str(include_str!("../../fixtures/scheduling/v1.json")).unwrap();
-    assert_eq!(
-        fixture["scheduling_policy_version"],
-        SCHEDULING_POLICY_VERSION
-    );
+    assert_eq!(fixture["scheduling_policy_version"], 1);
     for vector in fixture["blocks"].as_array().unwrap() {
         let block = ComparisonBlock {
             dataset_instance: vector["dataset_instance"]
@@ -180,6 +224,41 @@ fn block_priorities_match_version_one_conformance_vectors() {
 }
 
 #[test]
+fn version_two_scheduling_matches_conformance_vectors() {
+    let fixture: Value =
+        serde_json::from_str(include_str!("../../fixtures/scheduling/v2.json")).unwrap();
+    assert_eq!(
+        fixture["scheduling_policy_version"],
+        SCHEDULING_POLICY_VERSION
+    );
+    let slots = fixture["slots"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|slot| SchedulingSlot {
+            logical_slot: RecordId::from_digest([slot["slot"].as_u64().unwrap() as u8; 32]),
+            comparison_block: ComparisonBlock {
+                dataset_instance: RecordId::from_digest(
+                    [slot["dataset"].as_u64().unwrap() as u8; 32],
+                ),
+                problem_configuration: RecordId::from_digest(
+                    [slot["problem"].as_u64().unwrap() as u8; 32],
+                ),
+                implementation_repetition: slot["repetition"].as_u64().unwrap(),
+                measurement_index: slot["measurement"].as_u64().unwrap(),
+            },
+            observation_round: 0,
+            scheduling_priority: ContentDigest::new([slot["priority"].as_u64().unwrap() as u8; 32]),
+        })
+        .collect::<Vec<_>>();
+    let order = schedule_slots(RunOrder::Randomized, &slots)
+        .into_iter()
+        .map(|index| u64::from(slots[index].logical_slot.digest()[0]))
+        .collect::<Vec<_>>();
+    assert_eq!(serde_json::json!(order), fixture["expected_order"]);
+}
+
+#[test]
 fn fresh_rounds_interleave_unequal_schedules_within_comparison_blocks() {
     let mut slots = slots()[..1].to_vec();
     let base = slots[0];
@@ -195,7 +274,7 @@ fn fresh_rounds_interleave_unequal_schedules_within_comparison_blocks() {
         }
     }
     slots.reverse();
-    let order = schedule_slots(RunOrder::Randomized, &seed(), &slots);
+    let order = schedule_slots(RunOrder::Randomized, &slots);
     assert_eq!(
         order
             .iter()

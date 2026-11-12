@@ -1092,7 +1092,7 @@ fn randomized_runs_interleave_comparable_implementations_and_record_the_schedule
             ),
             (
                 "datasets: [\"numbers\"]",
-                "datasets: [\"numbers\", \"other\"]",
+                "datasets: [\"other\", \"numbers\"]",
             ),
             ("measurement-repetitions: 3", "measurement-repetitions: 2"),
             (
@@ -1111,8 +1111,20 @@ fn randomized_runs_interleave_comparable_implementations_and_record_the_schedule
         let report = records.last().unwrap();
         assert_eq!(report["data"]["summary"]["accepted_attempts"], 8);
         let attempts = attempt_documents(root.path(), report);
+        assert_eq!(
+            attempts
+                .iter()
+                .map(
+                    |attempt| attempt["provenance"]["data"]["context"]["comparison"]["dataset"]
+                        .as_str()
+                        .unwrap()
+                )
+                .collect::<Vec<_>>(),
+            [
+                "other", "other", "other", "other", "numbers", "numbers", "numbers", "numbers"
+            ]
+        );
         let mut blocks = BTreeSet::new();
-        let mut previous_priority = None;
         for pair in attempts.as_chunks::<2>().0 {
             let contexts = pair
                 .iter()
@@ -1121,14 +1133,10 @@ fn randomized_runs_interleave_comparable_implementations_and_record_the_schedule
             let first = &contexts[0]["scheduling"];
             let second = &contexts[1]["scheduling"];
             assert_eq!(first["run_order"], "randomized");
-            assert_eq!(first["policy_version"], 1);
+            assert_eq!(first["policy_version"], 2);
             assert_eq!(first["comparison_block"], second["comparison_block"]);
             assert!(blocks.insert(first["comparison_block"].to_string()));
-            let priority = first["block_priority"].as_str().unwrap();
-            if let Some(previous) = previous_priority {
-                assert!(previous < priority);
-            }
-            previous_priority = Some(priority);
+            assert!(first.get("block_priority").is_none());
             assert!(first["slot_priority"].as_str() < second["slot_priority"].as_str());
             assert_eq!(
                 contexts[0]["implementation_seed"],
@@ -2650,6 +2658,60 @@ fn concurrent_lanes_own_separate_reusable_workers_and_warmups() {
             if index < 2 { 2 } else { 0 }
         );
     }
+}
+
+#[test]
+fn concurrent_randomized_batches_finish_each_dataset_before_starting_the_next() {
+    let root = reuse_repository();
+    replace(
+        root.path(),
+        "metewand.yaml",
+        "datasets:\n",
+        "datasets:\n  other:\n    output-schema: \"schemas/dataset.json\"\n    sources: [\"data.json\"]\n",
+    );
+    replace(
+        root.path(),
+        "metewand.yaml",
+        "datasets: [\"numbers\"]",
+        "datasets: [\"numbers\", \"other\"]",
+    );
+    replace(
+        root.path(),
+        "metewand.yaml",
+        "warmup-runs: 2",
+        "warmup-runs: 0\nmax-concurrency: 2\nrun-order: randomized",
+    );
+    let output = metewand(
+        root.path(),
+        &["run", "--output-dir", "run", "--output", "jsonl"],
+    );
+    assert!(output.status.success(), "{output:?}");
+    let records = envelopes(&output);
+    let report = records.last().unwrap();
+    assert_eq!(report["data"]["summary"]["accepted_attempts"], 6);
+    let attempts = attempt_documents(root.path(), report);
+    for (index, attempt) in attempts.iter().enumerate() {
+        let context = &attempt["provenance"]["data"]["context"];
+        assert_eq!(
+            context["comparison"]["dataset"],
+            if index < 3 { "numbers" } else { "other" }
+        );
+        assert_eq!(
+            context["concurrency"]["batch_index"],
+            [0, 0, 1, 2, 2, 3][index]
+        );
+        assert_eq!(
+            context["concurrency"]["batch_size"],
+            [2, 2, 1, 2, 2, 1][index]
+        );
+    }
+    let started = report["data"]["events"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|event| event["event"] == "attempt_started")
+        .count();
+    assert_eq!(started, 6);
 }
 
 #[test]

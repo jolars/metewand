@@ -314,7 +314,7 @@ fn expands_repetitions_into_identified_one_shot_records() {
     let experiment = &plan.experiments[0];
     assert_eq!(experiment.name, name("main"));
     assert_eq!(experiment.candidates.len(), 2);
-    assert_eq!(experiment.scheduling_seed.value, 8_960_666_142_325_237);
+    assert_eq!(experiment.scheduling_seed.value, 947_582_895_964_626);
     assert_eq!(experiment.execution_policy.record.warmup_runs, 2);
     assert!(experiment.execution_policy.record.worker_reuse);
 
@@ -423,8 +423,8 @@ fn expands_repetitions_into_identified_one_shot_records() {
             "mw1-logical-candidate-d00b8333a7a13b19535a406986f05222cb431e9978b27610398a85a373a68875",
             "mw1-logical-specification-f84ad430ec72ae97710ecbc4ecc208dd10f8186467a7fe24f6a4b600f5932e33",
             "mw1-logical-observation-slot-9bad8a54c8103f6c7f0f9b727f4e7c439fad859dd634456bf90855cc7fdb05cf",
-            "mw1-logical-attempt-slot-9bfa93af33b020f6a9cad40a626132cfa77490c5ac996804aa937181a32481dd",
-            "mw1-logical-attempt-slot-a387bde5dae47ec3b7e04f8e3a92d6f884af1846626f5ebfdc11e36e3b5e5568",
+            "mw1-logical-attempt-slot-e4d2d1448586630ac0572e3096640d9259fef91c4b827a36c6ec633123beb948",
+            "mw1-logical-attempt-slot-dbb5462a16fc15145c4e4564ee3288105a9c325b64685ef5d5203b191d50cce7",
         ]
     );
 }
@@ -782,13 +782,9 @@ fn scheduled_measurements(plan: &LogicalPlan) -> Vec<ScheduledMeasurement> {
         }
         let slots = measurements.iter().map(|m| m.slot).collect::<Vec<_>>();
         scheduled.extend(
-            schedule_slots(
-                experiment.execution_policy.record.run_order,
-                &experiment.scheduling_seed,
-                &slots,
-            )
-            .into_iter()
-            .map(|index| measurements[index]),
+            schedule_slots(experiment.execution_policy.record.run_order, &slots)
+                .into_iter()
+                .map(|index| measurements[index]),
         );
     }
     scheduled

@@ -29,9 +29,7 @@ use crate::core::{
         ResolvedLaunchRecord, ResolvedObservationSlotRecord, ResolvedOneShotSpecificationRecord,
         ResolvedWorkerRecord, SourceBundleArtifact, SourceBundleResource, WorkerWorkingDirectory,
     },
-    scheduling::{
-        ComparisonBlock, SchedulingSlot, derive_block_scheduling_priority, schedule_slots,
-    },
+    scheduling::{ComparisonBlock, SchedulingSlot, schedule_slots},
 };
 use crate::protocol::{MaterializeResponse, WorkerIdentity};
 use serde_json::{Value, json};
@@ -685,36 +683,55 @@ pub(super) fn resolve(
         }
         let ordered = schedule_slots(
             experiment.execution_policy.record.run_order,
-            &experiment.scheduling_seed,
             &scheduling_slots,
         )
         .into_iter()
         .map(|index| positions[index])
         .collect::<Vec<_>>();
         if !ordered.is_empty() {
-            // Bound allocation by selected work even when the authored limit is huge.
             let max_concurrency = experiment.execution_policy.record.max_concurrency;
-            let lane_count = max_concurrency.min(ordered.len() as u64) as usize;
-            for (offset, &(candidate, measurement)) in ordered.iter().enumerate() {
-                let batch_index = offset / lane_count;
-                let batch_size = lane_count.min(ordered.len() - batch_index * lane_count);
-                let provenance = &mut candidates[candidate].measurements[measurement].provenance;
-                let mut value = provenance.as_json().clone();
-                value["concurrency"] = json!({
-                    "max_concurrency": max_concurrency,
-                    "dispatch": "fixed_batches",
-                    "batch_index": batch_index,
-                    "batch_size": batch_size,
-                    "lane_index": offset % lane_count,
-                });
-                *provenance = canonical(value)?;
+            let dataset_groups = ordered
+                .chunk_by(|&(a, m), &(b, n)| {
+                    candidates[a].measurements[m]
+                        .scheduling
+                        .comparison_block
+                        .dataset_instance
+                        == candidates[b].measurements[n]
+                            .scheduling
+                            .comparison_block
+                            .dataset_instance
+                })
+                .map(|group| group.len())
+                .collect::<Vec<_>>();
+            let mut offset = 0;
+            let mut batch_index = 0;
+            for group_size in dataset_groups {
+                // Finish each dataset before dispatching another, including partial batches.
+                let lane_count = max_concurrency.min(group_size as u64) as usize;
+                let group = &ordered[offset..offset + group_size];
+                for batch in group.chunks(lane_count) {
+                    for (lane_index, &(candidate, measurement)) in batch.iter().enumerate() {
+                        let provenance =
+                            &mut candidates[candidate].measurements[measurement].provenance;
+                        let mut value = provenance.as_json().clone();
+                        value["concurrency"] = json!({
+                            "max_concurrency": max_concurrency,
+                            "dispatch": "fixed_batches",
+                            "batch_index": batch_index,
+                            "batch_size": batch.len(),
+                            "lane_index": lane_index,
+                        });
+                        *provenance = canonical(value)?;
+                    }
+                    let start = schedule.len() + offset;
+                    batches.push(ResolvedBatch {
+                        slots: start..start + batch.len(),
+                        lane_count,
+                    });
+                    offset += batch.len();
+                    batch_index += 1;
+                }
             }
-            let start = schedule.len();
-            let end = start + ordered.len();
-            batches.extend((start..end).step_by(lane_count).map(|start| ResolvedBatch {
-                slots: start..(start + lane_count).min(end),
-                lane_count,
-            }));
         }
         schedule.extend(ordered);
         candidate_offset += experiment.candidates.len();
@@ -1152,7 +1169,6 @@ fn resolve_candidate(
                         "implementation_repetition": block.implementation_repetition,
                         "measurement_index": block.measurement_index,
                     },
-                    "block_priority": hex(derive_block_scheduling_priority(&experiment.scheduling_seed, block).bytes()),
                     "slot_priority": hex(scheduling.scheduling_priority.bytes()),
                 },
                 "dataset_materialization": dataset_provenance.map(CanonicalValue::as_json),

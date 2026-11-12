@@ -190,11 +190,19 @@ pub(super) fn rebuild_batches(
         let mut batch_start = start;
         let mut batch_index = 0;
         while batch_start < end {
+            let (first_candidate, first_measurement) = schedule[batch_start];
+            let dataset = resolved.candidates[first_candidate].measurements[first_measurement]
+                .scheduling
+                .comparison_block
+                .dataset_instance;
             let mut batch_end = batch_start;
             let mut repetitions = BTreeSet::new();
             while batch_end < end && batch_end - batch_start < lanes {
                 let (candidate, measurement) = schedule[batch_end];
                 let slot = &resolved.candidates[candidate].measurements[measurement];
+                if slot.scheduling.comparison_block.dataset_instance != dataset {
+                    break;
+                }
                 if slot.fresh.is_some()
                     && !repetitions.insert((
                         slot.specification.id,

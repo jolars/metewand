@@ -19,7 +19,7 @@ fn workspace_exposes_current_compatibility_versions() {
     assert_eq!(WIRE_PROTOCOL_VERSION, 1);
     assert_eq!(IDENTITY_VERSION, 1);
     assert_eq!(SEED_DERIVATION_VERSION, 1);
-    assert_eq!(SCHEDULING_POLICY_VERSION, 1);
+    assert_eq!(SCHEDULING_POLICY_VERSION, 2);
     assert_eq!(EXECUTION_SEMANTICS_VERSION, 2);
     assert_eq!(LOCAL_TREE_HASH_VERSION, 1);
     assert_eq!(SOURCE_RESOLUTION_VERSION, 1);

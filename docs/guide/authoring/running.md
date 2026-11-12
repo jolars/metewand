@@ -173,10 +173,13 @@ execution-policies:
     timeout: 5 s
 ```
 
-Then add `execution-policy: local` to the experiment. Randomized order
-deterministically interleaves implementation configurations within comparison
-blocks. Execution remains serial unless you explicitly set `max-concurrency`.
-Concurrency changes the workload and is recorded in the execution policy.
+Then add `execution-policy: local` to the experiment. Experiments and dataset
+configurations run in expansion order. Randomized order shuffles implementation
+configurations within each problem and repetition block, reproducibly from the
+experiment seed. Each dataset configuration finishes before the next starts.
+Execution remains serial unless you explicitly set `max-concurrency`.
+Concurrent batches stay within one dataset configuration. Concurrency changes
+the workload and is recorded in the execution policy.
 
 `timeout` is a scientific wall-time limit over the selected scope. Separate
 operational limits bound each worker phase, with ten-second defaults. A larger

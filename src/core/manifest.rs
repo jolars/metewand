@@ -749,7 +749,7 @@ impl PrimaryTime {
 pub enum RunOrder {
     /// Declared deterministic order.
     Sequential,
-    /// Deterministically randomized order.
+    /// Seeded implementation order within comparisons visited in plan order.
     Randomized,
 }
 

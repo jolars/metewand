@@ -37,7 +37,8 @@ measurements afterward with
 
 Do not pipe or redirect the command when testing the live bars. JSON output and
 `TERM=dumb` also disable them. The run uses serial execution, deterministic
-randomized ordering, and worker reuse. Each dataset takes an extra half-second
+randomized implementation ordering within each dataset, and worker reuse.
+Datasets run in manifest order. Each dataset takes an extra half-second
 to generate so preparation is visible.
 
 The implementations deliberately sleep for 0.4, 0.55, and 0.7 seconds per

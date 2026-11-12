@@ -115,7 +115,7 @@
     "experiments": [
       {
         "name": "main",
-        "scheduling_seed": 2389870828410754,
+        "scheduling_seed": 7114234899263797,
         "max_concurrency": 1,
         "execution_policy": "mw1-execution-policy-5b589a57ec1470abcace11c56a258f07333c351b843f29c03323ee8591768c75",
         "observation_policy": "mw1-observation-policy-7ab610c92432eb64c53468035b88dd50d822ccf28213e385f51164bff0d2ff19",
@@ -147,8 +147,8 @@
                   "mw1-logical-observation-slot-433c5fd76bf7655182ddb63487e528018d72fa192bfc2681d2ba3fa890ff67ad"
                 ],
                 "attempt_slots": [
-                  "mw1-logical-attempt-slot-9d0976c7ea3325d16ab3c8f3b97e8c3a40e129c7c2c926bd2585def9530faada",
-                  "mw1-logical-attempt-slot-5f9fbf24e141939decd259cd7705c72242c713e5dcc5cdf598b6e81a2902e4fd"
+                  "mw1-logical-attempt-slot-08df58609f0b47e6afd94fe9eb3cfa73587a821a4fb24164610625792fc47c9f",
+                  "mw1-logical-attempt-slot-dd7740879063360dff055c26ef83db494e08e44f61140742baa1138202e7310f"
                 ]
               }
             ]

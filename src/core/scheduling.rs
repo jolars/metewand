@@ -1,15 +1,19 @@
 //! Pure deterministic ordering over resolved one-shot measurement slots.
 
-use sha2::{Digest, Sha256};
+use std::collections::BTreeMap;
 
 use crate::core::{
     manifest::RunOrder,
-    planning::SCHEDULING_PRIORITY_DOMAIN,
     records::{
-        ContentDigest, DatasetInstanceRecord, DerivedSeedRecord, LogicalAttemptSlotRecord,
-        ProblemConfigurationRecord, RecordId,
+        ContentDigest, DatasetInstanceRecord, LogicalAttemptSlotRecord, ProblemConfigurationRecord,
+        RecordId,
     },
 };
+
+#[cfg(test)]
+use crate::core::{planning::SCHEDULING_PRIORITY_DOMAIN, records::DerivedSeedRecord};
+#[cfg(test)]
+use sha2::{Digest, Sha256};
 
 /// Comparable measurements that differ only in implementation configuration.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -42,6 +46,7 @@ pub struct SchedulingSlot {
 /// Typed identities use their complete UTF-8 spelling, separated by NUL.
 /// Indices use eight-byte big-endian encoding, also separated by NUL.
 #[must_use]
+#[cfg(test)]
 pub fn derive_block_scheduling_priority(
     scheduling_seed: &DerivedSeedRecord,
     block: &ComparisonBlock,
@@ -64,23 +69,36 @@ pub fn derive_block_scheduling_priority(
 /// Returns input indices in deterministic dispatch order for one experiment.
 ///
 /// Sequential order retains the caller's deterministic expansion order.
-/// Randomized order sorts by block priority, typed block fields, slot priority,
-/// and logical slot identity. Identity tie-breakers make even equal priorities
-/// independent of input order. No priority depends on the selected member set.
+/// Randomized order preserves first-seen dataset and problem configurations,
+/// visits repetition indices in order, and sorts implementations by their seeded
+/// slot priorities. Identity tie-breakers resolve equal priorities independently
+/// of member order. No priority depends on the selected member set.
 /// Warm-ups belong to the worker lifecycle and run before their measurement.
 #[must_use]
-pub fn schedule_slots(
-    run_order: RunOrder,
-    scheduling_seed: &DerivedSeedRecord,
-    slots: &[SchedulingSlot],
-) -> Vec<usize> {
+pub fn schedule_slots(run_order: RunOrder, slots: &[SchedulingSlot]) -> Vec<usize> {
     let mut order = (0..slots.len()).collect::<Vec<_>>();
     if run_order == RunOrder::Randomized {
+        let mut datasets = BTreeMap::new();
+        let mut problems = BTreeMap::new();
+        for slot in slots {
+            let block = slot.comparison_block;
+            let next_dataset = datasets.len();
+            datasets
+                .entry(block.dataset_instance)
+                .or_insert(next_dataset);
+            let next_problem = problems.len();
+            problems
+                .entry((block.dataset_instance, block.problem_configuration))
+                .or_insert(next_problem);
+        }
         order.sort_by_cached_key(|&index| {
             let slot = &slots[index];
+            let block = slot.comparison_block;
             (
-                derive_block_scheduling_priority(scheduling_seed, &slot.comparison_block),
-                slot.comparison_block,
+                datasets[&block.dataset_instance],
+                problems[&(block.dataset_instance, block.problem_configuration)],
+                block.implementation_repetition,
+                block.measurement_index,
                 slot.observation_round,
                 slot.scheduling_priority,
                 slot.logical_slot,

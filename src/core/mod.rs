@@ -45,7 +45,7 @@ pub const IDENTITY_VERSION: u32 = 1;
 pub const SEED_DERIVATION_VERSION: u32 = 1;
 
 /// Version of the deterministic scheduling policy bound into scheduling seeds.
-pub const SCHEDULING_POLICY_VERSION: u32 = 1;
+pub const SCHEDULING_POLICY_VERSION: u32 = 2;
 
 /// Version of execution behavior that contributes to resolved identities.
 pub const EXECUTION_SEMANTICS_VERSION: u32 = 2;
@@ -63,7 +63,7 @@ mod tests {
         assert_eq!(PUBLIC_SCHEMA_VERSION, 1);
         assert_eq!(IDENTITY_VERSION, 1);
         assert_eq!(SEED_DERIVATION_VERSION, 1);
-        assert_eq!(SCHEDULING_POLICY_VERSION, 1);
+        assert_eq!(SCHEDULING_POLICY_VERSION, 2);
         assert_eq!(EXECUTION_SEMANTICS_VERSION, 2);
         assert_eq!(crate::core::export::EXPORT_SCHEMA_VERSION, 1);
         assert_eq!(crate::core::cache::CACHE_MAINTENANCE_VERSION, 1);

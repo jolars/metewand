@@ -486,7 +486,7 @@ fn python_and_r_starters_run_inspect_resume_and_export_without_scientific_boiler
             .filter(|line| line.contains('|'))
             .map(|line| line.split('|').next().unwrap().trim())
             .collect::<Vec<_>>();
-        assert_eq!(methods, ["Method", "loop", "builtin"], "{text}");
+        assert_eq!(methods, ["Method", "builtin", "loop"], "{text}");
         fs::remove_file(starter.project.join("metewand.yaml")).unwrap();
         let status = starter.json(&["status", "--output-dir", "run"], 0);
         assert_eq!(status["comparison"], run["comparison"]);

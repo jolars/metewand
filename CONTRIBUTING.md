@@ -117,11 +117,13 @@ parameters form a closed empty object. Unambiguous function benchmarks default
 to a local environment, one-shot execution, one measurement, and wall time over
 `prepare_and_execute`. Profile selection stays explicit.
 
-Sequential scheduling follows plan order. Randomized scheduling interleaves
-implementation configurations within dataset, problem,
-implementation-repetition, and measurement blocks. Bounded concurrency
-contributes to execution policy and resolved identity. Dispatch and event order
-remain deterministic, and batches do not cross experiment boundaries.
+Sequential scheduling follows plan order. Randomized scheduling preserves the
+first occurrence of each dataset configuration and, within it, each problem
+configuration. It visits implementation and measurement repetitions in index
+order and shuffles only implementation configurations within each comparison
+block, using seeded slot priorities. Bounded concurrency contributes to execution
+policy and resolved identity. Dispatch and event order remain deterministic, and
+batches do not cross dataset or experiment boundaries.
 
 Named experiment selection filters an already expanded plan, preserving logical
 identities and manifest order. Positional names and repeated `--experiment`
@@ -135,7 +137,7 @@ Worker checks use candidate dependencies, including when only part of an
 experiment is selected. Run ID selectors narrow the filtered plan further and
 reject excluded IDs. All selectors belong to the invocation and must be repeated
 to resume the same subset. Filtering expanded records preserves canonical
-identities, seeds, scheduling priorities, and compatibility version 1.
+identities, seeds, and scheduling priorities within the current scheduling policy.
 
 Local `environment-variables` are literal, validated worker
 settings, not ambient inheritance. Empty settings retain the original local
@@ -222,7 +224,8 @@ release numbers are unnecessary. It is separate from public compatibility versio
   | ------------------------------------------------------------- | -------------------------------------------------------------- |
   | Manifest, public schemas, wire protocol, and typed identities | 1                                                              |
   | Language binding API                                        | 1                                                              |
-  | Seed derivation and scheduling policy                         | 1                                                              |
+  | Seed derivation                                              | 1                                                              |
+  | Scheduling policy                                            | 2                                                              |
   | Execution semantics                                           | 2                                                              |
   | Measurement provenance                                        | 3 for streaming, 2 for other deliveries; versions 1 and 2 remain readable |
   | Worker environment provenance                                 | 1 on Unix, 2 on Windows, 3 for containers                                        |
@@ -249,6 +252,13 @@ Consider only boundaries the change affects. Briefly record consequential
 compatibility decisions in the change description and update the relevant
 fixtures. Do not require a separate review document or tests for speculative
 interfaces.
+
+Scheduling policy 2 replaces randomized comparison-block order with dataset and
+problem configuration order from expansion. It also bounds concurrent batches
+by dataset configuration. The policy version enters scheduling seeds, giving
+new attempts distinct identities. Version-1 scheduling vectors and persisted
+results retain their original meaning. New provenance records policy version 2
+and seeded slot priorities without the former block priority.
 
 ## Worker protocol and packages
 

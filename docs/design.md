@@ -192,9 +192,12 @@ Dataset, implementation, and scheduling seeds use separate deterministic
 derivations. Comparable implementations receive paired implementation seeds.
 Benchmark code remains responsible for seeding its random generators.
 
-The scheduler preserves deterministic order, including randomized comparison
-blocks and bounded concurrency. Measurement repetitions, implementation
-repetitions, and retries represent different things and retain separate indices.
+The scheduler visits experiments and dataset configurations in expansion order.
+Randomized scheduling shuffles implementation configurations within each
+comparison block while preserving problem and repetition order. Concurrent
+batches stay within one dataset configuration. Measurement repetitions,
+implementation repetitions, and retries represent different things and retain
+separate indices.
 
 ## Architecture
 
