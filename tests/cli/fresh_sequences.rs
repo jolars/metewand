@@ -364,6 +364,31 @@ fn active_time_bound_censors_and_resume_does_not_reset_it() {
     assert_eq!(report["attempts"].as_array().unwrap().len(), 1);
     assert_eq!(report["attempts"][0]["status"], "censored");
     assert_eq!(report["fresh_sequences"][0]["consumed_time_ns"], 20_000_000);
+    let archived = invoke(
+        stage.path(),
+        &[
+            "archive",
+            "create",
+            "--output-dir",
+            "run",
+            "--destination",
+            "saved.tar.gz",
+        ],
+    );
+    assert!(archived.status.success(), "{archived:?}");
+    fs::remove_dir_all(stage.path().join("run")).unwrap();
+    let restored = invoke(
+        stage.path(),
+        &[
+            "archive",
+            "restore",
+            "--archive",
+            "saved.tar.gz",
+            "--destination",
+            "run",
+        ],
+    );
+    assert!(restored.status.success(), "{restored:?}");
     let (_, resume) = run(stage.path(), &["--resume", "--retry"]);
     assert!(resume["attempts"].as_array().unwrap().is_empty());
     assert_eq!(resume["fresh_sequences"][0]["consumed_time_ns"], 20_000_000);
@@ -451,8 +476,7 @@ fn max_attempts_counts_dispatches_after_target_skips() {
     assert_eq!(report["summary"]["attempt_slots"], 3);
 }
 
-#[test]
-fn one_policy_can_mix_fresh_and_buffered_delivery() {
+fn mixed_delivery(restore_subset: bool) {
     let stage = stage(false);
     fs::write(
         stage.path().join("buffered.py"),
@@ -498,16 +522,87 @@ experiments:
     edit(stage.path(), "problem.yaml", |s| {
         s.replace("supported-budgets:","instrumented-scopes:\n  solver:\n    clock-origin: Before solving.\n    included-work: Solving and snapshots.\n    excluded-preparation: None.\nsupported-budgets:")
     });
+    let saved_observations = if restore_subset {
+        let directory = stage.path().join("run");
+        fs::create_dir(&directory).unwrap();
+        drop(crate::runtime::run_store::RunStore::open_fresh(&directory).unwrap());
+        let (output, report) = run(stage.path(), &["--implementation", "buffered"]);
+        assert!(output.status.success(), "{output:?}\n{report}");
+        let status = data(&invoke(
+            stage.path(),
+            &["status", "--output-dir", "run", "--output", "json"],
+        ));
+        let archived = invoke(
+            stage.path(),
+            &[
+                "archive",
+                "create",
+                "--output-dir",
+                "run",
+                "--destination",
+                "subset.tar.gz",
+            ],
+        );
+        assert!(archived.status.success(), "{archived:?}");
+        fs::remove_dir_all(directory).unwrap();
+        let restored = invoke(
+            stage.path(),
+            &[
+                "archive",
+                "restore",
+                "--archive",
+                "subset.tar.gz",
+                "--destination",
+                "run",
+            ],
+        );
+        assert!(restored.status.success(), "{restored:?}");
+        status["observations"].as_array().unwrap().clone()
+    } else {
+        vec![]
+    };
     let (output, report) = run(stage.path(), &[]);
     assert!(output.status.success(), "{output:?}\n{report}");
     assert_eq!(report["fresh_sequences"].as_array().unwrap().len(), 2);
-    assert!(
-        report["attempts"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|a| a["observations"].as_array().is_some_and(|o| !o.is_empty()))
-    );
+    if restore_subset {
+        assert!(!saved_observations.is_empty());
+        assert!(report["summary"]["accepted_attempts"].as_u64().unwrap() > 0);
+        assert!(
+            report["fresh_sequences"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|sequence| sequence["status"] == "accepted")
+        );
+        let status = data(&invoke(
+            stage.path(),
+            &["status", "--output-dir", "run", "--output", "json"],
+        ));
+        let observations = status["observations"].as_array().unwrap();
+        assert!(
+            saved_observations
+                .iter()
+                .all(|observation| observations.contains(observation))
+        );
+    } else {
+        assert!(
+            report["attempts"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|a| a["observations"].as_array().is_some_and(|o| !o.is_empty()))
+        );
+    }
+}
+
+#[test]
+fn one_policy_can_mix_fresh_and_buffered_delivery() {
+    mixed_delivery(false);
+}
+
+#[test]
+fn archive_restore_can_continue_a_subset_with_another_profile_delivery() {
+    mixed_delivery(true);
 }
 
 #[test]

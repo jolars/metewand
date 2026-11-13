@@ -315,6 +315,7 @@ pub enum ArchiveOperation {
     Create,
     Verify,
     Import,
+    Restore,
 }
 
 /// Human and machine output use the same operation receipt.

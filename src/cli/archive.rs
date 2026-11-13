@@ -4,7 +4,7 @@ use crate::core::archive::ArchiveOperation;
 
 use crate::cli::output::{CommandError, CommandResult};
 
-const HELP: &str = "Usage: metewand [--output FORMAT] archive <operation> [OPTIONS]\n\nOperations:\n  create --output-dir PATH --destination FILE.tar.gz\n  verify --archive PATH [--max-entries N] [--max-bytes N]\n  import --archive FILE.tar.gz --destination PATH [--max-entries N] [--max-bytes N]\n\nCreate a deterministic whole-run archive from committed evidence after all started attempts are terminal. Pending work and failures are preserved. Verification accepts a file or an imported collection, works offline, and never runs benchmark code. Import creates a read-only collection for status, explain, and export. Destinations must be new and have existing parents. Source code and input data outside registered artifacts are not gathered. Verification and import default to 1000000 entries and 1099511627776 expanded bytes.\n";
+const HELP: &str = "Usage: metewand [--output FORMAT] archive <operation> [OPTIONS]\n\nOperations:\n  create --output-dir PATH --destination FILE.tar.gz\n  verify --archive PATH [--max-entries N] [--max-bytes N]\n  import --archive FILE.tar.gz --destination PATH [--max-entries N] [--max-bytes N]\n  restore --archive FILE.tar.gz --destination PATH [--max-entries N] [--max-bytes N]\n\nCreate a deterministic whole-run archive from committed evidence after all started attempts are terminal. Pending work and failures are preserved. Verification accepts a file or an imported collection, works offline, and never runs benchmark code. Import creates a read-only collection for status, explain, and export. Restore rebuilds a resumable run on supported local storage, preserving accepted measurements, failures, retries, pending work, and profile budgets. It does not execute workers or restore ownership leases. Resume requires the original benchmark sources, inputs, and compatible prepared environments. Destinations must be new and have existing parents. Source code and input data outside registered artifacts are not gathered. Verification, import, and restore default to 1000000 entries and 1099511627776 expanded bytes.\n";
 
 pub fn command(arguments: &[OsString]) -> Result<CommandResult, CommandError> {
     if arguments == ["--help"]
@@ -19,10 +19,11 @@ pub fn command(arguments: &[OsString]) -> Result<CommandResult, CommandError> {
         [op, rest @ ..] if op == "create" => (ArchiveOperation::Create, rest),
         [op, rest @ ..] if op == "verify" => (ArchiveOperation::Verify, rest),
         [op, rest @ ..] if op == "import" => (ArchiveOperation::Import, rest),
+        [op, rest @ ..] if op == "restore" => (ArchiveOperation::Restore, rest),
         _ => {
             return Err(CommandError::usage(
                 "invalid_archive_operation",
-                "expected `archive create`, `archive verify`, or `archive import`",
+                "expected `archive create`, `archive verify`, `archive import`, or `archive restore`",
             ));
         }
     };
@@ -73,7 +74,7 @@ pub fn command(arguments: &[OsString]) -> Result<CommandResult, CommandError> {
     if matches!(operation, ArchiveOperation::Verify) == destination.is_some() {
         return Err(CommandError::usage(
             "invalid_archive_destination",
-            "create and import require --destination; verify does not accept a destination",
+            "create, import, and restore require --destination; verify does not accept a destination",
         ));
     }
     let mut limits = (1_000_000, 1_u64 << 40);
@@ -114,7 +115,9 @@ fn execute(
     destination: Option<PathBuf>,
     limits: (u64, u64),
 ) -> Result<CommandResult, CommandError> {
-    use crate::runtime::archive::{ArchiveLimits, create_archive, import_archive, verify_archive};
+    use crate::runtime::archive::{
+        ArchiveLimits, create_archive, import_archive, restore_archive, verify_archive,
+    };
     let limits = ArchiveLimits {
         max_entries: limits.0,
         max_expanded_bytes: limits.1,
@@ -125,6 +128,11 @@ fn execute(
         }
         ArchiveOperation::Verify => verify_archive(&input, limits),
         ArchiveOperation::Import => import_archive(
+            &input,
+            destination.as_deref().expect("checked destination"),
+            limits,
+        ),
+        ArchiveOperation::Restore => restore_archive(
             &input,
             destination.as_deref().expect("checked destination"),
             limits,

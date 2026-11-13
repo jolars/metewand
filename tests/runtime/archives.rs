@@ -9,7 +9,10 @@ use std::{
 
 use crate::core::canonical::CanonicalValue;
 use crate::runtime::{
-    archive::{ArchiveError, ArchiveLimits, create_archive, import_archive, verify_archive},
+    archive::{
+        ArchiveError, ArchiveLimits, create_archive, import_archive, restore_archive,
+        verify_archive,
+    },
     run_store::RunStore,
 };
 use flate2::{Compression, GzBuilder};
@@ -95,6 +98,97 @@ fn portable_executable_metadata_survives_import_without_host_permission_bits() {
     assert_eq!(created.manifest_sha256, imported.manifest_sha256);
     assert!(RunStore::open(&target).is_err());
     assert!(!target.join("run.sqlite3").exists());
+}
+
+#[test]
+fn restore_preserves_executable_metadata_or_rejects_before_publication() {
+    let root = tempfile::tempdir().unwrap();
+    let archive = root.path().join("saved.tar.gz");
+    create_archive(&fixture(), &archive).unwrap();
+    let destination = root.path().join("restored");
+    let restored = restore_archive(&archive, &destination, ArchiveLimits::default());
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        restored.unwrap();
+        let original =
+            crate::runtime::archive::collection_snapshot(&fixture(), ArchiveLimits::default())
+                .unwrap();
+        for (name, file) in original.files.unwrap() {
+            if let Some(relative) = name.strip_prefix("data/") {
+                assert_eq!(
+                    fs::metadata(destination.join(relative))
+                        .unwrap()
+                        .permissions()
+                        .mode()
+                        & 0o111
+                        != 0,
+                    file.executable
+                );
+            }
+        }
+        drop(RunStore::open(&destination).unwrap());
+        let again = root.path().join("again.tar.gz");
+        create_archive(&destination, &again).unwrap();
+        assert_eq!(fs::read(&archive).unwrap(), fs::read(again).unwrap());
+    }
+    #[cfg(windows)]
+    {
+        assert!(
+            restored
+                .unwrap_err()
+                .to_string()
+                .contains("executable bits")
+        );
+        assert!(!destination.exists());
+    }
+}
+
+#[test]
+fn restore_limits_and_existing_destinations_leave_evidence_unchanged() {
+    let root = tempfile::tempdir().unwrap();
+    let run = root.path().join("run");
+    fs::create_dir(&run).unwrap();
+    drop(RunStore::open(&run).unwrap());
+    let archive = root.path().join("saved.tar.gz");
+    create_archive(&run, &archive).unwrap();
+    let before = fs::read(&archive).unwrap();
+    let destination = root.path().join("restored");
+    assert!(
+        restore_archive(
+            &archive,
+            &destination,
+            ArchiveLimits {
+                max_entries: 1,
+                ..ArchiveLimits::default()
+            }
+        )
+        .is_err()
+    );
+    assert!(!destination.exists());
+    restore_archive(&archive, &destination, ArchiveLimits::default()).unwrap();
+    let existing = bytes(&destination);
+    assert!(restore_archive(&archive, &destination, ArchiveLimits::default()).is_err());
+    assert_eq!(existing, bytes(&destination));
+    assert_eq!(before, fs::read(archive).unwrap());
+}
+
+#[test]
+fn restore_rejects_payload_sidecars_before_opening_sqlite() {
+    let root = tempfile::tempdir().unwrap();
+    fs::write(root.path().join("run.sqlite3-wal"), b"archived payload").unwrap();
+    let before = bytes(root.path());
+    let evidence = crate::core::archive::ArchiveEvidence {
+        schema_version: 1,
+        records: vec![],
+    };
+    let error = RunStore::restore(root.path(), &evidence).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("collides with run coordination files")
+    );
+    assert_eq!(before, bytes(root.path()));
 }
 
 #[test]
