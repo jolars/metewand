@@ -94,6 +94,82 @@ fn success(root: &Path, args: &[&str]) -> Value {
 }
 
 #[test]
+fn archive_restore_rebuilds_a_resumable_run_after_losing_the_database() {
+    let root = tempfile::tempdir().unwrap();
+    copy(
+        &Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/fixed-dataset"),
+        root.path(),
+    );
+    let manifest = root.path().join("metewand.yaml");
+    fs::write(
+        &manifest,
+        fs::read_to_string(&manifest)
+            .unwrap()
+            .replace("measurement-repetitions: 1", "measurement-repetitions: 3"),
+    )
+    .unwrap();
+    success(
+        root.path(),
+        &["run", "--output-dir", "run", "--max-attempts", "1"],
+    );
+    let before = success(root.path(), &["status", "--output-dir", "run"]);
+    assert!(before["summary"]["pending_slots"].as_u64().unwrap() > 0);
+    success(
+        root.path(),
+        &[
+            "archive",
+            "create",
+            "--output-dir",
+            "run",
+            "--destination",
+            "saved.tar.gz",
+        ],
+    );
+    let saved = fs::read(root.path().join("saved.tar.gz")).unwrap();
+    fs::remove_dir_all(root.path().join("run")).unwrap();
+
+    let report = success(
+        root.path(),
+        &[
+            "archive",
+            "restore",
+            "--archive",
+            "saved.tar.gz",
+            "--destination",
+            "restored",
+        ],
+    );
+    assert_eq!(report["operation"], "restore");
+    assert!(root.path().join("restored/run.sqlite3").is_file());
+    assert!(!root.path().join("restored/archive.json").exists());
+    let after = success(root.path(), &["status", "--output-dir", "restored"]);
+    for key in ["summary", "slots", "attempts", "observations", "comparison"] {
+        assert_eq!(before[key], after[key], "{key}");
+    }
+    success(
+        root.path(),
+        &[
+            "archive",
+            "create",
+            "--output-dir",
+            "restored",
+            "--destination",
+            "round-trip.tar.gz",
+        ],
+    );
+    assert_eq!(
+        saved,
+        fs::read(root.path().join("round-trip.tar.gz")).unwrap()
+    );
+    let resumed = success(root.path(), &["run", "--output-dir", "restored"]);
+    assert_eq!(resumed["attempts"].as_array().unwrap().len(), 2);
+    let finished = success(root.path(), &["status", "--output-dir", "restored"]);
+    assert_eq!(finished["summary"]["pending_slots"], 0);
+    assert_eq!(finished["attempts"].as_array().unwrap().len(), 3);
+    assert_eq!(saved, fs::read(root.path().join("saved.tar.gz")).unwrap());
+}
+
+#[test]
 fn archive_rejects_scientific_payload_changes_after_inventory_updates() {
     let root = tempfile::tempdir().unwrap();
     copy(
@@ -443,6 +519,30 @@ fn profile_round_trip(example: &str) -> tempfile::TempDir {
             "results.tar.gz",
         ],
     );
+    success(
+        &repo,
+        &[
+            "archive",
+            "restore",
+            "--archive",
+            "results.tar.gz",
+            "--destination",
+            "restored",
+        ],
+    );
+    let restored = success(&repo, &["status", "--output-dir", "restored"]);
+    for key in [
+        "summary",
+        "slots",
+        "attempts",
+        "observations",
+        "comparison",
+        "fresh_sequences",
+    ] {
+        assert_eq!(before[key], restored[key], "{example}: restored {key}");
+    }
+    let resumed = success(&repo, &["run", "--output-dir", "restored"]);
+    assert!(resumed["attempts"].as_array().unwrap().is_empty());
     fs::rename(
         repo.join("results.tar.gz"),
         root.path().join("results.tar.gz"),
@@ -768,6 +868,49 @@ fn archive_preserves_failed_attempts_retries_and_pending_work() {
     ] {
         assert_eq!(before[key], after[key], "{key}");
     }
+    success(
+        &repo,
+        &[
+            "archive",
+            "restore",
+            "--archive",
+            "results.tar.gz",
+            "--destination",
+            "restored",
+        ],
+    );
+    let restored = success(&repo, &["status", "--output-dir", "restored"]);
+    for key in [
+        "summary",
+        "slots",
+        "attempts",
+        "observations",
+        "diagnostics",
+    ] {
+        assert_eq!(before[key], restored[key], "restored {key}");
+    }
+    let slot = before["attempts"][0]["slot_id"].as_str().unwrap();
+    let skipped = invoke(
+        &repo,
+        &["run", "--output-dir", "restored", "--select", slot],
+    );
+    let skipped: Value = serde_json::from_slice(&skipped.stdout).unwrap();
+    assert!(skipped["data"]["attempts"].as_array().unwrap().is_empty());
+    let retried = invoke(
+        &repo,
+        &[
+            "run",
+            "--output-dir",
+            "restored",
+            "--select",
+            slot,
+            "--retry",
+        ],
+    );
+    assert_eq!(retried.status.code(), Some(5));
+    let history = success(&repo, &["status", "--output-dir", "restored"]);
+    assert_eq!(history["attempts"].as_array().unwrap().len(), 4);
+    assert_eq!(history["attempts"][3]["retry_index"], 3);
     let output = invoke(
         &repo,
         &[

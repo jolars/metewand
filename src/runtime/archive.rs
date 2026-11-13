@@ -210,6 +210,77 @@ pub fn import_archive(
     )
 }
 
+/// Rebuilds a resumable local run from a verified archive without executing workers.
+/// The destination is published only after its database and artifacts agree
+/// with the portable evidence. Original ownership leases are not restored.
+pub fn restore_archive(
+    path: &Path,
+    destination: &Path,
+    limits: ArchiveLimits,
+) -> Result<ArchiveReport, ArchiveError> {
+    let destination = new_destination(destination)?;
+    let parent = destination.parent().expect("destination parent");
+    let source = private_stage(Some(parent))?;
+    extract(path, source.path(), limits)?;
+    let snapshot = collection_snapshot(source.path(), limits)?;
+    let manifest: ArchiveManifest = read_document(
+        &source.path().join("archive.json"),
+        PublicSchema::ArchiveManifest,
+        limits,
+    )?;
+    let evidence = snapshot.archive_evidence()?;
+    // Reuse the privately extracted payloads so restoration needs only one
+    // uncompressed copy, even for large profile archives on local scratch.
+    let stage = source.path().join("data");
+    if !stage.exists() {
+        platform_fs::create_private_directory(&stage)?;
+    }
+    platform_fs::set_private_directory(&stage)?;
+    crate::runtime::run_store::RunStore::restore(&stage, &evidence).map_err(evidence_error)?;
+    for file in &manifest.files {
+        let Some(relative) = file.path.strip_prefix("data/") else {
+            continue;
+        };
+        let target = stage.join(relative);
+        platform_fs::set_executable(&target, file.executable)?;
+        if platform_fs::is_executable(&fs::symlink_metadata(&target)?) != file.executable {
+            return Err(invalid(
+                "the destination cannot preserve archived executable bits for a resumable run",
+            ));
+        }
+    }
+    let restored = EvidenceSnapshot::read(&stage).map_err(evidence_error)?;
+    let records = |evidence: &ArchiveEvidence| -> Result<Vec<Vec<u8>>, ArchiveError> {
+        let mut records = evidence
+            .records
+            .iter()
+            .map(canonical_bytes)
+            .collect::<Result<Vec<_>, _>>()?;
+        records.sort();
+        Ok(records)
+    };
+    if records(&evidence)? != records(&restored.archive_evidence()?)? {
+        return Err(invalid(
+            "restored coordination state differs from portable evidence",
+        ));
+    }
+    ResultSet::from_snapshot(&restored).map_err(evidence_error)?;
+    for name in walk_files(&stage)?.keys() {
+        platform_fs::sync_owned_file(&stage.join(name))?;
+    }
+    crate::runtime::publication::sync_directories(&stage).map_err(evidence_error)?;
+    rename_no_replace(&stage, &destination)?;
+    platform_fs::complete_namespace_change(source.path())?;
+    platform_fs::complete_namespace_change(parent)?;
+    report(
+        ArchiveOperation::Restore,
+        path,
+        Some(&destination),
+        &manifest,
+        &snapshot,
+    )
+}
+
 pub(crate) fn collection_snapshot(
     root: &Path,
     limits: ArchiveLimits,

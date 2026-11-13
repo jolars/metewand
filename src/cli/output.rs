@@ -227,6 +227,7 @@ impl CommandResult {
                     ArchiveOperation::Create => "Created",
                     ArchiveOperation::Verify => "Verified",
                     ArchiveOperation::Import => "Imported",
+                    ArchiveOperation::Restore => "Restored",
                 };
                 let mut output = format!(
                     "{action} archive: {}\nEvidence: {} records, {} files, {} bytes.\nManifest SHA-256: {}\n",

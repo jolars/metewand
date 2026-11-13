@@ -24,7 +24,8 @@
           "enum": [
             "create",
             "verify",
-            "import"
+            "import",
+            "restore"
           ]
         },
         "archive_path": {

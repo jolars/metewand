@@ -95,10 +95,49 @@ environment guarantees and the existing Nix and uv backends.
 - [ ] Complete archival machine provenance and accounting, and qualify a
   mixed-language benchmark under those stronger guarantees.
 - [ ] Add stronger isolation backends as needed.
-- [ ] Add SLURM and remote execution.
 
 Publication-archive claims require the enforced controls described in the
 [reproducibility model](docs/design.md#reproducibility-model).
+
+## Shared storage and recovery
+
+Make a shared project directory the durable home of an HPC run. Keep worker
+scratch and rebuildable indexes local to each host. Preserve existing SQLite
+runs and scientific identities as the storage model evolves.
+
+- [x] Restore resumable local run state from verified portable evidence,
+  preserving pending work, failures, retries, accepted observations, and
+  profile accounting without the original coordination database.
+- [ ] Publish versioned durable records incrementally to shared storage.
+  Include ownership, retry authorization, acceptance, and budget decisions.
+  Commit completed work before reporting success; preserve streaming
+  publication boundaries and recover after losing all node-local state.
+- [ ] Support shared immutable dataset caches with portable retention roots
+  and safe reclamation, without a shared SQLite WAL catalog.
+- [ ] Qualify publication, cross-host visibility, and recovery on supported HPC
+  filesystems. Distinguish compute-node failure from storage-server power loss,
+  and batch metadata operations for large runs. Exercise clustlasso-cd on
+  GenomeDK's BeeGFS project storage and XFS scratch.
+
+## Distributed execution
+
+- [ ] Partition plans into deterministic, disjoint shards that preserve
+  comparison blocks, seeds, and scientific identities. Give each shard one
+  coordinator and combine its evidence for status, explanation, and analysis.
+- [ ] Fence ownership and retry generations across duplicate submissions,
+  requeues, and late results. Preserve attempt history and cumulative budgets
+  when continuing on another node.
+
+## Slurm and remote execution
+
+- [ ] Generate reviewable Slurm job scripts and array assignments from a plan,
+  with explicit account, partition, CPU, memory, and wall-time settings.
+- [ ] Add explicit submission and reconciliation with scheduler states,
+  cancellation, and accounting. Record allocations and observed hardware
+  separately from scientific timing and parameters.
+- [ ] Run and audit clustlasso-cd sweeps on GenomeDK using prepared Apptainer
+  environments, shared durable results, and disposable node-local scratch.
+- [ ] Add other remote execution backends when an adopter needs one.
 
 ## Results and analysis
 

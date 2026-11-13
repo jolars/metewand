@@ -552,4 +552,28 @@ stored filenames; import reports unsupported names or collisions without changin
 them. Matching archive contents preserve the recorded execution guarantees and
 timing scopes.
 
+To continue execution after losing the original local run directory, restore an
+archive into a new directory on supported local storage:
+
+```sh
+metewand archive restore --archive results.tar.gz --destination restored
+metewand status --output-dir restored
+metewand run --manifest metewand.yaml --output-dir restored
+```
+
+Restore verifies the archive, rebuilds the coordination database, and retains
+accepted measurements, pending work, failures, retries, and profile accounting.
+It does not launch workers. Continuing requires the original benchmark sources,
+inputs, and compatible prepared environments. Repeat the original experiment
+and selection flags. Recorded failures still require `--retry`; completed
+measurements with matching identities are reused. Keep the archive for recovery
+or sharing; the restored run can acquire new history independently.
+
+On a cluster, the archive can live in shared project storage, while the restored
+run must currently use supported local storage. Save an archive after all started
+attempts finish and before the cluster removes local scratch. Automatic
+publication to shared storage during execution remains planned work. Restore
+requires the destination to represent archived executable bits faithfully;
+read-only import supports analysis when that is unavailable.
+
 The next part covers [other languages, artifacts, and profiles](extending.md).

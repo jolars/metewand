@@ -4,7 +4,7 @@ use std::{
     process::{Command, Output},
 };
 
-use super::{ArchiveLimits, create_archive, import_archive, verify_archive};
+use super::{ArchiveLimits, create_archive, import_archive, restore_archive, verify_archive};
 
 fn fixture() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("schemas/v1/fixtures/archive-executable-v1")
@@ -21,15 +21,50 @@ fn archive_publication_child() {
         .parse()
         .unwrap();
     crate::runtime::fault_injection::arm(fs::File::create(root.join("trace")).unwrap(), target);
-    if std::env::var("METEWAND_ARCHIVE_CRASH_OPERATION").unwrap() == "create" {
-        create_archive(&fixture(), &root.join("created.tar.gz")).unwrap();
-    } else {
-        import_archive(
-            &root.join("input.tar.gz"),
-            &root.join("imported"),
-            ArchiveLimits::default(),
-        )
-        .unwrap();
+    match std::env::var("METEWAND_ARCHIVE_CRASH_OPERATION")
+        .unwrap()
+        .as_str()
+    {
+        "create" => {
+            create_archive(&fixture(), &root.join("created.tar.gz")).unwrap();
+        }
+        "import" => {
+            import_archive(
+                &root.join("input.tar.gz"),
+                &root.join("imported"),
+                ArchiveLimits::default(),
+            )
+            .unwrap();
+        }
+        "restore" => {
+            restore_archive(
+                &root.join("input.tar.gz"),
+                &root.join("restored"),
+                ArchiveLimits::default(),
+            )
+            .unwrap();
+        }
+        _ => panic!("unknown archive crash operation"),
+    }
+}
+
+fn prepare_input(root: &Path, operation: &str) {
+    match operation {
+        "import" => {
+            create_archive(&fixture(), &root.join("input.tar.gz")).unwrap();
+        }
+        "restore" => {
+            #[cfg(unix)]
+            create_archive(&fixture(), &root.join("input.tar.gz")).unwrap();
+            #[cfg(windows)]
+            {
+                let run = root.join("source");
+                fs::create_dir(&run).unwrap();
+                drop(crate::runtime::run_store::RunStore::open(&run).unwrap());
+                create_archive(&run, &root.join("input.tar.gz")).unwrap();
+            }
+        }
+        _ => (),
     }
 }
 
@@ -49,38 +84,54 @@ fn invoke(root: &Path, operation: &str, target: usize) -> Output {
 
 #[test]
 fn publication_crashes_leave_no_destination_or_a_complete_verified_archive() {
-    for operation in ["create", "import"] {
+    for operation in ["create", "import", "restore"] {
         let baseline = tempfile::tempdir().unwrap();
-        if operation == "import" {
-            create_archive(&fixture(), &baseline.path().join("input.tar.gz")).unwrap();
-        }
+        prepare_input(baseline.path(), operation);
         let output = invoke(baseline.path(), operation, 0);
         assert!(output.status.success(), "{output:?}");
         let trace = fs::read_to_string(baseline.path().join("trace")).unwrap();
-        for label in [
-            "file_sync.before",
-            "file_sync.after",
-            "rename.before",
-            "rename.after",
-        ] {
-            let target = trace.lines().position(|line| line == label).unwrap() + 1;
+        let targets = trace.lines().enumerate().filter_map(|(index, label)| {
+            let durability = matches!(
+                label,
+                "file_sync.before"
+                    | "file_sync.after"
+                    | "directory_sync.before"
+                    | "directory_sync.after"
+                    | "rename.before"
+                    | "rename.after"
+            );
+            let transaction = operation == "restore"
+                && (label.starts_with("database.before COMMIT")
+                    || label.starts_with("database.after COMMIT"));
+            (durability || transaction).then_some((index + 1, label.to_owned()))
+        });
+        for (target, label) in targets {
             let root = tempfile::tempdir().unwrap();
-            if operation == "import" {
-                create_archive(&fixture(), &root.path().join("input.tar.gz")).unwrap();
-            }
+            prepare_input(root.path(), operation);
             let output = invoke(root.path(), operation, target);
             assert_eq!(
                 output.status.code(),
                 Some(86),
                 "{operation}: {label}: {output:?}"
             );
-            let destination = root.path().join(if operation == "create" {
-                "created.tar.gz"
-            } else {
-                "imported"
+            let destination = root.path().join(match operation {
+                "create" => "created.tar.gz",
+                "import" => "imported",
+                "restore" => "restored",
+                _ => unreachable!(),
             });
             if destination.exists() {
-                verify_archive(&destination, ArchiveLimits::default()).unwrap();
+                if operation == "restore" {
+                    drop(crate::runtime::run_store::RunStore::open(&destination).unwrap());
+                    let archive = root.path().join("round-trip.tar.gz");
+                    create_archive(&destination, &archive).unwrap();
+                    assert_eq!(
+                        fs::read(archive).unwrap(),
+                        fs::read(root.path().join("input.tar.gz")).unwrap()
+                    );
+                } else {
+                    verify_archive(&destination, ArchiveLimits::default()).unwrap();
+                }
             }
         }
     }

@@ -238,6 +238,19 @@ records comparable across languages. Public boundaries are versioned from their
 introduction. Package releases are separate from format and execution versions.
 Supported historical records keep their original meanings.
 
+HPC execution needs a durable run home on shared project storage, disposable
+worker scratch, and host-local query indexes. Durable records must preserve
+ownership, retry authorization, accepted observations, and scientific budget
+decisions as well as result artifacts. Independent jobs should own disjoint
+shards rather than update a shared SQLite WAL database. This is the target
+storage model; the current execution backend still requires local storage.
+
+Portable result archives provide the first recovery boundary. An archive retains
+terminal attempts and pending work independently of SQLite. Restoring it rebuilds
+a resumable local run with the original identities, selections, and profile
+accounting. Incremental publication and recovery from shared records remain
+necessary before local scratch can become fully disposable during execution.
+
 The current local backend runs trusted code in development environments. It
 records observed controls and limitations. Private directories and integrity
 checks do not establish a complete dependency closure, network isolation, or

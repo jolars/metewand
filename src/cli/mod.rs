@@ -62,7 +62,7 @@ Commands:
   export  Export verified history or rebuild the disposable JSONL index.
   cache   Verify exact objects, manage roots, or collect unused cache objects.
   bundle  Generate a portable whole-benchmark Docker build context.
-  archive Create, verify, or import portable result evidence.
+  archive Create, verify, import, or restore portable result evidence.
 
 Options:
   --output FORMAT  Write human, json, or jsonl output (default: human).
