@@ -8,7 +8,7 @@ use crate::core::{
         ResolvedObservationSlotRecord, ResolvedOneShotSpecificationRecord,
     },
 };
-use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
+use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use serde_json::{Value, json};
 
 use super::{
@@ -54,9 +54,7 @@ impl RunStore {
         )?;
         let policy = canonical(serde_json::to_value(policy).expect("profile policy"))?;
         let control_json = canonical(control.observation_control.clone())?;
-        let tx = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = self.transaction()?;
         tx.execute(
             "INSERT INTO fresh_sequences VALUES (?1,?2,?3) ON CONFLICT DO NOTHING",
             params![run.id.to_string(), timestamp(measurement_index)?, policy],
@@ -97,9 +95,7 @@ impl RunStore {
         point_limit: Option<u64>,
         now: u64,
     ) -> Result<Option<u64>, RunStoreError> {
-        let tx = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = self.transaction()?;
         fence(&tx, attempt, timestamp(now)?)?;
         let Some((run, index)) = membership(&tx, &attempt.slot().to_string())? else {
             return Ok(None);
@@ -127,9 +123,7 @@ impl RunStore {
         measured: u64,
         now: u64,
     ) -> Result<(), RunStoreError> {
-        let tx = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = self.transaction()?;
         fence(&tx, attempt, timestamp(now)?)?;
         tx.execute(
             "UPDATE fresh_budget SET charged_ns=min(?2,reserved_ns) WHERE attempt_id=?1",

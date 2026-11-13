@@ -41,7 +41,7 @@ Usage:
   metewand [--output FORMAT] check [EXPERIMENT]... [--manifest PATH] [--experiment NAME] [--implementation NAME] [--dataset NAME] [--problem NAME] [--workers] [--runtime-config PATH]
   metewand [--output FORMAT] plan [EXPERIMENT]... [--manifest PATH] [--experiment NAME] [--implementation NAME] [--dataset NAME] [--problem NAME] [--verbose]
   metewand [--output FORMAT] lock [--manifest PATH] [--check]
-  metewand [--output FORMAT] run [EXPERIMENT]... [--manifest PATH] [--output-dir PATH] [--implementation NAME] [--dataset NAME] [--problem NAME] [--runtime-config PATH] [--locked] [--verbose]
+  metewand [--output FORMAT] run [EXPERIMENT]... [--manifest PATH] [--output-dir PATH] [--implementation NAME] [--dataset NAME] [--problem NAME] [--runtime-config PATH] [--locked] [--shared] [--verbose]
   metewand [--output FORMAT] status [--manifest PATH] [--output-dir PATH]
   metewand [--output FORMAT] explain <id> [--manifest PATH] [--output-dir PATH]
   metewand [--output FORMAT] export --output-dir PATH --destination PATH [--format json|jsonl|csv] [--require-complete]

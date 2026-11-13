@@ -108,7 +108,7 @@ runs and scientific identities as the storage model evolves.
 - [x] Restore resumable local run state from verified portable evidence,
   preserving pending work, failures, retries, accepted observations, and
   profile accounting without the original coordination database.
-- [ ] Publish versioned durable records incrementally to shared storage.
+- [x] Publish versioned durable records incrementally to shared storage.
   Include ownership, retry authorization, acceptance, and budget decisions.
   Commit completed work before reporting success; preserve streaming
   publication boundaries and recover after losing all node-local state.

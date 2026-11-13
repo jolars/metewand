@@ -13,6 +13,8 @@ use crate::core::records::{
 pub struct RunOptions {
     /// Verify prepared Nix environments against `metewand.lock`.
     pub locked: bool,
+    /// Publish coordination records to shared storage with a disposable local view.
+    pub shared: bool,
     /// Union of stable IDs to execute; an empty list selects the complete plan.
     pub selected_ids: Vec<String>,
     /// Named experiment union, or the manifest default when empty.

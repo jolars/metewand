@@ -253,6 +253,7 @@ release numbers are unnecessary. It is separate from public compatibility versio
   | Measurement provenance                                        | 3 for streaming, 2 for other deliveries; versions 1 and 2 remain readable |
   | Worker environment provenance                                 | 1 on Unix, 2 on Windows, 3 for containers                                        |
   | Exports and build evidence                                    | 1                                                              |
+  | Shared durable coordination records                          | 1                                                              |
   | Portable result archives                                     | 1                                                              |
   | Prepared environment lockfiles                               | 4 for Apptainer, 3 for OCI; versions 1–3 remain readable                                                              |
   | SQLite layout                                                 | 1 for one-shot, 2 for buffered profiles, 3 for fresh sequences and streaming |
@@ -600,12 +601,16 @@ it. Use a new run directory when a selection needs a newer layout.
 Connections require WAL, full synchronization, foreign keys, recursive triggers,
 and strict tables. Initialization probes filesystem locking, synchronization,
 atomic no-replace publication, and SQLite behavior. Unsupported durability
-requirements fail rather than falling back to weaker guarantees. Network
-filesystems are unsupported. Windows writable roots must be on local NTFS.
+requirements fail rather than falling back to weaker guarantees. SQLite WAL
+roots cannot use network filesystems. Windows writable SQLite roots must be on
+local NTFS.
 
 Reserve and transition attempts in short immediate transactions with ownership,
-lease, and expected-revision checks. Never hold a transaction across worker
-execution, hashing, synchronization, or rename. Leases last 30 seconds and renew
+lease, and expected-revision checks. SQLite-only runs never hold a transaction
+across worker execution, hashing, synchronization, or rename. Shared runs hold
+only the local transaction while publishing its journal commit, which serializes
+attempt and heartbeat mutations until that commit is durable. Worker execution
+and artifact publication remain outside those transactions. Leases last 30 seconds and renew
 every five seconds. Running with an existing output directory performs recovery
 before scheduling. Recover only expired or released owners; retain live owners.
 Default reservations permit a new attempt after the latest attempt was recovered
@@ -641,6 +646,59 @@ committed snapshot. It never opens the original through a mutating initializer,
 recovers leases, checkpoints, or quarantines artifacts. Indexes and exports
 cannot establish acceptance or authorize retention changes.
 
+### Shared run storage
+
+`run --shared --output-dir PATH` creates a shared run home containing immutable
+artifacts and a version-1 `journal/`, with no SQLite database on shared storage.
+Existing shared runs are detected automatically. Existing SQLite runs retain
+their layouts and behavior; `--shared` cannot convert them in place. Manifest,
+scientific identity, execution, wire, and archive compatibility versions do not
+change. The new journal has its own compatibility version and public
+[record schema](schemas/v1/durable-record.schema.json).
+
+One coordinator holds `.shared-writer.lock` for the invocation, including all
+reconnected attempt and heartbeat stores. A second coordinator fails busy.
+This is single-coordinator execution, not distributed shard ownership or retry
+generation fencing. Every open rebuilds a fresh host-local SQLite view beneath
+`TMPDIR` (`TEMP` on Windows). That directory must use supported local storage
+outside the shared run home. Worker scratch and transient inspection databases
+remain local too. Artifact publication stages live beside their destinations
+so rename stays within one filesystem. Persistent dataset caches remain local.
+
+Temporary SQLite triggers capture ordered before- and after-images for every
+coordination mutation, including leases, claims, reservation authorization,
+observation selections, events, and fresh-sequence policies, charges, and stopping
+dispositions. Row integers use decimal strings to preserve timestamp precision.
+A transaction checks deferred foreign keys, serializes canonical JSON, flushes a
+private journal stage, publishes it without replacement, and synchronizes its
+parent namespace before committing the local view or returning success.
+Streaming checkpoint observations and decisions use this same boundary before
+replying to the worker. A failed publication or local commit invalidates further
+writes through that view; reopening replays the authoritative shared history.
+
+Each record filename contains a zero-padded sequence and SHA-256 of its complete
+canonical bytes. Sequence zero establishes the empty run. Later records bind
+the preceding record's hash. Replay requires a contiguous chain, known versions
+and row fields, exact before- and after-images, strict row constraints, and
+foreign keys at each original transaction boundary. A writable open synchronizes
+the journal directory before replay so complete records left by a crashed
+publisher become durable before reuse. Unpublished `.pending-*` files are ignored. Complete published artifacts without journal registration
+remain candidates for the existing verified orphan recovery, never proof of
+acceptance by themselves. Losing local state does not erase live leases,
+retry history, partial streaming evidence, or conservative fresh budget charges.
+A committed stop decision still does not prove terminal worker acknowledgment.
+
+Status, explanation, export, and archive creation replay into private storage
+without taking ownership or changing shared records. Readers may see an older
+committed prefix while publication proceeds; a gap or inconsistent visible chain
+fails explicitly. Rebuildable exports cannot authorize execution or acceptance.
+Shared runs reject `--rebuild-index` so disposable `index.jsonl` files do not
+accumulate in the shared run home; use an explicit export destination instead.
+The backend requires working file locks, synchronization, and atomic no-replace
+publication. Process-death tests do not qualify cross-host visibility or
+storage-server power loss on any particular HPC filesystem. BeeGFS/XFS
+qualification and metadata batching remain separate TODO items.
+
 ### Crash conformance
 
 Normal tests include representative publication crashes and focused recovery
@@ -668,8 +726,10 @@ campaigns affected by the change.
 
 The [durability workflow](.github/workflows/durability.yml) runs the exhaustive
 campaigns separately on Linux, macOS, and Windows. They interrupt subprocesses
-at application and SQLite boundaries and verify recovery, identity, acceptance,
-and retry invariants. They
+at application, shared-journal, and SQLite boundaries and verify recovery,
+identity, acceptance, and retry invariants. Shared scenarios discard all
+child-local scratch before replay and cover initialization, fresh budgets,
+streaming decisions, and orphan recovery. They
 model abrupt process death, not storage hardware losing power.
 
 ## Machine output and exports

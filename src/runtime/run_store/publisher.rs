@@ -5,7 +5,7 @@ use std::{
 };
 
 use crate::core::{canonical::CanonicalValue, records::ContentDigest};
-use rusqlite::{OptionalExtension, Transaction, TransactionBehavior, params};
+use rusqlite::{OptionalExtension, Transaction, params};
 use serde_json::json;
 use sha2::{Digest, Sha256};
 
@@ -98,9 +98,7 @@ impl RunStore {
         let stage = self.stage(attempt, clock())?;
         populate(&stage.object)?;
         let mut artifact = self.publish_stage(&stage, kind.name())?;
-        let tx = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = self.transaction()?;
         let now = clock().max(stage.acquired_at_ns);
         artifact.verified_at_ns = now;
         check_stage(&tx, attempt, &stage, now)?;
@@ -162,9 +160,7 @@ impl RunStore {
             &document.to_canonical_bytes()?,
         )?;
         let mut artifact = self.publish_stage(&stage, "attempt")?;
-        let tx = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = self.transaction()?;
         let now = clock().max(finished);
         artifact.verified_at_ns = now;
         check_stage(&tx, attempt, &stage, now)?;
@@ -194,11 +190,7 @@ impl RunStore {
     fn stage(&mut self, attempt: &OwnedAttempt, now_ns: u64) -> Result<Stage, RunStoreError> {
         let now = timestamp(now_ns)?.max(timestamp(attempt.updated_at_ns())?);
         let _creation_lock = super::recovery::coordination_lock(self, true)?;
-        let root = self
-            .database_path()
-            .parent()
-            .expect("database has a root")
-            .to_owned();
+        let root = self.root().to_owned();
         let objects = root.join("artifacts");
         match fs::create_dir(&objects) {
             Ok(()) => (),
@@ -232,9 +224,7 @@ impl RunStore {
                 .expect("stage is inside store"),
         )?;
         let lease_id = format!("staging:{relative}");
-        let tx = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = self.transaction()?;
         fence(&tx, attempt, now)?;
         tx.execute("INSERT INTO leases(id, owner_token, attempt_id, purpose, staging_path, acquired_at_ns, expires_at_ns)
             SELECT ?1, owner_token, attempt_id, 'staging', ?2, ?3, expires_at_ns FROM leases WHERE id = ?4",
@@ -295,9 +285,7 @@ impl RunStore {
         stage: &Stage,
     ) -> Result<CanonicalValue, RunStoreError> {
         let now = timestamp(finished)?;
-        let tx = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = self.transaction()?;
         check_stage(&tx, attempt, stage, finished)?;
         validate_finalization(&tx, attempt, outcome, now)?;
         let document = build_outcome_document(&tx, attempt, outcome, references, finished)?;

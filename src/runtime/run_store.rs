@@ -25,6 +25,8 @@ mod recovery;
 #[cfg(any(unix, windows))]
 mod restore;
 #[cfg(any(unix, windows))]
+pub(crate) mod shared;
+#[cfg(any(unix, windows))]
 pub use attempts::{
     ArtifactRegistration, AttemptPhase, ClaimDisposition, Finalization, LeaseRequest, OwnedAttempt,
     RetryAuthorization, TerminalAttempt, TerminalOutcome,

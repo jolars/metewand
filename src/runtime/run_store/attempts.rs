@@ -3,7 +3,7 @@ use crate::core::{
     identity::run_attempt_id,
     records::{ContentDigest, RecordId, ResolvedAttemptSlotRecord, RunAttemptRecord},
 };
-use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
+use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use serde_json::{Value, json};
 
 use super::{RunStore, RunStoreError};
@@ -194,11 +194,10 @@ impl RunStore {
         lease: LeaseRequest,
         now_ns: u64,
     ) -> Result<OwnedAttempt, RunStoreError> {
+        let shared = self.shared.is_some();
         let now = timestamp(now_ns)?;
         validate_lease(&lease, now)?;
-        let tx = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = self.transaction()?;
         if !tx.query_row(
             "SELECT EXISTS(SELECT 1 FROM attempt_slots WHERE id = ?1)",
             [slot.to_string()],
@@ -241,15 +240,21 @@ impl RunStore {
         tx.execute("INSERT INTO attempts(id, slot_id, retry_index, state, revision, started_at_ns, updated_at_ns)
             VALUES (?1, ?2, ?3, 'reserved', 0, ?4, ?4)", params![id.to_string(), slot.to_string(), next, now])?;
         insert_lease(&tx, &id.to_string(), "reservation", &lease, now)?;
-        append_transition(
-            &tx,
-            &id.to_string(),
-            None,
-            "reserved",
-            0,
-            now,
-            json!({"slot":slot.to_string(), "retry_index":next}),
-        )?;
+        let mut details = json!({"slot":slot.to_string(), "retry_index":next});
+        if shared {
+            details["retry_authorization"] = match authorization {
+                RetryAuthorization::FirstAttempt => json!({"kind":"first_attempt"}),
+                RetryAuthorization::Next { retry: true } => json!({"kind":"explicit_retry"}),
+                RetryAuthorization::Next { retry: false } => {
+                    json!({"kind": if next == 0 {"first_attempt"} else {"recovered_interruption"}})
+                }
+                RetryAuthorization::Retry {
+                    next_index,
+                    max_index,
+                } => json!({"kind":"bounded_retry", "next_index":next_index,"max_index":max_index}),
+            };
+        }
+        append_transition(&tx, &id.to_string(), None, "reserved", 0, now, details)?;
         tx.commit()?;
         Ok(OwnedAttempt {
             id,
@@ -277,9 +282,7 @@ impl RunStore {
         now_ns: u64,
     ) -> Result<OwnedAttempt, RunStoreError> {
         let now = timestamp(now_ns)?;
-        let tx = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = self.transaction()?;
         let state = fence(&tx, attempt, now)?;
         let advanced = transition(&tx, attempt, &state, phase.name(), now, json!({}), None)?;
         tx.commit()?;
@@ -302,9 +305,7 @@ impl RunStore {
         if expires <= now {
             return Err(invalid("lease expiration must be in the future"));
         }
-        let tx = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = self.transaction()?;
         fence(&tx, attempt, now)?;
         let mut query = tx.prepare("SELECT id, expires_at_ns FROM leases WHERE attempt_id = ?1 AND released_at_ns IS NULL AND (purpose IN ('reservation', 'finalization') OR (purpose = 'staging' AND expires_at_ns > ?2))")?;
         let leases = query
@@ -351,9 +352,7 @@ impl RunStore {
                 "finalization lease must have the reservation owner",
             ));
         }
-        let tx = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = self.transaction()?;
         let state = fence(&tx, attempt, now)?;
         let competing: bool = tx.query_row(
             "SELECT EXISTS(SELECT 1 FROM finalization_claims WHERE slot_id = ?1)",
@@ -405,9 +404,7 @@ impl RunStore {
         references: &[(String, String)],
         now_ns: u64,
     ) -> Result<TerminalAttempt, RunStoreError> {
-        let tx = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = self.transaction()?;
         let terminal =
             commit_finalization_in(&tx, attempt, outcome, artifact, references, now_ns, now_ns)?;
         tx.commit()?;

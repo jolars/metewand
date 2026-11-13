@@ -6,7 +6,7 @@ use std::{
 };
 
 use crate::core::{canonical::CanonicalValue, identity::run_attempt_id, records::ContentDigest};
-use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
+use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
@@ -91,11 +91,7 @@ impl RunStore {
     ) -> Result<RecoveryReport, RunStoreError> {
         let _recovery_lock = coordination_lock(self, false)?;
         let now = timestamp(clock())? as u64;
-        let root = self
-            .database_path()
-            .parent()
-            .expect("store has a root")
-            .to_owned();
+        let root = self.root().to_owned();
         let objects = root.join("artifacts");
         ensure_directory(&objects)?;
         crate::runtime::platform_fs::complete_namespace_change(&root)?;
@@ -113,9 +109,7 @@ impl RunStore {
             if busy_attempts.contains(&id) {
                 continue;
             }
-            let tx = self
-                .connection
-                .transaction_with_behavior(TransactionBehavior::Immediate)?;
+            let tx = self.transaction()?;
             let checked = timestamp(clock().max(now))?;
             let Some((mut attempt, state)) = expired_attempt(&tx, &id, checked)? else {
                 continue;
@@ -155,9 +149,7 @@ impl RunStore {
                 }
                 sync_tree(&root.join(&orphan.artifact.relative_path))?;
                 crate::runtime::platform_fs::complete_namespace_change(&objects)?;
-                let tx = self
-                    .connection
-                    .transaction_with_behavior(TransactionBehavior::Immediate)?;
+                let tx = self.transaction()?;
                 let checked = timestamp(clock().max(now).max(checked as u64))?;
                 require_expired(&tx, &attempt, checked)?;
                 validate_orphan(&tx, &attempt, orphan, checked as u64)?;
@@ -189,9 +181,7 @@ impl RunStore {
         // Claim resolution comes first. Quarantine is repeatable if a crash
         // occurs after rename but before the lease-release transaction commits.
         for stage in stages {
-            let tx = self
-                .connection
-                .transaction_with_behavior(TransactionBehavior::Immediate)?;
+            let tx = self.transaction()?;
             let checked = timestamp(clock().max(now))?;
             let recoverable = match &stage.lease_id {
                 None => true,
@@ -402,9 +392,7 @@ impl RunStore {
             } else {
                 sync_tree(&path)?;
                 crate::runtime::platform_fs::complete_namespace_change(objects)?;
-                let tx = self
-                    .connection
-                    .transaction_with_behavior(TransactionBehavior::Immediate)?;
+                let tx = self.transaction()?;
                 register_artifact(&tx, &artifact, &kind)?;
                 tx.commit()?;
                 report.imported_artifacts.push(artifact);
@@ -419,12 +407,8 @@ impl RunStore {
         orphan: &Orphan,
         now: u64,
     ) -> Result<Evidence, RunStoreError> {
-        let root = self
-            .database_path()
-            .parent()
-            .expect("store root")
-            .to_owned();
-        let tx = self.connection.transaction()?;
+        let root = self.root().to_owned();
+        let tx = self.transaction()?;
         let evidence = validate_orphan(&tx, attempt, orphan, now)?;
         for artifact in &evidence.roots {
             verify_registered(&root, artifact)?;
@@ -441,9 +425,7 @@ impl RunStore {
         clock: &mut impl FnMut() -> u64,
         earliest: u64,
     ) -> Result<TerminalAttempt, RunStoreError> {
-        let tx = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = self.transaction()?;
         let finished = clock().max(earliest).max(attempt.updated_at_ns());
         require_expired(&tx, attempt, timestamp(finished)?)?;
         let outcome = TerminalOutcome::Failed {
@@ -481,9 +463,7 @@ impl RunStore {
         let path = root.join(&relative_path);
         publish_prepared_directory(&object, &path)?;
         let (_, mut artifact) = completed_metadata(root, &relative_path, finished)?;
-        let tx = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = self.transaction()?;
         let checked = clock().max(finished);
         require_expired(&tx, attempt, timestamp(checked)?)?;
         if build_outcome_document(&tx, attempt, &outcome, &references, finished)? != document {
@@ -507,7 +487,7 @@ impl RunStore {
 }
 
 pub(super) fn coordination_lock(store: &RunStore, shared: bool) -> Result<File, RunStoreError> {
-    let root = store.database_path().parent().expect("store root");
+    let root = store.root();
     let file = open_lock(&root.join(".run-store-recovery.lock"), true)?;
     let result = if shared {
         file.try_lock_shared()

@@ -1,0 +1,408 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "metewand://schemas/v1/durable-record.schema.json",
+  "x-metewand-compatibility-version": 1,
+  "title": "Shared durable coordination transaction",
+  "description": "Canonical records are named by a zero-padded 20-digit sequence and SHA-256 of the complete file bytes. Sequence zero has no changes or predecessor. Later records form a contiguous hash chain. Each ordered change replaces one exact before-image with its after-image within an atomic transaction. Collection rows retain all version-1 coordination fields; integers use decimal strings to preserve timestamp precision. These fields are independent of the physical SQLite file format.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "sequence": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "previous_sha256": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      ]
+    },
+    "changes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "collection": {
+            "enum": [
+              "applicability_decisions",
+              "artifacts",
+              "attempt_artifacts",
+              "attempt_observation_slots",
+              "attempt_slots",
+              "attempt_transitions",
+              "attempts",
+              "events",
+              "finalization_claims",
+              "fresh_budget",
+              "fresh_dispositions",
+              "fresh_members",
+              "fresh_sequences",
+              "leased_artifacts",
+              "leases",
+              "observation_artifacts",
+              "observation_slots",
+              "observations",
+              "resolved_runs",
+              "selected_observations"
+            ]
+          },
+          "before": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "after": {
+            "type": [
+              "object",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "collection",
+          "before",
+          "after"
+        ],
+        "additionalProperties": false,
+        "not": {
+          "properties": {
+            "before": {
+              "type": "null"
+            },
+            "after": {
+              "type": "null"
+            }
+          }
+        },
+        "oneOf": [
+          {
+            "properties": {
+              "collection": {
+                "const": "applicability_decisions"
+              },
+              "before": {
+                "$ref": "#/$defs/applicability_decisions"
+              },
+              "after": {
+                "$ref": "#/$defs/applicability_decisions"
+              }
+            }
+          },
+          {
+            "properties": {
+              "collection": {
+                "const": "artifacts"
+              },
+              "before": {
+                "$ref": "#/$defs/artifacts"
+              },
+              "after": {
+                "$ref": "#/$defs/artifacts"
+              }
+            }
+          },
+          {
+            "properties": {
+              "collection": {
+                "const": "attempt_artifacts"
+              },
+              "before": {
+                "$ref": "#/$defs/attempt_artifacts"
+              },
+              "after": {
+                "$ref": "#/$defs/attempt_artifacts"
+              }
+            }
+          },
+          {
+            "properties": {
+              "collection": {
+                "const": "attempt_observation_slots"
+              },
+              "before": {
+                "$ref": "#/$defs/attempt_observation_slots"
+              },
+              "after": {
+                "$ref": "#/$defs/attempt_observation_slots"
+              }
+            }
+          },
+          {
+            "properties": {
+              "collection": {
+                "const": "attempt_slots"
+              },
+              "before": {
+                "$ref": "#/$defs/attempt_slots"
+              },
+              "after": {
+                "$ref": "#/$defs/attempt_slots"
+              }
+            }
+          },
+          {
+            "properties": {
+              "collection": {
+                "const": "attempt_transitions"
+              },
+              "before": {
+                "$ref": "#/$defs/attempt_transitions"
+              },
+              "after": {
+                "$ref": "#/$defs/attempt_transitions"
+              }
+            }
+          },
+          {
+            "properties": {
+              "collection": {
+                "const": "attempts"
+              },
+              "before": {
+                "$ref": "#/$defs/attempts"
+              },
+              "after": {
+                "$ref": "#/$defs/attempts"
+              }
+            }
+          },
+          {
+            "properties": {
+              "collection": {
+                "const": "events"
+              },
+              "before": {
+                "$ref": "#/$defs/events"
+              },
+              "after": {
+                "$ref": "#/$defs/events"
+              }
+            }
+          },
+          {
+            "properties": {
+              "collection": {
+                "const": "finalization_claims"
+              },
+              "before": {
+                "$ref": "#/$defs/finalization_claims"
+              },
+              "after": {
+                "$ref": "#/$defs/finalization_claims"
+              }
+            }
+          },
+          {
+            "properties": {
+              "collection": {
+                "const": "fresh_budget"
+              },
+              "before": {
+                "$ref": "#/$defs/fresh_budget"
+              },
+              "after": {
+                "$ref": "#/$defs/fresh_budget"
+              }
+            }
+          },
+          {
+            "properties": {
+              "collection": {
+                "const": "fresh_dispositions"
+              },
+              "before": {
+                "$ref": "#/$defs/fresh_dispositions"
+              },
+              "after": {
+                "$ref": "#/$defs/fresh_dispositions"
+              }
+            }
+          },
+          {
+            "properties": {
+              "collection": {
+                "const": "fresh_members"
+              },
+              "before": {
+                "$ref": "#/$defs/fresh_members"
+              },
+              "after": {
+                "$ref": "#/$defs/fresh_members"
+              }
+            }
+          },
+          {
+            "properties": {
+              "collection": {
+                "const": "fresh_sequences"
+              },
+              "before": {
+                "$ref": "#/$defs/fresh_sequences"
+              },
+              "after": {
+                "$ref": "#/$defs/fresh_sequences"
+              }
+            }
+          },
+          {
+            "properties": {
+              "collection": {
+                "const": "leased_artifacts"
+              },
+              "before": {
+                "$ref": "#/$defs/leased_artifacts"
+              },
+              "after": {
+                "$ref": "#/$defs/leased_artifacts"
+              }
+            }
+          },
+          {
+            "properties": {
+              "collection": {
+                "const": "leases"
+              },
+              "before": {
+                "$ref": "#/$defs/leases"
+              },
+              "after": {
+                "$ref": "#/$defs/leases"
+              }
+            }
+          },
+          {
+            "properties": {
+              "collection": {
+                "const": "observation_artifacts"
+              },
+              "before": {
+                "$ref": "#/$defs/observation_artifacts"
+              },
+              "after": {
+                "$ref": "#/$defs/observation_artifacts"
+              }
+            }
+          },
+          {
+            "properties": {
+              "collection": {
+                "const": "observation_slots"
+              },
+              "before": {
+                "$ref": "#/$defs/observation_slots"
+              },
+              "after": {
+                "$ref": "#/$defs/observation_slots"
+              }
+            }
+          },
+          {
+            "properties": {
+              "collection": {
+                "const": "observations"
+              },
+              "before": {
+                "$ref": "#/$defs/observations"
+              },
+              "after": {
+                "$ref": "#/$defs/observations"
+              }
+            }
+          },
+          {
+            "properties": {
+              "collection": {
+                "const": "resolved_runs"
+              },
+              "before": {
+                "$ref": "#/$defs/resolved_runs"
+              },
+              "after": {
+                "$ref": "#/$defs/resolved_runs"
+              }
+            }
+          },
+          {
+            "properties": {
+              "collection": {
+                "const": "selected_observations"
+              },
+              "before": {
+                "$ref": "#/$defs/selected_observations"
+              },
+              "after": {
+                "$ref": "#/$defs/selected_observations"
+              }
+            }
+          }
+        ]
+      }
+    }
+  },
+  "required": [
+    "schema_version",
+    "sequence",
+    "previous_sha256",
+    "changes"
+  ],
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "sequence": {
+            "const": 0
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "previous_sha256": {
+            "type": "null"
+          },
+          "changes": {
+            "maxItems": 0
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "previous_sha256": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "applicability_decisions": {"type": ["object", "null"], "properties": {"id": {"type": "string"}, "candidate_id": {"type": "string"}, "applicable": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"}, "record_json": {"type": "string"}}, "required": ["id", "candidate_id", "applicable", "record_json"], "additionalProperties": false},
+    "artifacts": {"type": ["object", "null"], "properties": {"id": {"type": "string"}, "kind": {"type": "string"}, "relative_path": {"type": "string"}, "content_sha256": {"type": "string"}, "storage_kind": {"type": "string"}, "manifest_sha256": {"anyOf": [{"type": "string"}, {"type": "null"}]}, "verified_at_ns": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"}}, "required": ["id", "kind", "relative_path", "content_sha256", "storage_kind", "manifest_sha256", "verified_at_ns"], "additionalProperties": false},
+    "attempt_artifacts": {"type": ["object", "null"], "properties": {"attempt_id": {"type": "string"}, "role": {"type": "string"}, "artifact_id": {"type": "string"}}, "required": ["attempt_id", "role", "artifact_id"], "additionalProperties": false},
+    "attempt_observation_slots": {"type": ["object", "null"], "properties": {"attempt_slot_id": {"type": "string"}, "observation_slot_id": {"type": "string"}, "resolved_run_id": {"type": "string"}}, "required": ["attempt_slot_id", "observation_slot_id", "resolved_run_id"], "additionalProperties": false},
+    "attempt_slots": {"type": ["object", "null"], "properties": {"id": {"type": "string"}, "logical_slot_id": {"type": "string"}, "resolved_run_id": {"type": "string"}, "kind": {"type": "string"}, "role": {"type": "string"}, "record_json": {"type": "string"}}, "required": ["id", "logical_slot_id", "resolved_run_id", "kind", "role", "record_json"], "additionalProperties": false},
+    "attempt_transitions": {"type": ["object", "null"], "properties": {"attempt_id": {"type": "string"}, "revision": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"}, "previous_revision": {"anyOf": [{"type": "string", "pattern": "^(0|[1-9][0-9]*)$"}, {"type": "null"}]}, "from_state": {"anyOf": [{"type": "string"}, {"type": "null"}]}, "to_state": {"type": "string"}, "occurred_at_ns": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"}, "event_sequence": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"}}, "required": ["attempt_id", "revision", "previous_revision", "from_state", "to_state", "occurred_at_ns", "event_sequence"], "additionalProperties": false},
+    "attempts": {"type": ["object", "null"], "properties": {"id": {"type": "string"}, "slot_id": {"type": "string"}, "retry_index": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"}, "state": {"type": "string"}, "revision": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"}, "started_at_ns": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"}, "updated_at_ns": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"}, "finished_at_ns": {"anyOf": [{"type": "string", "pattern": "^(0|[1-9][0-9]*)$"}, {"type": "null"}]}, "failure_code": {"anyOf": [{"type": "string"}, {"type": "null"}]}, "final_artifact_id": {"anyOf": [{"type": "string"}, {"type": "null"}]}, "final_artifact_kind": {"type": "string"}}, "required": ["id", "slot_id", "retry_index", "state", "revision", "started_at_ns", "updated_at_ns", "finished_at_ns", "failure_code", "final_artifact_id", "final_artifact_kind"], "additionalProperties": false},
+    "events": {"type": ["object", "null"], "properties": {"sequence": {"anyOf": [{"type": "string", "pattern": "^(0|[1-9][0-9]*)$"}, {"type": "null"}]}, "attempt_id": {"anyOf": [{"type": "string"}, {"type": "null"}]}, "occurred_at_ns": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"}, "kind": {"type": "string"}, "payload_json": {"type": "string"}}, "required": ["sequence", "attempt_id", "occurred_at_ns", "kind", "payload_json"], "additionalProperties": false},
+    "finalization_claims": {"type": ["object", "null"], "properties": {"slot_id": {"type": "string"}, "attempt_id": {"type": "string"}, "lease_id": {"type": "string"}, "lease_purpose": {"type": "string"}}, "required": ["slot_id", "attempt_id", "lease_id", "lease_purpose"], "additionalProperties": false},
+    "fresh_budget": {"type": ["object", "null"], "properties": {"attempt_id": {"type": "string"}, "reserved_ns": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"}, "charged_ns": {"anyOf": [{"type": "string", "pattern": "^(0|[1-9][0-9]*)$"}, {"type": "null"}]}}, "required": ["attempt_id", "reserved_ns", "charged_ns"], "additionalProperties": false},
+    "fresh_dispositions": {"type": ["object", "null"], "properties": {"slot_id": {"type": "string"}, "reason": {"type": "string"}, "causing_attempt_id": {"type": "string"}}, "required": ["slot_id", "reason", "causing_attempt_id"], "additionalProperties": false},
+    "fresh_members": {"type": ["object", "null"], "properties": {"slot_id": {"type": "string"}, "resolved_run_id": {"type": "string"}, "measurement_index": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"}, "schedule_index": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"}, "control_json": {"type": "string"}}, "required": ["slot_id", "resolved_run_id", "measurement_index", "schedule_index", "control_json"], "additionalProperties": false},
+    "fresh_sequences": {"type": ["object", "null"], "properties": {"resolved_run_id": {"type": "string"}, "measurement_index": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"}, "policy_json": {"type": "string"}}, "required": ["resolved_run_id", "measurement_index", "policy_json"], "additionalProperties": false},
+    "leased_artifacts": {"type": ["object", "null"], "properties": {"lease_id": {"type": "string"}, "artifact_id": {"type": "string"}}, "required": ["lease_id", "artifact_id"], "additionalProperties": false},
+    "leases": {"type": ["object", "null"], "properties": {"id": {"type": "string"}, "owner_token": {"type": "string"}, "attempt_id": {"anyOf": [{"type": "string"}, {"type": "null"}]}, "purpose": {"type": "string"}, "staging_path": {"anyOf": [{"type": "string"}, {"type": "null"}]}, "acquired_at_ns": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"}, "expires_at_ns": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"}, "released_at_ns": {"anyOf": [{"type": "string", "pattern": "^(0|[1-9][0-9]*)$"}, {"type": "null"}]}}, "required": ["id", "owner_token", "attempt_id", "purpose", "staging_path", "acquired_at_ns", "expires_at_ns", "released_at_ns"], "additionalProperties": false},
+    "observation_artifacts": {"type": ["object", "null"], "properties": {"observation_id": {"type": "string"}, "role": {"type": "string"}, "artifact_id": {"type": "string"}}, "required": ["observation_id", "role", "artifact_id"], "additionalProperties": false},
+    "observation_slots": {"type": ["object", "null"], "properties": {"id": {"type": "string"}, "logical_slot_id": {"type": "string"}, "resolved_run_id": {"type": "string"}, "record_json": {"type": "string"}}, "required": ["id", "logical_slot_id", "resolved_run_id", "record_json"], "additionalProperties": false},
+    "observations": {"type": ["object", "null"], "properties": {"id": {"type": "string"}, "slot_id": {"type": "string"}, "producing_attempt_id": {"type": "string"}, "attempt_slot_id": {"type": "string"}, "valid": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"}, "completion": {"type": "string"}, "artifact_id": {"type": "string"}, "artifact_kind": {"type": "string"}, "record_json": {"type": "string"}}, "required": ["id", "slot_id", "producing_attempt_id", "attempt_slot_id", "valid", "completion", "artifact_id", "artifact_kind", "record_json"], "additionalProperties": false},
+    "resolved_runs": {"type": ["object", "null"], "properties": {"id": {"type": "string"}, "logical_specification_id": {"type": "string"}, "candidate_id": {"type": "string"}, "applicability_id": {"type": "string"}, "applicable": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"}, "record_json": {"type": "string"}}, "required": ["id", "logical_specification_id", "candidate_id", "applicability_id", "applicable", "record_json"], "additionalProperties": false},
+    "selected_observations": {"type": ["object", "null"], "properties": {"slot_id": {"type": "string"}, "observation_id": {"type": "string"}, "valid": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"}, "selected_at_ns": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"}}, "required": ["slot_id", "observation_id", "valid", "selected_at_ns"], "additionalProperties": false}
+  }
+}

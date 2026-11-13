@@ -61,79 +61,68 @@ fn claim(store: &mut RunStore, attempt: &OwnedAttempt) -> OwnedAttempt {
         .attempt
 }
 
-fn seed(store: &RunStore, measurement: bool) {
+fn seed(store: &mut RunStore, measurement: bool) {
     seed_kind(store, measurement, false);
 }
 
-fn seed_kind(store: &RunStore, measurement: bool, streaming: bool) {
-    store
-        .connection
-        .execute_batch(
-            "INSERT INTO applicability_decisions VALUES ('decision', 'candidate', 1, '{}');
+fn seed_kind(store: &mut RunStore, measurement: bool, streaming: bool) {
+    let tx = store.transaction().unwrap();
+    tx.execute_batch(
+        "INSERT INTO applicability_decisions VALUES ('decision', 'candidate', 1, '{}');
          INSERT INTO resolved_runs VALUES ('run', 'logical', 'candidate', 'decision', 1, '{}');",
-        )
-        .unwrap();
-    let version = store
-        .connection
+    )
+    .unwrap();
+    let version = tx
         .pragma_query_value(None, "user_version", |r| r.get::<_, u32>(0))
         .unwrap();
     let buffered = version == 2;
     for index in [1, 2] {
-        store
-            .connection
-            .execute(
-                "INSERT INTO attempt_slots VALUES (?1, ?1, 'run', ?3, ?2, '{}')",
-                (
-                    slot(index).to_string(),
-                    if measurement { "measurement" } else { "warmup" },
-                    if streaming {
-                        "stream"
-                    } else if buffered {
-                        "buffered"
-                    } else if version == 3 {
-                        "fresh_observation"
-                    } else {
-                        "one_shot"
-                    },
-                ),
-            )
-            .unwrap();
+        tx.execute(
+            "INSERT INTO attempt_slots VALUES (?1, ?1, 'run', ?3, ?2, '{}')",
+            (
+                slot(index).to_string(),
+                if measurement { "measurement" } else { "warmup" },
+                if streaming {
+                    "stream"
+                } else if buffered {
+                    "buffered"
+                } else if version == 3 {
+                    "fresh_observation"
+                } else {
+                    "one_shot"
+                },
+            ),
+        )
+        .unwrap();
     }
     if version == 3 && !streaming {
         let policy=json!({"metric":"gap","direction":"at_most","threshold":0,"max-observations":2,"max-active-time":"1 ms"}).to_string();
-        store
-            .connection
-            .execute("INSERT INTO fresh_sequences VALUES ('run',0,?1)", [policy])
+        tx.execute("INSERT INTO fresh_sequences VALUES ('run',0,?1)", [policy])
             .unwrap();
         for index in [1u8, 2] {
-            store
-                .connection
-                .execute(
-                    "INSERT INTO fresh_members VALUES (?1,'run',0,?2,?3)",
-                    params![
-                        slot(index).to_string(),
-                        i64::from(index - 1),
-                        json!({"iterations":index}).to_string()
-                    ],
-                )
-                .unwrap();
+            tx.execute(
+                "INSERT INTO fresh_members VALUES (?1,'run',0,?2,?3)",
+                params![
+                    slot(index).to_string(),
+                    i64::from(index - 1),
+                    json!({"iterations":index}).to_string()
+                ],
+            )
+            .unwrap();
         }
     }
     if measurement {
-        store
-            .connection
-            .execute_batch(
-                "INSERT INTO observation_slots VALUES ('observation-slot', 'logical', 'run', '{}')",
-            )
-            .unwrap();
-        store
-            .connection
-            .execute(
-                "INSERT INTO attempt_observation_slots VALUES (?1, 'observation-slot', 'run')",
-                [slot(1).to_string()],
-            )
-            .unwrap();
+        tx.execute_batch(
+            "INSERT INTO observation_slots VALUES ('observation-slot', 'logical', 'run', '{}')",
+        )
+        .unwrap();
+        tx.execute(
+            "INSERT INTO attempt_observation_slots VALUES (?1, 'observation-slot', 'run')",
+            [slot(1).to_string()],
+        )
+        .unwrap();
     }
+    tx.commit().unwrap();
 }
 
 fn observe(store: &mut RunStore, attempt: &OwnedAttempt, now: u64) -> String {
@@ -143,7 +132,7 @@ fn observe(store: &mut RunStore, attempt: &OwnedAttempt, now: u64) -> String {
         .artifact;
     let id = format!("observation-{}", attempt.retry_index());
     // The orchestrator's record and selection registration must be atomic too.
-    let tx = store.connection.transaction().unwrap();
+    let tx = store.transaction().unwrap();
     tx.execute("INSERT INTO observations VALUES (?1, 'observation-slot', ?2, ?3, 1, 'reached', ?4, 'observation', '{}')",
         (&id, attempt.id().to_string(), slot(1).to_string(), &artifact.id)).unwrap();
     let buffered = tx
@@ -184,10 +173,14 @@ fn observe(store: &mut RunStore, attempt: &OwnedAttempt, now: u64) -> String {
 }
 
 fn prepare(root: &Path, scenario: &str) {
+    let shared = scenario.starts_with("shared-");
+    let scenario = scenario.strip_prefix("shared-").unwrap_or(scenario);
     if scenario.starts_with("initialize") {
         return;
     }
-    let mut store = if scenario.starts_with("fresh-") || scenario.starts_with("stream-") {
+    let mut store = if shared {
+        RunStore::open_shared(root)
+    } else if scenario.starts_with("fresh-") || scenario.starts_with("stream-") {
         RunStore::open_fresh(root)
     } else if scenario.starts_with("buffered-") {
         RunStore::open_buffered(root)
@@ -196,7 +189,7 @@ fn prepare(root: &Path, scenario: &str) {
     }
     .unwrap();
     seed_kind(
-        &store,
+        &mut store,
         !scenario.starts_with("concurrent"),
         scenario.starts_with("stream-"),
     );
@@ -356,6 +349,8 @@ fn crash_child() {
         return;
     };
     let scenario = std::env::var("METEWAND_FAULT_SCENARIO").unwrap();
+    let shared = scenario.starts_with("shared-");
+    let scenario = scenario.strip_prefix("shared-").unwrap_or(&scenario);
     let trace = File::create(std::env::var_os("METEWAND_FAULT_TRACE").unwrap()).unwrap();
     let target = std::env::var("METEWAND_FAULT_TARGET")
         .unwrap()
@@ -363,7 +358,9 @@ fn crash_child() {
         .unwrap();
     if scenario.starts_with("initialize") {
         arm(trace, target);
-        if scenario == "initialize-fresh" {
+        if shared {
+            RunStore::open_shared(Path::new(&root)).unwrap();
+        } else if scenario == "initialize-fresh" {
             RunStore::open_fresh(Path::new(&root)).unwrap();
         } else if scenario == "initialize-buffered" {
             RunStore::open_buffered(Path::new(&root)).unwrap();
@@ -401,13 +398,17 @@ fn crash_child() {
             )
             .unwrap();
     } else {
-        publish(&mut store, &scenario);
+        publish(&mut store, scenario);
     }
 }
 
 fn run(root: &Path, scenario: &str, target: usize) -> (Output, Vec<String>) {
     let trace = tempfile::NamedTempFile::new().unwrap();
+    let scratch = tempfile::tempdir().unwrap();
     let output = command(root, scenario, trace.path(), target)
+        .env("TMPDIR", scratch.path())
+        .env("TMP", scratch.path())
+        .env("TEMP", scratch.path())
         .output()
         .unwrap();
     let boundaries = fs::read_to_string(trace.path())
@@ -513,9 +514,16 @@ fn assert_terminal_artifacts(root: &Path, db: &Connection, successes: &BTreeSet<
 }
 
 fn audit(root: &Path, scenario: &str) {
-    let mut store = RunStore::open(root).unwrap();
+    let shared = scenario.starts_with("shared-");
+    let scenario = scenario.strip_prefix("shared-").unwrap_or(scenario);
+    let mut store = if shared {
+        RunStore::open_shared(root)
+    } else {
+        RunStore::open(root)
+    }
+    .unwrap();
     if scenario.starts_with("initialize") {
-        seed(&store, true);
+        seed(&mut store, true);
     }
     let successes = published_successes(root);
     let before_selections = selections(&store.connection);
@@ -794,6 +802,16 @@ fn campaign_child() {
 #[ignore = "exhaustive crash campaign; see CONTRIBUTING.md#crash-conformance"]
 fn every_durability_boundary_survives_process_death_and_resume() {
     let scenarios = [
+        "shared-initialize",
+        "shared-fresh-accepted",
+        "shared-fresh-censored",
+        "shared-fresh-failed",
+        "shared-stream-accepted",
+        "shared-stream-censored",
+        "shared-stream-failed",
+        "shared-recover-interrupted",
+        "shared-recover-orphan",
+        "shared-recover-artifact",
         "initialize",
         "initialize-buffered",
         "initialize-fresh",
@@ -870,6 +888,10 @@ fn every_durability_boundary_survives_process_death_and_resume() {
         "rename.after",
         "finalization.before",
         "finalization.after",
+        "shared.publish.before",
+        "shared.publish.after",
+        "shared.local_commit.before",
+        "shared.local_commit.after",
         "finalization.outcome.before",
         "finalization.outcome.after",
         "finalization.projection.before",
@@ -1058,7 +1080,7 @@ fn fresh_sequence_budget_and_target_survive_publication_crashes() {
 fn fresh_time_reservation_refunds_only_on_terminal_commit() {
     let root = tempfile::tempdir().unwrap();
     let mut store = RunStore::open_fresh(root.path()).unwrap();
-    seed(&store, true);
+    seed(&mut store, true);
     let attempt = reserve(&mut store);
     assert_eq!(
         store.reserve_fresh_time(&attempt, None, 10).unwrap(),
@@ -1143,5 +1165,93 @@ fn streaming_publication_and_decisions_survive_process_death_without_splicing() 
         let store = RunStore::open(root.path()).unwrap();
         let producers:i64 = store.connection.query_row("SELECT count(DISTINCT o.producing_attempt_id) FROM selected_observations s JOIN observations o ON o.id=s.observation_id",[],|r|r.get(0)).unwrap();
         assert_eq!(producers, 1);
+    }
+}
+
+#[test]
+fn shared_publication_survives_loss_of_scratch_at_commit_and_stream_boundaries() {
+    for scenario in ["shared-fresh-accepted", "shared-stream-accepted"] {
+        let fixture = tempfile::tempdir().unwrap();
+        prepare(fixture.path(), scenario);
+        let baseline = tempfile::tempdir().unwrap();
+        copy_fixture(fixture.path(), baseline.path());
+        let (output, boundaries) = run(baseline.path(), scenario, 0);
+        assert!(output.status.success(), "{scenario}: {output:?}");
+        let mut targets = Vec::new();
+        for needle in [
+            "rename.after",
+            "shared.publish.before",
+            "shared.publish.after",
+            "shared.local_commit.before",
+            "shared.local_commit.after",
+            "finalization.projection.after",
+            "finalization.after",
+        ] {
+            targets.push(boundaries.iter().rposition(|p| p == needle).unwrap() + 1);
+        }
+        let checkpoint_published = if scenario.contains("stream") {
+            let checkpoint = boundaries
+                .iter()
+                .position(|p| p == "stream.checkpoint.before_commit")
+                .unwrap();
+            let published = checkpoint
+                + boundaries[checkpoint..]
+                    .iter()
+                    .position(|p| p == "shared.publish.after")
+                    .unwrap();
+            targets.push(published + 1);
+            targets.push(published + 2);
+            Some(published + 1)
+        } else {
+            None
+        };
+        if scenario.contains("stream") {
+            for needle in [
+                "stream.checkpoint.before_commit",
+                "stream.checkpoint.after_commit",
+                "stream.decision.before_send",
+            ] {
+                targets.push(boundaries.iter().position(|p| p == needle).unwrap() + 1);
+            }
+        } else {
+            for needle in ["INSERT INTO fresh_budget", "UPDATE fresh_budget"] {
+                targets.push(boundaries.iter().position(|p| p.contains(needle)).unwrap() + 1);
+            }
+        }
+        for target in targets {
+            let root = tempfile::tempdir().unwrap();
+            copy_fixture(fixture.path(), root.path());
+            let (output, _) = run(root.path(), scenario, target);
+            assert_eq!(
+                output.status.code(),
+                Some(86),
+                "{scenario} {}: {output:?}",
+                boundaries[target - 1]
+            );
+            assert!(!root.path().join("run.sqlite3").exists());
+            if checkpoint_published.is_some_and(|commit| target >= commit) {
+                let store = RunStore::open(root.path()).unwrap();
+                assert_eq!(count(&store.connection, "observations"), 1);
+                assert_eq!(
+                    store
+                        .connection
+                        .query_row(
+                            "SELECT count(*) FROM events WHERE kind='stream_checkpoint'",
+                            [],
+                            |r| r.get::<_, i64>(0)
+                        )
+                        .unwrap(),
+                    1
+                );
+                let accepted = count_where(&store.connection, "state='accepted'");
+                if accepted == 0 {
+                    assert!(
+                        selections(&store.connection).is_empty(),
+                        "a saved checkpoint must not imply terminal acceptance"
+                    );
+                }
+            }
+            audit(root.path(), scenario);
+        }
     }
 }

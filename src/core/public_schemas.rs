@@ -23,6 +23,7 @@ static CATALOG: Mutex<Option<SchemaCatalog>> = Mutex::new(None);
 /// A public versioned schema entry point.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum PublicSchema {
+    DurableRecord,
     BundleManifest,
     BundleOutput,
     /// Exact prepared environments and worker launches.
@@ -99,7 +100,8 @@ pub enum PublicSchema {
 }
 
 /// Every public schema entry point in stable presentation order.
-pub const PUBLIC_SCHEMAS: [PublicSchema; 42] = [
+pub const PUBLIC_SCHEMAS: [PublicSchema; 43] = [
+    PublicSchema::DurableRecord,
     PublicSchema::BundleManifest,
     PublicSchema::BundleOutput,
     PublicSchema::Lockfile,
@@ -149,6 +151,7 @@ impl PublicSchema {
     #[must_use]
     pub const fn slug(self) -> &'static str {
         match self {
+            Self::DurableRecord => "durable-record",
             Self::BundleManifest => "bundle-manifest",
             Self::BundleOutput => "bundle-output",
             Self::LockfileV3 => "lockfile-v3",
@@ -206,6 +209,7 @@ impl PublicSchema {
     #[must_use]
     pub fn repository_path(self) -> &'static Path {
         Path::new(match self {
+            Self::DurableRecord => "schemas/v1/durable-record.schema.json",
             Self::BundleManifest => "schemas/v1/bundle-manifest.schema.json",
             Self::BundleOutput => "schemas/v1/bundle-output.schema.json",
             Self::LockfileV3 => "schemas/v3/lockfile.schema.json",
@@ -259,6 +263,7 @@ impl PublicSchema {
     #[must_use]
     pub const fn id(self) -> &'static str {
         match self {
+            Self::DurableRecord => "metewand://schemas/v1/durable-record.schema.json",
             Self::BundleManifest => "metewand://schemas/v1/bundle-manifest.schema.json",
             Self::BundleOutput => "metewand://schemas/v1/bundle-output.schema.json",
             Self::LockfileV3 => "metewand://schemas/v3/lockfile.schema.json",
@@ -322,6 +327,7 @@ impl PublicSchema {
     #[must_use]
     pub const fn source(self) -> &'static str {
         match self {
+            Self::DurableRecord => include_str!("../../schemas/v1/durable-record.schema.json"),
             Self::BundleManifest => include_str!("../../schemas/v1/bundle-manifest.schema.json"),
             Self::BundleOutput => include_str!("../../schemas/v1/bundle-output.schema.json"),
             Self::LockfileV3 => include_str!("../../schemas/v3/lockfile.schema.json"),

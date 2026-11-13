@@ -1641,6 +1641,7 @@ impl CommandError {
                 (EXIT_USAGE, "invalid_export_destination")
             }
             ExportError::ReadOnlyCollection => (EXIT_USAGE, "read_only_archive"),
+            ExportError::SharedIndex => (EXIT_USAGE, "shared_run_index"),
             _ => (EXIT_INVALID_REPOSITORY, "invalid_export_evidence"),
         };
         Self { exit_code, diagnostic: Box::new(Diagnostic::new(code, error.to_string()).with_remediation("Select a verified run with `--output-dir PATH` and a new export directory with `--destination PATH`.")) }

@@ -242,14 +242,21 @@ HPC execution needs a durable run home on shared project storage, disposable
 worker scratch, and host-local query indexes. Durable records must preserve
 ownership, retry authorization, accepted observations, and scientific budget
 decisions as well as result artifacts. Independent jobs should own disjoint
-shards rather than update a shared SQLite WAL database. This is the target
-storage model; the current execution backend still requires local storage.
+shards rather than update a shared SQLite WAL database. The opt-in shared run
+backend publishes an immutable transaction journal and artifacts there, rebuilding
+SQLite in host-local scratch on every invocation.
+Each shared run has one coordinator. Disjoint distributed shards and qualification
+on specific HPC filesystems remain future work.
 
 Portable result archives provide the first recovery boundary. An archive retains
 terminal attempts and pending work independently of SQLite. Restoring it rebuilds
 a resumable local run with the original identities, selections, and profile
-accounting. Incremental publication and recovery from shared records remain
-necessary before local scratch can become fully disposable during execution.
+accounting. Shared runs additionally publish ownership, retry authorization,
+observations,
+acceptance, and budget decisions at each coordination transaction. Published
+records commit before success or a streaming checkpoint reply. Recovery rebuilds
+local coordination from that history, retaining interrupted ownership leases
+until expiry and preserving conservative charges for unknown execution time.
 
 The current local backend runs trusted code in development environments. It
 records observed controls and limitations. Private directories and integrity

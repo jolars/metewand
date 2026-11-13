@@ -8,6 +8,7 @@ pub mod canonical;
 pub mod comparison;
 pub mod compatibility;
 pub mod controls;
+pub mod durable;
 pub mod duration;
 pub mod export;
 mod field_declaration;

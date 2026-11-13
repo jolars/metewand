@@ -7,7 +7,7 @@ use crate::core::{
     },
     run_documents::observation_document,
 };
-use rusqlite::{OptionalExtension, TransactionBehavior, params};
+use rusqlite::{OptionalExtension, params};
 use serde_json::json;
 
 use super::{
@@ -42,9 +42,10 @@ impl RunStore {
         }
         let record = String::from_utf8(canonical_identity_bytes(&decision.record)?)
             .expect("canonical UTF-8");
-        self.connection.execute("INSERT INTO applicability_decisions VALUES (?1, ?2, ?3, ?4) ON CONFLICT(id) DO NOTHING",
+        let tx = self.transaction()?;
+        tx.execute("INSERT INTO applicability_decisions VALUES (?1, ?2, ?3, ?4) ON CONFLICT(id) DO NOTHING",
             params![decision.id.to_string(), decision.record.candidate_id.to_string(), decision.record.outcome == ApplicabilityOutcome::Applicable, record])?;
-        let existing: String = self.connection.query_row(
+        let existing: String = tx.query_row(
             "SELECT record_json FROM applicability_decisions WHERE id = ?1",
             [decision.id.to_string()],
             |r| r.get(0),
@@ -52,6 +53,7 @@ impl RunStore {
         if existing != record {
             return Err(invalid("applicability identity has conflicting contents"));
         }
+        tx.commit()?;
         Ok(())
     }
 
@@ -136,9 +138,7 @@ impl RunStore {
         if attempt.record.specification != run.id || observation.record.specification != run.id {
             return Err(invalid("slot and run identities disagree"));
         }
-        let tx = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = self.transaction()?;
         let decision = if let Some(decision) = run.record.applicability {
             let valid: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM applicability_decisions WHERE id = ?1 AND candidate_id = ?2 AND applicable = 1)",
                 params![decision.to_string(), candidate.to_string()], |r| r.get(0))?;
@@ -305,9 +305,7 @@ impl RunStore {
                 .to_canonical_bytes()?,
         )
         .expect("canonical UTF-8");
-        let tx = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = self.transaction()?;
         let now = timestamp(now_ns)?;
         fence(&tx, attempt, now)?;
         tx.execute(
