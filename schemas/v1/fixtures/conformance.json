@@ -2458,6 +2458,16 @@
           "docker build ."
         ]
       }
+    },
+    {
+      "name": "durable-initialization",
+      "schema": "durable-record",
+      "instance": {
+        "schema_version": 1,
+        "sequence": 0,
+        "previous_sha256": null,
+        "changes": []
+      }
     }
   ],
   "invalid": [
@@ -5529,6 +5539,16 @@
       "name": "bundle-output-missing-fields",
       "schema": "bundle-output",
       "instance": {}
+    },
+    {
+      "name": "durable-unsupported-version",
+      "schema": "durable-record",
+      "instance": {
+        "schema_version": 2,
+        "sequence": 0,
+        "previous_sha256": null,
+        "changes": []
+      }
     }
   ]
 }

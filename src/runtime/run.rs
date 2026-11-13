@@ -187,6 +187,12 @@ pub(crate) fn run_repository_with_progress(
         .map_err(RunError::Selection)?;
     let plan = selection::preselect(&plan, options)?;
     let (output_directory, resume) = destination(output_directory)?;
+    if resume && options.shared && !crate::runtime::run_store::shared::is_shared(&output_directory)
+    {
+        return Err(RunError::Unsupported(
+            "--shared requires a new output directory or an existing shared run".into(),
+        ));
+    }
     let cache_directory = settings
         .cache_directory
         .map(|path| {
@@ -284,19 +290,19 @@ pub(crate) fn run_repository_with_progress(
         crate::runtime::platform_fs::complete_namespace_change(
             output_directory.parent().expect("destination has a parent"),
         )?;
-        store = Some(
-            if resolved
-                .candidates
-                .iter()
-                .any(|c| c.fresh_profile.is_some() || c.streaming_profile.is_some())
-            {
-                RunStore::open_fresh(&output_directory)?
-            } else if resolved.candidates.iter().any(|c| c.profile.is_some()) {
-                RunStore::open_buffered(&output_directory)?
-            } else {
-                RunStore::open(&output_directory)?
-            },
-        );
+        store = Some(if options.shared {
+            RunStore::open_shared(&output_directory)?
+        } else if resolved
+            .candidates
+            .iter()
+            .any(|c| c.fresh_profile.is_some() || c.streaming_profile.is_some())
+        {
+            RunStore::open_fresh(&output_directory)?
+        } else if resolved.candidates.iter().any(|c| c.profile.is_some()) {
+            RunStore::open_buffered(&output_directory)?
+        } else {
+            RunStore::open(&output_directory)?
+        });
     }
     let mut store = store.expect("new or resumed store");
     if resume {
@@ -1099,7 +1105,9 @@ fn destination(path: &Path) -> Result<(PathBuf, bool), RunError> {
     let resume = match fs::symlink_metadata(&destination) {
         Ok(metadata) if metadata.is_dir() => {
             let database = destination.join("run.sqlite3");
-            if !fs::symlink_metadata(&database).is_ok_and(|metadata| metadata.is_file()) {
+            if !crate::runtime::run_store::shared::is_shared(&destination)
+                && !fs::symlink_metadata(&database).is_ok_and(|metadata| metadata.is_file())
+            {
                 return Err(io::Error::new(
                     io::ErrorKind::AlreadyExists,
                     "existing output directory is not a Metewand run store",

@@ -138,6 +138,9 @@ impl ResultSet {
         if self.read_only {
             return Err(ExportError::ReadOnlyCollection);
         }
+        if crate::runtime::run_store::shared::is_shared(&self.root) {
+            return Err(ExportError::SharedIndex);
+        }
         let target = self.root.join("index.jsonl");
         match fs::symlink_metadata(&target) {
             Ok(metadata) if !metadata.is_file() => return Err(ExportError::UnsafeIndex),
@@ -722,6 +725,10 @@ pub enum ExportError {
         "archive collections are read-only; export to a new destination without --rebuild-index"
     )]
     ReadOnlyCollection,
+    #[error(
+        "shared runs use disposable local views; export to a new destination without --rebuild-index"
+    )]
+    SharedIndex,
     #[error(transparent)]
     Inspection(#[from] InspectionError),
     #[error(transparent)]

@@ -30,13 +30,22 @@ impl StoreSnapshot {
         crate::runtime::platform_fs::set_private_directory(private.path())?;
         // Temporary roots can have symlinked ancestors that SQLite's NOFOLLOW rejects.
         let private_root = fs::canonicalize(private.path())?;
-        copy_database_snapshot(&root, &private_root, "run.sqlite3")?;
-        let connection = Connection::open_with_flags(
+        let shared = super::shared::is_shared(&root);
+        if !shared {
+            copy_database_snapshot(&root, &private_root, "run.sqlite3")?;
+        }
+        let mut connection = Connection::open_with_flags(
             private_root.join("run.sqlite3"),
-            OpenFlags::SQLITE_OPEN_READ_ONLY
-                | OpenFlags::SQLITE_OPEN_NO_MUTEX
+            (if shared {
+                OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE
+            } else {
+                OpenFlags::SQLITE_OPEN_READ_ONLY
+            }) | OpenFlags::SQLITE_OPEN_NO_MUTEX
                 | OpenFlags::SQLITE_OPEN_NOFOLLOW,
         )?;
+        if shared {
+            super::shared::read_shared(&root, &mut connection)?;
+        }
         connection.pragma_update(None, "query_only", true)?;
         let version = connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
         if version != RUN_STORE_SCHEMA_VERSION

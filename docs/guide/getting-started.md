@@ -207,3 +207,32 @@ and export the results. Linked pages explain the details.
 
 Use `metewand init --empty` if you prefer a blank manifest. Component
 [scaffolding](authoring/extending.md#add-components) helps extend it.
+
+
+## Use shared project storage
+
+Create a run whose durable home can survive the loss of a compute node's local
+scratch:
+
+```sh
+TMPDIR=/local/scratch metewand run --shared --output-dir /project/benchmark-run
+metewand status --output-dir /project/benchmark-run
+```
+
+The output directory must be new and its parent must exist. Set `TMPDIR` to an
+existing local scratch directory (`TEMP` on Windows). Metewand writes immutable,
+versioned coordination records and artifacts to the project directory and keeps
+SQLite and worker scratch local. One coordinator can run there at a time.
+
+To continue on another node with the same benchmark sources, inputs, and prepared
+environments, repeat the run command with the same output directory. Existing
+shared runs are detected automatically, so `--shared` is optional on resume.
+Metewand reconstructs local state from published records, preserves accepted
+work and profile budgets, and recovers interrupted attempts after their leases
+expire. Recorded failures still require `--retry`. Status, explanation, export,
+and archive commands read shared runs directly.
+
+Existing SQLite runs keep their current storage format. Choose a new directory
+to use shared publication. Required locking, synchronization, and atomic rename
+must work on the shared filesystem. Qualification for specific HPC filesystems
+and storage-server power loss remains pending.

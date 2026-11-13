@@ -106,11 +106,7 @@ impl AttemptExecution {
     }
 
     pub fn output_root(&self) -> std::path::PathBuf {
-        self.store
-            .database_path()
-            .parent()
-            .expect("store root")
-            .to_owned()
+        self.store.root().to_owned()
     }
 
     pub fn retry_index(&self) -> u64 {
@@ -236,7 +232,7 @@ impl AttemptExecution {
         self.finish_heartbeat()?;
         let attempt_path = published.artifact.relative_path;
         let observation_path = observation.artifact.relative_path;
-        let root = self.store.database_path().parent().expect("store root");
+        let root = self.store.root();
         Ok((
             crate::runtime::publication::PublishedOneShot {
                 observation: prepared.observation,

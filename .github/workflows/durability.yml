@@ -15,6 +15,8 @@ on:
       - src/runtime/artifact_store/**
       - src/runtime/archive.rs
       - src/runtime/archive/**
+      - src/core/durable.rs
+      - schemas/v1/durable-record.schema.json
       - src/runtime/evidence.rs
       - src/runtime/durability.rs
       - src/runtime/fault_injection.rs

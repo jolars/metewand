@@ -23,6 +23,8 @@ const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 pub struct RunStore {
     database_path: PathBuf,
     pub(super) connection: Connection,
+    pub(super) root: PathBuf,
+    pub(super) shared: Option<std::sync::Arc<std::sync::Mutex<super::shared::SharedJournal>>>,
 }
 
 impl RunStore {
@@ -43,16 +45,26 @@ impl RunStore {
 
     /// Absolute path of the database, for inspection and backup tooling.
     #[must_use]
+    #[cfg(test)]
     pub fn database_path(&self) -> &Path {
         &self.database_path
+    }
+
+    pub fn root(&self) -> &Path {
+        &self.root
     }
 
     pub(crate) fn reconnect(&self) -> Result<Self, RunStoreError> {
         let connection = open_database(&self.database_path)?;
         configure(&connection)?;
+        if self.shared.is_some() {
+            super::shared::install_capture(&connection)?;
+        }
         Ok(Self {
             database_path: self.database_path.clone(),
             connection,
+            root: self.root.clone(),
+            shared: self.shared.clone(),
         })
     }
 
@@ -69,6 +81,9 @@ impl RunStore {
     }
 
     fn open_version(root: &Path, check: &Check<'_>, layout: u32) -> Result<Self, RunStoreError> {
+        if super::shared::is_shared(root) {
+            return Self::open_shared(root);
+        }
         if crate::runtime::archive::is_collection(root) {
             return Err(RunStoreError::InvalidAttempt(
                 "archive collections are read-only",
@@ -133,6 +148,8 @@ impl RunStore {
         Ok(Self {
             database_path,
             connection,
+            root: root.to_owned(),
+            shared: None,
         })
     }
 }

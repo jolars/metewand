@@ -30,6 +30,7 @@ mod runtime_config;
 mod rust_sdk;
 mod scaffold;
 mod scaffold_workers;
+mod shared_runs;
 mod streaming_profiles;
 mod support;
 mod worker_checks;
