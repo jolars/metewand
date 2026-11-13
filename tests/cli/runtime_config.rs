@@ -114,7 +114,8 @@ fn runtime_cache_paths_preserve_scientific_identities_seeds_and_dataset_bytes() 
         }
     }
     for (name, record) in [("a", first), ("b", second)] {
-        let runtime = json!({"version":1,"caches":{"provider":root.path().join(format!("downloads-{name}"))}});
+        let cache = fs::canonicalize(root.path().join(format!("downloads-{name}"))).unwrap();
+        let runtime = json!({"version":1,"caches":{"provider":cache}});
         assert_eq!(record["context"]["runtime"], runtime);
         assert_eq!(
             record["context"]["dataset_materialization"]["runtime"],
@@ -169,7 +170,10 @@ fn runtime_cache_changes_reuse_artifacts_and_retain_original_materialization_evi
     );
     assert_eq!(
         second["context"]["runtime"]["caches"]["provider"],
-        root.path().join("downloads-b").to_str().unwrap()
+        fs::canonicalize(root.path().join("downloads-b"))
+            .unwrap()
+            .to_str()
+            .unwrap()
     );
 }
 

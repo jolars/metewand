@@ -184,7 +184,12 @@ fn r_materializers_validate_and_receive_separate_runtime_bindings() {
     );
     let output = process.wait().unwrap();
     assert!(output.status.success(), "{output:?}");
-    assert_eq!(output.stdout.bytes(), b"runtime:/downloads\nmaterialize\n");
+    assert_eq!(
+        std::str::from_utf8(output.stdout.bytes())
+            .unwrap()
+            .replace("\r\n", "\n"),
+        "runtime:/downloads\nmaterialize\n"
+    );
 }
 
 #[test]
