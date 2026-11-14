@@ -65,6 +65,10 @@ impl ArtifactStore {
         Ok(catalog)
     }
 
+    pub fn initialization_report(&self) -> Result<CacheReport, ArtifactStoreError> {
+        Ok(self.report(CacheOperation::Init, false))
+    }
+
     fn report(&self, operation: CacheOperation, dry_run: bool) -> CacheReport {
         CacheReport {
             command: "cache".into(),
@@ -334,6 +338,17 @@ impl ArtifactStore {
 }
 
 impl StoredArtifact {
+    /// Retains a run dependency with an owner that survives relocation of shared
+    /// storage. Existing local caches keep their original path-based root names.
+    pub fn retain_for_run(&self, output: &Path) -> Result<(), ArtifactStoreError> {
+        let name = if self.store.is_shared() {
+            super::shared::run_owner(output)?
+        } else {
+            format!("run:{}", output.display())
+        };
+        self.add_root(&name)
+    }
+
     /// Retains a verified dataset for a durable run or an explicitly named pin.
     pub fn add_root(&self, name: &str) -> Result<(), ArtifactStoreError> {
         self.store

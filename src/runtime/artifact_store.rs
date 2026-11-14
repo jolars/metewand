@@ -2,6 +2,7 @@
 
 mod catalog;
 mod maintenance;
+mod shared;
 
 pub use catalog::CACHE_CATALOG_VERSION;
 
@@ -116,16 +117,28 @@ impl ArtifactStore {
         if !root.is_absolute() {
             return Err(ArtifactStoreError::InvalidRoot);
         }
+        if shared::is_shared(root) {
+            return Self::open_shared(root);
+        }
         create_directory(root)?;
         crate::runtime::platform_fs::check_storage_root(root)?;
         #[cfg(windows)]
         crate::runtime::platform_fs::set_private_directory(root)?;
         let root = fs::canonicalize(root)?;
-        for child in ["objects", "derivations", "leases", "quarantine", "garbage"] {
-            create_directory(&root.join(child))?;
-        }
         let store = Self { root };
-        let _guard = store.lock_file(true)?;
+        let guard = store.lock_file(true)?;
+        // Another initializer may have selected shared storage while this
+        // invocation waited for the cache lock.
+        if store.is_shared() {
+            drop(guard);
+            return Self::open_shared(&store.root);
+        }
+        if missing(&store.root.join("cache.sqlite3"))? {
+            store.require_uninitialized()?;
+        }
+        for child in ["objects", "derivations", "leases", "quarantine", "garbage"] {
+            create_directory(&store.root.join(child))?;
+        }
         catalog::Catalog::initialize(&store)?;
         Ok(store)
     }
@@ -146,6 +159,17 @@ impl ArtifactStore {
         let _guard = store.lock()?;
         catalog::Catalog::read(&store)?;
         Ok(store)
+    }
+
+    fn require_uninitialized(&self) -> Result<(), ArtifactStoreError> {
+        for child in ["objects", "derivations", "leases", "quarantine", "garbage"] {
+            if !missing(&self.root.join(child))? {
+                return Err(ArtifactStoreError::Catalog(
+                    "cache layout exists without its authoritative catalog",
+                ));
+            }
+        }
+        Ok(())
     }
 
     #[must_use]

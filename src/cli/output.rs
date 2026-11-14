@@ -263,7 +263,10 @@ impl CommandResult {
                         writeln!(output, "  {detail}").expect("string write");
                     }
                 }
-                if result.targets.is_empty() {
+                if result.operation == crate::core::cache::CacheOperation::Init {
+                    writeln!(output, "Shared cache ready: {}", result.cache_directory)
+                        .expect("string write");
+                } else if result.targets.is_empty() {
                     output.push_str("No matching cache objects.\n");
                 }
                 output

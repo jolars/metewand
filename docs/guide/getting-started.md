@@ -164,11 +164,11 @@ attempts automatically. Recorded execution or scientific failures require
 `--retry`. Use a new output directory for an independent run. Add `--output json`
 to commands when you need machine-readable output.
 
-Use local disks for run and cache directories. Windows currently requires
-local NTFS. Recovery covers abrupt process death; it does not promise recovery
-from a machine losing power. The recorded storage evidence identifies the
-platform's synchronization and publication behavior. Network filesystems are
-unsupported.
+Use local disks for SQLite run and cache directories. Windows requires local
+NTFS. For shared project storage, use the explicit shared backends described
+below. Recovery covers abrupt process death; it does not promise recovery from a
+machine losing power. The recorded storage evidence identifies the platform's
+synchronization and publication behavior.
 
 ## Start with R
 
@@ -236,3 +236,48 @@ Existing SQLite runs keep their current storage format. Choose a new directory
 to use shared publication. Required locking, synchronization, and atomic rename
 must work on the shared filesystem. Qualification for specific HPC filesystems
 and storage-server power loss remains pending.
+
+To reuse verified datasets across nodes, initialize a separate Metewand-owned
+shared cache, then pass it to each run:
+
+```sh
+metewand cache init --shared --cache-dir /project/dataset-cache
+TMPDIR=/local/scratch metewand run --shared \
+  --output-dir /project/benchmark-run --cache-dir /project/dataset-cache
+metewand cache roots --cache-dir /project/dataset-cache
+metewand cache gc --cache-dir /project/dataset-cache --dry-run
+```
+
+The cache parent must exist. Initialization is idempotent and refuses existing
+SQLite caches. Subsequent runs detect the shared cache automatically. Dataset
+objects and construction mappings use the same verified formats and scientific
+identities as local caches. Workers receive private copies in local scratch.
+The shared catalog contains immutable, hash-linked version-1 JSON records and
+requires no shared SQLite database. Keep the entire cache when relocating it.
+
+Each run stores a portable `run-v1:...` retention owner in `.cache-owner.json`.
+Keep this file when moving the run directory. Independent runs get different
+owners even when they perform the same comparison. Moving either directory or
+using another mount point preserves the cache roots. Failed runs retain their
+datasets and prepared problem inputs, and deleting a run directory does not release its roots. Archives
+and restores do not transfer cache ownership; a restored run acquires a new
+owner when it next uses a shared cache.
+
+After deciding that a run no longer needs a dataset, copy its exact object ID
+and root name from `cache roots` and release that edge explicitly:
+
+```sh
+metewand cache root remove --cache-dir /project/dataset-cache \
+  --id tree-v1-SHA256 --root run-v1:OWNER
+metewand cache gc --cache-dir /project/dataset-cache --id tree-v1-SHA256
+```
+
+Replace the placeholders with the complete values. Collection preserves other
+roots and live reader, publisher, and worker-view leases. It validates the whole
+selection before deleting anything, retains derivation mappings for verified
+reconstruction, and recovers interrupted cleanup on the next collection. Cache
+inspection and dry runs leave shared files unchanged. All participating hosts
+must honor the same file locks, synchronized publication, and atomic rename;
+specific HPC filesystems and storage-server power loss still need qualification.
+Catalog snapshots currently retain their complete history; metadata batching
+for large runs remains future work.

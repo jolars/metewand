@@ -4,13 +4,14 @@ use crate::core::cache::CacheOperation;
 
 use crate::cli::output::{CommandError, CommandResult};
 
-const HELP: &str = "Usage: metewand [--output FORMAT] cache <operation> --cache-dir PATH [OPTIONS]\n\nOperations:\n  verify --id tree-v1-SHA256 ...    Verify exact objects without changing the cache.\n  gc [--id tree-v1-SHA256 ...] [--dry-run]\n                                  Collect unrooted, unleased cataloged objects.\n  roots                           List durable named roots.\n  root add|remove --root NAME --id tree-v1-SHA256 [--dry-run]\n                                  Add or release one exact root-to-object edge.\n\nThe cache must already exist. Verification and dry runs create no cache files or SQLite sidecars. Collection uses a fresh transactional catalog snapshot and live kernel leases; indexes never authorize deletion. Run roots persist until explicitly released, even if the run directory disappears.\n";
+const HELP: &str = "Usage: metewand [--output FORMAT] cache <operation> --cache-dir PATH [OPTIONS]\n\nOperations:\n  init --shared                   Initialize a portable shared cache.\n  verify --id tree-v1-SHA256 ...    Verify exact objects without changing the cache.\n  gc [--id tree-v1-SHA256 ...] [--dry-run]\n                                  Collect unrooted, unleased cataloged objects.\n  roots                           List durable named roots.\n  root add|remove --root NAME --id tree-v1-SHA256 [--dry-run]\n                                  Add or release one exact root-to-object edge.\n\nExcept for init, the cache must already exist. Shared caches use immutable portable catalog records instead of SQLite. Verification and dry runs create no cache files or SQLite sidecars. Collection uses a fresh committed catalog snapshot and live kernel leases; indexes never authorize deletion. Run roots persist until explicitly released, even if the run directory disappears.\n";
 
 pub fn command(arguments: &[OsString]) -> Result<CommandResult, CommandError> {
     if arguments == ["-h"] || arguments == ["--help"] {
         return Ok(CommandResult::help(HELP));
     }
     let (operation, rest) = match arguments {
+        [op, rest @ ..] if op == "init" => (CacheOperation::Init, rest),
         [op, rest @ ..] if op == "verify" => (CacheOperation::Verify, rest),
         [op, rest @ ..] if op == "gc" => (CacheOperation::Gc, rest),
         [op, rest @ ..] if op == "roots" => (CacheOperation::Roots, rest),
@@ -23,17 +24,20 @@ pub fn command(arguments: &[OsString]) -> Result<CommandResult, CommandError> {
         _ => {
             return Err(CommandError::usage(
                 "invalid_cache_operation",
-                "expected `cache verify`, `cache gc`, `cache roots`, or `cache root add|remove`",
+                "expected `cache init --shared`, `cache verify`, `cache gc`, `cache roots`, or `cache root add|remove`",
             ));
         }
     };
     let mut options = BTreeMap::new();
     let mut ids = Vec::new();
     let mut dry_run = false;
+    let mut shared = false;
     let mut arguments = rest.iter();
     while let Some(argument) = arguments.next() {
         let flag = argument.to_str().unwrap_or("");
-        if flag == "--dry-run" && !dry_run {
+        if flag == "--shared" && !shared {
+            shared = true;
+        } else if flag == "--dry-run" && !dry_run {
             dry_run = true;
         } else if matches!(flag, "--cache-dir" | "--id" | "--root") {
             let value = arguments
@@ -97,7 +101,9 @@ pub fn command(arguments: &[OsString]) -> Result<CommandResult, CommandError> {
             "`cache root add|remove` requires `--root NAME` and exactly one `--id tree-v1-SHA256`",
         ));
     }
-    if (!root_operation && root.is_some())
+    if (shared != (operation == CacheOperation::Init))
+        || (operation == CacheOperation::Init && (dry_run || !ids.is_empty()))
+        || (!root_operation && root.is_some())
         || (operation == CacheOperation::Roots && !ids.is_empty())
         || (matches!(operation, CacheOperation::Verify | CacheOperation::Roots) && dry_run)
     {
@@ -130,9 +136,14 @@ fn maintain(
             .map_err(|error| CommandError::usage("cache_directory_unavailable", error.to_string()))?
             .join(path)
     };
-    let store = crate::runtime::artifact_store::ArtifactStore::open_existing(&path)
-        .map_err(|error| CommandError::cache(&error))?;
+    let store = if operation == CacheOperation::Init {
+        crate::runtime::artifact_store::ArtifactStore::open_shared(&path)
+    } else {
+        crate::runtime::artifact_store::ArtifactStore::open_existing(&path)
+    }
+    .map_err(|error| CommandError::cache(&error))?;
     let result = match operation {
+        CacheOperation::Init => store.initialization_report(),
         CacheOperation::Verify => store.verify_targets(&ids),
         CacheOperation::Gc => store.collect(&ids, dry_run),
         CacheOperation::Roots => store.roots(),

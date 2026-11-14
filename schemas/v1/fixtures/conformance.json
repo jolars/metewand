@@ -1,6 +1,8 @@
 {
   "version": 1,
   "valid": [
+    {"name": "shared-cache-empty-initialization", "schema": "shared-cache-record", "instance": {"schema_version": 1, "sequence": 0, "previous_sha256": null, "snapshot": {"objects": {}, "roots": {}, "pending": {}}}},
+    {"name": "portable-shared-cache-owner", "schema": "shared-cache-owner", "instance": {"schema_version": 1, "root": "run-v1:1111111111111111111111111111111111111111111111111111111111111111"}},
     {"name": "explicit-local-download-cache", "schema": "runtime-config", "instance": {"version": 1, "caches": {"datamonger": "/downloads", "other": "../other"}}},
     {"name": "empty-local-runtime-config", "schema": "runtime-config", "instance": {"version": 1, "caches": {}}},
     {"name": "materialize-with-explicit-runtime-config", "schema": "worker-protocol-message", "instance": {"id": "1", "method": "materialize", "source_dir": "/source", "dataset_parameters": {}, "dataset_seed": 17, "output_dir": "/output", "runtime": {"version": 1, "caches": {"datamonger": "/downloads"}}}},
@@ -2471,6 +2473,8 @@
     }
   ],
   "invalid": [
+    {"name": "shared-cache-unsupported-version", "schema": "shared-cache-record", "instance": {"schema_version": 2, "sequence": 0, "previous_sha256": null, "snapshot": {"objects": {}, "roots": {}, "pending": {}}}},
+    {"name": "shared-cache-path-owner", "schema": "shared-cache-owner", "instance": {"schema_version": 1, "root": "run:/host/path"}},
     {"name": "runtime-config-rejects-unknown-version", "schema": "runtime-config", "instance": {"version": 2, "caches": {}}},
     {"name": "runtime-config-rejects-scientific-overrides", "schema": "runtime-config", "instance": {"version": 1, "caches": {}, "parameters": {}}},
     {"name": "runtime-config-rejects-empty-path", "schema": "runtime-config", "instance": {"version": 1, "caches": {"datamonger": ""}}},

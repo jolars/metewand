@@ -99,7 +99,7 @@ struct ConformanceCase {
 
 #[test]
 fn publishes_the_complete_versioned_schema_set() {
-    assert_eq!(PUBLIC_SCHEMAS.len(), 43);
+    assert_eq!(PUBLIC_SCHEMAS.len(), 45);
 
     let mut slugs = BTreeSet::new();
     let mut paths = BTreeSet::new();

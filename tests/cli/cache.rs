@@ -97,6 +97,16 @@ fn cache_commands_use_exact_targets_and_explicit_root_and_collection_operations(
 fn invalid_and_missing_cache_arguments_do_not_initialize_a_store() {
     let root = tempfile::tempdir().unwrap();
     for args in [
+        vec!["cache", "init", "--cache-dir", "missing"],
+        vec![
+            "cache",
+            "init",
+            "--shared",
+            "--dry-run",
+            "--cache-dir",
+            "missing",
+        ],
+        vec!["cache", "gc", "--shared", "--cache-dir", "missing"],
         vec![
             "cache",
             "verify",
@@ -241,4 +251,127 @@ fn durable_run_roots_survive_stale_indexes_and_collection_preserves_reconstructi
         1
     );
     assert_eq!(fs::read(derivation.join("dataset.json")).unwrap(), mapping);
+}
+
+#[test]
+fn shared_cache_reuses_generated_data_and_keeps_roots_after_run_relocation() {
+    let root = tempfile::tempdir().unwrap();
+    copy_tree(
+        &Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/generated-dataset"),
+        root.path(),
+    );
+    let materializations = root.path().join("materializations");
+    let worker = root.path().join("worker.py");
+    let source = fs::read_to_string(&worker).unwrap();
+    let trace = serde_json::to_string(materializations.to_str().unwrap()).unwrap();
+    fs::write(&worker, source.replace(
+        "assert role == \"dataset_materializer\"",
+        &format!("assert role == \"dataset_materializer\"\n            with open({trace}, \"ab\") as trace: trace.write(b'x')"),
+    )).unwrap();
+    let (code, init) = command(
+        root.path(),
+        &["cache", "init", "--shared", "--cache-dir", "cache"],
+    );
+    assert_eq!(code, 0, "{init}");
+    assert_eq!(init["data"]["operation"], "init");
+    let (code, local) = command(
+        root.path(),
+        &["run", "--output-dir", "local", "--cache-dir", "local-cache"],
+    );
+    assert_eq!(code, 0, "{local}");
+    for output in ["first", "second"] {
+        let (code, run) = command(
+            root.path(),
+            &[
+                "run",
+                "--shared",
+                "--output-dir",
+                output,
+                "--cache-dir",
+                "cache",
+            ],
+        );
+        assert_eq!(code, 0, "{run}");
+        for (local, shared) in local["data"]["attempts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .zip(run["data"]["attempts"].as_array().unwrap())
+        {
+            for key in ["logical_slot_id", "resolved_slot_id", "attempt_id"] {
+                assert_eq!(local[key], shared[key], "{key}");
+            }
+        }
+    }
+    assert_eq!(fs::read(&materializations).unwrap(), b"xx");
+    let (_, roots) = command(root.path(), &["cache", "roots", "--cache-dir", "cache"]);
+    let id = roots["data"]["targets"][0]["id"].as_str().unwrap();
+    let owners = roots["data"]["targets"][0]["roots"].as_array().unwrap();
+    assert_eq!(owners.len(), 2);
+    assert!(
+        owners
+            .iter()
+            .all(|owner| owner.as_str().unwrap().starts_with("run-v1:"))
+    );
+    let owner: Value =
+        serde_json::from_slice(&fs::read(root.path().join("first/.cache-owner.json")).unwrap())
+            .unwrap();
+    let owner = owner["root"].as_str().unwrap();
+    fs::rename(root.path().join("first"), root.path().join("moved-run")).unwrap();
+    fs::rename(root.path().join("cache"), root.path().join("moved-cache")).unwrap();
+    let (code, run) = command(
+        root.path(),
+        &[
+            "run",
+            "--output-dir",
+            "moved-run",
+            "--cache-dir",
+            "moved-cache",
+        ],
+    );
+    assert_eq!(code, 0, "{run}");
+    let (_, relocated) = command(
+        root.path(),
+        &["cache", "roots", "--cache-dir", "moved-cache"],
+    );
+    assert_eq!(relocated["data"]["targets"], roots["data"]["targets"]);
+    fs::remove_dir_all(root.path().join("moved-run")).unwrap();
+    let (_, gc) = command(root.path(), &["cache", "gc", "--cache-dir", "moved-cache"]);
+    assert_eq!(gc["data"]["targets"][0]["state"], "retained");
+    assert!(owners.iter().any(|name| name == owner));
+    for name in owners {
+        let (code, report) = command(
+            root.path(),
+            &[
+                "cache",
+                "root",
+                "remove",
+                "--cache-dir",
+                "moved-cache",
+                "--id",
+                id,
+                "--root",
+                name.as_str().unwrap(),
+            ],
+        );
+        assert_eq!(code, 0, "{report}");
+    }
+    let (_, gc) = command(
+        root.path(),
+        &["cache", "gc", "--cache-dir", "moved-cache", "--id", id],
+    );
+    assert_eq!(gc["data"]["targets"][0]["state"], "deleted");
+    assert!(!root.path().join("moved-cache/cache.sqlite3").exists());
+    // The retained derivation mapping permits reconstruction after explicit GC.
+    let (code, run) = command(
+        root.path(),
+        &["run", "--output-dir", "third", "--cache-dir", "moved-cache"],
+    );
+    assert_eq!(code, 0, "{run}");
+    let (_, roots) = command(
+        root.path(),
+        &["cache", "roots", "--cache-dir", "moved-cache"],
+    );
+    assert_eq!(roots["data"]["targets"][0]["id"], id);
+    assert_eq!(fs::read(&materializations).unwrap(), b"xxx");
 }
