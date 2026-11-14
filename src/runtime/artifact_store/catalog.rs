@@ -9,9 +9,10 @@ pub const CACHE_CATALOG_VERSION: u32 = 1;
 const NAME: &str = "cache.sqlite3";
 const SCHEMA: &str = include_str!("catalog.sql");
 
-pub(super) struct Catalog(pub Connection);
+pub(super) struct LocalCatalog(Connection);
 
-#[derive(Default)]
+#[derive(Clone, Debug, Default, serde::Deserialize, Eq, PartialEq, serde::Serialize)]
+#[serde(deny_unknown_fields)]
 pub(super) struct Snapshot {
     pub objects: BTreeMap<String, String>,
     pub roots: BTreeMap<String, Vec<String>>,
@@ -19,7 +20,7 @@ pub(super) struct Snapshot {
 }
 
 // Every caller holds the cache lock, including across a snapshot and collection.
-impl Catalog {
+impl LocalCatalog {
     pub fn initialize(store: &ArtifactStore) -> Result<Self, ArtifactStoreError> {
         Self::connect(store, true)
     }
@@ -202,4 +203,102 @@ fn verify_schema(connection: &Connection, initialize: bool) -> Result<(), Artifa
         ));
     }
     Ok(())
+}
+
+pub(super) enum Catalog {
+    Local(LocalCatalog),
+    Shared(super::shared::SharedCatalog),
+}
+
+impl Catalog {
+    pub fn initialize(store: &ArtifactStore) -> Result<Self, ArtifactStoreError> {
+        if store.is_shared() {
+            return Self::open(store);
+        }
+        Ok(Self::Local(LocalCatalog::initialize(store)?))
+    }
+
+    pub fn open(store: &ArtifactStore) -> Result<Self, ArtifactStoreError> {
+        if store.is_shared() {
+            Ok(Self::Shared(super::shared::SharedCatalog::open(
+                store, true,
+            )?))
+        } else {
+            Ok(Self::Local(LocalCatalog::open(store)?))
+        }
+    }
+
+    pub fn read(store: &ArtifactStore) -> Result<Snapshot, ArtifactStoreError> {
+        if store.is_shared() {
+            super::shared::SharedCatalog::open(store, false)?.snapshot()
+        } else {
+            LocalCatalog::read(store)
+        }
+    }
+
+    pub fn register(&self, digest: &str, marker: &str) -> Result<(), ArtifactStoreError> {
+        match self {
+            Self::Local(catalog) => catalog.register(digest, marker),
+            Self::Shared(catalog) => catalog.update(|snapshot| {
+                if let Some(expected) = snapshot.objects.get(digest) {
+                    if expected != marker {
+                        return Err(ArtifactStoreError::ChangedContent);
+                    }
+                } else {
+                    snapshot.objects.insert(digest.into(), marker.into());
+                }
+                Ok(())
+            }),
+        }
+    }
+
+    pub fn root(&self, digest: &str, name: &str, add: bool) -> Result<(), ArtifactStoreError> {
+        match self {
+            Self::Local(catalog) => catalog.root(digest, name, add),
+            Self::Shared(catalog) => catalog.update(|snapshot| {
+                if !snapshot.objects.contains_key(digest) {
+                    return Err(ArtifactStoreError::UnknownTarget(digest.into()));
+                }
+                let roots = snapshot.roots.entry(digest.into()).or_default();
+                if add {
+                    if !roots.iter().any(|root| root == name) {
+                        roots.push(name.into());
+                        roots.sort();
+                    }
+                } else if let Some(index) = roots.iter().position(|root| root == name) {
+                    roots.remove(index);
+                } else {
+                    return Err(ArtifactStoreError::UnknownRoot(name.into()));
+                }
+                if roots.is_empty() {
+                    snapshot.roots.remove(digest);
+                }
+                Ok(())
+            }),
+        }
+    }
+
+    pub fn pending(&self, digest: &str, detached: bool) -> Result<(), ArtifactStoreError> {
+        match self {
+            Self::Local(catalog) => catalog.pending(digest, detached),
+            Self::Shared(catalog) => catalog.update(|snapshot| {
+                snapshot.pending.insert(digest.into(), detached);
+                Ok(())
+            }),
+        }
+    }
+
+    pub fn forget(&self, digest: &str) -> Result<(), ArtifactStoreError> {
+        match self {
+            Self::Local(catalog) => catalog.forget(digest),
+            Self::Shared(catalog) => catalog.update(|snapshot| {
+                if snapshot.roots.contains_key(digest) {
+                    return Err(ArtifactStoreError::Catalog("cannot forget rooted content"));
+                }
+                snapshot.pending.remove(digest);
+                snapshot.objects.remove(digest);
+                Ok(())
+            }),
+        }
+    }
 }

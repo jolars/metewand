@@ -8,6 +8,7 @@ pub const CACHE_MAINTENANCE_VERSION: u32 = 1;
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CacheOperation {
+    Init,
     Verify,
     Gc,
     Roots,

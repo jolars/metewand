@@ -60,7 +60,7 @@ Commands:
   status  Inspect planned slots, durable attempts, and resumable state.
   explain Explain a stable identity and its recorded relationships.
   export  Export verified history or rebuild the disposable JSONL index.
-  cache   Verify exact objects, manage roots, or collect unused cache objects.
+  cache   Initialize shared caches, verify objects, manage roots, or collect unused objects.
   bundle  Generate a portable whole-benchmark Docker build context.
   archive Create, verify, import, or restore portable result evidence.
 

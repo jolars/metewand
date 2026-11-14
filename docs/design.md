@@ -91,7 +91,11 @@ Named download caches are explicit local runtime bindings. Their host paths
 remain outside scientific parameters, seeds, launches, and derivations, while
 provenance records effective bindings. Providers verify pinned content before
 returning scientific data. Metewand's artifact cache separately stores verified
-materialized outputs. Scientific overrides retain their normal identity rules.
+materialized outputs. An explicitly initialized shared artifact cache publishes
+immutable, hash-linked retention snapshots instead of a shared SQLite catalog.
+Portable run owners and live kernel leases protect objects during collection;
+worker views stay in local scratch. Scientific overrides retain their normal
+identity rules.
 
 A problem may prepare shared inputs from the verified dataset and its resolved
 parameters. Preparation runs once per dataset and problem configuration before

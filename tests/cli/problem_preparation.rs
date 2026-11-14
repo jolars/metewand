@@ -323,3 +323,36 @@ fn problem_preparation_rejects_mutation_before_attempts() {
             .any(|event| event["callback"] == "solve")
     );
 }
+
+#[test]
+fn shared_cache_retains_both_datasets_and_problem_preparations_for_the_run() {
+    let root = repository();
+    let (success, report) = invoke(
+        root.path(),
+        &["cache", "init", "--shared", "--cache-dir", "cache"],
+    );
+    assert!(success, "{report}");
+    let (success, report) = invoke(
+        root.path(),
+        &[
+            "run",
+            "--shared",
+            "--output-dir",
+            "run",
+            "--cache-dir",
+            "cache",
+        ],
+    );
+    assert!(success, "{report}");
+    let owner: Value =
+        serde_json::from_slice(&fs::read(root.path().join("run/.cache-owner.json")).unwrap())
+            .unwrap();
+    let (success, report) = invoke(root.path(), &["cache", "gc", "--cache-dir", "cache"]);
+    assert!(success, "{report}");
+    let targets = report["data"]["targets"].as_array().unwrap();
+    assert_eq!(targets.len(), 3, "one dataset and two problem preparations");
+    for target in targets {
+        assert_eq!(target["state"], "retained");
+        assert_eq!(target["roots"], serde_json::json!([owner["root"]]));
+    }
+}

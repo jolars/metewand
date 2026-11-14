@@ -356,7 +356,10 @@ pub(crate) fn run_repository_with_progress(
             resolved.candidates[candidate]
                 .dataset
                 .artifact
-                .add_root(&format!("run:{}", output_directory.display()))?;
+                .retain_for_run(&output_directory)?;
+            if let Some(preparation) = &resolved.candidates[candidate].preparation {
+                preparation.artifact.retain_for_run(&output_directory)?;
+            }
         }
         if resolved.candidates[candidate].streaming_profile.is_some() {
             store.register_streaming(

@@ -112,7 +112,7 @@ runs and scientific identities as the storage model evolves.
   Include ownership, retry authorization, acceptance, and budget decisions.
   Commit completed work before reporting success; preserve streaming
   publication boundaries and recover after losing all node-local state.
-- [ ] Support shared immutable dataset caches with portable retention roots
+- [x] Support shared immutable dataset caches with portable retention roots
   and safe reclamation, without a shared SQLite WAL catalog.
 - [ ] Qualify publication, cross-host visibility, and recovery on supported HPC
   filesystems. Distinguish compute-node failure from storage-server power loss,

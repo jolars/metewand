@@ -663,7 +663,9 @@ generation fencing. Every open rebuilds a fresh host-local SQLite view beneath
 `TMPDIR` (`TEMP` on Windows). That directory must use supported local storage
 outside the shared run home. Worker scratch and transient inspection databases
 remain local too. Artifact publication stages live beside their destinations
-so rename stays within one filesystem. Persistent dataset caches remain local.
+so rename stays within one filesystem. Dataset caches default to local SQLite
+catalogs; `cache init --shared --cache-dir PATH` explicitly initializes the shared
+cache backend described below.
 
 Temporary SQLite triggers capture ordered before- and after-images for every
 coordination mutation, including leases, claims, reservation authorization,
@@ -699,6 +701,38 @@ publication. Process-death tests do not qualify cross-host visibility or
 storage-server power loss on any particular HPC filesystem. BeeGFS/XFS
 qualification and metadata batching remain separate TODO items.
 
+### Shared dataset caches
+
+Shared caches preserve version-1 object inventories, construction mappings, and
+lease receipts. Their separate version-1 catalog consists of canonical JSON
+snapshots in `shared-catalog/`. Each filename binds its sequence and SHA-256;
+each record binds the preceding record's digest. Replay validates the complete
+chain, schema, root ordering, and object references. Empty, missing, mixed SQLite
+and shared, or corrupt catalogs fail closed. Private `.pending-*` stages never
+authorize retention or collection. Published records are never modified.
+
+All cache operations hold the existing cache lock while reading a snapshot and
+publishing retention changes or detaching objects. Writable opens synchronize the
+catalog namespace before reuse after a process crash. Publication synchronizes a
+private stage before no-replace rename and synchronizes the directory before
+returning success. Collection retains its intent, detach, cleanup, and forget
+ordering, with portable records replacing SQLite transactions. A failed publisher
+must reopen before writing again. Readers and dry runs neither synchronize nor
+repair shared state. Unregistered objects remain protected from collection until
+a verified writable operation registers them.
+
+Shared-cache run roots use random operational owner tokens from a version-1
+`.cache-owner.json` in the run home. Publish this file durably before registering
+any root. Tokens contain no host or path, survive relocation, and distinguish
+independent run homes. They never enter scientific identities. Local caches
+retain their existing path-based roots and SQLite layout. The catalog and owner
+have public schemas; adding `init` extends the version-1 cache receipt without
+changing existing records, manifest, identity, wire, or execution versions.
+Archive restoration creates a new retention owner on first shared-cache use;
+source roots remain until explicitly released. Neither indexes nor run-directory
+existence authorize release. File-lock coherence and filesystem-specific
+power-loss guarantees require the separate HPC qualification work.
+
 ### Crash conformance
 
 Normal tests include representative publication crashes and focused recovery
@@ -720,6 +754,19 @@ cargo test --test integration --locked \
   runtime::artifact_store::maintenance::tests::collection_recovers_after_each_database_sync_rename_and_cleanup_boundary \
   -- --exact --ignored --nocapture
 ```
+
+For shared-cache catalog, retention, or publication changes, also run both
+shared campaigns:
+
+```sh
+cargo test --test integration --locked \
+  runtime::artifact_store::maintenance::tests::shared_ \
+  -- --ignored --nocapture
+```
+
+These exhaust every instrumented file-sync, rename, namespace-sync, and cleanup
+boundary for collection, import, and root publication. They cover process death
+on the test filesystem, not cross-host visibility or storage-server power loss.
 
 Compile-only tracing fixes need representative crash tests. Run only the
 campaigns affected by the change.

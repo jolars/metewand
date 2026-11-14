@@ -17,7 +17,7 @@
       "properties": {
         "command": { "const": "cache" },
         "schema_version": { "const": 1 },
-        "operation": { "enum": ["verify", "gc", "roots", "root_add", "root_remove"] },
+        "operation": { "enum": ["init", "verify", "gc", "roots", "root_add", "root_remove"] },
         "cache_directory": { "type": "string", "minLength": 1 },
         "dry_run": { "type": "boolean" },
         "targets": {
