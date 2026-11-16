@@ -60,8 +60,10 @@ test("serves clean Markdown for every page with homepage features, code, and tab
     );
     if (path === "/") {
       assert.match(body, /^# Metewand\b/);
-      assert.match(body, /```sh\nmetewand check/);
       assert.match(body, /Use your own language/);
+    }
+    if (path === "/guide/getting-started") {
+      assert.match(body, /```sh\nmetewand check/);
     }
     if (path === "/guide/authoring/validation") {
       assert.match(body, /\|/);
