@@ -100,6 +100,31 @@ fn portable_executable_metadata_survives_import_without_host_permission_bits() {
     assert!(!target.join("run.sqlite3").exists());
 }
 
+#[cfg(target_os = "linux")]
+#[test]
+fn archive_creation_survives_unsupported_no_replace_rename() {
+    let root = tempfile::tempdir().unwrap();
+    let archive = root.path().join("result.tar.gz");
+    let trace = root.path().join("syscalls.log");
+    let output = std::process::Command::new("strace")
+        .args(["-f", "-qq", "-e", "inject=renameat2:error=EINVAL", "-o"])
+        .arg(&trace)
+        .arg(env!("CARGO_BIN_EXE_metewand"))
+        .args(["archive", "create", "--output-dir"])
+        .arg(fixture())
+        .arg("--destination")
+        .arg(&archive)
+        .output()
+        .expect("Linux archive publication tests require strace");
+    assert!(output.status.success(), "{output:?}");
+    let trace = fs::read_to_string(trace).unwrap();
+    assert!(trace.contains("renameat2(") && trace.contains("EINVAL") && trace.contains("INJECTED"));
+    verify_archive(&archive, ArchiveLimits::default()).unwrap();
+    let baseline = root.path().join("baseline.tar.gz");
+    create_archive(&fixture(), &baseline).unwrap();
+    assert_eq!(fs::read(archive).unwrap(), fs::read(baseline).unwrap());
+}
+
 #[test]
 fn restore_preserves_executable_metadata_or_rejects_before_publication() {
     let root = tempfile::tempdir().unwrap();

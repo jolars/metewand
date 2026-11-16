@@ -104,6 +104,9 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: nextest
+      - name: Install filesystem fault injection tools
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y strace
       - uses: Swatinem/rust-cache@v2
       - run: cargo nextest run --workspace --all-targets --locked --profile ci
       - name: Install uv for locked Python integration tests

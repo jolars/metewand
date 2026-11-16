@@ -121,9 +121,6 @@ impl ArtifactStore {
             return Self::open_shared(root);
         }
         create_directory(root)?;
-        crate::runtime::platform_fs::check_storage_root(root)?;
-        #[cfg(windows)]
-        crate::runtime::platform_fs::set_private_directory(root)?;
         let root = fs::canonicalize(root)?;
         let store = Self { root };
         let guard = store.lock_file(true)?;
@@ -133,6 +130,9 @@ impl ArtifactStore {
             drop(guard);
             return Self::open_shared(&store.root);
         }
+        crate::runtime::platform_fs::check_sqlite_storage_root(&store.root)?;
+        #[cfg(windows)]
+        crate::runtime::platform_fs::set_private_directory(&store.root)?;
         if missing(&store.root.join("cache.sqlite3"))? {
             store.require_uninitialized()?;
         }

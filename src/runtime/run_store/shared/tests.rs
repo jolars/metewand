@@ -51,6 +51,45 @@ fn canonical_initialization_and_schema_columns_are_frozen_for_version_one() {
 }
 
 #[test]
+fn interrupted_initialization_can_resume_in_a_pristine_run_home() {
+    let root = tempfile::tempdir().unwrap();
+    let directory = root.path().join(JOURNAL);
+    fs::create_dir(&directory).unwrap();
+    let pending = directory.join(".pending-initialization");
+    fs::write(&pending, b"unpublished initialization").unwrap();
+
+    drop(RunStore::open(root.path()).unwrap());
+
+    assert_eq!(files(&directory).len(), 2);
+    assert_eq!(fs::read(pending).unwrap(), b"unpublished initialization");
+    assert!(StoreSnapshot::read(root.path()).is_ok());
+}
+
+#[test]
+fn empty_journals_cannot_reset_populated_run_homes() {
+    for entry in ["artifacts", ".cache-owner.json", "index.jsonl"] {
+        let root = tempfile::tempdir().unwrap();
+        let mut store = RunStore::open_shared(root.path()).unwrap();
+        event(&mut store, 1, "committed").unwrap();
+        drop(store);
+        let directory = root.path().join(JOURNAL);
+        for path in files(&directory).into_keys() {
+            fs::remove_file(path).unwrap();
+        }
+        if entry == "artifacts" {
+            fs::create_dir(root.path().join(entry)).unwrap();
+        } else {
+            fs::write(root.path().join(entry), b"persisted run data").unwrap();
+        }
+
+        assert!(StoreSnapshot::read(root.path()).is_err(), "{entry}");
+        assert!(RunStore::open(root.path()).is_err(), "{entry}");
+        assert!(RunStore::open_shared(root.path()).is_err(), "{entry}");
+        assert!(files(&directory).is_empty(), "{entry}");
+    }
+}
+
+#[test]
 fn readers_are_read_only_and_ownership_outlives_reconnected_stores() {
     let root = tempfile::tempdir().unwrap();
     let mut store = RunStore::open_shared(root.path()).unwrap();

@@ -100,7 +100,7 @@ impl RunStore {
         let root = canonical_root.as_path();
         let root_file = crate::runtime::platform_fs::open_directory(root)?;
         reject_network_filesystem(&root_file)?;
-        crate::runtime::platform_fs::check_storage_root(root)?;
+        crate::runtime::platform_fs::check_sqlite_storage_root(root)?;
         let lock = open_lock(&root.join(".run-store-init.lock"))?;
         let _guard = acquire_lock(lock, check)?;
         #[cfg(windows)]

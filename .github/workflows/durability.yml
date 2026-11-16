@@ -4,27 +4,6 @@ on:
   schedule:
     - cron: '17 3 * * 0'
   workflow_dispatch:
-  pull_request:
-    branches: [main]
-    paths:
-      - .github/workflows/durability.yml
-      - Cargo.toml
-      - Cargo.lock
-      - rust-toolchain.toml
-      - src/runtime/artifact_store.rs
-      - src/runtime/artifact_store/**
-      - src/runtime/archive.rs
-      - src/runtime/archive/**
-      - src/core/durable.rs
-      - schemas/v1/durable-record.schema.json
-      - src/runtime/evidence.rs
-      - src/runtime/durability.rs
-      - src/runtime/fault_injection.rs
-      - src/runtime/local_tree.rs
-      - src/runtime/platform_fs.rs
-      - src/runtime/publication.rs
-      - src/runtime/run_store.rs
-      - src/runtime/run_store/**
 
 permissions:
   contents: read

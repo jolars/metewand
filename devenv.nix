@@ -13,7 +13,7 @@
         withr
       ];
     })
-  ];
+  ] ++ lib.optionals pkgs.stdenv.isLinux [ pkgs.strace ];
 
   env.MINIFLARE_WORKERD_PATH = lib.mkIf pkgs.stdenv.hostPlatform.isLinux (
     pkgs.writeShellScript "metewand-workerd" ''

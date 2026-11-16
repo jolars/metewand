@@ -14,7 +14,8 @@ pages.
 
 Use Rust 1.98.0 and edition 2024. `devenv shell` provides the pinned toolchain,
 rustfmt, Clippy, Nextest, Python, R with `jsonlite`, `roxygen2`, `testthat`, and
-`withr`, and Node.js:
+`withr`, and Node.js. On Linux it also provides `strace` for filesystem fault
+injection tests:
 
 ```sh
 devenv shell
@@ -679,8 +680,11 @@ replying to the worker. A failed publication or local commit invalidates further
 writes through that view; reopening replays the authoritative shared history.
 
 Each record filename contains a zero-padded sequence and SHA-256 of its complete
-canonical bytes. Sequence zero establishes the empty run. Later records bind
-the preceding record's hash. Replay requires a contiguous chain, known versions
+canonical bytes. Sequence zero establishes the empty run. Initialization can
+resume only while the run home contains its writer lock and journal, including
+unpublished initialization stages. A populated run with no committed
+initialization record fails closed. Later records bind the preceding record's
+hash. Replay requires a contiguous chain, known versions
 and row fields, exact before- and after-images, strict row constraints, and
 foreign keys at each original transaction boundary. A writable open synchronizes
 the journal directory before replay so complete records left by a crashed
@@ -710,6 +714,8 @@ each record binds the preceding record's digest. Replay validates the complete
 chain, schema, root ordering, and object references. Empty, missing, mixed SQLite
 and shared, or corrupt catalogs fail closed. Private `.pending-*` stages never
 authorize retention or collection. Published records are never modified.
+The local SQLite filesystem restrictions do not apply to shared caches, which
+require coherent file locks, synchronization, and atomic no-replace publication.
 
 All cache operations hold the existing cache lock while reading a snapshot and
 publishing retention changes or detaching objects. Writable opens synchronize the
@@ -736,9 +742,16 @@ power-loss guarantees require the separate HPC qualification work.
 ### Crash conformance
 
 Normal tests include representative publication crashes and focused recovery
-checks. Run the exhaustive run-store campaign when changing synchronization,
-transaction or publication ordering, recovery decisions, the run-store schema,
-or the campaign's crash points and assertions, or when explicitly requested:
+checks. Use these during local development and pull-request verification,
+including for changes to synchronization, transaction or publication ordering,
+recovery decisions, persisted schemas, and crash coverage. Add focused regression
+tests for the affected invariants.
+
+Exhaustive campaigns are long-running checks for scheduled or manually triggered
+CI. Run them locally only when explicitly requested; they are not a prerequisite
+for completing local work. Select only the campaigns affected by the change.
+
+The exhaustive run-store campaign covers initialization, publication, and recovery:
 
 ```sh
 cargo test --test integration --locked \
@@ -746,8 +759,8 @@ cargo test --test integration --locked \
   -- --exact --ignored --nocapture
 ```
 
-For changes to cache catalog synchronization, publication ordering, collection
-recovery, or the cache campaign's crash points and assertions, run:
+The local-cache campaign covers catalog synchronization, publication ordering,
+and collection recovery:
 
 ```sh
 cargo test --test integration --locked \
@@ -755,8 +768,7 @@ cargo test --test integration --locked \
   -- --exact --ignored --nocapture
 ```
 
-For shared-cache catalog, retention, or publication changes, also run both
-shared campaigns:
+The shared-cache campaigns cover catalog, retention, publication, and collection:
 
 ```sh
 cargo test --test integration --locked \
@@ -768,15 +780,12 @@ These exhaust every instrumented file-sync, rename, namespace-sync, and cleanup
 boundary for collection, import, and root publication. They cover process death
 on the test filesystem, not cross-host visibility or storage-server power loss.
 
-Compile-only tracing fixes need representative crash tests. Run only the
-campaigns affected by the change.
-
-The [durability workflow](.github/workflows/durability.yml) runs the exhaustive
-campaigns separately on Linux, macOS, and Windows. They interrupt subprocesses
-at application, shared-journal, and SQLite boundaries and verify recovery,
-identity, acceptance, and retry invariants. Shared scenarios discard all
-child-local scratch before replay and cover initialization, fresh budgets,
-streaming decisions, and orphan recovery. They
+The [durability workflow](.github/workflows/durability.yml) runs weekly and on
+manual dispatch on Linux, macOS, and Windows. Exhaustive campaigns do not run on
+pull requests. They interrupt subprocesses at application, shared-journal, and
+SQLite boundaries and verify recovery, identity, acceptance, and retry invariants.
+Shared scenarios discard all child-local scratch before replay and cover
+initialization, fresh budgets, streaming decisions, and orphan recovery. They
 model abrupt process death, not storage hardware losing power.
 
 ## Machine output and exports
@@ -887,7 +896,13 @@ Paths that the target filesystem cannot represent fail without renaming evidence
 
 Creation and import use private staging and atomic publication without replacement.
 Their destinations need existing parents. Archive files must be outside their
-source run or collection. Import publishes a collection only after verification
+source run or collection. Archive files use no-clobber tempfile persistence,
+which can publish through a hard link when Unix no-replace rename is unsupported,
+as on GenomeDK's BeeGFS. The file is synchronized before publication and its
+parent directory afterward. Existing destinations remain untouched. Directory
+publication for import, restore, and shared artifacts still requires filesystem
+support for atomic no-replace rename; this file fallback does not qualify those
+operations on BeeGFS. Import publishes a collection only after verification
 and synchronization. The shared reader supplies the same inspection and export
 projections for SQLite runs and collections. Collections reject run-store
 initialization and index rebuilding; table exports must use a new destination

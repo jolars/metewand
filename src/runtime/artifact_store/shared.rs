@@ -56,7 +56,6 @@ impl ArtifactStore {
             return Err(ArtifactStoreError::InvalidRoot);
         }
         create_directory(root)?;
-        crate::runtime::platform_fs::check_storage_root(root)?;
         let store = Self {
             root: fs::canonicalize(root)?,
         };

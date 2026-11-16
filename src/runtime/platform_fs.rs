@@ -415,7 +415,7 @@ pub(crate) fn file_signature(file: &File) -> io::Result<[u64; 7]> {
     windows::file_signature(file)
 }
 
-pub(crate) fn check_storage_root(path: &Path) -> io::Result<()> {
+pub(crate) fn check_sqlite_storage_root(path: &Path) -> io::Result<()> {
     let directory = open_directory(path)?;
     #[cfg(target_os = "linux")]
     {
@@ -442,7 +442,7 @@ pub(crate) fn check_storage_root(path: &Path) -> io::Result<()> {
         }
     }
     #[cfg(windows)]
-    windows::check_storage_root(path, &directory)?;
+    windows::check_sqlite_storage_root(path, &directory)?;
     let _ = directory;
     Ok(())
 }
@@ -743,7 +743,7 @@ mod windows {
         ])
     }
 
-    pub(super) fn check_storage_root(path: &Path, directory: &File) -> io::Result<()> {
+    pub(super) fn check_sqlite_storage_root(path: &Path, directory: &File) -> io::Result<()> {
         let path = wide(path)?;
         let mut volume = vec![0u16; 32768];
         // SAFETY: The output buffer is writable and includes space for NUL.

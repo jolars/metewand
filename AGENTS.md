@@ -124,10 +124,12 @@ documentation checks; repository prose needs only diff and link review. Use
 Run both formatting checks. Cargo's formatter does not discover the shared
 modules loaded through `include!`; the explicit entry point covers them.
 
-Run the relevant exhaustive crash campaign only for changes to durability
-behavior, persisted schemas, or crash coverage, or when requested. Compile-only
-tracing fixes need representative crash tests. See [Crash
-conformance](CONTRIBUTING.md#crash-conformance) for commands and CI coverage.
+For changes to durability behavior, persisted schemas, or crash coverage, add
+focused regression tests and run the relevant representative crash tests.
+Exhaustive crash campaigns belong in scheduled or manually triggered CI. Run
+them locally only when explicitly requested. Do not start or wait for them as
+part of routine local verification. See
+[Crash conformance](CONTRIBUTING.md#crash-conformance) for commands and CI coverage.
 
 Use Rust 1.98.0 and edition 2024. Keep `Cargo.lock` current and use `--locked`
 in verification. Comments should explain why a choice exists rather than

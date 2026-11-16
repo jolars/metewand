@@ -143,7 +143,14 @@ pub fn create_archive(root: &Path, destination: &Path) -> Result<ArchiveReport, 
         tar.into_inner()?.finish()?;
     }
     platform_fs::sync_owned_file(output.path())?;
-    rename_no_replace(output.path(), &destination)?;
+    #[cfg(test)]
+    crate::runtime::fault_injection::hit("rename.before");
+    // File persistence can use a hard link when no-replace rename is unsupported.
+    output
+        .persist_noclobber(&destination)
+        .map_err(|error| error.error)?;
+    #[cfg(test)]
+    crate::runtime::fault_injection::hit("rename.after");
     platform_fs::complete_namespace_change(parent)?;
     report(
         ArchiveOperation::Create,

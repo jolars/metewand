@@ -95,6 +95,16 @@ impl RunStore {
             _scratch: scratch,
         };
         if journal.next == 0 {
+            // Only initialization infrastructure may precede the first commit.
+            // Existing run data must never be detached from its lost history.
+            for entry in fs::read_dir(&root)? {
+                let name = entry?.file_name();
+                if name != JOURNAL && name != ".shared-writer.lock" {
+                    return Err(invalid(
+                        "populated shared run has no committed initialization record",
+                    ));
+                }
+            }
             journal.publish(Vec::new())?;
         }
         install_capture(&store.connection)?;

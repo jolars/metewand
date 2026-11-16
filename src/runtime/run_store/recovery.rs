@@ -408,12 +408,14 @@ impl RunStore {
         now: u64,
     ) -> Result<Evidence, RunStoreError> {
         let root = self.root().to_owned();
-        let tx = self.transaction()?;
+        let tx = self.connection.transaction()?;
         let evidence = validate_orphan(&tx, attempt, orphan, now)?;
+        tx.commit()?;
+        // Hash outside coordination transactions so slow dependencies cannot
+        // delay live owners' renewals. Terminal import revalidates the snapshot.
         for artifact in &evidence.roots {
             verify_registered(&root, artifact)?;
         }
-        tx.commit()?;
         Ok(evidence)
     }
 

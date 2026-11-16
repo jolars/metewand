@@ -1255,3 +1255,95 @@ fn shared_publication_survives_loss_of_scratch_at_commit_and_stream_boundaries()
         }
     }
 }
+
+#[test]
+fn orphan_verification_allows_another_attempt_to_renew_its_lease() {
+    use rusqlite::trace::{TraceEvent, TraceEventCodes};
+    use std::cell::RefCell;
+
+    thread_local! {
+        static RENEW: RefCell<Option<Box<dyn FnOnce()>>> = const { RefCell::new(None) };
+    }
+
+    let root = tempfile::tempdir().unwrap();
+    let mut store = RunStore::open(root.path()).unwrap();
+    seed(&mut store, false);
+    let attempt = reserve(&mut store);
+    let dependency = store
+        .publish_artifact(&attempt, ArtifactKind::Dataset, payload, || 11)
+        .unwrap()
+        .artifact;
+    let attempt = claim(&mut store, &attempt);
+    let mut times = [20, 21, 100].into_iter();
+    assert!(
+        store
+            .publish_finalization(
+                &attempt,
+                TerminalOutcome::Accepted,
+                &[("dataset".into(), dependency.id)],
+                payload,
+                || times.next().unwrap(),
+            )
+            .is_err()
+    );
+
+    let live = store
+        .reserve(
+            slot(2),
+            RetryAuthorization::FirstAttempt,
+            lease("live-reservation", 200),
+            30,
+        )
+        .unwrap();
+    let mut heartbeat = store.reconnect().unwrap();
+    heartbeat.connection.busy_timeout(Duration::ZERO).unwrap();
+    let (sender, receiver) = std::sync::mpsc::channel();
+    RENEW.with_borrow_mut(|renew| {
+        *renew = Some(Box::new(move || {
+            sender.send(heartbeat.renew(&live, 300, 100)).unwrap();
+        }));
+    });
+    // Renew from a second connection as recovery reads the dependency metadata,
+    // before it hashes the bytes. This deterministically exposes a writer lock.
+    store
+        .connection
+        .trace_v2(
+            TraceEventCodes::SQLITE_TRACE_STMT,
+            Some(|event: TraceEvent<'_>| {
+                if let TraceEvent::Stmt(statement, _) = event
+                    && statement
+                        .sql()
+                        .starts_with("SELECT relative_path, content_sha256")
+                {
+                    RENEW.with_borrow_mut(|renew| {
+                        if let Some(renew) = renew.take() {
+                            renew();
+                        }
+                    });
+                }
+            }),
+        )
+        .unwrap();
+
+    let report = store.recover(|| 100).unwrap();
+    receiver
+        .try_recv()
+        .expect("recovery checked the dependency")
+        .expect("orphan verification must allow concurrent lease renewal");
+    assert_eq!(report.terminals.len(), 1);
+    assert!(matches!(
+        report.terminals[0].outcome,
+        TerminalOutcome::Accepted
+    ));
+    assert_eq!(
+        store
+            .connection
+            .query_row(
+                "SELECT expires_at_ns FROM leases WHERE id='live-reservation'",
+                [],
+                |r| r.get::<_, i64>(0)
+            )
+            .unwrap(),
+        300
+    );
+}
