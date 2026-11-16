@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.7.0](https://github.com/jolars/metewand/compare/v0.6.0...v0.7.0) (2026-11-16)
+
+### Features
+
+- add shared dataset caches with portable retention roots ([`a1bd987`](https://github.com/jolars/metewand/commit/a1bd98737b0fe999ec378af3f9ad435819b6386f))
+- publish incremental shared run records ([`6407833`](https://github.com/jolars/metewand/commit/6407833aabec82254d6a7cdb390ad7f6f03415e9))
+- restore runs from portable archives ([`f492c37`](https://github.com/jolars/metewand/commit/f492c3776c2d8c259538be7c7128dc30a65a09ef))
+
+### Bug Fixes
+
+- support archive publication on BeeGFS ([`26a1327`](https://github.com/jolars/metewand/commit/26a1327a5b124ee5ae5f4cfdfe6100429f5c0b16))
+
 ## [0.6.0](https://github.com/jolars/metewand/compare/v0.5.0...v0.6.0) (2026-11-12)
 
 ### Features
