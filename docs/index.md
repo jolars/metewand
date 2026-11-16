@@ -6,18 +6,19 @@ hero:
   image:
     src: /brand/logo.png
     alt: A measuring rod with gold ends and evenly spaced graduations.
-  text: |
-    Reproducible benchmarks.
-    Across languages.
-  tagline: Compare computational methods with explicit contracts, independent
-    evaluation, and provenance for every result.
+  text: Measure, compare, reproduce.
+  tagline: Compare computational methods across languages, measure their
+    performance, and evaluate their results.
   actions:
     - theme: brand
+      text: What is Metewand?
+      link: /guide/overview
+    - theme: alt
       text: Get started
       link: /guide/getting-started
     - theme: alt
-      text: Overview
-      link: /guide/overview
+      text: Source code
+      link: https://github.com/jolars/metewand
 
 features:
   - title: Use your own language
@@ -49,16 +50,16 @@ an observation back to the inputs and policies that produced it.
 
 ## Start with a small example
 
-The [overview](guide/overview.md) introduces the model, and
-[getting started](guide/getting-started.md) runs your first benchmark.
-The [authoring guide](guide/authoring/index.md) walks you through running and
-modifying the least-squares example, with links to the details.
-The [examples](guide/examples.md) provide complete alternatives in Python, R,
-and native Rust.
+The [overview](guide/overview.md) introduces the model, and [getting
+started](guide/getting-started.md) runs your first benchmark. The [authoring
+guide](guide/authoring/index.md) walks you through running and modifying the
+least-squares example, with links to the details. The
+[examples](guide/examples.md) provide complete alternatives in Python, R, and
+native Rust.
 
-Metewand is under active development. The current runtime supports trusted
-local benchmarks, including one-shot runs, fresh sequences, and buffered
-profiles. See [running and analyzing comparisons](guide/authoring/running.md)
-for the current controls and the
-[TODO list](https://github.com/jolars/metewand/blob/main/TODO.md) for planned
+Metewand is under active development. The current runtime supports trusted local
+benchmarks, including one-shot runs, fresh sequences, and buffered profiles. See
+[running and analyzing comparisons](guide/authoring/running.md) for the current
+controls and the [TODO
+list](https://github.com/jolars/metewand/blob/main/TODO.md) for planned
 capabilities.
