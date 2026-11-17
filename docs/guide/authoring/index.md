@@ -179,8 +179,9 @@ metewand run --output-dir repeated-run
 ```
 
 Metewand preserves matching accepted measurements and restarts interrupted
-attempts automatically. See [run and analyze](running.md) for retrying failures,
-choosing timing scopes, and preparing reproducible environments.
+attempts automatically. See [run and analyze](running.md) for retrying failures.
+When you need more control, [choose what to time](execution.md) or [prepare
+worker environments](environments.md).
 
 To build your own comparison, replace the generator and methods, update the
 result fields, and write an evaluator that checks your scientific question.

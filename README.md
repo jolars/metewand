@@ -72,9 +72,9 @@ Metewand prints timings and absolute errors and saves the results in
 `.metewand/` beside the manifest. Replace the generated functions and edit the
 configuration to compare your own methods. Follow the [authoring
 guide](docs/guide/authoring/index.md) or adapt the [least-squares
-example](examples/least-squares) for a fuller comparison. See [running and
-analyzing comparisons](docs/guide/authoring/running.md) for repeated
-measurements and exports.
+example](examples/least-squares) for a fuller comparison. See [running the
+comparison](docs/guide/authoring/running.md) and [analyzing the
+results](docs/guide/authoring/results.md) for repeated measurements and exports.
 
 For an existing benchmark repository, open the directory containing
 `metewand.yaml` and run `metewand plan`, then `metewand run`. Select a named

@@ -100,4 +100,4 @@ remaining selection and exits with code `5` if any attempt fails. Inspect the
 recorded evidence before deciding whether to change the methods, limits, or
 target.
 
-Next, [control execution and analyze the results](running.md).
+Next, [run the comparison](running.md) and [analyze the results](results.md).
