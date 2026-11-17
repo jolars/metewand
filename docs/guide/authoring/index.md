@@ -5,15 +5,15 @@ settings, and check the answers against an accuracy target. You will use the
 existing example so you can learn how the pieces fit together before writing
 your own benchmark.
 
-The example compares gradient descent with coordinate descent. Both methods
-fit a linear model to the same simulated data and return coefficients called
-`beta`. You do not need to understand either algorithm to follow along.
+The example compares gradient descent with coordinate descent. Both methods fit
+a linear model to the same simulated data and return coefficients called `beta`.
+You do not need to understand either algorithm to follow along.
 
 ## Open the example
 
-First, [install the CLI and Python package](../getting-started.md#install).
-Keep the Python environment with the Metewand package active. This example
-needs no other Python packages.
+First, [install the CLI and Python package](../getting-started.md#install). Keep
+the Python environment with the Metewand package active. This example needs no
+other Python packages.
 
 If you already have a Metewand checkout, open its `examples/least-squares`
 directory. Otherwise, get the example with Git:
@@ -30,14 +30,15 @@ contains the data generator, methods, and evaluator. A second manifest,
 
 ## Read the comparison
 
-Open `metewand.yaml`. Its four main sections connect the pieces of the benchmark:
+Open `metewand.yaml`. Its four main sections connect the pieces of the
+benchmark:
 
-| Section | What it does in this example |
-| --- | --- |
-| `datasets` | Generates 100 observations with three features and some noise. |
-| `problems` | Declares the coefficient vector and the metrics used to evaluate it. |
-| `implementations` | Selects the two methods and gives each 200 iterations. |
-| `experiments` | Brings those choices together and sets a random seed. |
+  | Section           | What it does in this example                                         |
+  | ----------------- | -------------------------------------------------------------------- |
+  | `datasets`        | Generates 100 observations with three features and some noise.       |
+  | `problems`        | Declares the coefficient vector and the metrics used to evaluate it. |
+  | `implementations` | Selects the two methods and gives each 200 iterations.               |
+  | `experiments`     | Brings those choices together and sets a random seed.                |
 
 At the bottom, you will find:
 
@@ -66,18 +67,18 @@ def gd(data, context):
 ```
 
 The manifest's `function: benchmark.py:gd` points to this function. Metewand
-passes in the generated data and a context containing the method's settings.
-The function returns the `beta` field declared by the problem.
+passes in the generated data and a context containing the method's settings. The
+function returns the `beta` field declared by the problem.
 
 The `generate` function creates the input. The `cd` function calls the other
-method. Finally, `evaluate` independently computes two metrics from each
-answer: `objective`, the least-squares loss, and `gradient_inf`, the largest
-absolute gradient component. Smaller values indicate a better fit and a point
-closer to a stationary solution, respectively.
+method. Finally, `evaluate` independently computes two metrics from each answer:
+`objective`, the least-squares loss, and `gradient_inf`, the largest absolute
+gradient component. Smaller values indicate a better fit and a point closer to a
+stationary solution, respectively.
 
 These roles run in separate processes; Metewand supplies the data and collects
-the results. You can keep ordinary solver code behind small functions like
-`gd`. See [write the functions](functions.md) for the implementation details.
+the results. You can keep ordinary solver code behind small functions like `gd`.
+See [write the functions](functions.md) for the implementation details.
 
 ## Check and run it
 
@@ -104,9 +105,9 @@ Look for both method names, their timings, and the `objective` and
 accuracy metrics but has not set a target that either method must reach.
 
 The default time includes preparation, solving, and result serialization.
-Generating the shared data and evaluating the answers happen outside that
-time. This tiny example helps you learn the workflow; use larger problems and
-repeated measurements before comparing performance.
+Generating the shared data and evaluating the answers happen outside that time.
+This tiny example helps you learn the workflow; use larger problems and repeated
+measurements before comparing performance.
 
 ## Make one change
 
@@ -166,8 +167,8 @@ metewand export --output-dir repeated-run --format csv --destination tables
 ```
 
 Open `tables/results.csv` in your analysis tool. Compare accuracy alongside
-timing, and retain individual repetitions when assessing variation. Keep the
-run directory as the original evidence; the exported table is a view of it.
+timing, and retain individual repetitions when assessing variation. Keep the run
+directory as the original evidence; the exported table is a view of it.
 
 Destination parents must exist, and export destinations must be new directories.
 If a run is interrupted, repeat the command with the same manifest and output
@@ -178,8 +179,8 @@ metewand run --output-dir repeated-run
 ```
 
 Metewand preserves matching accepted measurements and restarts interrupted
-attempts automatically. See [run and analyze](running.md) for
-retrying failures, choosing timing scopes, and preparing reproducible environments.
+attempts automatically. See [run and analyze](running.md) for retrying failures,
+choosing timing scopes, and preparing reproducible environments.
 
 To build your own comparison, replace the generator and methods, update the
 result fields, and write an evaluator that checks your scientific question.

@@ -1,7 +1,7 @@
 # Vary parameters and add repetitions
 
-Keep the functions from [the functions page](functions.md). You can expand the comparison
-by editing only the manifest.
+Keep the functions from [the functions page](functions.md). You can expand the
+comparison by editing only the manifest.
 
 ## Put settings with their owner
 
@@ -10,16 +10,16 @@ Each method's `iterations` changes how it solves the problem. A problem
 parameter would change the requested computation, such as a regularization
 coefficient. Timing and process controls belong in execution policies.
 
-Types and bounds declare valid values. A `default` supplies a missing value.
-A `grid` selects values to benchmark without narrowing their valid domain:
+Types and bounds declare valid values. A `default` supplies a missing value. A
+`grid` selects values to benchmark without narrowing their valid domain:
 
 ```yaml
 n_samples: {type: integer, minimum: 1, grid: [100, 1000]}
 ```
 
-Replace the dataset's original `n_samples` declaration with this one to try
-both sizes. A field can have a default or a grid, but not both. Fields are
-required unless `optional: true`; unknown parameter names are rejected.
+Replace the dataset's original `n_samples` declaration with this one to try both
+sizes. A field can have a default or a grid, but not both. Fields are required
+unless `optional: true`; unknown parameter names are rejected.
 
 ## Specialize shared defaults
 
@@ -108,10 +108,10 @@ experiments:
           coordinate_descent: {iterations: 1}
 ```
 
-The normal case uses each method's default iteration count. The second case
-uses one iteration for each. Both inherit the dataset grid if you kept it.
-After adding an accuracy target, this will show the difference between a valid
-answer and one that reaches the requested accuracy.
+The normal case uses each method's default iteration count. The second case uses
+one iteration for each. Both inherit the dataset grid if you kept it. After
+adding an accuracy target, this will show the difference between a valid answer
+and one that reaches the requested accuracy.
 
 Selection follows this order: declaration grids supply initial choices,
 experiment axes replace matching choices, and named cases replace matching
@@ -128,7 +128,8 @@ metewand plan --output json
 
 Check the candidate count and resolved settings before running a large matrix.
 Identical candidates are rejected rather than silently counted twice. See the
-[parameter-matrix example](https://github.com/jolars/metewand/tree/main/examples/parameter-matrix)
+[parameter-matrix
+example](https://github.com/jolars/metewand/tree/main/examples/parameter-matrix)
 for dataset, problem, and implementation overrides together.
 
 Next, [add scientific validation](validation.md).

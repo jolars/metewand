@@ -2,13 +2,13 @@
 
 This walkthrough builds a least-squares benchmark with two methods: gradient
 descent and coordinate descent. You will generate shared data, evaluate both
-answers independently, vary their settings, add accuracy checks, and export
-the measurements.
+answers independently, vary their settings, add accuracy checks, and export the
+measurements.
 
 The code uses Python's standard library and the Metewand package. Complete the
 [installation](../getting-started.md#install) first and keep that Python
-environment active. The finished code is also available in the
-[least-squares example](https://github.com/jolars/metewand/tree/main/examples/least-squares).
+environment active. The finished code is also available in the [least-squares
+example](https://github.com/jolars/metewand/tree/main/examples/least-squares).
 
 ## State the question
 
@@ -76,12 +76,11 @@ experiments:
 
 The dataset declares the input parameters. The problem declares the answer's
 shape and the metrics its evaluator can return. The implementations declare
-their own settings. The experiment chooses what to compare and supplies a
-seed.
+their own settings. The experiment chooses what to compare and supplies a seed.
 
 `function: benchmark.py:gd` selects the `gd` function in a source file beside
-the manifest. Metewand includes that file in the worker's source bundle.
-There is no worker protocol code to write.
+the manifest. Metewand includes that file in the worker's source bundle. There
+is no worker protocol code to write.
 
 We mark the metric fields optional so a later validity check can reject an
 unusable result without inventing numerical metrics for it. Required result
@@ -90,11 +89,11 @@ fields still have to exist and satisfy their declarations.
 ## Keep the first run small
 
 We have omitted named execution and observation policies. This selects local
-execution, one final result, and one measurement per method. The primary time
-is wall time over preparation, solving, and result serialization. `plan` will
-show these resolved defaults once the source file exists.
+execution, one final result, and one measurement per method. The primary time is
+wall time over preparation, solving, and result serialization. `plan` will show
+these resolved defaults once the source file exists.
 
-There is no accuracy target yet. The evaluator can report useful metrics
-without claiming either method converged.
+There is no accuracy target yet. The evaluator can report useful metrics without
+claiming either method converged.
 
 Next, [write the functions](functions.md) referenced by this manifest.

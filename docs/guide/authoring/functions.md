@@ -79,8 +79,8 @@ returns the `beta` field declared by the problem. The package writes the result
 envelope and checks that its values can be represented as canonical JSON.
 
 One GD iteration is a full gradient update. One CD iteration is a full cyclic
-coordinate sweep. Equal iteration limits are convenient controls, not a claim
-of equal work.
+coordinate sweep. Equal iteration limits are convenient controls, not a claim of
+equal work.
 
 ## Evaluate the answers independently
 
@@ -110,10 +110,10 @@ def evaluate(data, result, context):
     )
 ```
 
-The evaluator recomputes metrics from the input and coefficient vector. It
-does not trust a solver's own objective or convergence flag. It also rejects
-vectors with the wrong dimension, which the result's array declaration alone
-cannot detect.
+The evaluator recomputes metrics from the input and coefficient vector. It does
+not trust a solver's own objective or convergence flag. It also rejects vectors
+with the wrong dimension, which the result's array declaration alone cannot
+detect.
 
 Returning plain metrics is sufficient when the problem declares no scientific
 rules. `context.semantics` supplies any declared rules; the last few lines will
@@ -128,9 +128,9 @@ metewand check --workers
 metewand run --output-dir first-run
 ```
 
-The plan has two candidates: one dataset and problem configuration, paired
-with each method. Worker checking verifies imports and callables. This version
-has no reference cases, so that check does not yet validate the metric formulas.
+The plan has two candidates: one dataset and problem configuration, paired with
+each method. Worker checking verifies imports and callables. This version has no
+reference cases, so that check does not yet validate the metric formulas.
 
 The run records objective and gradient metrics for both methods. Completion is
 `not_required` because we have not declared an accuracy target.

@@ -17,9 +17,9 @@ metewand scaffold implementation candidate --language python --problem target
 
 The adapters go under `datasets/`, `problems/`, and `implementations/`. Fill in
 their functions, declare result and metric fields, and add an experiment that
-selects them. Scaffolding does not add experiments or install dependencies.
-It preserves existing manifest comments and refuses to overwrite adapter files.
-Use `--dry-run` to inspect the proposed paths first.
+selects them. Scaffolding does not add experiments or install dependencies. It
+preserves existing manifest comments and refuses to overwrite adapter files. Use
+`--dry-run` to inspect the proposed paths first.
 
 `--manifest PATH` selects a different manifest. `--language r` selects R
 functions. `--language rust` generates callback templates for the internal Rust
@@ -49,10 +49,10 @@ evaluate <- function(data, result, context) {
 ```
 
 Select them with references such as `function: benchmark.R:solve`. The generator
-expects a declared integer parameter `size`. Return named lists for JSON
-objects and unnamed lists for arrays. Use `metewand::evaluation(metrics, verdict)`
-when scientific rules require an explicit verdict. The
-[R starter](../getting-started.md#start-with-r) supplies a complete manifest.
+expects a declared integer parameter `size`. Return named lists for JSON objects
+and unnamed lists for arrays. Use `metewand::evaluation(metrics, verdict)` when
+scientific rules require an explicit verdict. The [R
+starter](../getting-started.md#start-with-r) supplies a complete manifest.
 
 The function context supplies `parameters` for the current role,
 `problem_parameters` for implementations and evaluators, `seed` for generators
@@ -60,9 +60,10 @@ and implementations, and `semantics` for evaluators. Evaluators have no supplied
 random seed. Install dependencies in each selected worker environment.
 
 Native Rust helpers run without a Python or R host. Other languages can
-implement the process protocol directly. Start with the
-[Rust example](https://github.com/jolars/metewand/tree/main/examples/rust-worker)
-or [raw worker example](https://github.com/jolars/metewand/tree/main/examples/fixed-dataset).
+implement the process protocol directly. Start with the [Rust
+example](https://github.com/jolars/metewand/tree/main/examples/rust-worker) or
+[raw worker
+example](https://github.com/jolars/metewand/tree/main/examples/fixed-dataset).
 
 ## Separate preparation and solving
 
@@ -70,19 +71,20 @@ Lifecycle workers let you load data in `prepare`, run a method in `execute`,
 convert its output, and reset state before reuse. They also support custom
 artifact writers and configuration-dependent applicability checks.
 
-Python and R both provide `serve_implementation` with named callbacks.
-Use `prepare(context)` to return state and `execute(state, context)` to return
+Python and R both provide `serve_implementation` with named callbacks. Use
+`prepare(context)` to return state and `execute(state, context)` to return
 solver output. Optional `result(output, context)` converts that output, and
 `reset(state, context)` clears slot state. Select `protocol-transport: socket`
 for these lifecycle workers. The CLI supplies the adapter; package and CLI
-release numbers need not match when they support binding API version 1. The native Rust
-examples implement the internal `Implementation` trait and use the same serving
-lifecycle. These helpers are not a published Rust library API.
-The runnable [Python](https://github.com/jolars/metewand/tree/main/examples/python-package),
+release numbers need not match when they support binding API version 1. The
+native Rust examples implement the internal `Implementation` trait and use the
+same serving lifecycle. These helpers are not a published Rust library API. The
+runnable
+[Python](https://github.com/jolars/metewand/tree/main/examples/python-package),
 [R](https://github.com/jolars/metewand/tree/main/examples/r-package), and
-[Rust](https://github.com/jolars/metewand/tree/main/examples/rust-worker) examples
-show complete adapters and declarations. The package source and R help pages
-describe their callback interfaces.
+[Rust](https://github.com/jolars/metewand/tree/main/examples/rust-worker)
+examples show complete adapters and declarations. The package source and R help
+pages describe their callback interfaces.
 
 ## Share problem-dependent preparation
 
@@ -103,9 +105,9 @@ problems:
 ```
 
 The Python or R function takes `(data, context)`. `data` contains the original
-JSON dataset, and `context.problem_parameters` (`context$problem_parameters` in
-R) contains the resolved problem settings. Return a JSON object or a `Dataset`
-with declared files. Implementations and evaluators read the prepared artifact
+JSON dataset, and `context.problem_parameters` (`context$problem_parameters` in R)
+contains the resolved problem settings. Return a JSON object or a `Dataset` with
+declared files. Implementations and evaluators read the prepared artifact
 through `context.problem_dir`, while `context.dataset_dir` continues to contain
 the original dataset. For example, use
 `read_json(context.problem_dir / "data.json")` to read a prepared JSON grid.
@@ -116,20 +118,21 @@ methods share its output. `run --cache-dir cache` also reuses it across runs.
 The cache identity includes the verified dataset instance, complete problem
 configuration, preparation sources, launch, environment, and output schema.
 Changing problem settings does not rematerialize the raw dataset. Keep solver
-initialization in each implementation's own `prepare` callback.
-Use `worker-timeouts.materialize` to adjust the preparation deadline.
+initialization in each implementation's own `prepare` callback. Use
+`worker-timeouts.materialize` to adjust the preparation deadline.
 
 For binary datasets, register `serve_problem_preparer(materialize)` and read the
 verified `context.dataset_dir` directly. Write shared files beneath
 `context.output_dir` and return a `Dataset` with `Artifact` declarations. Select
 `protocol-transport: socket` and declare `output-schema` beneath `preparation`.
 Raw workers serve `problem_preparer`, receive a `materialize` request with
-`dataset_dir`, `problem_contract_id`, `problem_parameters`, and `output_dir`, and
-return the standard dataset manifest. Consumers negotiate `problem_preparation`
-before receiving `problem_dir`. Existing benchmarks without preparation keep
-their original request shapes and identities.
+`dataset_dir`, `problem_contract_id`, `problem_parameters`, and `output_dir`,
+and return the standard dataset manifest. Consumers negotiate
+`problem_preparation` before receiving `problem_dir`. Existing benchmarks
+without preparation keep their original request shapes and identities.
 
-The [shared preparation example](https://github.com/jolars/metewand/tree/main/examples/problem-preparation)
+The [shared preparation
+example](https://github.com/jolars/metewand/tree/main/examples/problem-preparation)
 compares two methods over two path configurations and retains an early-stopped
 grid for independent evaluation.
 
@@ -151,13 +154,13 @@ metewand run --runtime-config metewand.local.yaml --cache-dir artifacts
 ```
 
 Only the selected configuration is loaded. Relative cache paths resolve beside
-that file. Use expanded paths: `~` and environment variables are not interpolated.
-An existing cache must be a directory; a new cache needs an existing parent.
-Checking the configuration creates no directories. Keep local configuration and
-download caches outside selected source bundles, and keep download caches
-separate from run output and the artifact cache.
-Host cache bindings currently require local process materializers. Container
-materializers need cache mounts, which this interface does not yet provide.
+that file. Use expanded paths: `~` and environment variables are not
+interpolated. An existing cache must be a directory; a new cache needs an
+existing parent. Checking the configuration creates no directories. Keep local
+configuration and download caches outside selected source bundles, and keep
+download caches separate from run output and the artifact cache. Host cache
+bindings currently require local process materializers. Container materializers
+need cache mounts, which this interface does not yet provide.
 
 Dataset materializers receive the resolved paths separately from scientific
 parameters. For example, a Python materializer can pass a binding to Datamonger:
@@ -171,13 +174,13 @@ def materialize(context):
 
 In R, use `context$runtime$caches$datamonger`. Native workers negotiate the
 `runtime_config` capability and read the optional `runtime` object on dataset
-`materialize` requests. The context supplies `version: 1` and empty `caches` when
-no bindings are selected. The CLI's Python and R adapters and native helpers
-support this extension within binding API and wire protocol version 1.
+`materialize` requests. The context supplies `version: 1` and empty `caches`
+when no bindings are selected. The CLI's Python and R adapters and native
+helpers support this extension within binding API and wire protocol version 1.
 
 The provider owns download initialization, checksum verification, and cleanup.
-`--cache-dir` instead selects Metewand's verified materialized-artifact cache.
-A download-cache path does not enter scientific parameters, seeds, normalized
+`--cache-dir` instead selects Metewand's verified materialized-artifact cache. A
+download-cache path does not enter scientific parameters, seeds, normalized
 launches, or dataset derivations. Record selectors, pinned versions, decoding,
 and preprocessing as scientific inputs. Preserve the identities of thread
 settings, algorithm controls, and scientific overrides through their normal
@@ -185,9 +188,9 @@ manifest fields. Keep host paths out of returned scientific artifacts.
 
 Attempt provenance records the invocation's effective bindings at
 `context.runtime`. Dataset construction receipts record the bindings used for
-materialization at `context.dataset_materialization.runtime`. Reusing an artifact
-retains that original receipt, even when the current invocation selects a
-different download directory. Moving an existing `cache_dir` parameter into
+materialization at `context.dataset_materialization.runtime`. Reusing an
+artifact retains that original receipt, even when the current invocation selects
+a different download directory. Moving an existing `cache_dir` parameter into
 runtime configuration changes the authored dataset's identities once; retained
 runs keep their original meaning.
 
@@ -201,20 +204,20 @@ function: benchmark.py:gd
 sources: [benchmark.py, solvers.py, requirements.txt]
 ```
 
-Metewand hashes declared source content. Workers receive private copies of
-their bundles, and undeclared sibling modules are not automatically available.
-A lockfile in `sources` records its bytes; the local runner does not install or
+Metewand hashes declared source content. Workers receive private copies of their
+bundles, and undeclared sibling modules are not automatically available. A
+lockfile in `sources` records its bytes; the local runner does not install or
 provision its dependencies.
 
 Function workers exchange JSON objects. For large matrices, sparse structures,
 or native formats, use a materializer and custom result writers. Write all files
-under `context.output_dir` (or `context$output_dir` in R), close them, and return
-a `Dataset` or `Result` with `Artifact` declarations (`dataset`, `result`, and
-`artifact` in R). Declare paths, media types, and optional representation
-metadata. The CLI computes inventories and hashes, writes canonical envelopes,
-and validates schemas before publication. Native workers continue to return
-completed manifests directly. See the
-[generated-dataset example](https://github.com/jolars/metewand/tree/main/examples/generated-dataset).
+under `context.output_dir` (or `context$output_dir` in R), close them, and
+return a `Dataset` or `Result` with `Artifact` declarations (`dataset`,
+`result`, and `artifact` in R). Declare paths, media types, and optional
+representation metadata. The CLI computes inventories and hashes, writes
+canonical envelopes, and validates schemas before publication. Native workers
+continue to return completed manifests directly. See the [generated-dataset
+example](https://github.com/jolars/metewand/tree/main/examples/generated-dataset).
 
 ## Move from final answers to profiles
 
@@ -280,41 +283,44 @@ You can omit `max-observations` when all resolved bindings use finite fresh
 sequences with the same expanded length. The example infers four observations.
 For generated schedules, the length includes both `count` and any prefix points.
 The controls may differ between implementations. Set an explicit limit when
-schedules have different lengths or use buffered or streaming delivery.
-Explicit limits keep their existing validation and produce the same identities
-as equivalent inferred limits.
+schedules have different lengths or use buffered or streaming delivery. Explicit
+limits keep their existing validation and produce the same identities as
+equivalent inferred limits.
 
-| Approach | Use it when | Recorded coordinate |
-| --- | --- | --- |
-| Fresh sequence | You can rerun a solver from clean state at a finite schedule of iteration limits or tolerances. | The selected primary clock for each independent point, with executor wall time retained. |
-| Buffered profile | You can instrument one trajectory and capture bounded local measurements and result snapshots. | An instrumented clock with a problem-authorized scope, plus executor time. |
-| Streaming profile | Your solver can pause for independent evaluation at bounded checkpoints. | Executor-observed active time, excluding checkpoint pauses, plus elapsed and evaluation time. |
+  | Approach          | Use it when                                                                                     | Recorded coordinate                                                                           |
+  | ----------------- | ----------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+  | Fresh sequence    | You can rerun a solver from clean state at a finite schedule of iteration limits or tolerances. | The selected primary clock for each independent point, with executor wall time retained.      |
+  | Buffered profile  | You can instrument one trajectory and capture bounded local measurements and result snapshots.  | An instrumented clock with a problem-authorized scope, plus executor time.                    |
+  | Streaming profile | Your solver can pause for independent evaluation at bounded checkpoints.                        | Executor-observed active time, excluding checkpoint pauses, plus elapsed and evaluation time. |
 
 Fresh sequences work with black-box solvers and stop according to independent
 evaluation and configured limits. Buffered profiles retain provisional local
-trace values and independently evaluated snapshots separately. Instrumented
-time and wall time remain different measurements.
+trace values and independently evaluated snapshots separately. Instrumented time
+and wall time remain different measurements.
 
 Fresh sequences can select `primary-time: implementation_time` with authorized
-execute-only timing to exclude framework result serialization. Those observations
-use `measurement_basis: worker_reported`. Their cumulative budget still charges
-executor wall time, including result writing, across resume and retries.
+execute-only timing to exclude framework result serialization. Those
+observations use `measurement_basis: worker_reported`. Their cumulative budget
+still charges executor wall time, including result writing, across resume and
+retries.
 
 Streaming profiles publish each evaluated checkpoint before the worker receives
 `continue` or `stop`. Their active clock includes snapshot serialization and
 excludes validation, evaluation, and durable publication. Checkpoints remain
-available after a later failure. A clean-state retry preserves that evidence
-and selects a successful curve from one producing attempt.
+available after a later failure. A clean-state retry preserves that evidence and
+selects a successful curve from one producing attempt.
 
-The [fresh-sequence example](https://github.com/jolars/metewand/tree/main/examples/fresh-sequence)
+The [fresh-sequence
+example](https://github.com/jolars/metewand/tree/main/examples/fresh-sequence)
 contains Python and R adapters, explicit and geometric schedules, repetitions,
-and resume commands. The
-[buffered-profile example](https://github.com/jolars/metewand/tree/main/examples/buffered-profile)
-contains Python and native Rust workers, bounded traces, selected snapshots,
-and exports. Start from these complete manifests rather than adding profile
-fields to a function worker.
+and resume commands. The [buffered-profile
+example](https://github.com/jolars/metewand/tree/main/examples/buffered-profile)
+contains Python and native Rust workers, bounded traces, selected snapshots, and
+exports. Start from these complete manifests rather than adding profile fields
+to a function worker.
 
-The [streaming-profile example](https://github.com/jolars/metewand/tree/main/examples/streaming-profile)
+The [streaming-profile
+example](https://github.com/jolars/metewand/tree/main/examples/streaming-profile)
 contains Python and native Rust checkpoint helpers, evaluator-controlled
 stopping, active-time coordinates, and partial-curve exports. Python registers
 `execute_stream(state, context)` and uses `context.stream.checkpoint(...)` to
@@ -324,12 +330,13 @@ child processes or background threads.
 Find further integrations in [examples](../examples.md), or read the
 [design](../../design.md) for the underlying model.
 
-Checkpoint schedules accept periodic checks, such as `{every: 10, start: 0}`,
-or explicit indices, such as `{indices: [0, 1, 2, 4, 8, 16]}`. Explicit indices
+Checkpoint schedules accept periodic checks, such as `{every: 10, start: 0}`, or
+explicit indices, such as `{indices: [0, 1, 2, 4, 8, 16]}`. Explicit indices
 must be nonempty, strictly increasing, nonnegative safe integers. Both streaming
 and buffered profiles use the same schedule semantics. A terminal snapshot may
 occur between scheduled checks; unscheduled intermediate checks do not serialize
-a snapshot. Existing periodic schedules retain their representation and identity.
+a snapshot. Existing periodic schedules retain their representation and
+identity.
 
 ### Calibrate a common solver time limit
 
@@ -346,13 +353,13 @@ the same named instrumented scope and clock semantics.
 
 All adaptive settings have defaults:
 
-| Setting | Default | Purpose |
-| --- | --- | --- |
-| `initial-pilot-time` | `1 s` | Starting budget for the internal discovery rounds. |
-| `growth-factor` | `2` | Increase the pilot budget when no solver converges. |
-| `multiplier` | `11` | Scale the fastest verified convergence time. |
-| `minimum-time` | `1 ms` | Keep derived limits positive and representable. |
-| `watchdog-grace` | `10 s` | Allow cooperative stopping and terminal serialization. |
+  | Setting              | Default | Purpose                                                |
+  | -------------------- | ------- | ------------------------------------------------------ |
+  | `initial-pilot-time` | `1 s`   | Starting budget for the internal discovery rounds.     |
+  | `growth-factor`      | `2`     | Increase the pilot budget when no solver converges.    |
+  | `multiplier`         | `11`    | Scale the fastest verified convergence time.           |
+  | `minimum-time`       | `1 ms`  | Keep derived limits positive and representable.        |
+  | `watchdog-grace`     | `10 s`  | Allow cooperative stopping and terminal serialization. |
 
 Override only what the comparison needs, for example:
 
@@ -364,9 +371,9 @@ adaptive-budget:
 Metewand runs one clean pilot per applicable implementation configuration, using
 the first planned implementation seed and the configured warm-ups. Each round
 receives a common temporary budget. The default rounds allow 1, 2, 4, 8 seconds,
-and so on until at least one solver converges. There is no configured ceiling
-on that growth or on the number of rounds. Individual pilots still have a
-budget, so the first slow solver cannot block discovery indefinitely.
+and so on until at least one solver converges. There is no configured ceiling on
+that growth or on the number of rounds. Individual pilots still have a budget,
+so the first slow solver cannot block discovery indefinitely.
 
 Metewand finishes the entire first successful round before choosing its fastest
 independently verified convergence time, `t_ref`. A failed pilot or provisional
@@ -397,22 +404,22 @@ adaptive-budget: {}
 
 The initial pilot budget shrinks to fit a shorter ceiling. If no pilot converges
 at that ceiling and at least one pilot is time-limited, measurements use the
-ceiling as their fallback. An optional
-`fallback-time` overrides that fallback and must lie between the minimum and
-ceiling. It is only meaningful with a ceiling.
+ceiling as their fallback. An optional `fallback-time` overrides that fallback
+and must lie between the minimum and ceiling. It is only meaningful with a
+ceiling.
 
 The worker receives the effective limit in its existing
 `profile.policy.max-active-time`. Its observer returns a stop decision at a
 check, allowing the solver to return its terminal snapshot. A target reached
 after the limit remains censored. Checks can overshoot, so choose a check
-frequency that provides useful stopping resolution. The outer scientific
-timeout becomes the limit plus `watchdog-grace`, and the execute watchdog is
-extended when needed. Preparation and evaluation keep their own deadlines.
-These adaptive deadlines replace the execution policy's fixed scientific
-timeout for these trajectories.
+frequency that provides useful stopping resolution. The outer scientific timeout
+becomes the limit plus `watchdog-grace`, and the execute watchdog is extended
+when needed. Preparation and evaluation keep their own deadlines. These adaptive
+deadlines replace the execution policy's fixed scientific timeout for these
+trajectories.
 
-Calibration precedes measured dispatch and runs serially. Pilots do not count
-as measurements. `--max-attempts` counts newly started pilots as well as measured
+Calibration precedes measured dispatch and runs serially. Pilots do not count as
+measurements. `--max-attempts` counts newly started pilots as well as measured
 attempts, so a bounded invocation can stop during a round. Resume completes that
 round and reuses any frozen decision. `--retry` does not recalibrate it. Repeat
 the same experiment and name filters: changing the solver cohort creates a
@@ -439,16 +446,17 @@ environments:
 ```
 
 Set `environment: container` on the workers that use it. Install the language
-binding package and scientific dependencies in the image. Run `metewand lock`
-to prepare images, `metewand lock --check` to verify them, and `metewand run
---locked` to execute. Checks and locked runs never pull images.
+binding package and scientific dependencies in the image. Run `metewand lock` to
+prepare images, `metewand lock --check` to verify them, and
+`metewand run --locked` to execute. Checks and locked runs never pull images.
 
-The first OCI backend uses a local, rootful Linux Docker Engine and authenticated
-protocol sockets over host networking. It records pinned software evidence and
-control limitations; it does not provide archival isolation or container CPU and
-memory accounting. Required controls that it cannot enforce cause an explicit
-failure. See the [Docker example](https://github.com/jolars/metewand/tree/main/examples/locked-oci)
-for image preparation and the supported configuration.
+The first OCI backend uses a local, rootful Linux Docker Engine and
+authenticated protocol sockets over host networking. It records pinned software
+evidence and control limitations; it does not provide archival isolation or
+container CPU and memory accounting. Required controls that it cannot enforce
+cause an explicit failure. See the [Docker
+example](https://github.com/jolars/metewand/tree/main/examples/locked-oci) for
+image preparation and the supported configuration.
 
 ## Bundle the whole benchmark
 
@@ -469,7 +477,8 @@ parent. Recipe paths and repeated `--include` patterns are relative to the
 manifest. The optional recipe runs as root with `/bin/sh -eu` in `/benchmark`
 during the build. Install bindings and scientific dependencies where isolated
 workers can find them; ambient Python and R search paths are not inherited.
-Without a recipe, the supplied base image must already contain those dependencies.
+Without a recipe, the supplied base image must already contain those
+dependencies.
 
 The command copies declared source bundles, datasets, contracts, schemas, and
 reference artifacts. It preserves manifest bytes and logical identities. Include
@@ -484,7 +493,8 @@ may fetch dependencies; pin them in your recipe. The context inventory and
 command output have separate version-1 schemas. Bundling retains the current
 trusted execution guarantees.
 
-See the [bundled benchmark example](https://github.com/jolars/metewand/tree/main/examples/bundled-benchmark)
+See the [bundled benchmark
+example](https://github.com/jolars/metewand/tree/main/examples/bundled-benchmark)
 for build, mounted-output, resume, and inspection commands.
 
 ### Local Apptainer images
@@ -498,16 +508,16 @@ environments:
     image: images/worker.sif
 ```
 
-Run `metewand lock`, `metewand lock --check`, and `metewand run --locked` as with
-other prepared environments. The image can remain Git-ignored. Metewand verifies
-its complete SHA-256 digest separately from the source snapshot and executes it
-in place. It never pulls, builds, converts, or repairs images. Supported images
-have a native Linux amd64 or arm64 unencrypted SquashFS system partition.
-Image paths must remain inside the repository without symlinks. Keep SIF files
-outside worker source globs.
+Run `metewand lock`, `metewand lock --check`, and `metewand run --locked` as
+with other prepared environments. The image can remain Git-ignored. Metewand
+verifies its complete SHA-256 digest separately from the source snapshot and
+executes it in place. It never pulls, builds, converts, or repairs images.
+Supported images have a native Linux amd64 or arm64 unencrypted SquashFS system
+partition. Image paths must remain inside the repository without symlinks. Keep
+SIF files outside worker source globs.
 
 All worker roles use authenticated sockets and host networking, with private
-working directories. Explicit worker transport declarations must select `socket`.
-CPU and memory accounting remain unavailable, and required controls still fail
-when the backend cannot enforce them. See the
-[Apptainer example](https://github.com/jolars/metewand/tree/main/examples/locked-apptainer).
+working directories. Explicit worker transport declarations must select
+`socket`. CPU and memory accounting remain unavailable, and required controls
+still fail when the backend cannot enforce them. See the [Apptainer
+example](https://github.com/jolars/metewand/tree/main/examples/locked-apptainer).

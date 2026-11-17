@@ -22,9 +22,9 @@ irm https://metewand.org/install.ps1 | iex
 
 The installers support x64 and ARM64 on Linux and macOS, and x64 on Windows.
 They place `metewand` in Cargo's binary directory, normally `~/.cargo/bin`.
-Restart your shell if `metewand` is not on `PATH`, then run
-`metewand --version` to check the installation. You can also download archives
-and checksums from [GitHub Releases](https://github.com/jolars/metewand/releases).
+Restart your shell if `metewand` is not on `PATH`, then run `metewand --version`
+to check the installation. You can also download archives and checksums from
+[GitHub Releases](https://github.com/jolars/metewand/releases).
 
 Install worker packages separately. Python, R, and the CLI have independent
 release numbers; compatibility follows binding API version 1. The CLI supplies
@@ -68,8 +68,8 @@ python -m venv .venv
 python -m pip install ./packages/python
 ```
 
-If your PowerShell policy prevents activation, put the environment on `PATH`
-for the current session with `$env:Path = "$PWD\.venv\Scripts;$env:Path"`.
+If your PowerShell policy prevents activation, put the environment on `PATH` for
+the current session with `$env:Path = "$PWD\.venv\Scripts;$env:Path"`.
 
 Keep this environment active. Workers use its Python interpreter and installed
 dependencies. On Windows, the runner resolves the default `python3` launch to
@@ -79,8 +79,8 @@ repository's development tools.
 ## Run an existing benchmark
 
 If someone shares a benchmark repository, install the dependencies described in
-its README and open the directory containing `metewand.yaml`. Review and run
-the comparison with:
+its README and open the directory containing `metewand.yaml`. Review and run the
+comparison with:
 
 ```sh
 metewand plan
@@ -124,10 +124,9 @@ metewand run
 ```
 
 `check` validates the declarations. `plan` shows the expanded comparison and
-effective settings. Neither command imports benchmark code or creates run
-files. `check --workers` launches the workers to verify imports and function
-names and evaluate any declared reference cases. The starter has no reference
-cases yet.
+effective settings. Neither command imports benchmark code or creates run files.
+`check --workers` launches the workers to verify imports and function names and
+evaluate any declared reference cases. The starter has no reference cases yet.
 
 The run prints a comparison with method names, settings, timings, metrics, and
 outcomes. It uses one measurement per method. The default wall time includes
@@ -139,8 +138,8 @@ to your repository's `.gitignore`. Use `--output-dir PATH` to choose another
 directory.
 
 The starter declares no accuracy target, so completion is `not_required`.
-Successful execution means the result passed the configured checks; it does
-not establish convergence.
+Successful execution means the result passed the configured checks; it does not
+establish convergence.
 
 ## Inspect and export
 
@@ -152,8 +151,8 @@ metewand export --output-dir .metewand --format csv --destination tables
 `tables/` contains `results.csv` and `export.json`, which records the export's
 lineage. Keep the run directory as the original evidence.
 
-Destination parents must exist. Export destinations must be new directories.
-To continue an interrupted run, repeat the run command:
+Destination parents must exist. Export destinations must be new directories. To
+continue an interrupted run, repeat the run command:
 
 ```sh
 metewand run
@@ -161,8 +160,8 @@ metewand run
 
 Metewand preserves matching accepted measurements and restarts interrupted
 attempts automatically. Recorded execution or scientific failures require
-`--retry`. Use a new output directory for an independent run. Add `--output json`
-to commands when you need machine-readable output.
+`--retry`. Use a new output directory for an independent run. Add
+`--output json` to commands when you need machine-readable output.
 
 Use local disks for SQLite run and cache directories. Windows requires local
 NTFS. For shared project storage, use the explicit shared backends described
@@ -192,22 +191,23 @@ metewand check --workers
 metewand run
 ```
 
-Replace `SITE_LIBRARY` with the path printed by `Rscript --vanilla -e 'cat(.Library)'`.
-Quote that path if it contains spaces. These R commands also work in PowerShell.
+Replace `SITE_LIBRARY` with the path printed by
+`Rscript --vanilla -e 'cat(.Library)'`. Quote that path if it contains spaces.
+These R commands also work in PowerShell.
 
 The R starter creates `metewand.yaml` and `benchmark.R`, with the same roles and
-defaults as Python. See the [R package](https://github.com/jolars/metewand/tree/main/packages/r)
-for installation details.
+defaults as Python. See the [R
+package](https://github.com/jolars/metewand/tree/main/packages/r) for
+installation details.
 
 ## Write your own comparison
 
-Continue with [authoring a benchmark](authoring/index.md) for a hands-on tutorial
-using the least-squares example. Run it, change its settings, check accuracy,
-and export the results. Linked pages explain the details.
+Continue with [authoring a benchmark](authoring/index.md) for a hands-on
+tutorial using the least-squares example. Run it, change its settings, check
+accuracy, and export the results. Linked pages explain the details.
 
 Use `metewand init --empty` if you prefer a blank manifest. Component
 [scaffolding](authoring/extending.md#add-components) helps extend it.
-
 
 ## Use shared project storage
 
@@ -224,13 +224,13 @@ existing local scratch directory (`TEMP` on Windows). Metewand writes immutable,
 versioned coordination records and artifacts to the project directory and keeps
 SQLite and worker scratch local. One coordinator can run there at a time.
 
-To continue on another node with the same benchmark sources, inputs, and prepared
-environments, repeat the run command with the same output directory. Existing
-shared runs are detected automatically, so `--shared` is optional on resume.
-Metewand reconstructs local state from published records, preserves accepted
-work and profile budgets, and recovers interrupted attempts after their leases
-expire. Recorded failures still require `--retry`. Status, explanation, export,
-and archive commands read shared runs directly.
+To continue on another node with the same benchmark sources, inputs, and
+prepared environments, repeat the run command with the same output directory.
+Existing shared runs are detected automatically, so `--shared` is optional on
+resume. Metewand reconstructs local state from published records, preserves
+accepted work and profile budgets, and recovers interrupted attempts after their
+leases expire. Recorded failures still require `--retry`. Status, explanation,
+export, and archive commands read shared runs directly.
 
 Existing SQLite runs keep their current storage format. Choose a new directory
 to use shared publication. Required locking, synchronization, and atomic rename
@@ -251,17 +251,17 @@ metewand cache gc --cache-dir /project/dataset-cache --dry-run
 The cache parent must exist. Initialization is idempotent and refuses existing
 SQLite caches. Subsequent runs detect the shared cache automatically. Dataset
 objects and construction mappings use the same verified formats and scientific
-identities as local caches. Workers receive private copies in local scratch.
-The shared catalog contains immutable, hash-linked version-1 JSON records and
+identities as local caches. Workers receive private copies in local scratch. The
+shared catalog contains immutable, hash-linked version-1 JSON records and
 requires no shared SQLite database. Keep the entire cache when relocating it.
 
 Each run stores a portable `run-v1:...` retention owner in `.cache-owner.json`.
 Keep this file when moving the run directory. Independent runs get different
 owners even when they perform the same comparison. Moving either directory or
 using another mount point preserves the cache roots. Failed runs retain their
-datasets and prepared problem inputs, and deleting a run directory does not release its roots. Archives
-and restores do not transfer cache ownership; a restored run acquires a new
-owner when it next uses a shared cache.
+datasets and prepared problem inputs, and deleting a run directory does not
+release its roots. Archives and restores do not transfer cache ownership; a
+restored run acquires a new owner when it next uses a shared cache.
 
 After deciding that a run no longer needs a dataset, copy its exact object ID
 and root name from `cache roots` and release that edge explicitly:
@@ -279,5 +279,5 @@ reconstruction, and recovers interrupted cleanup on the next collection. Cache
 inspection and dry runs leave shared files unchanged. All participating hosts
 must honor the same file locks, synchronized publication, and atomic rename;
 specific HPC filesystems and storage-server power loss still need qualification.
-Catalog snapshots currently retain their complete history; metadata batching
-for large runs remains future work.
+Catalog snapshots currently retain their complete history; metadata batching for
+large runs remains future work.

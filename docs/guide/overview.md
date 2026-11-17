@@ -22,14 +22,14 @@ and worker behavior. Observation policies choose between a final result and a
 profile of progress.
 
 For example, a least-squares benchmark can generate a matrix and response,
-compare gradient descent with coordinate descent, and independently compute
-each answer's objective and gradient norm. Both methods solve the same problem;
-the evaluator applies the same checks to both.
+compare gradient descent with coordinate descent, and independently compute each
+answer's objective and gradient norm. Both methods solve the same problem; the
+evaluator applies the same checks to both.
 
 ## What do you write?
 
-Start with two files: `metewand.yaml` and `benchmark.py` or `benchmark.R`.
-The manifest declares parameters, result and metric fields, and the comparison.
+Start with two files: `metewand.yaml` and `benchmark.py` or `benchmark.R`. The
+manifest declares parameters, result and metric fields, and the comparison.
 Ordinary functions generate data, run methods, and compute metrics. Use the
 Metewand Python or R package as the entry point for your benchmark code. Each
 package handles the worker protocol and writes standard result files.
@@ -41,9 +41,9 @@ own process. Metewand does not require a shared host language.
 ## What does a run record?
 
 Each measurement retains effective settings, independently evaluated metrics,
-timings, and an outcome. Failed attempts stay visible alongside successful
-ones. A method can produce a valid answer and still miss an accuracy target.
-Without a declared target, successful execution makes no convergence claim.
+timings, and an outcome. Failed attempts stay visible alongside successful ones.
+A method can produce a valid answer and still miss an accuracy target. Without a
+declared target, successful execution makes no convergence claim.
 
 The default wall time includes preparation, solving, and result serialization.
 It excludes worker startup, shared dataset generation, and independent
@@ -51,20 +51,21 @@ evaluation. Other timing scopes require an explicit policy and problem support.
 
 Runs are stored in a directory you choose. You can inspect them without the
 original manifest, resume unfinished work, and export JSONL or CSV for analysis.
-Metewand retains individual measurements rather than choosing an aggregation
-or drawing statistical conclusions.
+Metewand retains individual measurements rather than choosing an aggregation or
+drawing statistical conclusions.
 
 ## Choose a starting point
 
 Follow [getting started](getting-started.md) to install the CLI and run a small
-benchmark. Then read [authoring a benchmark](authoring/index.md) to run and modify the
-least-squares example, check its answers, and export measurements. Its linked
-pages explain the code and configuration in detail.
+benchmark. Then read [authoring a benchmark](authoring/index.md) to run and
+modify the least-squares example, check its answers, and export measurements.
+Its linked pages explain the code and configuration in detail.
 
 The [examples](examples.md) provide runnable alternatives. The
 [design](../design.md) explains the general model.
 
 Metewand is under active development. The current runner executes trusted local
-code and records development-environment evidence, or verifies prepared Nix, uv, and Linux Docker OCI and Apptainer SIF
-environments with `run --locked`. Isolation and the Julia package are planned.
-Pin a Metewand revision when retaining benchmark runs.
+code and records development-environment evidence, or verifies prepared Nix, uv,
+and Linux Docker OCI and Apptainer SIF environments with `run --locked`.
+Isolation and the Julia package are planned. Pin a Metewand revision when
+retaining benchmark runs.

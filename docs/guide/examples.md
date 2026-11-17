@@ -7,23 +7,26 @@ with scientific checks and repeated measurements.
 These examples provide complete code and reproduction commands. Follow each
 example's README for its working directory and dependencies.
 
-| Example | What to learn |
-| --- | --- |
-| [Least squares](https://github.com/jolars/metewand/tree/main/examples/least-squares) | Compare ordinary functions, then add accuracy targets and analytic references. |
-| [Parameter matrix](https://github.com/jolars/metewand/tree/main/examples/parameter-matrix) | Combine dataset, problem, and implementation grids with named cases. |
-| [Python package](https://github.com/jolars/metewand/tree/main/examples/python-package) | Separate preparation and solving with lifecycle callbacks. |
-| [R package](https://github.com/jolars/metewand/tree/main/examples/r-package) | Use the same worker roles and lifecycle in R. |
-| [Native Rust](https://github.com/jolars/metewand/tree/main/examples/rust-worker) | Run a native implementation and evaluator with standard artifacts. |
-| [Locked Nix](https://github.com/jolars/metewand/tree/main/examples/locked-nix) | Prepare exact software outputs and verify locked worker launches. |
-| [Locked uv](https://github.com/jolars/metewand/tree/main/examples/locked-uv) | Prepare Python workers with local dependencies and verify their installed content offline. |
-| [Generated dataset](https://github.com/jolars/metewand/tree/main/examples/generated-dataset) | Materialize datasets and write custom artifacts. |
-| [Shared problem preparation](https://github.com/jolars/metewand/tree/main/examples/problem-preparation) | Cache problem-dependent inputs and share them across methods and evaluation. |
-| [Fresh sequences](https://github.com/jolars/metewand/tree/main/examples/fresh-sequence) | Compare black-box solvers over clean runs with independent targets. |
-| [Buffered profiles](https://github.com/jolars/metewand/tree/main/examples/buffered-profile) | Instrument a trajectory and evaluate selected snapshots. |
-| [Streaming profiles](https://github.com/jolars/metewand/tree/main/examples/streaming-profile) | Pause at checkpoints for independent evaluation and durable stopping decisions. |
+  | Example                                                                                                 | What to learn                                                                              |
+  | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+  | [Least squares](https://github.com/jolars/metewand/tree/main/examples/least-squares)                    | Compare ordinary functions, then add accuracy targets and analytic references.             |
+  | [Parameter matrix](https://github.com/jolars/metewand/tree/main/examples/parameter-matrix)              | Combine dataset, problem, and implementation grids with named cases.                       |
+  | [Python package](https://github.com/jolars/metewand/tree/main/examples/python-package)                  | Separate preparation and solving with lifecycle callbacks.                                 |
+  | [R package](https://github.com/jolars/metewand/tree/main/examples/r-package)                            | Use the same worker roles and lifecycle in R.                                              |
+  | [Native Rust](https://github.com/jolars/metewand/tree/main/examples/rust-worker)                        | Run a native implementation and evaluator with standard artifacts.                         |
+  | [Locked Nix](https://github.com/jolars/metewand/tree/main/examples/locked-nix)                          | Prepare exact software outputs and verify locked worker launches.                          |
+  | [Locked uv](https://github.com/jolars/metewand/tree/main/examples/locked-uv)                            | Prepare Python workers with local dependencies and verify their installed content offline. |
+  | [Generated dataset](https://github.com/jolars/metewand/tree/main/examples/generated-dataset)            | Materialize datasets and write custom artifacts.                                           |
+  | [Shared problem preparation](https://github.com/jolars/metewand/tree/main/examples/problem-preparation) | Cache problem-dependent inputs and share them across methods and evaluation.               |
+  | [Fresh sequences](https://github.com/jolars/metewand/tree/main/examples/fresh-sequence)                 | Compare black-box solvers over clean runs with independent targets.                        |
+  | [Buffered profiles](https://github.com/jolars/metewand/tree/main/examples/buffered-profile)             | Instrument a trajectory and evaluate selected snapshots.                                   |
+  | [Streaming profiles](https://github.com/jolars/metewand/tree/main/examples/streaming-profile)           | Pause at checkpoints for independent evaluation and durable stopping decisions.            |
 
-The [full example collection](https://github.com/jolars/metewand/tree/main/examples)
-also includes dataset-free problems, raw protocol workers, real-package
-comparisons, external data providers, and release-overhead measurements.
+The [full example
+collection](https://github.com/jolars/metewand/tree/main/examples) also includes
+dataset-free problems, raw protocol workers, real-package comparisons, external
+data providers, and release-overhead measurements.
 
-- [Bundled benchmark](https://github.com/jolars/metewand/tree/main/examples/bundled-benchmark): run a complete benchmark in one image with mounted results.
+- [Bundled
+  benchmark](https://github.com/jolars/metewand/tree/main/examples/bundled-benchmark):
+  run a complete benchmark in one image with mounted results.
