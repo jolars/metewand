@@ -70,16 +70,16 @@ export default defineConfig({
           { text: 'Write the functions', link: '/guide/authoring/functions' },
           { text: 'Parameters and repetitions', link: '/guide/authoring/parameters' },
           { text: 'Scientific validation', link: '/guide/authoring/validation' },
-          {
-            text: 'Run the comparison',
-            link: '/guide/authoring/running',
-            items: [
-              { text: 'Choose timing and limits', link: '/guide/authoring/execution' },
-              { text: 'Prepare worker environments', link: '/guide/authoring/environments' },
-              { text: 'Analyze and share results', link: '/guide/authoring/results' },
-            ],
-          },
+          { text: 'Run and analyze', link: '/guide/authoring/running' },
           { text: 'Extend the benchmark', link: '/guide/authoring/extending' },
+        ],
+      },
+      {
+        text: 'Optional recipes',
+        items: [
+          { text: 'Time the solver', link: '/guide/authoring/execution' },
+          { text: 'Prepare worker environments', link: '/guide/authoring/environments' },
+          { text: 'Share and restore results', link: '/guide/authoring/results' },
         ],
       },
       {

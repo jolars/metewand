@@ -1,195 +1,207 @@
 # Run and analyze the comparison
 
-Start with a small run. Check that the methods produce useful answers before
-increasing the input sizes or repetition counts.
+Keep using the least-squares benchmark from the previous pages. You have two
+methods that solve the same problem and an evaluator that checks their answers.
+Now you can run the comparison, examine the measurements, and export them for
+analysis.
 
-## Check and start the run
+## Check the plan {#check-and-start-the-run}
 
 From the directory containing `metewand.yaml`, run:
 
 ```sh
 metewand check --workers
 metewand plan
-metewand run
-metewand status
 ```
 
-`check --workers` validates the manifest and checks that its workers can run.
-`plan` shows which methods and datasets will run, how many measurements to
-expect, and which timing settings apply. Review it after each manifest change.
-`run` performs the comparison; `status` reads the saved results.
+The first command checks the manifest and starts its workers to check that they
+can respond correctly. The second shows what Metewand will run. Look for the
+methods and datasets you intended to compare, and check how many measurements
+you have requested.
 
-By default, Metewand times data loading, solving, and result serialization.
-Worker startup, dataset generation, and independent evaluation happen outside
-that interval. See [choose what to time](execution.md#choose-what-to-time) when
-your comparison needs a different timer.
+A small change to a parameter grid can create a lot more work. Before starting a
+large comparison, try a small dataset and a few repetitions. This gives you a
+chance to find problems in the code or evaluator while the run is still quick.
 
-## Choose where to save results {#keep-the-run-outside-source-bundles}
+## Run the comparison {#keep-the-run-outside-source-bundles}
 
-Metewand saves the run in `.metewand/` beside the manifest, including when you
-choose a manifest with `--manifest PATH`. Add `.metewand/` to `.gitignore`. To
-keep a separate run, choose another directory:
+Save this run in a directory named `comparison-run`:
 
 ```sh
-metewand run --output-dir ../results
-metewand status --output-dir ../results
+metewand run --output-dir comparison-run
 ```
 
-Relative paths start from your working directory, and the parent must exist. A
-new directory starts a run. An existing Metewand run directory continues that
-run automatically. Other existing directories are rejected.
+Choose a new directory for an independent run. Metewand creates it, but its
+parent must already exist. If you use an existing Metewand run directory,
+Metewand continues that run instead.
 
-Keep the run outside the files you include as worker sources. This walkthrough
-includes only `benchmark.py`, so `.metewand/` is suitable. If you include the
-whole project directory, save the run outside it. The same rule applies to an
-explicit artifact cache. See [include the files you want to
-lock](environments.md#include-the-files-you-want-to-lock) for source patterns
-and locked environments.
+Without `--output-dir`, results go in `.metewand/` beside the manifest. Add that
+directory to `.gitignore` if you use it. Keep run directories outside the files
+you include as worker sources. The walkthrough includes only `benchmark.py`, so
+`comparison-run` beside it is suitable.
 
-## Choose an experiment {#select-a-named-experiment}
+The command shows its progress and finishes with a summary. A method can finish
+running yet fail the comparison because its answer misses the accuracy target.
+The measurements are still saved, so you can inspect what happened.
 
-A manifest can keep small and full comparisons as separate experiments. Choose
-one by name:
+## Understand what gets timed {#choose-what-to-time}
+
+The default timer starts when the worker begins preparing the computation. It
+includes loading the shared data, running the method, and converting and writing
+the result as JSON. Metewand calls this scope `prepare_and_execute`.
+
+Starting the worker and importing its packages happen before this timer starts.
+Generating the shared dataset and independently evaluating the answer also
+happen outside the timed interval. Both methods receive the same generated data.
+
+This matters when you interpret a small benchmark. For these tiny inputs,
+loading data and writing the answer may take a substantial part of the measured
+time. The number describes the work inside the timed interval, which includes
+more than the solver's arithmetic.
+
+Use the same timing definition for the methods you compare. If your question
+specifically concerns the solver's own computation, see the optional recipe for
+[timing the solver](execution.md).
+
+## Read the results {#read-the-output}
+
+Inspect the saved run:
 
 ```sh
-metewand plan smoke
-metewand check smoke --workers
-metewand run smoke
+metewand status --output-dir comparison-run --verbose
 ```
 
-Set `default-experiment: full` at the top level to choose the usual experiment.
-Without a default or an explicit choice, commands select every experiment.
+`status` reads the saved measurements without running the methods again. The
+verbose output shows the methods, settings, timings, metrics, and failures.
 
-`metewand run --experiment smoke` means the same thing. You can supply several
-names, such as `metewand run smoke full`, repeat `--experiment`, or mix the two
-spellings. Metewand runs the selected experiments in manifest order. An explicit
-choice overrides the default. Repeat your choice when continuing the run.
+For this example, look at `objective` and `gradient_inf` alongside the timing.
+The objective measures the least-squares loss. The gradient metric is the
+largest absolute component of the gradient, which the evaluator compares with
+the accuracy target you declared.
 
-For a benchmark with its own manifest, use:
+If you kept the iteration-limit case from the previous pages, expect it to miss
+that target. A coefficient vector can be a valid answer while still being too
+inaccurate for the comparison. A fast attempt that misses the target should not
+be reported as a successful solution.
+
+## Repeat measurements
+
+A single timing can vary because of other work on the machine. Repeat the same
+configured computation to see how much the measurements vary. If you have not
+already done so on the [parameters page](parameters.md), add this field to the
+existing experiment:
+
+```yaml
+measurement-repetitions: 3
+```
+
+Keep the experiment's other fields, then run it again:
 
 ```sh
-metewand run --manifest benchmarks/gaussian-regression/metewand.yaml
+metewand plan
+metewand run --output-dir comparison-run
 ```
 
-## Choose methods and datasets {#filter-solvers-and-datasets}
+Metewand keeps matching completed measurements and adds the repetitions that
+remain. You do not need to discard the run to request more measurements. Retain
+the individual timings when you analyze variation. A retry after a failure is a
+separate attempt to obtain a result, rather than an extra measurement
+repetition.
 
-Use the same filters to preview, check, and run a smaller comparison:
+## Stop and continue {#resume-and-diagnose}
+
+If you need to stop, press Ctrl+C. When you return, repeat the command:
 
 ```sh
-metewand plan --dataset simulated --implementation gradient_descent
-metewand check --dataset simulated --implementation gradient_descent --workers
-metewand run --dataset simulated --implementation gradient_descent
+metewand run --output-dir comparison-run
 ```
 
-Use `--problem` to choose a problem too. Names must match the manifest exactly,
-including case. Repeat a flag to include several names. For example,
-`--implementation gradient_descent --implementation coordinate_descent` includes
-both methods. Using both a dataset and an implementation filter requires a match
-for both. Unknown names or a combination that selects no work cause an error
-before execution.
+Metewand keeps completed measurements and restarts interrupted attempts from the
+beginning. It reuses results only when the inputs, code, environments, and
+policies still match. Keep those unchanged when you want to continue the same
+comparison. Choose a new output directory when you want to start independently.
 
-Metewand chooses experiments first, then applies these filters. Each selected
-method and dataset keeps its parameter choices and repetitions. Repeated
-`--select ID` flags on `run` can narrow the selection further; an ID excluded by
-the other filters is an error.
+### Investigate a failure
 
-Static checks still validate the whole manifest. `check --workers` launches only
-the workers needed for your selection. Repeat the filters when continuing the
-same subset, or broaden them to run more methods and datasets. Matching accepted
-measurements remain reusable.
-
-## Read the output
-
-`run` ends with a short summary and the output directory. Add `--verbose` to see
-individual measurements, settings, metrics, and failures. Use `status` to
-inspect the saved results without running workers again. With
-`--output-dir PATH`, it can inspect another run without the manifest.
-
-During a run, Metewand reports preparation and shows which method, dataset, and
-repetition it is working on. Progress reflects the work still to do in this
-invocation. Redirected logs receive plain updates and a heartbeat every ten
-seconds during long tasks. Progress goes to stderr; the final summary goes to
-stdout. Set `NO_COLOR` to disable color.
-
-For scripts, choose structured output:
+An attempt that finishes with a recorded failure is not retried automatically.
+Start by reading its diagnostic in `status`. Copy the record ID into:
 
 ```sh
-metewand plan --output json > plan.json
-metewand run --output jsonl > events.jsonl
+metewand explain ID --output-dir comparison-run
 ```
 
-JSON and JSONL contain complete records regardless of `--verbose`. JSONL streams
-execution events after preparation completes. These modes disable the human
-display and keep worker logs separate. For a fuller human-readable plan, use
-`metewand plan --verbose`; `metewand plan --output jsonl` also exports the plan.
+For example, `completion_target_not_reached` means the evaluator found a valid
+answer that missed the declared target. In the iteration-limit case, the method
+was only allowed one iteration. Running it again with that same limit may
+produce the same outcome.
 
-## Resume and diagnose
-
-Repeat the same command to continue a run. Metewand checks the inputs, code,
-environments, and policies, then skips matching accepted measurements. Changed
-inputs create new identities for the affected measurements. Use a new output
-directory when you want an independent run of the same benchmark. `--resume`
-remains accepted as an alias for the default behavior.
-
-If you need to stop, press Ctrl+C. Repeating the command restarts interrupted
-attempts from clean state and keeps their earlier records. Recovery may wait up
-to 30 seconds for the previous process's ownership lease to expire. Attempts
-owned by another process are left alone unless you explicitly request a retry.
-
-Recorded failures need an explicit retry:
+After investigating, you can explicitly request another attempt:
 
 ```sh
-metewand run --retry
+metewand run --output-dir comparison-run --retry
 ```
 
-This allows one new attempt for each selected failed measurement and preserves
-the earlier attempts. Read the diagnostic first: an exception, malformed result,
-timeout, evaluator failure, and missed accuracy target need different fixes.
-Repeating unchanged code may produce the same failure.
+This allows one new attempt for each selected failed measurement. Metewand keeps
+the earlier attempts, so you can see the failure history when reviewing the
+results.
 
-Copy an ID from `status` to inspect its records:
+## Export and analyze the measurements {#export-for-analysis}
+
+Export the run as a CSV table:
 
 ```sh
-metewand explain ID
+metewand export --output-dir comparison-run --format csv --destination tables
 ```
 
-`ID` can identify an attempt, observation, diagnostic, or another supported
-record. Add `--output-dir PATH` to inspect a run without its manifest.
-Inspection does not modify or recover the run. Use `--max-attempts 2` on `run`
-to limit how much new work one invocation starts.
+Open `tables/results.csv` in your analysis tool. The destination must be a new
+directory, and its parent must already exist.
 
-## Export the results {#export-for-analysis}
+The table includes several kinds of record. Rows with `record_type` set to
+`observation` contain the measured results. Check their `completion` values when
+comparing methods that have an accuracy target.
 
-Export a table to a new directory whose parent already exists:
+One observation can occupy several rows. In this example, `/objective` and
+`/gradient_inf` are two metrics from the same measurement. Use the observation's
+ID to keep those rows together. They are not two separate repetitions.
+
+Keep failures and missed accuracy targets in your report. Before comparing
+timings, check that the methods solved the same problem on the same data with
+the same timing definition. Compare accuracy alongside speed, and retain the
+individual repetitions when assessing variation.
+
+If you prefer structured data, export JSON instead:
 
 ```sh
-metewand export --output-dir .metewand --format csv --destination tables
+metewand export --output-dir comparison-run --format json --destination analysis
 ```
 
-Compare accuracy alongside timing, and keep failed attempts in your analysis. A
-single measurement can produce several metric rows. See [analyze and share
-results](results.md) for how to read the tables, choose a timer, and check that
-the comparison finished.
+`analysis/results.json` keeps each observation's metrics together in one object.
+It also includes attempts and failures. Choose the format that is easier to use
+in your analysis code. Export reads the saved run, so you can revisit the
+analysis without running the methods again.
+
+## When you need more {#change-how-workers-run}
 
 <span id="share-stored-results"></span>
 
-To share results or keep a copy for recovery, [create an
-archive](results.md#share-stored-results). It keeps the recorded results and
-artifacts as well as the history of attempts.
+To send the run to someone else or save it for recovery, [create an
+archive](results.md#share-stored-results). An archive keeps the recorded results
+and their files together.
 
-## Change how workers run
-
-<span id="choose-what-to-time"></span>
 <span id="name-an-execution-policy"></span>
 
-[Choose how the comparison runs](execution.md) when you need to change the
-timer, run order, time limits, or worker reuse.
+If the default timer does not answer your scientific question, [time the
+solver](execution.md).
 
 <span id="declare-worker-variables"></span>
 <span id="lock-nix-worker-environments"></span>
 <span id="lock-uv-worker-environments"></span>
 
-[Prepare worker environments](environments.md) to set library variables or lock
-the software used by Python and Nix workers.
+To record and verify the software used by workers, [prepare a locked
+environment](environments.md).
 
-The next part covers [other languages, artifacts, and profiles](extending.md).
+<span id="select-a-named-experiment"></span>
+<span id="filter-solvers-and-datasets"></span>
+
+Use `metewand run --help` for other command options. The next part covers [other
+languages, artifacts, and profiles](extending.md).

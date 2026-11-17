@@ -29,5 +29,5 @@ features:
     link: /guide/authoring/
   - title: Keep the evidence
     details: Record settings, timings, metrics, and failures. Trace results back to their inputs, revisit past runs, and export the data for analysis.
-    link: /guide/authoring/results
+    link: /guide/authoring/running
 ---
