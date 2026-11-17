@@ -49,7 +49,7 @@ as `offset: {value: 1}`. Arrays and objects require an explicit `value` or `grid
 wrapper. The grid selects runs without restricting the valid array domain.
 All grids expand deterministically. Overlapping cases are errors rather than implicit statistical
 replications; use repetition fields for that purpose. See
-[configuration expansion](../../CONTRIBUTING.md#manifests-and-planning).
+[parameters and named cases](../../docs/guide/authoring/parameters.md#use-named-cases-for-coupled-choices).
 
 The worker uses the raw protocol and Python's standard library. No package or
 third-party package is needed, and all scientific choices remain visible in

@@ -6,7 +6,7 @@ same datasets, scientific criteria, and execution policies.
 
 This document describes the general design. The [contributor
 guide](https://github.com/jolars/metewand/blob/main/CONTRIBUTING.md) covers
-implementation contracts and verification; the
+setup, testing, and submitting changes; the
 [TODO list](https://github.com/jolars/metewand/blob/main/TODO.md) groups remaining
 work by area.
 

@@ -1,8 +1,8 @@
 //! Versioned SQLite layout for durable run coordination.
 //!
 //! Store initialization verifies SQLite settings and filesystem capabilities.
-//! Attempt writers fence transactions by lease ownership and revision. See
-//! `CONTRIBUTING.md#durability-and-recovery` for the transaction and validation requirements.
+//! Attempt writers fence transactions by lease ownership and revision. The
+//! durable evidence model is described in `docs/design.md#durable-evidence`.
 
 #[cfg(any(unix, windows))]
 pub(crate) mod adaptive;

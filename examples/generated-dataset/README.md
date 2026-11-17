@@ -21,9 +21,9 @@ provenance, and materializes each dataset configuration once per run. Each
 attempt receives a private copy of that instance. Add
 `--cache-dir /tmp/metewand-artifacts` to reuse the verified construction across
 independent runs with different output directories. Repeat the same run command
-to resume its remaining measurements. See
-[sources and artifacts](../../CONTRIBUTING.md#sources-and-artifacts) for cache
-ownership and retention.
+to resume its remaining measurements. See the
+[artifact store](../../src/runtime/artifact_store.rs) for cache ownership and
+retention.
 
 The contract's `semantics.preprocessing` rules describe shared construction and
 implementation conversion, and prohibit untimed implementation preprocessing.
@@ -40,7 +40,7 @@ enforcement.
 A dataset's optional `source` table may supply a pinned HTTP(S) JSON input with a
 `values` array. In that case this example transforms the verified raw file named
 `source` instead of generating the parameter values. See
-[dataset materialization](../../CONTRIBUTING.md#sources-and-artifacts) for the runtime
+[dataset materialization](../../docs/design.md#datasets-and-parameters) for the runtime
 overview and external-provider boundary. The
 [materialization module](../../src/runtime/dataset_materialization.rs)
 defines the runtime API and optional binary validation.

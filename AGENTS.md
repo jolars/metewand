@@ -1,10 +1,8 @@
 # AGENTS.md
 
 This file is the operational repository guide for AI agents. Read the relevant
-parts of `docs/design.md` and `CONTRIBUTING.md` before changing architecture or
-public behavior. `docs/design.md` defines the general model; `CONTRIBUTING.md`
-records implementation contracts and verification. Types, schemas, package help,
-and fixtures specify individual interfaces. `TODO.md` lists remaining work by
+parts of `docs/design.md` before changing architecture or public behavior.
+`docs/design.md` defines the general model. `TODO.md` lists remaining work by
 area.
 
 ## Project priorities
@@ -41,10 +39,10 @@ composes all three. Runtime, core, and protocol must never use CLI modules. Keep
 domain types out of the CLI, and keep execution and filesystem concerns out of
 core and protocol.
 
-There is no public Rust library API. Repository tests and native examples compile
-internal modules directly through `src/modules.rs`. Keep the single integration
-harness in `tests/integration.rs`, with tests grouped by layer under `tests/`.
-Extract a reusable library only when a concrete consumer needs one.
+There is no public Rust library API. Repository tests and native examples
+compile internal modules directly through `src/modules.rs`. Keep the single
+integration harness in `tests/integration.rs`, with tests grouped by layer under
+`tests/`. Extract a reusable library only when a concrete consumer needs one.
 
 ## Repository conventions
 
@@ -62,27 +60,10 @@ Extract a reusable library only when a concrete consumer needs one.
   `packages/julia`.
 - User documentation belongs in `docs/`; `README.md` remains the concise entry
   point. The VitePress site lives in `docs/`, with the overview, getting
-  started, and multipart authoring guide in `docs/guide/`. `docs/design.md`
-  describes the general design; `CONTRIBUTING.md` consolidates contributor notes,
-  implementation contracts, verification, and website development. Keep detailed
-  interfaces in their authoritative types, schemas, package help, and fixtures
-  rather than adding a reference page for each implementation step.
-
-Do not create placeholder directories. Add each directory with its first real
-schema, fixture, example, package, or document.
+  started, and multipart authoring guide; `CONTRIBUTING.md` is human-readable
+  guidance for contributors.
 
 ## Compatibility and releases
-
-The Rust binary package, Python package, and R package have independent
-package releases, managed by Versionary from Conventional Commits. Keep their
-version-1 binding API stable across compatible CLI upgrades. Package SemVer is
-separate from the public compatibility constants for the manifest, schemas,
-identities, execution semantics, and wire protocol.
-Consider only the versions affected by a change, and record a consequential
-compatibility decision in the change description. Do not require a standalone
-review, a decision table for unchanged versions, or fixtures for speculative
-interfaces. See [Compatibility versions](CONTRIBUTING.md#compatibility-versions)
-for the pre-MVP stability policy.
 
 Preserve supported persisted records and canonical identity rules. Update
 relevant conformance vectors when their actual contract changes; use byte-level
@@ -91,9 +72,9 @@ evolve together with their current consumers before the MVP. Do not silently
 reinterpret existing results or promise readers for every development revision.
 
 Versionary creates release PRs, tags, changelogs, and GitHub Releases. The
-separate `crates-publish.yml` workflow publishes the binary package as `metewand`
-on root release tags. Schemas and adapters ship directly from their canonical
-source directories. Check the extracted package with
+separate `crates-publish.yml` workflow publishes the binary package as
+`metewand` on root release tags. Schemas and adapters ship directly from their
+canonical source directories. Check the extracted package with
 `cargo publish --locked --dry-run`; no asset preparation step is required.
 
 ## Development and verification
@@ -108,9 +89,9 @@ for the complete Rust suite. These commands use Nextest and accept its filters.
 Keep combinatorial planning and scheduling assertions in core tests, with small
 CLI cases covering worker execution, emitted records, and provenance.
 
-Run focused tests while developing, then verify the affected behavior once.
-Rust changes require formatting and Clippy; run the complete suite for broad
-changes, uncertain impact, or an explicit request. Website changes require the
+Run focused tests while developing, then verify the affected behavior once. Rust
+changes require formatting and Clippy; run the complete suite for broad changes,
+uncertain impact, or an explicit request. Website changes require the
 documentation checks; repository prose needs only diff and link review. Use
 `devenv test` for a full local CI run when warranted. Available commands are:
 
@@ -124,12 +105,10 @@ documentation checks; repository prose needs only diff and link review. Use
 Run both formatting checks. Cargo's formatter does not discover the shared
 modules loaded through `include!`; the explicit entry point covers them.
 
-For changes to durability behavior, persisted schemas, or crash coverage, add
-focused regression tests and run the relevant representative crash tests.
 Exhaustive crash campaigns belong in scheduled or manually triggered CI. Run
 them locally only when explicitly requested. Do not start or wait for them as
-part of routine local verification. See
-[Crash conformance](CONTRIBUTING.md#crash-conformance) for commands and CI coverage.
+part of routine local verification. See [Crash
+conformance](CONTRIBUTING.md#crash-conformance) for commands and CI coverage.
 
 Use Rust 1.98.0 and edition 2024. Keep `Cargo.lock` current and use `--locked`
 in verification. Comments should explain why a choice exists rather than

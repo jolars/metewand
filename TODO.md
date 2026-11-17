@@ -4,8 +4,8 @@ Remaining work is grouped by area. Prioritize useful benchmarks in Basin and
 clustlasso-cd.
 
 The [design](docs/design.md) defines the general model.
-[CONTRIBUTING.md](CONTRIBUTING.md) records implementation contracts and
-verification, and [AGENTS.md](AGENTS.md) gives repository instructions.
+[CONTRIBUTING.md](CONTRIBUTING.md) covers setup, testing, and submitting changes,
+and [AGENTS.md](AGENTS.md) gives repository instructions.
 
 ## Adopter integrations
 
