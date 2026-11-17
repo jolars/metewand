@@ -490,6 +490,14 @@ fn profile_round_trip(example: &str) -> tempfile::TempDir {
         source.replace_range(start..end, "");
         fs::write(path, source.replace("[bisection, uniroot]", "[bisection]")).unwrap();
     }
+    // Allow slow worker startup on shared Windows runners before testing archive fidelity.
+    let manifest = repo.join("metewand.yaml");
+    let source = fs::read_to_string(&manifest).unwrap();
+    fs::write(
+        manifest,
+        format!("{source}\nworker-timeouts:\n  hello: 30 s\n"),
+    )
+    .unwrap();
     success(&repo, &["run", "--output-dir", "run"]);
     let before = success(&repo, &["status", "--output-dir", "run"]);
     let mut expected = Vec::new();
