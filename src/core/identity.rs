@@ -860,6 +860,12 @@ impl IdentityRecord for ResolvedOneShotSpecificationRecord {
         if let Some(decision) = self.applicability {
             result.insert("applicability".into(), id(&decision));
         }
+        if let Some(pilot) = &self.calibration {
+            result.insert("calibration".into(), json!(pilot));
+        }
+        if let Some(group) = self.adaptive_budget_group {
+            result.insert("adaptive_budget_group".into(), id(&group));
+        }
         result
     }
 }

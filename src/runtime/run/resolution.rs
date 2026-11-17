@@ -98,7 +98,7 @@ pub(super) struct ResolvedMeasurement {
     pub specification: IdentifiedRecord<ResolvedOneShotSpecificationRecord>,
     pub selection_ids: Vec<String>,
     pub scheduling: SchedulingSlot,
-    pub warmups: Vec<(u64, RecordId<ResolvedAttemptSlotRecord>)>,
+    pub warmups: Vec<IdentifiedRecord<ResolvedAttemptSlotRecord>>,
     pub logical_slot: RecordId<LogicalAttemptSlotRecord>,
     pub attempt_slot: IdentifiedRecord<ResolvedAttemptSlotRecord>,
     pub observation_slot: IdentifiedRecord<ResolvedObservationSlotRecord>,
@@ -1090,6 +1090,8 @@ fn resolve_candidate(
             != crate::core::applicability::ApplicabilityOutcome::NotApplicable
     }) {
         let resolved = identify_record(ResolvedOneShotSpecificationRecord {
+            adaptive_budget_group: None,
+            calibration: None,
             applicability: applicability
                 .record
                 .checked_inputs
@@ -1107,14 +1109,11 @@ fn resolve_candidate(
             .attempt_slots
             .iter()
             .filter_map(|slot| {
-                if let AttemptSlotRole::Warmup { warmup_index } = slot.record.role {
-                    Some(
-                        identify_record(ResolvedAttemptSlotRecord {
-                            logical_slot: slot.id,
-                            specification: resolved.id,
-                        })
-                        .map(|resolved| (warmup_index, resolved.id)),
-                    )
+                if matches!(slot.record.role, AttemptSlotRole::Warmup { .. }) {
+                    Some(identify_record(ResolvedAttemptSlotRecord {
+                        logical_slot: slot.id,
+                        specification: resolved.id,
+                    }))
                 } else {
                     None
                 }

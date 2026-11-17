@@ -157,6 +157,8 @@ pub enum SlotState {
 /// Planned and resolved positions remain distinct even when inputs change.
 #[derive(Clone, Debug, Serialize)]
 pub struct SlotStatus {
+    #[serde(skip_serializing_if = "is_false")]
+    pub calibration: bool,
     pub logical_slot_id: String,
     pub resolved_slot_id: Option<String>,
     pub logical_run_id: String,
@@ -172,6 +174,8 @@ pub struct SlotStatus {
 /// The authoritative projection of one execution, including nonterminal work.
 #[derive(Clone, Debug, Serialize)]
 pub struct AttemptStatus {
+    #[serde(skip_serializing_if = "is_false")]
+    pub calibration: bool,
     pub id: String,
     pub slot_id: String,
     pub retry_index: u64,
@@ -190,6 +194,8 @@ pub struct AttemptStatus {
 /// An observation can remain valid without being selected or accepted.
 #[derive(Clone, Debug, Serialize)]
 pub struct ObservationStatus {
+    #[serde(skip_serializing_if = "is_false")]
+    pub calibration: bool,
     pub id: String,
     pub slot_id: String,
     pub attempt_id: String,
@@ -201,6 +207,8 @@ pub struct ObservationStatus {
 
 #[derive(Debug, Default, Serialize)]
 pub struct StatusSummary {
+    #[serde(skip_serializing_if = "zero")]
+    pub calibration_attempts: usize,
     #[serde(skip_serializing_if = "zero")]
     pub skipped_target_reached_slots: usize,
     #[serde(skip_serializing_if = "zero")]
@@ -222,6 +230,8 @@ pub struct StatusSummary {
 /// The same status evidence is rendered by human and machine interfaces.
 #[derive(Debug, Serialize)]
 pub struct StatusReport {
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub adaptive_budgets: Vec<crate::core::adaptive::AdaptiveBudgetDecision>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub comparison: Vec<crate::core::comparison::ComparisonRow>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -245,4 +255,8 @@ pub struct Explanation {
 
 fn zero(value: &usize) -> bool {
     *value == 0
+}
+
+fn is_false(value: &bool) -> bool {
+    !value
 }

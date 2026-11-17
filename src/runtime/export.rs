@@ -57,6 +57,13 @@ impl ResultSet {
         }) {
             records.push(project(source, &graph)?);
         }
+        let pilot_slots = crate::runtime::inspection::calibration_slots(&snapshot.tables);
+        records.retain(|record| {
+            !record
+                .resolved_slot_id
+                .as_ref()
+                .is_some_and(|id| pilot_slots.contains(id))
+        });
         let mut traces = Vec::new();
         for attempt in records
             .iter()

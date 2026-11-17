@@ -49,7 +49,7 @@ equivalent configurations.
   Keep host cache paths outside scientific dataset parameters, record effective
   settings in provenance, and retain scientific overrides in identities.
   Distinguish adapter caches from the artifact cache selected by `--cache-dir`.
-- [ ] Show the scientific timeout, worker execution watchdog, and cumulative
+- [x] Show the scientific timeout, worker execution watchdog, and cumulative
   profile time limit together in `plan --verbose`. Diagnose when the
   watchdog cuts the requested scientific budget short while retaining the
   separate purposes of these limits.
@@ -66,20 +66,25 @@ configuration.
 
 ## Profiles
 
-- [ ] Add adaptive scientific-budget schedules. For clustlasso-cd, calibrate a
-  common per-solver limit for each input, penalty setting, and accuracy
-  target from independently verified pilot convergence times. Increase
-  bounded pilot limits until a solver converges, complete that pilot round
+- [x] Add adaptive scientific-budget schedules for buffered profiles. For
+  clustlasso-cd, calibrate a common per-solver limit for each input, penalty
+  setting, and accuracy target from independently verified pilot convergence
+  times. Increase pilot budgets until a solver converges, complete that round
   for all methods, then freeze a configurable multiple of the fastest
   verified pilot time for all methods and measured repetitions.
   "Convergence plus ten times its duration" corresponds to `11 * t_ref`.
-  Include a minimum limit, an absolute ceiling, and a fallback when no solver
-  converges. Keep calibration separate from measured runs so serial dispatch
+  Supply useful defaults and allow unbounded pilot growth and derived limits.
+  Keep an optional absolute ceiling and fallback when no solver converges.
+  Diagnose completed rounds with no convergence and no time-limited pilot
+  instead of increasing budgets for unrelated stopping conditions or failures.
+  Keep calibration separate from measured runs so serial dispatch
   order does not determine the reference method. Record the reference
   attempts, timing basis, multiplier, and effective limit, and preserve
   budget decisions across resume and retries. Support cooperative stopping
   for buffered profiles, align execution watchdogs with the derived limit,
   and retain censored terminal states separately from execution failures.
+- [ ] Extend adaptive calibration to fresh-sequence or streaming delivery when
+  an adopter needs it.
 - [ ] Add checkpoint-state restoration.
 
 ## Language packages and environments

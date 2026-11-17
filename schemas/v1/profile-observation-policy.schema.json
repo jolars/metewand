@@ -415,10 +415,12 @@
     },
     "default-binding": {
       "$ref": "#/properties/implementations/additionalProperties"
+    },
+    "adaptive-budget": {
+      "$ref": "#/$defs/adaptive_budget"
     }
   },
   "required": [
-    "max-active-time",
     "kind"
   ],
   "additionalProperties": false,
@@ -501,11 +503,13 @@
         "max-active-time": {
           "type": "string",
           "pattern": "^\\s*[1-9][0-9]*\\s*(ms|s|min|h)\\s*$"
+        },
+        "adaptive-budget": {
+          "$ref": "#/$defs/adaptive_budget"
         }
       },
       "required": [
-        "max-observations",
-        "max-active-time"
+        "max-observations"
       ],
       "additionalProperties": false,
       "dependentRequired": {
@@ -537,8 +541,29 @@
         "terminal-reserve-bytes": [
           "max-trace-points",
           "max-buffer-bytes"
+        ],
+        "adaptive-budget": [
+          "metric",
+          "direction",
+          "threshold"
         ]
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "not": {
+              "required": [
+                "adaptive-budget"
+              ]
+            }
+          },
+          "then": {
+            "required": [
+              "max-active-time"
+            ]
+          }
+        }
+      ]
     },
     "scope": {
       "type": "object",
@@ -596,7 +621,8 @@
               "required": [
                 "max-trace-points",
                 "max-buffer-bytes",
-                "terminal-reserve-bytes"
+                "terminal-reserve-bytes",
+                "max-active-time"
               ]
             }
           ]
@@ -739,6 +765,228 @@
         "observation_control"
       ],
       "additionalProperties": false
+    },
+    "adaptive_budget": {
+      "type": "object",
+      "properties": {
+        "initial-pilot-time": {
+          "type": "string",
+          "pattern": "^\\s*[1-9][0-9]*\\s*(ms|s|min|h)\\s*$",
+          "default": "1 s"
+        },
+        "minimum-time": {
+          "type": "string",
+          "pattern": "^\\s*[1-9][0-9]*\\s*(ms|s|min|h)\\s*$",
+          "default": "1 ms"
+        },
+        "fallback-time": {
+          "type": "string",
+          "pattern": "^\\s*[1-9][0-9]*\\s*(ms|s|min|h)\\s*$"
+        },
+        "watchdog-grace": {
+          "type": "string",
+          "pattern": "^\\s*[1-9][0-9]*\\s*(ms|s|min|h)\\s*$",
+          "default": "10 s"
+        },
+        "growth-factor": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 9007199254740991,
+          "default": 2
+        },
+        "multiplier": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991,
+          "default": 11
+        }
+      },
+      "additionalProperties": false
+    },
+    "pilot_evidence": {
+      "type": "object",
+      "properties": {
+        "round": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "limit_ns": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "candidate_id": {
+          "$ref": "common.schema.json#/$defs/identity"
+        },
+        "attempt_id": {
+          "$ref": "common.schema.json#/$defs/identity"
+        },
+        "attempt_directory": {
+          "$ref": "common.schema.json#/$defs/repository_path"
+        },
+        "status": {
+          "enum": [
+            "accepted",
+            "censored",
+            "failed",
+            "superseded"
+          ]
+        },
+        "convergence_time_ns": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          ]
+        },
+        "observation_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^mw1-[a-z-]+-[0-9a-f]{64}$"
+        },
+        "implementation": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "round",
+        "limit_ns",
+        "candidate_id",
+        "attempt_id",
+        "attempt_directory",
+        "status",
+        "convergence_time_ns",
+        "observation_id"
+      ],
+      "additionalProperties": false
+    },
+    "adaptive_decision": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "group_id": {
+          "$ref": "common.schema.json#/$defs/identity"
+        },
+        "timing_basis": {
+          "const": "instrumented"
+        },
+        "instrumented_scope": {
+          "type": "string",
+          "minLength": 1
+        },
+        "multiplier": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "minimum_limit_ns": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "ceiling_limit_ns": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "effective_limit_ns": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "reference_attempt_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^mw1-[a-z-]+-[0-9a-f]{64}$"
+        },
+        "reference_observation_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^mw1-[a-z-]+-[0-9a-f]{64}$"
+        },
+        "reference_time_ns": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          ]
+        },
+        "fallback": {
+          "type": "boolean"
+        },
+        "pilots": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/pilot_evidence"
+          }
+        }
+      },
+      "required": [
+        "schema_version",
+        "group_id",
+        "timing_basis",
+        "instrumented_scope",
+        "multiplier",
+        "minimum_limit_ns",
+        "ceiling_limit_ns",
+        "effective_limit_ns",
+        "reference_attempt_id",
+        "reference_observation_id",
+        "reference_time_ns",
+        "fallback",
+        "pilots"
+      ],
+      "additionalProperties": false
+    },
+    "calibration_pilot": {
+      "type": "object",
+      "properties": {
+        "group_id": {
+          "$ref": "common.schema.json#/$defs/identity"
+        },
+        "round": {
+          "$ref": "common.schema.json#/$defs/safe_nonnegative_integer"
+        },
+        "limit_ns": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "group_id",
+        "round",
+        "limit_ns"
+      ],
+      "additionalProperties": false
     }
   },
   "allOf": [
@@ -843,6 +1091,44 @@
       "then": {
         "required": [
           "max-checkpoint-bytes"
+        ]
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "adaptive-budget"
+        ]
+      },
+      "then": {
+        "required": [
+          "metric",
+          "direction",
+          "threshold"
+        ],
+        "properties": {
+          "default-binding": {
+            "$ref": "#/properties/implementations/additionalProperties/oneOf/0"
+          },
+          "implementations": {
+            "additionalProperties": {
+              "$ref": "#/properties/implementations/additionalProperties/oneOf/0"
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "not": {
+          "required": [
+            "adaptive-budget"
+          ]
+        }
+      },
+      "then": {
+        "required": [
+          "max-active-time"
         ]
       }
     }

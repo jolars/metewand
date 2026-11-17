@@ -14,6 +14,12 @@ pub struct ProfilePolicy {
         deserialize_with = "present",
         skip_serializing_if = "Option::is_none"
     )]
+    pub adaptive_budget: Option<crate::core::adaptive::AdaptiveBudget>,
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub metric: Option<String>,
     #[serde(
         default,
@@ -58,7 +64,22 @@ pub struct ProfilePolicy {
         deserialize_with = "positive_bound"
     )]
     pub terminal_reserve_bytes: u64,
+    #[serde(
+        default,
+        deserialize_with = "active_time",
+        skip_serializing_if = "String::is_empty"
+    )]
     pub max_active_time: String,
+}
+
+fn active_time<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<String, D::Error> {
+    let value = String::deserialize(deserializer)?;
+    if value.trim().is_empty() {
+        return Err(serde::de::Error::custom(
+            "max-active-time must not be empty",
+        ));
+    }
+    Ok(value)
 }
 
 fn positive_bound<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<u64, D::Error> {
@@ -109,7 +130,14 @@ impl ProfilePolicy {
         {
             self.validate_buffered()?;
         }
-        self.active_time_ns()?;
+        if let Some(budget) = &self.adaptive_budget {
+            budget.validate(self.active_time_bound_ns()?)?;
+            if self.metric.is_none() {
+                return Err("adaptive budgets require a scientific completion target".into());
+            }
+        } else {
+            self.active_time_ns()?;
+        }
         match (&self.metric, self.direction, self.threshold) {
             (None, None, None) if self.record_thresholds.is_empty() => {
                 if self.max_trace_points != 0 && self.max_trace_points < self.max_observations {
@@ -165,6 +193,14 @@ impl ProfilePolicy {
             Some(Direction::AtMost) => value <= threshold,
             Some(Direction::AtLeast) => value >= threshold,
             None => false,
+        }
+    }
+
+    pub fn active_time_bound_ns(&self) -> Result<Option<u64>, String> {
+        if self.max_active_time.is_empty() {
+            Ok(None)
+        } else {
+            self.active_time_ns().map(Some)
         }
     }
 
@@ -369,6 +405,12 @@ impl ProfileBinding {
         }
     }
     pub fn validate(&self, policy: &ProfilePolicy) -> Result<(), String> {
+        if policy.adaptive_budget.is_some() && !matches!(self, Self::Buffered(_)) {
+            return Err(
+                "adaptive budgets currently require buffered_profile delivery for every method"
+                    .into(),
+            );
+        }
         match self {
             Self::Streaming(b) => {
                 if policy.max_checkpoint_bytes == 0

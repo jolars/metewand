@@ -14,6 +14,8 @@ pub const ANALYSIS_SCHEMA_VERSION: u32 = 1;
 /// A portable projection, rather than an archive of the result artifacts.
 #[derive(Clone, Debug, Serialize)]
 pub struct AnalysisSnapshot {
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub adaptive_budgets: Vec<crate::core::adaptive::AdaptiveBudgetDecision>,
     pub schema_version: u32,
     pub candidates: Vec<AnalysisCandidate>,
     pub observations: Vec<AnalysisObservation>,

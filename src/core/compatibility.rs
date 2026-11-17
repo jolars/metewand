@@ -148,6 +148,14 @@ fn validate_compatibility(
             });
         }
 
+        let adaptive = observation_policy
+            .profile
+            .as_ref()
+            .is_some_and(|p| p.policy.adaptive_budget.is_some());
+        if adaptive && timing_scope != TimingScope::ExecuteOnly {
+            return Err(ManifestCompatibilityError::InvalidProfile("adaptive buffered budgets require timing-scope: execute_only so preparation cannot consume the solver's limit".into()));
+        }
+        let mut adaptive_scope = None;
         for implementation in &experiment.implementations {
             let definition = manifest
                 .implementations
@@ -203,6 +211,13 @@ fn validate_compatibility(
                         }
                     }
                     crate::core::profile::ProfileBinding::Buffered(binding) => {
+                        if adaptive
+                            && adaptive_scope
+                                .replace(&binding.instrumented_scope)
+                                .is_some_and(|previous| previous != &binding.instrumented_scope)
+                        {
+                            return Err(ManifestCompatibilityError::InvalidProfile("adaptive budgets require the same named instrumented scope for all methods".into()));
+                        }
                         let scope = contract
                             .instrumented_scopes
                             .get(&binding.instrumented_scope)

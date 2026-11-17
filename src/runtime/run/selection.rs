@@ -68,7 +68,7 @@ pub(super) fn preselect(plan: &LogicalPlan, options: &RunOptions) -> Result<Logi
     }
     let mut matched = BTreeSet::new();
     let mut selected = plan.clone();
-    for experiment in &mut selected.experiments {
+    for (experiment, original) in selected.experiments.iter_mut().zip(&plan.experiments) {
         let bound = experiment
             .observation_policy
             .record
@@ -157,6 +157,37 @@ pub(super) fn preselect(plan: &LogicalPlan, options: &RunOptions) -> Result<Logi
         experiment
             .candidates
             .retain(|candidate| !candidate.specifications.is_empty());
+        if original
+            .observation_policy
+            .record
+            .profile
+            .as_ref()
+            .is_some_and(|profile| profile.as_json().get("adaptive-budget").is_some())
+        {
+            // ID filters preserve the cohort and its first planned pilot seed.
+            // Resolved IDs are matched after acquisition against the same cohort.
+            let comparisons = experiment
+                .candidates
+                .iter()
+                .map(|candidate| {
+                    (
+                        candidate.dataset_configuration.id,
+                        candidate.problem_configuration.id,
+                    )
+                })
+                .collect::<BTreeSet<_>>();
+            experiment.candidates = original
+                .candidates
+                .iter()
+                .filter(|candidate| {
+                    comparisons.contains(&(
+                        candidate.dataset_configuration.id,
+                        candidate.problem_configuration.id,
+                    ))
+                })
+                .cloned()
+                .collect();
+        }
     }
     selected
         .experiments

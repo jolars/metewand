@@ -85,6 +85,12 @@ pub struct ProfileObservationOutput {
     pub profile: crate::core::records::ProfileObservationRecord,
 }
 
+#[derive(Clone, Debug, Serialize)]
+pub struct CalibrationAttemptOutput {
+    pub pilot: crate::core::adaptive::CalibrationPilot,
+    pub attempt: RunAttemptOutput,
+}
+
 /// A monotonically sequenced event from one invocation.
 #[derive(Clone, Debug, Serialize)]
 pub struct RunEvent {
@@ -151,6 +157,10 @@ pub struct RunSummary {
 /// Final command output rendered by both human and machine interfaces.
 #[derive(Debug, Serialize)]
 pub struct RunReport {
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub calibration_attempts: Vec<CalibrationAttemptOutput>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub adaptive_budgets: Vec<crate::core::adaptive::AdaptiveBudgetDecision>,
     /// Individual measurements and failed attempts from the committed history.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub comparison: Vec<crate::core::comparison::ComparisonRow>,

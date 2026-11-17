@@ -331,6 +331,102 @@ and buffered profiles use the same schedule semantics. A terminal snapshot may
 occur between scheduled checks; unscheduled intermediate checks do not serialize
 a snapshot. Existing periodic schedules retain their representation and identity.
 
+### Calibrate a common solver time limit
+
+For buffered solver comparisons, add one setting to an existing target profile:
+
+```yaml
+adaptive-budget: {}
+```
+
+Omit `max-active-time` for no absolute ceiling. Remove it if the profile already
+has a fixed limit. Select `timing-scope: execute_only` and
+`primary-time: timed_wall_time` in the execution policy. Every method must use
+the same named instrumented scope and clock semantics.
+
+All adaptive settings have defaults:
+
+| Setting | Default | Purpose |
+| --- | --- | --- |
+| `initial-pilot-time` | `1 s` | Starting budget for the internal discovery rounds. |
+| `growth-factor` | `2` | Increase the pilot budget when no solver converges. |
+| `multiplier` | `11` | Scale the fastest verified convergence time. |
+| `minimum-time` | `1 ms` | Keep derived limits positive and representable. |
+| `watchdog-grace` | `10 s` | Allow cooperative stopping and terminal serialization. |
+
+Override only what the comparison needs, for example:
+
+```yaml
+adaptive-budget:
+  multiplier: 20
+```
+
+Metewand runs one clean pilot per applicable implementation configuration, using
+the first planned implementation seed and the configured warm-ups. Each round
+receives a common temporary budget. The default rounds allow 1, 2, 4, 8 seconds,
+and so on until at least one solver converges. There is no configured ceiling
+on that growth or on the number of rounds. Individual pilots still have a
+budget, so the first slow solver cannot block discovery indefinitely.
+
+Metewand finishes the entire first successful round before choosing its fastest
+independently verified convergence time, `t_ref`. A failed pilot or provisional
+local threshold crossing cannot establish the reference. Measured repetitions
+then receive `max(minimum-time, multiplier * t_ref)`, rounded up to whole
+milliseconds. A multiplier of 11 means the convergence duration plus ten times
+that duration. If no solver converges, a larger pilot budget is tried only when
+at least one pilot exhausted its scientific time budget. Duration arithmetic
+reports an error if it exceeds the supported nanosecond range.
+
+If every pilot stops for another reason, calibration exits with
+`adaptive_calibration_stopped` before starting measurements. The diagnostic
+lists each solver's stop reason and saved attempt. Check iteration caps,
+stopping tolerances, trace or snapshot limits, and worker or evaluator failures.
+More solver time does not address those recorded stops. Pilot artifacts remain
+available through `status` and `explain`; resuming unchanged inputs reports the
+same diagnosis without rerunning those pilots. If pilots remain time-limited,
+unbounded discovery continues until convergence, interruption, or an invocation
+bound such as `--max-attempts`.
+
+An optional `max-active-time` supplies an absolute ceiling for both discovery
+rounds and the derived measured limit:
+
+```yaml
+max-active-time: 2 min
+adaptive-budget: {}
+```
+
+The initial pilot budget shrinks to fit a shorter ceiling. If no pilot converges
+at that ceiling and at least one pilot is time-limited, measurements use the
+ceiling as their fallback. An optional
+`fallback-time` overrides that fallback and must lie between the minimum and
+ceiling. It is only meaningful with a ceiling.
+
+The worker receives the effective limit in its existing
+`profile.policy.max-active-time`. Its observer returns a stop decision at a
+check, allowing the solver to return its terminal snapshot. A target reached
+after the limit remains censored. Checks can overshoot, so choose a check
+frequency that provides useful stopping resolution. The outer scientific
+timeout becomes the limit plus `watchdog-grace`, and the execute watchdog is
+extended when needed. Preparation and evaluation keep their own deadlines.
+These adaptive deadlines replace the execution policy's fixed scientific
+timeout for these trajectories.
+
+Calibration precedes measured dispatch and runs serially. Pilots do not count
+as measurements. `--max-attempts` counts newly started pilots as well as measured
+attempts, so a bounded invocation can stop during a round. Resume completes that
+round and reuses any frozen decision. `--retry` does not recalibrate it. Repeat
+the same experiment and name filters: changing the solver cohort creates a
+different calibration group and new resolved measurements, so results collected
+under different common limits are not reused.
+
+`run`, `status`, and JSON analysis exports retain `adaptive_budgets`, including
+the timing basis, pilot attempts, reference observation, multiplier, and frozen
+limit. Run output lists new pilots separately in `calibration_attempts`; status
+tags their slots, attempts, and observations with `calibration: true`. Measured
+comparison tables and exports exclude pilots. Whole-run archives retain their
+artifacts and the frozen decision, including when restored for execution.
+Fresh-sequence and streaming calibration are not supported yet.
+
 ## Run workers in a pinned image
 
 On Linux, select a prebuilt image with an immutable registry digest:

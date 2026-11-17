@@ -629,6 +629,10 @@ pub struct ResolvedWorkerRecord {
 /// A one-shot logical run bound to all immutable execution dependencies.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ResolvedOneShotSpecificationRecord {
+    /// The calibrated cohort is part of the effective scientific comparison.
+    pub adaptive_budget_group: Option<RecordId<crate::core::adaptive::AdaptiveBudgetGroupResource>>,
+    /// Pilot coordinates separate calibration from measured executions.
+    pub calibration: Option<crate::core::adaptive::CalibrationPilot>,
     /// Checked applicability evidence; absent for legacy unconditional runs.
     pub applicability: Option<RecordId<crate::core::applicability::ApplicabilityDecisionRecord>>,
     /// Resolution-free logical run.

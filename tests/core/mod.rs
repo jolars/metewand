@@ -1,3 +1,4 @@
+mod adaptive_budgets;
 mod applicability;
 mod archives;
 mod buffered_profiles;

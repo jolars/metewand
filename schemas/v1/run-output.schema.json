@@ -175,6 +175,8 @@
     "report": {
       "type": "object",
       "properties": {
+        "calibration_attempts": { "type": "array", "minItems": 1, "items": { "type": "object", "properties": { "pilot": { "$ref": "profile-observation-policy.schema.json#/$defs/calibration_pilot" }, "attempt": { "$ref": "#/$defs/attempt" } }, "required": ["pilot", "attempt"], "additionalProperties": false } },
+        "adaptive_budgets": { "type": "array", "minItems": 1, "items": { "$ref": "profile-observation-policy.schema.json#/$defs/adaptive_decision" } },
         "command": { "const": "run" },
         "benchmark": { "$ref": "common.schema.json#/$defs/name" },
         "manifest_hash": { "$ref": "common.schema.json#/$defs/sha256" },

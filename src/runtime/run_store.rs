@@ -5,6 +5,8 @@
 //! `CONTRIBUTING.md#durability-and-recovery` for the transaction and validation requirements.
 
 #[cfg(any(unix, windows))]
+pub(crate) mod adaptive;
+#[cfg(any(unix, windows))]
 mod attempts;
 #[cfg(any(unix, windows))]
 mod coordination;

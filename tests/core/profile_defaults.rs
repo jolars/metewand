@@ -519,6 +519,7 @@ fn persisted_profile_policies_still_require_explicit_observation_limits() {
     ))
     .unwrap();
     let mut persisted_schema = schema["$defs"]["policy"].clone();
+    persisted_schema["$defs"] = json!({"adaptive_budget":schema["$defs"]["adaptive_budget"]});
     persisted_schema["$schema"] = schema["$schema"].clone();
     let catalog =
         SchemaCatalog::try_new([("policy.schema.json".into(), persisted_schema)]).unwrap();

@@ -619,6 +619,8 @@ fn graph(mutation: Option<&str>, order: ObjectOrder, checked: bool) -> IdentityG
         &mut vectors,
         "resolved-specification",
         ResolvedOneShotSpecificationRecord {
+            adaptive_budget_group: None,
+            calibration: None,
             applicability,
             logical_specification,
             problem_instance,

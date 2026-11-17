@@ -1,5 +1,6 @@
 //! Manifest-driven execution of the trusted local Gate-1 vertical path.
 
+mod adaptive;
 mod attempt;
 mod check;
 mod profile;
@@ -132,6 +133,7 @@ pub(crate) struct PreparationProgress {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum PreparationPhase {
+    CalibratingBudget,
     VerifyingEnvironments,
     ResolvingWorkers,
     PreparingDataset,
@@ -251,6 +253,7 @@ pub(crate) fn run_repository_with_progress(
     for candidate in &resolved.candidates {
         candidate.validate_destination(&output_directory)?;
     }
+    adaptive::bind_groups(&mut resolved.candidates)?;
     let mut store = if resume {
         Some(RunStore::open(&output_directory)?)
     } else {
@@ -312,7 +315,35 @@ pub(crate) fn run_repository_with_progress(
         if candidate.applicability.record.checked_inputs.is_some() {
             store.register_applicability(&candidate.applicability)?;
         }
+        if cache_directory.is_some()
+            && candidate
+                .profile
+                .as_ref()
+                .is_some_and(|p| p.policy.adaptive_budget.is_some())
+            && !candidate.measurements.is_empty()
+        {
+            candidate
+                .dataset
+                .artifact
+                .retain_for_run(&output_directory)?;
+            if let Some(preparation) = &candidate.preparation {
+                preparation.artifact.retain_for_run(&output_directory)?;
+            }
+        }
     }
+    let (adaptive_budgets, calibration_attempts) = adaptive::calibrate(
+        repository,
+        &mut resolved,
+        &mut store,
+        options,
+        &selected,
+        &mut progress,
+    )?;
+    let mut measured_options = options.clone();
+    measured_options.max_attempts = options
+        .max_attempts
+        .map(|n| n.saturating_sub(calibration_attempts.len() as u64));
+    let options = &measured_options;
     let fresh_repetitions = selected
         .iter()
         .filter_map(|&(candidate, measurement)| {
@@ -350,6 +381,13 @@ pub(crate) fn run_repository_with_progress(
     for &(candidate, measurement) in &resolved.schedule {
         let slot = &resolved.candidates[candidate].measurements[measurement];
         if !selected.contains(&(candidate, measurement)) {
+            continue;
+        }
+        if resolved.candidates[candidate]
+            .profile
+            .as_ref()
+            .is_some_and(|p| p.policy.adaptive_budget.is_some())
+        {
             continue;
         }
         if cache_directory.is_some() {
@@ -545,6 +583,8 @@ pub(crate) fn run_repository_with_progress(
         .filter(|row| selected.contains(&row.candidate_id))
         .collect();
     Ok(RunReport {
+        calibration_attempts,
+        adaptive_budgets,
         comparison,
         fresh_sequences,
         command: "run",
@@ -776,7 +816,7 @@ fn execute(
                 match &result {
                     Ok(result) => warmups.push(json!({
                         "index": index,
-                        "resolved_slot_id": measurement.warmups[index as usize].1,
+                        "resolved_slot_id": measurement.warmups[index as usize].id,
                         "implementation_seed": measurement.seed,
                         "status": "validated",
                         "result": result.result.as_json(), "metrics": result.metrics.as_json(),
@@ -784,7 +824,7 @@ fn execute(
                     })),
                     Err(error) => warmups.push(json!({
                         "index": index,
-                        "resolved_slot_id": measurement.warmups[index as usize].1,
+                        "resolved_slot_id": measurement.warmups[index as usize].id,
                         "implementation_seed": measurement.seed,
                         "status": "failed", "code": error.failure_kind().code(),
                         "message": error.to_string(), "measurements": measurements,
@@ -1136,6 +1176,14 @@ fn destination(path: &Path) -> Result<(PathBuf, bool), RunError> {
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum RunError {
+    /// A completed pilot round provides no evidence that more time would help.
+    #[error(
+        "No solver reached the accuracy target in the completed pilot round, and none exhausted its solver time budget."
+    )]
+    AdaptiveCalibrationStopped {
+        group_id: String,
+        pilots: Vec<crate::core::adaptive::PilotEvidence>,
+    },
     /// Prepared environment evidence is missing, stale, or inconsistent.
     #[error(transparent)]
     Lock(#[from] crate::runtime::lockfile::LockError),

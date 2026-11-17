@@ -535,6 +535,54 @@ evaluate snapshots. Named instrumented scopes must be authorized by the problem.
 Partial observations do not satisfy a retry, and acceptance selects observations
 from one producing attempt. Never splice trajectories across retries.
 
+Adaptive buffered budgets run serial pilot rounds before measured dispatch.
+An empty `adaptive-budget` mapping supplies defaults: a one-second initial
+pilot budget, doubling growth, multiplier 11, one-millisecond minimum, and
+ten-second watchdog grace. `max-active-time` is optional for adaptive profiles;
+without it, discovery grows until convergence and the measured limit has no
+configured ceiling. With a ceiling, clamp pilot growth and default the fallback
+to that ceiling. Retain per-pilot bounds so serial discovery can move past slow
+solvers. Check duration arithmetic rather than silently capping unbounded
+requests. Nonadaptive profiles still require their finite active-time bound.
+Group by experiment, resolved problem instance, scientific profile, execution
+policy, and selected applicable solver cohort. Require execute-only timing and
+identical named instrumented scope semantics. Experiment and name filters
+establish the cohort before run ID selection. Logical, resolved, attempt, and
+observation selectors narrow measured dispatch while preserving cohort members,
+pilot seeds, and group identities. A pilot uses the first planned
+implementation seed, its configured warm-ups, and a distinct resolved
+specification with `calibration` coordinates. Only accepted pilots with an
+independently reached snapshot at or before their limit qualify. Finish the
+round before selecting the fastest, with candidate identity breaking ties.
+Grow only when the round has no verified reference and at least one committed
+pilot outcome is censored by `active_time_limit` or failed with
+`scientific_timeout`. Other completed stops do not justify more solver time.
+If none is time-limited, return `adaptive_calibration_stopped` with solver
+names, stop reasons, and attempt references before measuring or freezing a
+fallback. Read reasons from committed terminal events so resume, shared replay,
+and archive restoration reproduce the diagnosis without rerunning pilots.
+Pass effective whole-millisecond limits through the existing buffered policy,
+retain terminal snapshots, and censor late target crossings. The outer timeout
+becomes limit plus grace; the execute watchdog is extended as necessary.
+
+Freeze decisions in insert-only `adaptive_budget_frozen` coordination events
+before dispatching measurements. Immediate transactions choose one decision per
+group; shared publication and archive restoration retain those events. Resume
+reuses completed pilots and the frozen decision, including after `--retry`.
+`--max-attempts` also bounds new pilots. Public policy and decision schemas use
+compatibility version 1; optional pilot identity fields are omitted for existing
+records, preserving their bytes. Measured resolved specifications bind the
+calibration group so changing the solver cohort cannot reuse results under a
+different common limit. SQLite layouts and the wire protocol remain
+unchanged. Workers receive an ordinary effective buffered policy, so binding
+API 1 adapters require no new callback. Keep pilots visible in status and
+whole-run archives, separate from measured comparison and analysis rows.
+Unbounded decisions record `ceiling_limit_ns: null`; numeric ceilings in earlier
+decisions retain their canonical representation.
+Pilot evidence adds optional `implementation` and `reason` fields within
+compatibility version 1. Readers accept their absence in earlier decisions,
+and omission preserves the existing canonical fixture.
+
 Streaming profiles negotiate `streaming_profile` within wire protocol 1. One
 `execute_stream` request remains pending through contiguous checkpoint and
 decision sequences. Each snapshot uses a distinct contained directory, and its

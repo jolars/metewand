@@ -10,6 +10,7 @@ pub(super) fn project(
     tables: &BTreeMap<&str, Vec<Value>>,
 ) -> Result<AnalysisSnapshot, ExportError> {
     let mut snapshot = AnalysisSnapshot {
+        adaptive_budgets: crate::runtime::inspection::adaptive_decisions(tables)?,
         schema_version: ANALYSIS_SCHEMA_VERSION,
         candidates: Vec::new(),
         observations: Vec::new(),
@@ -158,10 +159,10 @@ pub(super) fn project(
             _ => (),
         }
     }
-    for slot in tables["resolved-attempt-slot"]
-        .iter()
-        .filter(|s| s["role"] == "measurement")
-    {
+    let pilot_slots = crate::runtime::inspection::calibration_slots(tables);
+    for slot in tables["resolved-attempt-slot"].iter().filter(|s| {
+        s["role"] == "measurement" && !s["id"].as_str().is_some_and(|id| pilot_slots.contains(id))
+    }) {
         let id = required_text(slot, "id")?;
         let run_id = required_text(slot, "resolved_run_id")?;
         let run = graph
@@ -342,6 +343,12 @@ pub(super) fn select(source: &AnalysisSnapshot, records: &[ExportRecord]) -> Ana
         .map(|r| r.id.as_str())
         .collect::<BTreeSet<_>>();
     let mut snapshot = source.clone();
+    snapshot.adaptive_budgets.retain(|budget| {
+        budget
+            .pilots
+            .iter()
+            .any(|pilot| candidates.contains(pilot.candidate_id.as_str()))
+    });
     snapshot
         .candidates
         .retain(|c| candidates.contains(c.id.as_str()));

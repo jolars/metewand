@@ -114,6 +114,9 @@ pub(super) fn execute(
     let mut observations = Vec::new();
     let mut buffer_evidence = Value::Null;
     let mut target_reached = false;
+    let mut late_target = false;
+    let adaptive = measurement.provenance.as_json()["adaptive_budget"].is_object()
+        || measurement.specification.record.calibration.is_some();
     let mut stop_reason = "unreturned_buffer".to_owned();
     let mut expected_snapshots = 0;
     let mut warmups = Vec::new();
@@ -174,7 +177,14 @@ pub(super) fn execute(
                         },
                     )
                     .map_err(&publication_error)?;
-                target_reached |= result.completion == CompletionStatus::Reached;
+                let within_budget = !adaptive
+                    || result.execution_provenance["profile_observation"]["instrumented_time_ns"]
+                        .as_u64()
+                        .is_some_and(|time| {
+                            time <= policy.active_time_ns().expect("validated policy")
+                        });
+                target_reached |= result.completion == CompletionStatus::Reached && within_budget;
+                late_target |= result.completion == CompletionStatus::Reached && !within_budget;
                 observations.push(ProfileObservationOutput {
                     observation_id: published.id,
                     observation_directory: directory,
@@ -229,7 +239,7 @@ pub(super) fn execute(
                     );
                     warmups.push(json!({
                         "index": index,
-                        "resolved_slot_id": measurement.warmups[index as usize].1,
+                        "resolved_slot_id": measurement.warmups[index as usize].id,
                         "implementation_seed": measurement.seed,
                         "measurements": times,
                         "status": if result.is_ok() { "validated" } else { "failed" },
@@ -315,7 +325,9 @@ pub(super) fn execute(
         }
         Ok(()) => (
             ProfileAttemptStatus::Censored,
-            if stop_reason == "target_reached" {
+            if late_target {
+                "active_time_limit".into()
+            } else if stop_reason == "target_reached" {
                 "local_target_unconfirmed".into()
             } else {
                 stop_reason

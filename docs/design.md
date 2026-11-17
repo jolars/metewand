@@ -185,6 +185,18 @@ Retries never splice trajectories together. Partial evidence can remain
 inspectable without satisfying the observation policy. A streaming retry starts
 from clean state; it does not restore implementation state from a snapshot.
 
+Buffered profiles can calibrate a common scientific limit per input, problem
+configuration, accuracy target, and selected solver cohort. Growing pilot rounds
+increase their common limit until at least one method converges independently.
+Complete the round before choosing the fastest verified convergence time, then
+freeze a configurable multiple for every method and measured repetition. A
+minimum keeps the derived limit positive. Absolute ceilings and fallbacks are
+optional; calibration grows while time-limited pilots could benefit. If every
+method stops without reaching the target for another reason, report those
+stops instead of increasing the time budget. Calibration
+stays separate from measurement, and its evidence and decisions survive resume,
+retries, shared-storage replay, and archive restoration.
+
 ## Planning and identity
 
 Planning normalizes declarations, resolves defaults, validates contracts,

@@ -406,6 +406,7 @@ impl ProgressModel {
             Message::Phase(progress) => {
                 let action = match progress.phase {
                     PreparationPhase::VerifyingEnvironments => "Verifying environments",
+                    PreparationPhase::CalibratingBudget => "Calibrating solver budget",
                     PreparationPhase::ResolvingWorkers => "Resolving workers and staging sources",
                     PreparationPhase::PreparingDataset => {
                         "Preparing dataset (generate or verify cached data)"

@@ -28,9 +28,46 @@ use crate::runtime::{
     run_store::RunStoreError,
 };
 
+pub(crate) fn adaptive_decisions(
+    tables: &BTreeMap<&str, Vec<Value>>,
+) -> Result<Vec<crate::core::adaptive::AdaptiveBudgetDecision>, InspectionError> {
+    tables
+        .get("event")
+        .into_iter()
+        .flatten()
+        .filter(|event| event["kind"] == crate::runtime::run_store::adaptive::DECISION_EVENT)
+        .map(|event| {
+            serde_json::from_value(event["payload"].clone())
+                .map_err(|_| InspectionError::Invalid("invalid adaptive budget decision"))
+        })
+        .collect()
+}
+
+pub(crate) fn calibration_slots(tables: &BTreeMap<&str, Vec<Value>>) -> BTreeSet<String> {
+    let runs = tables
+        .get("resolved-specification")
+        .into_iter()
+        .flatten()
+        .filter(|run| run["definition"]["calibration"].is_object())
+        .filter_map(|run| run["id"].as_str())
+        .collect::<BTreeSet<_>>();
+    tables
+        .get("resolved-attempt-slot")
+        .into_iter()
+        .flatten()
+        .filter(|slot| {
+            slot["resolved_run_id"]
+                .as_str()
+                .is_some_and(|id| runs.contains(id))
+        })
+        .filter_map(|slot| slot["id"].as_str().map(str::to_owned))
+        .collect()
+}
+
 /// An in-memory inspection view. It never initializes, recovers, or writes a run.
 #[derive(Default)]
 pub struct Inspection {
+    adaptive_budgets: Vec<crate::core::adaptive::AdaptiveBudgetDecision>,
     fresh_sequences: Vec<crate::core::profile::FreshSequenceProgress>,
     records: BTreeMap<String, InspectionRecord>,
     slots: Vec<SlotStatus>,
@@ -47,7 +84,7 @@ impl Inspection {
     pub fn comparison_rows(&self) -> Vec<crate::core::comparison::ComparisonRow> {
         let empty = Value::Null;
         let mut rows = Vec::new();
-        for attempt in &self.attempts {
+        for attempt in self.attempts.iter().filter(|a| !a.calibration) {
             let observations = self
                 .observations
                 .iter()
@@ -226,6 +263,7 @@ impl Inspection {
                         if matches!(slot.record.role, AttemptSlotRole::Measured { .. }) {
                             current_slots.insert(slot.id.to_string());
                             self.slots.push(SlotStatus {
+                                calibration: false,
                                 logical_slot_id: slot.id.to_string(),
                                 resolved_slot_id: None,
                                 logical_run_id: specification.specification.id.to_string(),
@@ -270,6 +308,18 @@ impl Inspection {
             .map_err(io::Error::other)?
             .as_nanos();
         self.output_directory = Some(snapshot.root.to_string_lossy().into_owned());
+        self.adaptive_budgets = adaptive_decisions(&snapshot.tables)?;
+        for decision in &self.adaptive_budgets {
+            self.records.insert(
+                decision.group_id.clone(),
+                InspectionRecord::new(
+                    decision.group_id.clone(),
+                    "adaptive-budget",
+                    json!(decision),
+                ),
+            );
+        }
+        let pilot_slots = calibration_slots(&snapshot.tables);
         for (&kind, rows) in &snapshot.tables {
             if kind.starts_with("fresh-")
                 || matches!(
@@ -365,6 +415,9 @@ impl Inspection {
             record.record["events"] = json!(events);
             record.relate(diagnostic.iter().cloned());
             self.attempts.push(AttemptStatus {
+                calibration: row["slot_id"]
+                    .as_str()
+                    .is_some_and(|id| pilot_slots.contains(id)),
                 id,
                 slot_id: string(row, "slot_id")?,
                 retry_index: integer(row, "retry_index")?,
@@ -381,6 +434,9 @@ impl Inspection {
         }
         for row in &snapshot.tables["observation"] {
             self.observations.push(ObservationStatus {
+                calibration: row["attempt_slot_id"]
+                    .as_str()
+                    .is_some_and(|id| pilot_slots.contains(id)),
                 id: string(row, "id")?,
                 slot_id: string(row, "slot_id")?,
                 attempt_id: string(row, "attempt_id")?,
@@ -406,6 +462,11 @@ impl Inspection {
         }
         let stored_logical = snapshot.tables["resolved-attempt-slot"]
             .iter()
+            .filter(|row| {
+                !row["id"]
+                    .as_str()
+                    .is_some_and(|id| pilot_slots.contains(id))
+            })
             .map(|row| string(row, "logical_slot_id"))
             .collect::<Result<BTreeSet<_>, _>>()?;
         self.slots
@@ -466,6 +527,7 @@ impl Inspection {
             };
             let logical_slot_id = string(row, "logical_slot_id")?;
             self.slots.push(SlotStatus {
+                calibration: pilot_slots.contains(&id),
                 in_current_plan: self
                     .current_slots
                     .as_ref()
@@ -710,10 +772,11 @@ impl Inspection {
                 .cmp(&(&right.logical_slot_id, &right.resolved_slot_id))
         });
         let mut summary = StatusSummary {
-            attempt_slots: self.slots.len(),
+            attempt_slots: self.slots.iter().filter(|s| !s.calibration).count(),
+            calibration_attempts: self.attempts.iter().filter(|a| a.calibration).count(),
             ..StatusSummary::default()
         };
-        for slot in &self.slots {
+        for slot in self.slots.iter().filter(|s| !s.calibration) {
             match slot.state {
                 SlotState::SkippedTargetReached => summary.skipped_target_reached_slots += 1,
                 SlotState::Censored => summary.censored_slots += 1,
@@ -724,7 +787,7 @@ impl Inspection {
                 SlotState::RecoveryRequired => summary.recovery_required_slots += 1,
             }
         }
-        for attempt in &self.attempts {
+        for attempt in self.attempts.iter().filter(|a| !a.calibration) {
             match attempt.state.as_str() {
                 "accepted" => summary.accepted_attempts += 1,
                 "failed" => summary.failed_attempts += 1,
@@ -736,9 +799,10 @@ impl Inspection {
         summary.selected_observations = self
             .observations
             .iter()
-            .filter(|observation| observation.selected)
+            .filter(|observation| observation.selected && !observation.calibration)
             .count();
         StatusReport {
+            adaptive_budgets: self.adaptive_budgets.clone(),
             comparison: self.comparison_rows(),
             fresh_sequences: self.fresh_sequences,
             command: "status",

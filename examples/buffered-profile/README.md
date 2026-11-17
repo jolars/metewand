@@ -47,3 +47,18 @@ See [buffered profiles](../../docs/guide/authoring/extending.md#move-from-final-
 clock, collection, independent evaluation, and retry rules. An interrupted run
 retains already published snapshots. Repeat `run` to start a new complete
 trajectory for an interrupted slot. Recorded failures require `--retry`.
+
+To try adaptive calibration, select only the `target` experiment, set the local
+execution policy's `timing-scope` to `execute_only`, remove `max-active-time`
+from the `accuracy` observation policy, and add:
+
+```yaml
+adaptive-budget: {}
+```
+
+Use a new output directory. Metewand chooses its pilot budgets automatically,
+freezes a common limit from the fastest independently verified convergence,
+and starts the four measured trajectories. No pilot growth ceiling or absolute
+measured time ceiling is configured. Pilots are separate from measurements. See
+[adaptive budgets](../../docs/guide/authoring/extending.md#calibrate-a-common-solver-time-limit)
+for defaults, optional ceilings, watchdogs, and resume behavior.

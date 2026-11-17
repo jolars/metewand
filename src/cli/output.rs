@@ -368,6 +368,15 @@ fn render_status(report: &StatusReport) -> String {
     }
     writeln!(output, "Slots: {} total, {} satisfied, {} pending, {} active, {} require retry, {} require recovery.", summary.attempt_slots, summary.satisfied_slots, summary.pending_slots, summary.active_slots, summary.retry_required_slots, summary.recovery_required_slots).expect("string write");
     writeln!(output, "Attempts: {} accepted, {} failed, {} superseded, {} censored, {} active.\nSelected observations: {}", summary.accepted_attempts, summary.failed_attempts, summary.superseded_attempts, summary.censored_attempts, summary.active_attempts, summary.selected_observations).expect("string write");
+    render_adaptive_budgets(&mut output, &report.adaptive_budgets);
+    if summary.calibration_attempts > 0 {
+        writeln!(
+            output,
+            "Calibration attempts: {} (separate from measurements).",
+            summary.calibration_attempts
+        )
+        .expect("string write");
+    }
     output.push_str(&render_comparison(&report.comparison));
     for profile in &report.fresh_sequences {
         writeln!(
@@ -1151,6 +1160,10 @@ impl PlanRequirements {
             .iter()
             .map(|experiment| {
                 let policy = &repository.manifest.execution_policies[&experiment.execution_policy];
+                let profile = repository.manifest.observation_policies
+                    [&experiment.observation_policy]
+                    .profile
+                    .as_ref();
                 ControlRequirement {
                     experiment: experiment.name.to_string(),
                     cpus: policy.cpus,
@@ -1160,6 +1173,12 @@ impl PlanRequirements {
                     worker_reuse: policy.resolved_worker_reuse(),
                     warmup_runs: policy.resolved_warmup_runs(),
                     timeout: policy.timeout.clone(),
+                    worker_execute_timeout_ns: repository.manifest.worker_timeouts.execute,
+                    profile_max_active_time: profile.and_then(|p| {
+                        (!p.policy.max_active_time.is_empty())
+                            .then(|| p.policy.max_active_time.clone())
+                    }),
+                    adaptive_budget: profile.and_then(|p| p.policy.adaptive_budget.clone()),
                     timing_scope: policy.resolved_timing_scope().to_string(),
                     primary_time: primary_time(policy.resolved_primary_time()),
                     run_order: run_order(policy.resolved_run_order()),
@@ -1230,6 +1249,26 @@ impl PlanRequirements {
                 control.enforcement,
             )
             .expect("writing to a string cannot fail");
+            writeln!(output,"    budgets: scientific timeout={}, worker execute watchdog={} ns, profile active limit={}",
+                control.timeout.as_deref().unwrap_or("unspecified"),control.worker_execute_timeout_ns,
+                control.profile_max_active_time.as_deref().unwrap_or(if control.adaptive_budget.is_some() { "unbounded" } else { "not applicable" })).expect("string write");
+            if let Some(budget) = &control.adaptive_budget {
+                writeln!(output,"    adaptive calibration: pilot {} growing by {}, limit = {} times fastest verified time (minimum {}, ceiling {}, fallback {}); scientific watchdog = limit + {}, execute watchdog extended as needed",
+                    budget.initial_pilot_time,budget.growth_factor,budget.multiplier,budget.minimum_time,
+                    control.profile_max_active_time.as_deref().unwrap_or("unbounded"),budget.fallback_time.as_deref().or(control.profile_max_active_time.as_deref()).unwrap_or("wait for convergence"),budget.watchdog_grace).expect("string write");
+            } else if control
+                .timeout
+                .as_deref()
+                .and_then(|s| crate::core::duration::positive_nanoseconds(s).ok())
+                .is_some_and(|n| control.worker_execute_timeout_ns < n)
+                || control
+                    .profile_max_active_time
+                    .as_deref()
+                    .and_then(|s| crate::core::duration::positive_nanoseconds(s).ok())
+                    .is_some_and(|n| control.worker_execute_timeout_ns < n)
+            {
+                writeln!(output,"    warning: the worker execute watchdog is shorter than the requested scientific budget; it can terminate execution before that budget is exhausted").expect("string write");
+            }
         }
         writeln!(
             output,
@@ -1269,10 +1308,20 @@ struct ControlRequirement {
     worker_reuse: bool,
     warmup_runs: u64,
     timeout: Option<String>,
+    #[serde(skip_serializing_if = "default_execute_timeout")]
+    worker_execute_timeout_ns: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    profile_max_active_time: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    adaptive_budget: Option<crate::core::adaptive::AdaptiveBudget>,
     timing_scope: String,
     primary_time: &'static str,
     run_order: &'static str,
     enforcement: &'static str,
+}
+
+fn default_execute_timeout(value: &u64) -> bool {
+    *value == crate::core::manifest::WorkerTimeouts::default().execute
 }
 
 #[derive(Debug, Serialize)]
@@ -1688,6 +1737,28 @@ impl CommandError {
     #[cfg(any(unix, windows))]
     pub fn execution(error: &crate::runtime::run::RunError) -> Self {
         use crate::runtime::run::RunError;
+        if let RunError::AdaptiveCalibrationStopped { group_id, pilots } = error {
+            let diagnostic = Diagnostic::new("adaptive_calibration_stopped", error.to_string())
+                .with_detail("command", "run")
+                .with_detail("calibration_group_id", group_id.as_str())
+                .with_detail(
+                    "pilots",
+                    serde_json::to_value(pilots).expect("typed pilot evidence"),
+                )
+                .with_affected_ids(
+                    std::iter::once(group_id.clone())
+                        .chain(pilots.iter().map(|pilot| pilot.attempt_id.clone())),
+                )
+                .with_remediation(concat!(
+                    "Inspect the saved pilot stop reasons. Check solver stopping tolerances, ",
+                    "iteration caps, collection limits, and worker or evaluator failures ",
+                    "before rerunning."
+                ));
+            return Self {
+                exit_code: EXIT_RUN_FAILED,
+                diagnostic: Box::new(diagnostic),
+            };
+        }
         if let RunError::Lock(source) = error {
             return Self::locking(source);
         }
@@ -1902,6 +1973,15 @@ fn render_comparison(rows: &[crate::core::comparison::ComparisonRow]) -> String 
 
 fn render_run_report(report: &RunReport, verbose: bool, elapsed: std::time::Duration) -> String {
     let mut output = super::presentation::completion(report, elapsed);
+    if !report.calibration_attempts.is_empty() {
+        writeln!(
+            output,
+            "Calibration: {} pilot attempts.",
+            report.calibration_attempts.len()
+        )
+        .expect("string write");
+    }
+    render_adaptive_budgets(&mut output, &report.adaptive_budgets);
     if !verbose {
         return output;
     }
@@ -1980,6 +2060,26 @@ fn render_run_report(report: &RunReport, verbose: bool, elapsed: std::time::Dura
         }
     }
     output
+}
+
+fn render_adaptive_budgets(
+    output: &mut String,
+    decisions: &[crate::core::adaptive::AdaptiveBudgetDecision],
+) {
+    for decision in decisions {
+        writeln!(
+            output,
+            "Adaptive solver limit: {} ms ({}, {} pilot attempts; scope {}).",
+            decision.effective_limit_ns / 1_000_000,
+            decision.reference_time_ns.map_or_else(
+                || "fallback".into(),
+                |time| format!("{} times {} ns", decision.multiplier, time)
+            ),
+            decision.pilots.len(),
+            decision.instrumented_scope
+        )
+        .expect("string write");
+    }
 }
 
 fn render_machine<T: Serialize>(
@@ -2188,6 +2288,8 @@ mod tests {
     fn run_result(summary: RunSummary) -> super::CommandResult {
         super::CommandResult::Run {
             report: Box::new(RunReport {
+                calibration_attempts: Vec::new(),
+                adaptive_budgets: Vec::new(),
                 command: "run",
                 benchmark: "example".into(),
                 manifest_hash: String::new(),
