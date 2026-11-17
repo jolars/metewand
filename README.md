@@ -1,6 +1,8 @@
 # Metewand <img src="https://raw.githubusercontent.com/jolars/metewand/refs/heads/main/assets/logo.png" align="right" width="160" alt="A green measuring rod with brass ends" />
 
+[![CI](https://github.com/jolars/metewand/actions/workflows/ci.yml/badge.svg)](https://github.com/jolars/metewand/actions/workflows/ci.yml)
 [![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.23699794-blue)](https://doi.org/10.5281/zenodo.23699794)
+[![PyPI](https://img.shields.io/pypi/v/metewand)](https://pypi.org/project/metewand/)
 
 Metewand runs reproducible computational benchmarks across languages. It
 executes methods as separate processes, evaluates answers independently, and
