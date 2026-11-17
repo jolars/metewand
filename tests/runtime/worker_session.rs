@@ -1025,6 +1025,8 @@ if os.fork() == 0:
 os.close(signal)
 os.read(ready, 5)
 if os.environ['FILL_REQUEST_PIPE'] == '1':
+    # Startup may take longer than the blocked prepare request's deadline.
+    time.sleep(0.2)
     reader = os.fdopen(int(os.environ['METEWAND_PROTOCOL_READ_FD']))
     hello = json.loads(reader.readline())
     response = dict(id=hello['id'], ok=True, protocol=1,
@@ -1035,9 +1037,12 @@ os._exit(0)
 "#,
         ]);
         let worker = WorkerProcess::spawn(command, WorkerLogLimits::new(32, 32)).unwrap();
-        let started = Instant::now();
+        let mut started = Instant::now();
         let mut deadlines = timeouts();
-        deadlines.hello = Duration::from_millis(100);
+        // Only the exchange under test needs the short deadline.
+        if !fill_request_pipe {
+            deadlines.hello = Duration::from_millis(100);
+        }
         deadlines.prepare = Duration::from_millis(100);
         let session = WorkerSession::connect(
             worker,
@@ -1047,8 +1052,9 @@ os._exit(0)
             deadlines,
         );
         let error = if fill_request_pipe {
+            let mut session = session.expect("handshake must allow normal worker startup");
+            started = Instant::now();
             session
-                .unwrap()
                 .prepare(
                     "/dataset",
                     "contract",
@@ -1056,12 +1062,18 @@ os._exit(0)
                     json!({}),
                     1,
                 )
-                .unwrap_err()
+                .expect_err("a full request pipe must time out")
         } else {
-            session.unwrap_err()
+            session.expect_err("an unanswered handshake must time out")
+        };
+        let expected_phase = if fill_request_pipe {
+            WorkerPhase::Prepare
+        } else {
+            WorkerPhase::Hello
         };
         assert!(
-            matches!(error, WorkerSessionError::Timeout { .. }),
+            matches!(error, WorkerSessionError::Timeout { phase, limit }
+                if phase == expected_phase && limit == Duration::from_millis(100)),
             "{error:?}"
         );
         assert!(started.elapsed() < Duration::from_secs(3));
