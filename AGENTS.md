@@ -1,115 +1,70 @@
-# AGENTS.md
+# Repository Guidelines
 
-This file is the operational repository guide for AI agents. Read the relevant
-parts of `docs/design.md` before changing architecture or public behavior.
-`docs/design.md` defines the general model. `TODO.md` lists remaining work by
-area.
+## Project Structure & Module Organization
 
-## Project priorities
+`src/core/` owns domain logic; `src/protocol/` defines worker messages;
+`src/runtime/` handles execution and storage; `src/cli/` provides commands.
+Tests use `tests/integration.rs` and internals through `src/modules.rs`; no
+public library exists. `packages/` holds Python and R workers, `schemas/` and
+`fixtures/` public formats, `examples/` benchmarks, `docs/` VitePress guides,
+and `assets/` branding.
 
-Metewand is a reproducible, language-neutral computational benchmark system.
-Preserve these properties throughout the implementation:
+## Architecture & Project Priorities
 
-- Processes, not language-specific FFI, are the universal worker boundary.
-- Public machine-readable boundaries are versioned from their introduction;
-  internal records inherit their enclosing format's version.
-- Identities, expansion, scheduling, and emitted records are deterministic.
-- Human output is rendered from the same typed records as machine output.
-- Commands are noninteractive and read-only unless mutation is explicitly
-  authorized.
+Read [docs/design.md](docs/design.md) before architecture or public behavior
+changes. Prioritize Basin and clustlasso-cd benchmarks in [TODO.md](TODO.md),
+with focused tests and documentation.
 
-Prioritize useful local benchmarks in Basin and clustlasso-cd. Choose the next
-small step from the remaining work to meet those integrations' needs. Complete
-each behavior with focused tests and enough documentation to use it. A feature
-does not need every package callback or a separate reference page before an
-adopter can use it.
+Keep core and protocol independent. Runtime may use both; CLI composes all
+three. Lower layers must not depend on CLI. Keep domain types outside CLI and
+filesystem and execution concerns outside core and protocol.
 
-## Architecture and dependency direction
+Workers communicate across process boundaries. Keep identities, expansion,
+scheduling, and emitted records deterministic. Render human output from typed
+machine records. CLI commands must be noninteractive; mutations require explicit
+intent.
 
-Metewand is one binary-only Cargo package named `metewand`. Its internal modules
-preserve the existing separation of responsibilities:
+Version public machine-readable boundaries from introduction; nested internal
+records inherit enclosing format versions. Preserve saved-record meanings and
+canonical identities; update conformance fixtures when contracts change.
 
-- `src/core`: manifests, planning, scheduling, and run records.
-- `src/protocol`: wire types and protocol versioning.
-- `src/runtime`: artifacts, environments, executors, and provenance.
-- `src/cli`: CLI parsing and user-facing diagnostics.
+## Build, Test, and Development Commands
 
-Core and protocol remain independent foundations. Runtime may use both; the CLI
-composes all three. Runtime, core, and protocol must never use CLI modules. Keep
-domain types out of the CLI, and keep execution and filesystem concerns out of
-core and protocol.
+Run from the root in `devenv shell`. Keep `Cargo.lock` current.
 
-There is no public Rust library API. Repository tests and native examples
-compile internal modules directly through `src/modules.rs`. Keep the single
-integration harness in `tests/integration.rs`, with tests grouped by layer under
-`tests/`. Extract a reusable library only when a concrete consumer needs one.
+- `cargo build --locked`: build CLI.
+- `cargo run --locked -- --help`: run locally.
+- `test-fast`: core and protocol tests; `test-rust`: complete Nextest suite.
+- `npm --prefix docs ci`: install dependencies.
+- `npm --prefix docs run dev`: preview docs.
+- `npm --prefix docs run deploy:check`: validate website build, tests, and
+  packaging.
+- `cargo publish --locked --dry-run`: check packaging.
 
-## Repository conventions
+## Coding Style & Naming Conventions
 
-- Public JSON Schemas belong in `schemas/` and declare their dialect and
-  compatibility version.
-- Publish schemas for externally consumed boundaries. Keep internal helper
-  records private, and reuse the enclosing format's version for nested records.
-  Prefer deriving new schemas from authoritative boundary types when practical;
-  converting the existing schema catalog is not an MVP prerequisite.
-- Contract conformance fixtures live beside the contract under a `fixtures/`
-  directory; shared protocol vectors may live in a repository-level fixture tree
-  once they exist.
-- Runnable end-to-end demonstrations belong in `examples/`.
-- Language packages belong in `packages/r`, `packages/python`, and
-  `packages/julia`.
-- User documentation belongs in `docs/`; `README.md` remains the concise entry
-  point. The VitePress site lives in `docs/`, with the overview, getting
-  started, and multipart authoring guide; `CONTRIBUTING.md` is human-readable
-  guidance for contributors.
+Use Rust 2024 with four-space indentation, `snake_case` functions and modules,
+and `PascalCase` types. Use four-space Python and two-space R indentation. Run
+both formatting checks and Clippy:
 
-## Compatibility and releases
+```sh
+cargo fmt --all -- --check
+rustfmt --edition 2024 --check src/modules.rs
+cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+```
 
-Preserve supported persisted records and canonical identity rules. Update
-relevant conformance vectors when their actual contract changes; use byte-level
-vectors where canonical bytes matter. New authoring syntax and profile APIs may
-evolve together with their current consumers before the MVP. Do not silently
-reinterpret existing results or promise readers for every development revision.
+## Testing Guidelines
 
-Versionary creates release PRs, tags, changelogs, and GitHub Releases. The
-separate `crates-publish.yml` workflow publishes the binary package as
-`metewand` on root release tags. Schemas and adapters ship directly from their
-canonical source directories. Check the extracted package with
-`cargo publish --locked --dry-run`; no asset preparation step is required.
+Add deterministic regressions by layer; assert exact canonical bytes. Use Python
+`unittest` and R `testthat`. Run focused tests during development; use the full
+suite for broad or uncertain changes. Prose changes need diff and link review.
+Storage changes need representative crash tests. Keep exhaustive crash campaigns
+in scheduled or manual CI; run locally only on explicit request.
 
-## Development and verification
+## Commit & Pull Request Guidelines
 
-Prefer test-driven development. Add a failing unit, integration, or golden test
-that describes the behavior before implementing it. Keep fixtures deterministic
-and assert exact machine-readable bytes where the design defines a canonical
-representation.
-
-In `devenv shell`, use `test-fast` for core and protocol changes and `test-rust`
-for the complete Rust suite. These commands use Nextest and accept its filters.
-Keep combinatorial planning and scheduling assertions in core tests, with small
-CLI cases covering worker execution, emitted records, and provenance.
-
-Run focused tests while developing, then verify the affected behavior once. Rust
-changes require formatting and Clippy; run the complete suite for broad changes,
-uncertain impact, or an explicit request. Website changes require the
-documentation checks; repository prose needs only diff and link review. Use
-`devenv test` for a full local CI run when warranted. Available commands are:
-
-- `cargo fmt --all -- --check`
-- `rustfmt --edition 2024 --check src/modules.rs`
-- `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`
-- `cargo nextest run --workspace --all-targets --locked --profile ci`
-- `npm --prefix docs ci`
-- `npm --prefix docs run deploy:check`
-
-Run both formatting checks. Cargo's formatter does not discover the shared
-modules loaded through `include!`; the explicit entry point covers them.
-
-Exhaustive crash campaigns belong in scheduled or manually triggered CI. Run
-them locally only when explicitly requested. Do not start or wait for them as
-part of routine local verification. See [Crash
-conformance](CONTRIBUTING.md#crash-conformance) for commands and CI coverage.
-
-Use Rust 1.98.0 and edition 2024. Keep `Cargo.lock` current and use `--locked`
-in verification. Comments should explain why a choice exists rather than
-restating the code, and should use complete sentences with punctuation.
+Use Conventional Commits (`fix(runtime): preserve records`). Versionary uses
+`feat`, `fix`, and `perf` for releases. Use ASCII messages and backticks for
+code. PRs should explain the problem, behavior, compatibility, checks, and
+linked issues. Discuss substantial changes in issues. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for workflows.
