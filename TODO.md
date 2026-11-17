@@ -66,7 +66,20 @@ configuration.
 
 ## Profiles
 
-- [ ] Add adaptive scientific-budget schedules.
+- [ ] Add adaptive scientific-budget schedules. For clustlasso-cd, calibrate a
+  common per-solver limit for each input, penalty setting, and accuracy
+  target from independently verified pilot convergence times. Increase
+  bounded pilot limits until a solver converges, complete that pilot round
+  for all methods, then freeze a configurable multiple of the fastest
+  verified pilot time for all methods and measured repetitions.
+  "Convergence plus ten times its duration" corresponds to `11 * t_ref`.
+  Include a minimum limit, an absolute ceiling, and a fallback when no solver
+  converges. Keep calibration separate from measured runs so serial dispatch
+  order does not determine the reference method. Record the reference
+  attempts, timing basis, multiplier, and effective limit, and preserve
+  budget decisions across resume and retries. Support cooperative stopping
+  for buffered profiles, align execution watchdogs with the derived limit,
+  and retain censored terminal states separately from execution failures.
 - [ ] Add checkpoint-state restoration.
 
 ## Language packages and environments
