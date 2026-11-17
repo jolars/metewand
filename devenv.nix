@@ -2,6 +2,8 @@
 {
   packages = [
     pkgs.cargo-nextest
+    pkgs.gnutar
+    pkgs.go-task
     pkgs.nodejs_24
     pkgs.python3
     pkgs.uv

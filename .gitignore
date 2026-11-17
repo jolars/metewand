@@ -22,6 +22,11 @@ __pycache__/
 /packages/python/build/
 /packages/python/dist/
 
+# Paper builds
+/.task/
+/paper/arxiv.pdf
+/paper/arxiv.tar.gz
+
 # Website
 /docs/node_modules/
 /docs/.vitepress/cache/

@@ -1,0 +1,7 @@
+version: "3"
+
+tasks:
+  arxiv:
+    desc: Build and validate the arXiv source bundle and preview PDF
+    cmds:
+      - node paper/make-arxiv.mjs

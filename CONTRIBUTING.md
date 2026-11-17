@@ -1234,3 +1234,27 @@ execution. Foreground execution uses a clean environment, literal injected
 values, explicit staging mounts, and a PID namespace with its init process.
 Resource accounting remains unavailable. See the
 [example](examples/locked-apptainer/README.md) for the opt-in integration command.
+
+## Paper
+
+Edit [paper/paper.md](paper/paper.md) and [paper/paper.bib](paper/paper.bib).
+The paper uses Pandoc Markdown so its citations survive formatting.
+
+In `devenv shell`, run `task arxiv` from the repository root to prepare an arXiv
+submission. It requires Go Task, Node.js, Docker with a running daemon, and
+`tar`. The development environment provides Go Task, Node.js, and `tar`.
+Docker uses the `openjournals/inara` image, downloading it if needed.
+
+The task exports fresh preprint LaTeX, checks citations, and compiles only the
+submission files with PDFLaTeX without shell escape. It repeats compilation
+until references stabilize, up to five passes, and writes the outputs after a
+successful build:
+
+- `paper/arxiv.tar.gz` contains `main.tex` and any referenced figures. Inara
+  embeds the formatted bibliography, so the archive needs no separate
+  bibliography file or Biber run.
+- `paper/arxiv.pdf` is the local preview, kept outside the submission archive.
+
+Both outputs are ignored by Git. Upload the archive to arXiv and select
+PDFLaTeX. Review arXiv's generated PDF before completing the submission. See
+[arXiv's TeX submission instructions](https://info.arxiv.org/help/submit_tex.html).
