@@ -2,22 +2,22 @@
 
 [![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.23699794-blue)](https://doi.org/10.5281/zenodo.23699794)
 
-Metewand runs reproducible computational benchmarks across languages. It executes
-methods as separate processes, evaluates answers independently, and retains
-settings, timings, metrics, failures, and provenance.
+Metewand runs reproducible computational benchmarks across languages. It
+executes methods as separate processes, evaluates answers independently, and
+retains settings, timings, metrics, failures, and provenance.
 
-Start with the Metewand Python or R package: write ordinary functions and declare
-your comparison in YAML. The `metewand` CLI checks and runs the benchmark on
-Linux, macOS, and native Windows x64.
+Start with the Metewand Python or R package: write ordinary functions and
+declare your comparison in YAML. The `metewand` CLI checks and runs the
+benchmark on Linux, macOS, and native Windows x64.
 
-Read the [overview](docs/guide/overview.md), follow
-[getting started](docs/guide/getting-started.md), or read the
-[authoring guide](docs/guide/authoring/index.md). The documentation is also
-available at <https://metewand.org>.
+Read the [overview](docs/guide/overview.md), follow [getting
+started](docs/guide/getting-started.md), or read the [authoring
+guide](docs/guide/authoring/index.md). The documentation is also available at
+<https://metewand.org>.
 
 ## Install
 
-Starting with the next release, install the prebuilt CLI on Linux or macOS with:
+Install the prebuilt CLI on Linux or macOS with:
 
 ```sh
 curl --proto '=https' --tlsv1.2 -LsSf https://metewand.org/install | sh
@@ -29,11 +29,11 @@ On Windows, run this in PowerShell:
 irm https://metewand.org/install.ps1 | iex
 ```
 
-Installers place `metewand` in Cargo's binary directory, normally `~/.cargo/bin`.
-Archives are also available from [GitHub Releases](https://github.com/jolars/metewand/releases).
-Install the Python or R worker package separately. See
-[getting started](docs/guide/getting-started.md) for package installation and
-source builds.
+Installers place `metewand` in Cargo's binary directory, normally
+`~/.cargo/bin`. Archives are also available from [GitHub
+Releases](https://github.com/jolars/metewand/releases). Install the Python or R
+worker package separately. See [getting started](docs/guide/getting-started.md)
+for package installation and source builds.
 
 Starting with the next release, Rust users can also install the CLI from
 crates.io with Rust 1.98.0 or later:
@@ -54,9 +54,9 @@ metewand check --workers
 metewand run
 ```
 
-The generated `benchmark.py` compares Python's built-in sum with a loop on seeded
-integers and independently checks each answer. The experiment in `metewand.yaml`
-declares the comparison:
+The generated `benchmark.py` compares Python's built-in sum with a loop on
+seeded integers and independently checks each answer. The experiment in
+`metewand.yaml` declares the comparison:
 
 ```yaml
 experiments:
@@ -67,16 +67,16 @@ experiments:
     seed: 7
 ```
 
-Metewand prints timings and absolute errors and saves the results in `.metewand/`
-beside the manifest. Repeating `metewand run` resumes that history. Use
-`--output-dir PATH` for a separate run.
-Replace the generated functions and edit the configuration to compare your own
-methods. For R, start with `metewand init my-benchmark --language r`.
+Metewand prints timings and absolute errors and saves the results in
+`.metewand/` beside the manifest. Repeating `metewand run` resumes that history.
+Use `--output-dir PATH` for a separate run. Replace the generated functions and
+edit the configuration to compare your own methods. For R, start with
+`metewand init my-benchmark --language r`.
 
 Follow the [authoring guide](docs/guide/authoring/index.md) or adapt the
 [least-squares example](examples/least-squares) for a fuller comparison. See
-[running and analyzing comparisons](docs/guide/authoring/running.md) for repeated
-measurements and exports.
+[running and analyzing comparisons](docs/guide/authoring/running.md) for
+repeated measurements and exports.
 
 For an existing benchmark repository, open the directory containing
 `metewand.yaml` and run `metewand plan`, then `metewand run`. Select a named
@@ -87,13 +87,14 @@ that experiment.
 
 Metewand is under active development. The current runner executes trusted local
 code and supports locked Nix, uv, and Linux Docker OCI environments, streaming
-profiles, and portable result archives. Isolated execution and the Julia package remain
-planned. The CLI, Python package, and R package have separate release workflows.
+profiles, and portable result archives. Isolated execution and the Julia package
+remain planned. The CLI, Python package, and R package have separate release
+workflows.
 
 The [design](docs/design.md) describes the general model.
 [CONTRIBUTING.md](CONTRIBUTING.md) covers contributor setup, implementation
-contracts, verification, releases, and website development.
-[TODO.md](TODO.md) lists remaining work by area.
+contracts, verification, releases, and website development. [TODO.md](TODO.md)
+lists remaining work by area.
 
 ## Citation
 
