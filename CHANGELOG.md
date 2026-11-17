@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.8.0](https://github.com/jolars/metewand/compare/v0.7.0...v0.8.0) (2026-11-17)
+
+### Features
+
+- add adaptive scientific budgets for buffered profiles ([`a7ecc7d`](https://github.com/jolars/metewand/commit/a7ecc7d21f0128a174af1b458421b0dfc79b735f))
+
+### Bug Fixes
+
+- **docs:** update Markdown test for homepage ([`913b026`](https://github.com/jolars/metewand/commit/913b02601340422f89af0cd5c7ea4d8144349a86))
+
 ## [0.7.0](https://github.com/jolars/metewand/compare/v0.6.0...v0.7.0) (2026-11-16)
 
 ### Features
