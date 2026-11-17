@@ -35,8 +35,7 @@ Releases](https://github.com/jolars/metewand/releases). Install the Python or R
 worker package separately. See [getting started](docs/guide/getting-started.md)
 for package installation and source builds.
 
-Starting with the next release, Rust users can also install the CLI from
-crates.io with Rust 1.98.0 or later:
+Rust users can also install the CLI from crates.io with Rust 1.98.0 or later:
 
 ```sh
 cargo install metewand --locked
@@ -68,33 +67,17 @@ experiments:
 ```
 
 Metewand prints timings and absolute errors and saves the results in
-`.metewand/` beside the manifest. Repeating `metewand run` resumes that history.
-Use `--output-dir PATH` for a separate run. Replace the generated functions and
-edit the configuration to compare your own methods. For R, start with
-`metewand init my-benchmark --language r`.
-
-Follow the [authoring guide](docs/guide/authoring/index.md) or adapt the
-[least-squares example](examples/least-squares) for a fuller comparison. See
-[running and analyzing comparisons](docs/guide/authoring/running.md) for
-repeated measurements and exports.
+`.metewand/` beside the manifest. Replace the generated functions and edit the
+configuration to compare your own methods. Follow the [authoring
+guide](docs/guide/authoring/index.md) or adapt the [least-squares
+example](examples/least-squares) for a fuller comparison. See [running and
+analyzing comparisons](docs/guide/authoring/running.md) for repeated
+measurements and exports.
 
 For an existing benchmark repository, open the directory containing
 `metewand.yaml` and run `metewand plan`, then `metewand run`. Select a named
 comparison with `metewand run gaussian-regression` when the manifest declares
 that experiment.
-
-## Project status and development
-
-Metewand is under active development. The current runner executes trusted local
-code and supports locked Nix, uv, and Linux Docker OCI environments, streaming
-profiles, and portable result archives. Isolated execution and the Julia package
-remain planned. The CLI, Python package, and R package have separate release
-workflows.
-
-The [design](docs/design.md) describes the general model.
-[CONTRIBUTING.md](CONTRIBUTING.md) covers contributor setup, implementation
-contracts, verification, releases, and website development. [TODO.md](TODO.md)
-lists remaining work by area.
 
 ## Citation
 
@@ -103,7 +86,9 @@ that release in the [Zenodo archive](https://doi.org/10.5281/zenodo.23699794)
 and export its citation. To cite Metewand generally, use the concept DOI
 `10.5281/zenodo.23699794`.
 
-Machine-readable metadata is available in [CITATION.cff](CITATION.cff).
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines.
 
 ## License
 
