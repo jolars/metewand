@@ -161,6 +161,13 @@ commands. They are not required for routine local verification. These tests
 exercise process death on the test filesystem; they do not establish guarantees
 about storage hardware losing power or visibility across hosts.
 
+### Scheduled tests
+
+The [Durability workflow](.github/workflows/durability.yml) also runs the
+large concurrent-results stress test weekly and on manual dispatch on Linux
+and macOS. The default suite checks the same output formats with smaller
+payloads.
+
 ## Compatibility versions
 
 Package releases and public format versions are separate. The CLI, Python

@@ -277,25 +277,31 @@ fn a_failed_concurrent_attempt_keeps_its_policy_and_does_not_skip_later_batches(
 }
 
 #[test]
-fn large_concurrent_results_are_reported_in_all_output_formats() {
-    const SLOTS: usize = 24;
-    const RESULT_BYTES: usize = 2 * 1024 * 1024;
-    const METRIC_BYTES: usize = 512 * 1024;
+fn concurrent_results_are_reported_in_all_output_formats() {
+    check_concurrent_output(5, 128, 32);
+}
 
+#[test]
+#[ignore = "large-result stress test; see CONTRIBUTING.md#scheduled-tests"]
+fn large_concurrent_results_are_reported_in_all_output_formats() {
+    check_concurrent_output(24, 2 * 1024 * 1024, 512 * 1024);
+}
+
+fn check_concurrent_output(slots: usize, result_bytes: usize, metric_bytes: usize) {
     for format in ["human", "json", "jsonl"] {
-        let root = repository(Some(2), SLOTS, None);
+        let root = repository(Some(2), slots, None);
         let benchmark = root.path().join("benchmark");
         let worker = benchmark.join("worker.py");
         let source = fs::read_to_string(&worker)
             .unwrap()
             .replace(
                 r#""data": {"answer": prepared}"#,
-                &format!(r#""data": {{"answer": prepared, "payload": "r" * {RESULT_BYTES}}}"#),
+                &format!(r#""data": {{"answer": prepared, "payload": "r" * {result_bytes}}}"#),
             )
             .replace(
                 r#""data": {"absolute_error": error}"#,
                 &format!(
-                    r#""data": {{"absolute_error": error, "payload": "m" * {METRIC_BYTES} + str(answer)}}"#
+                    r#""data": {{"absolute_error": error, "payload": "m" * {metric_bytes} + str(answer)}}"#
                 ),
             )
             .replace(r#""result.json""#, r#""answer.json""#);
@@ -336,11 +342,11 @@ fn large_concurrent_results_are_reported_in_all_output_formats() {
         assert!(output.status.success(), "{format}: {stderr}");
         let state = document(&root.path().join("state.json"));
         assert_eq!(state["peak"], 2);
-        assert_eq!(state["completed"].as_array().unwrap().len(), SLOTS);
+        assert_eq!(state["completed"].as_array().unwrap().len(), slots);
         if format == "human" {
             let stdout = std::str::from_utf8(&output.stdout).unwrap();
             assert!(
-                stdout.contains(&format!("{SLOTS}/{SLOTS} accepted")),
+                stdout.contains(&format!("{slots}/{slots} accepted")),
                 "{stdout}"
             );
             assert!(
@@ -364,27 +370,27 @@ fn large_concurrent_results_are_reported_in_all_output_formats() {
         assert_eq!(report["schema_version"], 1);
         assert_eq!(report["kind"], "result");
         let report = &report["data"];
-        assert_eq!(report["summary"]["accepted_attempts"], SLOTS);
+        assert_eq!(report["summary"]["accepted_attempts"], slots);
         let attempts = report["attempts"].as_array().unwrap();
         let events = report["events"].as_array().unwrap();
         let comparison = report["comparison"].as_array().unwrap();
-        assert_eq!(comparison.len(), SLOTS);
-        assert_eq!(events.len(), 2 * SLOTS + 2);
+        assert_eq!(comparison.len(), slots);
+        assert_eq!(events.len(), 2 * slots + 2);
         let finished = events
             .iter()
             .filter(|event| event["event"] == "attempt_finished")
             .collect::<Vec<_>>();
-        assert_eq!(finished.len(), SLOTS);
-        assert_eq!(attempts.len(), SLOTS);
+        assert_eq!(finished.len(), slots);
+        assert_eq!(attempts.len(), slots);
         for (event, attempt) in finished.into_iter().zip(attempts) {
             let id = &attempt["attempt_id"];
             assert!(&event["attempt"] == attempt, "event for {id}");
             let result = attempt["result"]["payload"].as_str().unwrap();
-            assert_eq!(result.len(), RESULT_BYTES);
+            assert_eq!(result.len(), result_bytes);
             assert!(result.bytes().all(|byte| byte == b'r'));
             let answer = attempt["result"]["answer"].to_string();
             let metrics = attempt["metrics"]["payload"].as_str().unwrap();
-            assert_eq!(metrics.len(), METRIC_BYTES + answer.len());
+            assert_eq!(metrics.len(), metric_bytes + answer.len());
             assert!(metrics.ends_with(&answer));
             let row = comparison
                 .iter()

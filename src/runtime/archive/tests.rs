@@ -84,13 +84,41 @@ fn invoke(root: &Path, operation: &str, target: usize) -> Output {
 
 #[test]
 fn publication_crashes_leave_no_destination_or_a_complete_verified_archive() {
+    check_publication_crashes(false);
+}
+
+#[test]
+#[ignore = "full archive crash sweep; see CONTRIBUTING.md#crash-conformance"]
+fn every_archive_publication_boundary_survives_process_death() {
+    check_publication_crashes(true);
+}
+
+fn check_publication_crashes(exhaustive: bool) {
     for operation in ["create", "import", "restore"] {
         let baseline = tempfile::tempdir().unwrap();
         prepare_input(baseline.path(), operation);
         let output = invoke(baseline.path(), operation, 0);
         assert!(output.status.success(), "{output:?}");
         let trace = fs::read_to_string(baseline.path().join("trace")).unwrap();
+        // The last rename publishes the destination. Earlier renames can
+        // publish individual files inside the staging directory.
+        let publication_point = |boundary| {
+            trace
+                .lines()
+                .enumerate()
+                .filter(|(_, label)| *label == boundary)
+                .map(|(index, _)| index + 1)
+                .last()
+                .unwrap_or_else(|| panic!("{operation}: missing {boundary}"))
+        };
+        let before_publication = publication_point("rename.before");
+        let after_publication = publication_point("rename.after");
         let targets = trace.lines().enumerate().filter_map(|(index, label)| {
+            let target = index + 1;
+            if !exhaustive {
+                return (target == before_publication || target == after_publication)
+                    .then_some((target, label));
+            }
             let durability = matches!(
                 label,
                 "file_sync.before"
@@ -103,7 +131,7 @@ fn publication_crashes_leave_no_destination_or_a_complete_verified_archive() {
             let transaction = operation == "restore"
                 && (label.starts_with("database.before COMMIT")
                     || label.starts_with("database.after COMMIT"));
-            (durability || transaction).then_some((index + 1, label.to_owned()))
+            (durability || transaction).then_some((target, label))
         });
         for (target, label) in targets {
             let root = tempfile::tempdir().unwrap();
@@ -120,7 +148,15 @@ fn publication_crashes_leave_no_destination_or_a_complete_verified_archive() {
                 "restore" => "restored",
                 _ => unreachable!(),
             });
-            if destination.exists() {
+            let published = destination.exists();
+            if target == before_publication || target == after_publication {
+                assert_eq!(
+                    published,
+                    target == after_publication,
+                    "{operation}: {label}"
+                );
+            }
+            if published {
                 if operation == "restore" {
                     drop(crate::runtime::run_store::RunStore::open(&destination).unwrap());
                     let archive = root.path().join("round-trip.tar.gz");

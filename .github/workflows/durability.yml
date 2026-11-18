@@ -34,3 +34,18 @@ jobs:
           cargo test --test integration --locked
           runtime::artifact_store::maintenance::tests::collection_recovers_after_each_database_sync_rename_and_cleanup_boundary
           -- --exact --ignored --nocapture
+      - name: Exercise every archive publication boundary
+        run: >-
+          cargo test --test integration --locked
+          runtime::archive::tests::every_archive_publication_boundary_survives_process_death
+          -- --exact --ignored --nocapture
+      - uses: actions/setup-python@v7
+        if: runner.os != 'Windows'
+        with:
+          python-version: '3.14'
+      - name: Stress concurrent result reporting
+        if: runner.os != 'Windows'
+        run: >-
+          cargo test --test integration --locked
+          cli_tests::concurrency::large_concurrent_results_are_reported_in_all_output_formats
+          -- --exact --ignored --nocapture

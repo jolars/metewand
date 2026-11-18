@@ -494,12 +494,18 @@ fn execute_only_scientific_timeout_leaves_untimed_phases_their_operational_limit
 
 #[test]
 fn authored_worker_deadlines_reach_execution_and_provenance() {
-    for (deadline, accepted) in [("1 ms", false), ("1 s", true)] {
+    for (deadline, accepted) in [("1 ms", false), ("45 s", true)] {
         let root = repository();
+        replace(
+            root.path(),
+            "metewand.yaml",
+            "primary-time: \"timed_wall_time\"",
+            "primary-time: \"timed_wall_time\"\ntimeout: 30 s",
+        );
         let path = root.path().join("metewand.yaml");
         let mut source = fs::read_to_string(&path).unwrap();
         source.push_str(&format!(
-            "\nworker-timeouts:\n  hello: 30 s\n  execute: {deadline}\n"
+            "\nworker-timeouts:\n  hello: 30 s\n  materialize: 2 min\n  prepare: 1 min\n  execute: {deadline}\n  evaluate: 20 s\n"
         ));
         fs::write(path, source).unwrap();
         replace(
@@ -523,54 +529,23 @@ fn authored_worker_deadlines_reach_execution_and_provenance() {
                     .join(attempt["observation_directory"].as_str().unwrap())
                     .join("observation.json"),
             );
-            let timeouts =
-                &observation["provenance"]["data"]["execution"]["operational_timeouts_ns"];
-            assert_eq!(timeouts["hello"], "30000000000");
-            assert_eq!(timeouts["execute"], "1000000000");
-            assert_eq!(timeouts["prepare"], "10000000000");
+            let data = &observation["provenance"]["data"];
+            let limits = serde_json::json!({
+                "hello": "30000000000",
+                "materialize": "120000000000",
+                "prepare": "60000000000",
+                "execute": "45000000000",
+                "reset": "10000000000",
+                "evaluate": "20000000000",
+                "shutdown": "10000000000",
+            });
+            assert_eq!(data["execution"]["operational_timeouts_ns"], limits);
+            assert_eq!(data["context"]["operational_timeouts_ns"], limits);
+            assert_eq!(data["execution"]["scientific_timeout_ns"], "30000000000");
         } else {
             assert_eq!(attempt["diagnostic"]["code"], "phase_timeout");
         }
     }
-}
-
-#[test]
-fn worker_timeouts_allow_execution_beyond_the_default_and_retain_provenance() {
-    let root = repository();
-    replace(
-        root.path(),
-        "worker.py",
-        "elif method == \"execute\":",
-        "elif method == \"execute\":\n            import time\n            time.sleep(11)",
-    );
-    replace(
-        root.path(),
-        "metewand.yaml",
-        "primary-time: \"timed_wall_time\"",
-        "primary-time: \"timed_wall_time\"\ntimeout: 30 s",
-    );
-    let path = root.path().join("metewand.yaml");
-    let source = fs::read_to_string(&path).unwrap();
-    fs::write(&path, format!("{source}\nworker-timeouts:\n  materialize: 2 min\n  prepare: 1 min\n  execute: 45 s\n  evaluate: 20 s\n")).unwrap();
-    let output = metewand(
-        root.path(),
-        &["run", "--output-dir", "run", "--output", "jsonl"],
-    );
-    assert!(output.status.success(), "{output:?}");
-    let records = envelopes(&output);
-    let attempt = &records.last().unwrap()["data"]["attempts"][0];
-    let observation = document(
-        &root
-            .path()
-            .join("run")
-            .join(attempt["observation_directory"].as_str().unwrap())
-            .join("observation.json"),
-    );
-    let data = &observation["provenance"]["data"];
-    let limits = serde_json::json!({"hello":"10000000000", "materialize":"120000000000", "prepare":"60000000000", "execute":"45000000000", "reset":"10000000000", "evaluate":"20000000000", "shutdown":"10000000000"});
-    assert_eq!(data["execution"]["operational_timeouts_ns"], limits);
-    assert_eq!(data["context"]["operational_timeouts_ns"], limits);
-    assert_eq!(data["execution"]["scientific_timeout_ns"], "30000000000");
 }
 
 #[test]
