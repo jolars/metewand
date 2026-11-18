@@ -113,6 +113,7 @@ pub(super) fn execute(
     };
     let observation_slots = measurement.resolve_observations()?;
     let mut observations = Vec::new();
+    let mut published_buffer = None;
     let mut buffer_evidence = Value::Null;
     let mut target_reached = false;
     let mut late_target = false;
@@ -140,9 +141,10 @@ pub(super) fn execute(
             ProfileEvent::Buffer {
                 directory,
                 manifest,
+                digest,
             } => {
                 let artifact = execution
-                    .publish_buffer(directory)
+                    .publish_buffer(directory, digest)
                     .map_err(&publication_error)?;
                 expected_snapshots = manifest.snapshots.len();
                 stop_reason = serde_json::to_value(&manifest.stop_reason)
@@ -150,9 +152,22 @@ pub(super) fn execute(
                     .as_str()
                     .expect("stop text")
                     .into();
-                buffer_evidence = json!({"artifact":artifact,"manifest":manifest});
+                buffer_evidence = json!({
+                    "artifact": {"id": artifact.id, "directory": artifact.relative_path},
+                    "manifest": manifest
+                });
+                published_buffer = Some(root.join(artifact.relative_path));
             }
-            ProfileEvent::Observation(result) => {
+            ProfileEvent::Observation {
+                result,
+                buffered_snapshot,
+            } => {
+                let published_snapshot = buffered_snapshot.map(|relative| {
+                    published_buffer
+                        .as_ref()
+                        .expect("buffer published before evaluation")
+                        .join(relative)
+                });
                 result.execution_provenance["environment_class"] =
                     json!(candidate.environment_class());
                 result.execution_provenance["controls"] =
@@ -176,6 +191,7 @@ pub(super) fn execute(
                             retry_index,
                             provenance_data: measurement.provenance().clone(),
                         },
+                        published_snapshot.as_deref(),
                     )
                     .map_err(&publication_error)?;
                 let within_budget = !adaptive

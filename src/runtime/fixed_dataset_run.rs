@@ -103,8 +103,12 @@ pub(crate) enum ProfileEvent<'a> {
     Buffer {
         directory: &'a Path,
         manifest: &'a crate::core::profile::BufferedManifest,
+        digest: ContentDigest,
     },
-    Observation(&'a mut FixedDatasetResult),
+    Observation {
+        result: &'a mut FixedDatasetResult,
+        buffered_snapshot: Option<&'a Path>,
+    },
     Stopped(crate::core::profile::StopReason),
 }
 

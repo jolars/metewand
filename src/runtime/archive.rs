@@ -201,11 +201,12 @@ pub fn import_archive(
     let stage = private_stage(Some(parent))?;
     extract(path, stage.path(), limits)?;
     let snapshot = collection_snapshot(stage.path(), limits)?;
-    let manifest = read_document(
+    let manifest: ArchiveManifest = read_document(
         &stage.path().join("archive.json"),
         PublicSchema::ArchiveManifest,
         limits,
     )?;
+    reuse_verified_payloads(&stage.path().join("data"), &manifest.files)?;
     for name in walk_files(stage.path())?.keys() {
         platform_fs::sync_owned_file(&stage.path().join(name))?;
     }
@@ -261,6 +262,7 @@ pub fn restore_archive(
             ));
         }
     }
+    reuse_verified_payloads(&stage, &manifest.files)?;
     let restored = EvidenceSnapshot::read(&stage).map_err(evidence_error)?;
     let records = |evidence: &ArchiveEvidence| -> Result<Vec<Vec<u8>>, ArchiveError> {
         let mut records = evidence
@@ -345,6 +347,30 @@ pub(crate) fn collection_snapshot(
     validate_snapshot(&snapshot)?;
     validate_documents(&snapshot, limits)?;
     Ok(snapshot)
+}
+
+// Portable archives retain every logical path. The private extraction has
+// already been verified, so identical immutable files can share storage.
+fn reuse_verified_payloads(root: &Path, files: &[ArchiveFile]) -> io::Result<()> {
+    let mut contents = BTreeMap::new();
+    for file in files {
+        let Some(relative) = file.path.strip_prefix("data/") else {
+            continue;
+        };
+        let id = (&file.sha256, file.size_bytes, file.executable);
+        let path = root.join(relative);
+        if let Some(existing) = contents.get(&id) {
+            fs::remove_file(&path)?;
+            if fs::hard_link(existing, &path).is_err() {
+                // A portable archive can also be extracted onto a filesystem
+                // that cannot create hard links.
+                fs::copy(existing, &path)?;
+            }
+        } else {
+            contents.insert(id, path);
+        }
+    }
+    Ok(())
 }
 
 fn validate_snapshot(snapshot: &EvidenceSnapshot) -> Result<(), ArchiveError> {

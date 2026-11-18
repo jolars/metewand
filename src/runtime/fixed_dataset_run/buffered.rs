@@ -206,6 +206,7 @@ fn run_workers(
     event(ProfileEvent::Buffer {
         directory: frozen.path(),
         manifest: &manifest,
+        digest,
     })?;
     let mut evaluator = integrity.operation("evaluator hello", || {
         measure(&mut measurements.evaluator_startup_time_ns, || {
@@ -267,19 +268,15 @@ fn run_workers(
     let mut evaluation_total = Duration::ZERO;
     for (snapshot, point) in manifest.snapshots.iter().zip(buffer.snapshot_points) {
         let result_output = private_directory(request.private_root, "snapshot-")?;
-        let snapshot_root = frozen.path().join(
-            snapshot
-                .manifest
-                .parent()
-                .expect("validated snapshot parent"),
-        );
+        let manifest_path = &snapshot.manifest;
+        let snapshot_path = manifest_path.parent().expect("validated snapshot parent");
+        let snapshot_root = frozen.path().join(snapshot_path);
         crate::runtime::publication::copy_prepared(&snapshot_root, result_output.path())
             .map_err(FixedDatasetRunError::PrivateDirectory)?;
         let response = crate::protocol::ExecuteResponse::new(
             "buffer".parse().expect("static ID"),
             None,
-            snapshot
-                .manifest
+            manifest_path
                 .file_name()
                 .expect("validated manifest")
                 .to_str()
@@ -382,7 +379,10 @@ fn run_workers(
             result_output,
             metrics_output,
         };
-        event(ProfileEvent::Observation(&mut result))?;
+        event(ProfileEvent::Observation {
+            result: &mut result,
+            buffered_snapshot: Some(snapshot_path),
+        })?;
         for (name, tolerance) in &profile.scope.metric_agreement {
             let local = point
                 .provisional_metrics

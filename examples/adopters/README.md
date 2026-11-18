@@ -167,3 +167,46 @@ live-worker interruption, completed after recovery and explicit retry, and
 allocated no attempts on the final resume. JSONL and CSV retained identical
 nested evidence. The retained report is a compact record of this qualification;
 full local run artifacts and exports live at the paths recorded by its commands.
+
+## Buffered result storage
+
+The clustlasso-cd `smoke` experiment on `sim-tall-low-gaussian` with the
+`pg` implementation produced one attempt and four independently evaluated
+snapshots on November 18, 2026. Before and after sharing files, all four
+coefficient arrays, result manifests, and metric documents matched by SHA-256.
+Run the smoke case from the clustlasso-cd development environment.
+
+```sh
+"$metewand_bin" run smoke --manifest metewand.yaml \
+  --dataset sim-tall-low-gaussian --implementation pg --output-dir storage-smoke
+```
+
+The results below count each device and inode once. Allocated bytes come from
+`st_blocks × 512` and exclude directories.
+
+| Files for one attempt | Earlier file bytes | Shared file bytes | Earlier allocated bytes | Shared allocated bytes |
+| --- | ---: | ---: | ---: | ---: |
+| Coefficient arrays | 1,792 | 896 | 32,768 | 16,384 |
+| Result manifests | 12,656 | 6,328 | 32,768 | 16,384 |
+
+Both layouts expose eight paths for arrays and eight for result manifests.
+The shared layout stores four inodes for each group.
+
+| Other costs for the shared attempt | Serialized bytes |
+| --- | ---: |
+| Attempt document | 22,307 |
+| Recovery outcome | 127,780 |
+| Four observation documents | 114,553 |
+| Buffer and completion manifests | 6,405 |
+| Trace | 2,097 |
+| Four independently evaluated metric documents | 562 |
+| SQLite run catalog, including schema and coordination | 397,312 |
+| Retained log metadata within the observation documents | 1,632 |
+| Published stdout and stderr payloads | 0 |
+
+The workers were silent in this run. In a separate buffered-profile fixture,
+the implementation and evaluator each wrote 1,024 bytes per callback to
+stdout. At the last capture, worker log counters reported 1,984 retained
+implementation bytes and 3,008 retained evaluator bytes. The three
+observation documents stored 1,253 bytes of log metadata in total. The
+buffered attempt published no stdout or stderr payload files.

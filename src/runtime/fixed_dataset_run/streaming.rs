@@ -414,7 +414,10 @@ pub(crate) fn run_streaming(
                 result_output,
                 metrics_output,
             };
-            event(ProfileEvent::Observation(&mut result))?;
+            event(ProfileEvent::Observation {
+                result: &mut result,
+                buffered_snapshot: None,
+            })?;
             let reason_text = reason.as_ref().map(|r| {
                 serde_json::to_value(r)
                     .expect("reason")

@@ -255,6 +255,59 @@ pub(crate) fn prepare_fixed_dataset(
     result: &FixedDatasetResult,
     request: PublicationRequest<'_>,
 ) -> Result<PreparedOneShot, PublicationError> {
+    let (observation, observation_stage) = prepare_observation(result, &request, false)?;
+    let outcome = if result.completion == CompletionStatus::NotReached
+        && !matches!(
+            observation.record.profile,
+            Some(crate::core::records::ProfileObservationRecord::Fresh(_))
+        ) {
+        RunAttemptOutcome::Failed {
+            diagnostic: AttemptDiagnostic {
+                code: "completion_target_not_reached".to_owned(),
+                message: "The valid result did not reach the problem's completion target."
+                    .to_owned(),
+                details: None,
+            },
+            observation: Some(observation.id),
+        }
+    } else {
+        RunAttemptOutcome::Accepted {
+            observation: observation.id,
+        }
+    };
+    let attempt = identify_record(RunAttemptRecord {
+        slot: request.attempt_slot,
+        retry_index: request.retry_index,
+        outcome,
+        started_at: result.started_at,
+        finished_at: SystemTime::now(),
+        provenance: observation.record.provenance.clone(),
+    })?;
+    let attempt_stage = Builder::new().prefix("metewand-attempt-").tempdir()?;
+    crate::runtime::platform_fs::set_private_directory(attempt_stage.path())?;
+    write_logs(
+        attempt_stage.path(),
+        "implementation",
+        &result.implementation_output,
+    )?;
+    write_logs(
+        attempt_stage.path(),
+        "problem-evaluator",
+        &result.evaluator_output,
+    )?;
+    Ok(PreparedOneShot {
+        observation,
+        attempt,
+        observation_files: observation_stage,
+        attempt_files: attempt_stage,
+    })
+}
+
+pub(crate) fn prepare_observation(
+    result: &FixedDatasetResult,
+    request: &PublicationRequest<'_>,
+    link_result: bool,
+) -> Result<(IdentifiedRecord<RunObservationRecord>, TempDir), PublicationError> {
     if !request.provenance_data.as_json().is_object() {
         return Err(PublicationError::InvalidProvenance);
     }
@@ -275,7 +328,7 @@ pub(crate) fn prepare_fixed_dataset(
             },
         }))?,
     };
-    let mut attempt = RunAttemptRecord {
+    let attempt = RunAttemptRecord {
         slot: request.attempt_slot,
         retry_index: request.retry_index,
         outcome: RunAttemptOutcome::Failed {
@@ -295,8 +348,13 @@ pub(crate) fn prepare_fixed_dataset(
     let attempt_id = record_id(&attempt)?;
     let observation_stage = Builder::new().prefix("metewand-observation-").tempdir()?;
     crate::runtime::platform_fs::set_private_directory(observation_stage.path())?;
-    let result_copy = observation_stage.path().join("result");
-    copy_result(result, &result_copy)?;
+    if link_result {
+        if hash_local_tree(result.result_directory())? != result.result_tree_hash {
+            return Err(PublicationError::ModifiedOutput);
+        }
+    } else {
+        copy_result(result, &observation_stage.path().join("result"))?;
+    }
     let metrics_path = result.metrics_document();
     if !crate::runtime::platform_fs::is_regular_file(&fs::symlink_metadata(&metrics_path)?)
         || !crate::runtime::platform_fs::is_real_directory(&fs::symlink_metadata(
@@ -315,7 +373,7 @@ pub(crate) fn prepare_fixed_dataset(
         &result.metrics_bytes,
     )?;
 
-    let result_digest = hash_local_tree(&result_copy)?;
+    let result_digest = result.result_tree_hash;
     let metrics_digest = sha256(&result.metrics_bytes);
     let observation = identify_record(RunObservationRecord {
         profile: result
@@ -358,45 +416,52 @@ pub(crate) fn prepare_fixed_dataset(
         PublicSchema::Observation,
         &document,
     )?;
-    attempt.outcome = if result.completion == CompletionStatus::NotReached
-        && !matches!(
-            observation.record.profile,
-            Some(crate::core::records::ProfileObservationRecord::Fresh(_))
-        ) {
-        RunAttemptOutcome::Failed {
-            diagnostic: AttemptDiagnostic {
-                code: "completion_target_not_reached".to_owned(),
-                message: "The valid result did not reach the problem's completion target."
-                    .to_owned(),
-                details: None,
-            },
-            observation: Some(observation.id),
+    Ok((observation, observation_stage))
+}
+
+pub(crate) fn copy_buffer(
+    source: &Path,
+    destination: &Path,
+    expected: ContentDigest,
+) -> Result<(), PublicationError> {
+    let mut copies = BTreeMap::new();
+    for file in inventory(source)?.into_values() {
+        let original = source.join(&file.path);
+        let target = destination.join(&file.path);
+        fs::create_dir_all(target.parent().expect("a destination file has a parent"))?;
+        let executable =
+            crate::runtime::platform_fs::is_executable(&fs::symlink_metadata(&original)?);
+        let id = (file.sha256, file.size_bytes, executable);
+        if let Some(existing) = copies.get(&id) {
+            fs::hard_link(existing, &target)?;
+        } else {
+            crate::runtime::platform_fs::copy_owned_file(&original, &target)?;
+            copies.insert(id, target);
         }
-    } else {
-        RunAttemptOutcome::Accepted {
-            observation: observation.id,
-        }
-    };
-    attempt.finished_at = SystemTime::now();
-    let attempt = identify_record(attempt)?;
-    let attempt_stage = Builder::new().prefix("metewand-attempt-").tempdir()?;
-    crate::runtime::platform_fs::set_private_directory(attempt_stage.path())?;
-    write_logs(
-        attempt_stage.path(),
-        "implementation",
-        &result.implementation_output,
-    )?;
-    write_logs(
-        attempt_stage.path(),
-        "problem-evaluator",
-        &result.evaluator_output,
-    )?;
-    Ok(PreparedOneShot {
-        observation,
-        attempt,
-        observation_files: observation_stage,
-        attempt_files: attempt_stage,
-    })
+    }
+    if hash_local_tree(destination)? != expected {
+        return Err(PublicationError::ModifiedOutput);
+    }
+    Ok(())
+}
+
+pub(crate) fn link_buffered_result(
+    source: &Path,
+    destination: &Path,
+    expected: ContentDigest,
+) -> Result<(), PublicationError> {
+    // Only run-store-owned files may be linked into durable observations.
+    let files = inventory(source)?;
+    fs::create_dir(destination)?;
+    for name in files.keys() {
+        let target = destination.join(name);
+        fs::create_dir_all(target.parent().expect("a destination file has a parent"))?;
+        fs::hard_link(source.join(name), &target)?;
+    }
+    if hash_local_tree(destination)? != expected {
+        return Err(PublicationError::ModifiedOutput);
+    }
+    Ok(())
 }
 
 pub(crate) fn copy_prepared(source: &Path, destination: &Path) -> io::Result<()> {

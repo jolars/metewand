@@ -1,6 +1,7 @@
 use std::{
-    io,
-    path::Path,
+    collections::BTreeMap,
+    fs, io,
+    path::{Path, PathBuf},
     sync::{Arc, Mutex, mpsc},
     thread,
     time::{Duration, SystemTime, UNIX_EPOCH},
@@ -8,15 +9,18 @@ use std::{
 
 use crate::core::{
     canonical::CanonicalValue,
-    records::{IdentifiedRecord, RunAttemptOutcome, RunAttemptRecord, RunObservationRecord},
+    records::{
+        ContentDigest, IdentifiedRecord, MetricsArtifact, RecordId, RunAttemptOutcome,
+        RunAttemptRecord, RunObservationRecord,
+    },
     run_documents::attempt_document,
 };
 
 use crate::runtime::{
     fixed_dataset_run::FixedDatasetResult,
     publication::{
-        PublicationRequest, SavedData, copy_prepared, prepare_fixed_dataset,
-        published_observation_data,
+        PublicationRequest, SavedData, copy_buffer, copy_prepared, link_buffered_result,
+        prepare_fixed_dataset, prepare_observation, published_observation_data,
     },
     run_store::{
         ArtifactKind, ArtifactRegistration, AttemptPhase, ClaimDisposition, LeaseRequest,
@@ -40,6 +44,7 @@ pub(super) fn now() -> u64 {
 pub(super) struct AttemptExecution {
     store: RunStore,
     profile_references: Vec<(String, String)>,
+    buffered_metrics: BTreeMap<RecordId<MetricsArtifact>, PathBuf>,
     owned: Arc<Mutex<OwnedAttempt>>,
     owner: String,
     stop: mpsc::Sender<()>,
@@ -124,6 +129,7 @@ impl AttemptExecution {
             })?;
         Ok(Some(Self {
             profile_references: vec![],
+            buffered_metrics: BTreeMap::new(),
             store,
             owned,
             owner,
@@ -267,40 +273,67 @@ impl AttemptExecution {
 
     pub fn publish_buffer(
         &mut self,
-        directory: &std::path::Path,
-    ) -> Result<serde_json::Value, RunError> {
+        directory: &Path,
+        digest: ContentDigest,
+    ) -> Result<ArtifactRegistration, RunError> {
         let owned = self.owned.lock().expect("lease owner lock").clone();
         let published = self.store.publish_artifact(
             &owned,
             ArtifactKind::Other,
-            |path| copy_prepared(directory, path),
+            |path| copy_buffer(directory, path, digest).map_err(io::Error::other),
             now,
         )?;
         self.profile_references
             .push(("buffer".into(), published.artifact.id.clone()));
-        Ok(
-            serde_json::json!({"id":published.artifact.id,"directory":published.artifact.relative_path}),
-        )
+        Ok(published.artifact)
     }
 
     pub fn publish_profile_observation(
         &mut self,
         result: &FixedDatasetResult,
         request: PublicationRequest<'_>,
+        published_snapshot: Option<&Path>,
     ) -> Result<PublishedObservation, RunError> {
-        let prepared = prepare_fixed_dataset(result, request)?;
+        let (record, files) = prepare_observation(result, &request, published_snapshot.is_some())?;
+        let metrics_id = record.record.metrics.id;
+        let metrics = self.buffered_metrics.get(&metrics_id);
         let owned = self.owned.lock().expect("lease owner lock").clone();
         let published = self.store.publish_artifact(
             &owned,
             ArtifactKind::Observation,
-            |path| copy_prepared(prepared.observation_files.path(), path),
+            |path| {
+                if let Some(snapshot) = published_snapshot {
+                    fs::copy(
+                        files.path().join("observation.json"),
+                        path.join("observation.json"),
+                    )?;
+                    let destination = path.join("metrics.json");
+                    if let Some(existing) = metrics {
+                        fs::hard_link(existing, &destination)?;
+                        if fs::read(&destination)? != result.metrics_bytes {
+                            return Err(io::Error::other("published metrics changed"));
+                        }
+                    } else {
+                        fs::copy(files.path().join("metrics.json"), destination)?;
+                    }
+                    link_buffered_result(snapshot, &path.join("result"), result.result_tree_hash)
+                        .map_err(io::Error::other)?;
+                } else {
+                    copy_prepared(files.path(), path)?;
+                }
+                Ok(())
+            },
             now,
         )?;
-        let output = PublishedObservation::new(
-            self.store.root(),
-            &published.artifact,
-            prepared.observation,
-        )?;
+        if published_snapshot.is_some() {
+            self.buffered_metrics.entry(metrics_id).or_insert_with(|| {
+                self.store
+                    .root()
+                    .join(&published.artifact.relative_path)
+                    .join("metrics.json")
+            });
+        }
+        let output = PublishedObservation::new(self.store.root(), &published.artifact, record)?;
         self.store.register_observation(
             &owned,
             &output.record,

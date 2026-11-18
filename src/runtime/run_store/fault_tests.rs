@@ -125,9 +125,31 @@ fn seed_kind(store: &mut RunStore, measurement: bool, streaming: bool) {
     tx.commit().unwrap();
 }
 
-fn observe(store: &mut RunStore, attempt: &OwnedAttempt, now: u64) -> String {
+fn observe(
+    store: &mut RunStore,
+    attempt: &OwnedAttempt,
+    now: u64,
+    snapshot: Option<&Path>,
+) -> String {
     let artifact = store
-        .publish_artifact(attempt, ArtifactKind::Observation, payload, || now)
+        .publish_artifact(
+            attempt,
+            ArtifactKind::Observation,
+            |path| {
+                if let Some(snapshot) = snapshot {
+                    let digest = hash_local_tree(snapshot).map_err(io::Error::other)?;
+                    crate::runtime::publication::link_buffered_result(
+                        snapshot,
+                        &path.join("result"),
+                        digest,
+                    )
+                    .map_err(io::Error::other)
+                } else {
+                    payload(path)
+                }
+            },
+            || now,
+        )
         .unwrap()
         .artifact;
     let id = format!("observation-{}", attempt.retry_index());
@@ -208,7 +230,7 @@ fn prepare(root: &Path, scenario: &str) {
         );
         return;
     }
-    let observation = observe(&mut store, &attempt, 11);
+    let observation = observe(&mut store, &attempt, 11, None);
     let attempt = claim(&mut store, &attempt);
     if scenario == "recover-interrupted" {
         assert!(
@@ -242,6 +264,7 @@ fn prepare(root: &Path, scenario: &str) {
 
 fn publish(store: &mut RunStore, scenario: &str) {
     let fresh = scenario.starts_with("fresh-");
+    let buffered = scenario.starts_with("buffered-");
     let streaming = scenario.starts_with("stream-");
     let scenario = scenario
         .strip_prefix("buffered-")
@@ -276,7 +299,13 @@ fn publish(store: &mut RunStore, scenario: &str) {
     store
         .publish_artifact(&attempt, ArtifactKind::Dataset, payload, || 21)
         .unwrap();
-    let observation = observe(store, &attempt, 22);
+    let snapshot = buffered.then(|| {
+        store
+            .root()
+            .join(&dependency.artifact.relative_path)
+            .join("nested")
+    });
+    let observation = observe(store, &attempt, 22, snapshot.as_deref());
     if streaming {
         // Recovery must not infer delivery or acknowledgment from the saved decision.
         crate::runtime::fault_injection::hit("stream.decision.before_send");
@@ -682,7 +711,7 @@ fn audit(root: &Path, scenario: &str) {
         assert!(matches!(reservation, Err(RunStoreError::SatisfiedSlot)));
     } else {
         let attempt = reservation.unwrap();
-        let observation = observe(&mut store, &attempt, 220);
+        let observation = observe(&mut store, &attempt, 220, None);
         let attempt = store
             .begin_finalization(&attempt, lease("resume-claim", 400), 230)
             .unwrap()
@@ -1047,6 +1076,24 @@ fn buffered_selection_commits_with_the_terminal_attempt_and_survives_recovery() 
         let (output, _) = run(root.path(), "buffered-accepted", target);
         assert_eq!(output.status.code(), Some(86));
         audit(root.path(), "buffered-accepted");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+
+            let dirs = fs::read_dir(root.path().join("artifacts")).unwrap();
+            let payloads = dirs
+                .map(|entry| entry.unwrap().path())
+                .flat_map(|path| [path.join("nested/payload"), path.join("result/payload")])
+                .filter(|path| path.is_file())
+                .collect::<Vec<_>>();
+            assert!(payloads.iter().any(|path| path.ends_with("result/payload")));
+            assert!(
+                payloads
+                    .iter()
+                    .filter(|path| path.ends_with("result/payload"))
+                    .all(|path| fs::metadata(path).unwrap().nlink() == 2)
+            );
+        }
     }
 }
 

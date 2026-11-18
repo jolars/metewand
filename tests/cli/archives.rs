@@ -475,6 +475,27 @@ fn archive_round_trip_preserves_evidence_without_the_repository() {
     );
 }
 
+#[cfg(unix)]
+fn artifact_file_copies(root: &Path, name: &str) -> std::collections::BTreeMap<(u64, u64), usize> {
+    use std::os::unix::fs::MetadataExt;
+
+    fn visit(root: &Path, name: &str, copies: &mut std::collections::BTreeMap<(u64, u64), usize>) {
+        for entry in fs::read_dir(root).unwrap() {
+            let entry = entry.unwrap();
+            let metadata = entry.metadata().unwrap();
+            if metadata.is_dir() {
+                visit(&entry.path(), name, copies);
+            } else if entry.file_name() == name {
+                *copies.entry((metadata.dev(), metadata.ino())).or_default() += 1;
+            }
+        }
+    }
+
+    let mut copies = std::collections::BTreeMap::new();
+    visit(&root.join("artifacts"), name, &mut copies);
+    copies
+}
+
 fn profile_round_trip(example: &str) -> tempfile::TempDir {
     let root = tempfile::tempdir().unwrap();
     let project = Path::new(env!("CARGO_MANIFEST_DIR")).to_path_buf();
@@ -484,6 +505,20 @@ fn profile_round_trip(example: &str) -> tempfile::TempDir {
         &project.join("packages/python/src/metewand"),
         &repo.join("metewand"),
     );
+    if example == "buffered-profile" {
+        let worker = repo.join("worker.py");
+        let source = fs::read_to_string(&worker).unwrap();
+        fs::write(
+            worker,
+            source
+                .replace(
+                    r#"snapshot = lambda: {"x": x}"#,
+                    r#"snapshot = lambda: trace.snapshot({"x": x}, files=[("arrays/coefficients.bin", "application/octet-stream", bytes(range(256)))])"#,
+                )
+                .replace("            x *= 0.5", "            if index >= 2:\n                x *= 0.5"),
+        )
+        .unwrap();
+    }
     if example == "fresh-sequence" {
         let path = repo.join("metewand.yaml");
         let source = fs::read_to_string(&path).unwrap();
@@ -543,6 +578,18 @@ fn profile_round_trip(example: &str) -> tempfile::TempDir {
             "restored",
         ],
     );
+    #[cfg(unix)]
+    if example == "buffered-profile" {
+        let live = artifact_file_copies(&repo.join("run"), "coefficients.bin");
+        let restored = artifact_file_copies(&repo.join("restored"), "coefficients.bin");
+        let metrics = artifact_file_copies(&repo.join("run"), "metrics.json");
+        assert_eq!(metrics.values().sum::<usize>(), 15);
+        assert_eq!(metrics.values().filter(|paths| **paths == 3).count(), 1);
+        assert_eq!(live.values().sum::<usize>(), 30);
+        assert_eq!(live.len(), 5);
+        assert!(live.values().all(|paths| *paths == 6));
+        assert_eq!(restored.values().copied().collect::<Vec<_>>(), [30]);
+    }
     let restored = success(&repo, &["status", "--output-dir", "restored"]);
     for key in [
         "summary",
@@ -573,6 +620,11 @@ fn profile_round_trip(example: &str) -> tempfile::TempDir {
             "imported",
         ],
     );
+    #[cfg(unix)]
+    if example == "buffered-profile" {
+        let imported = artifact_file_copies(&root.path().join("imported/data"), "coefficients.bin");
+        assert_eq!(imported.values().copied().collect::<Vec<_>>(), [30]);
+    }
     let after = success(root.path(), &["status", "--output-dir", "imported"]);
     for key in [
         "summary",

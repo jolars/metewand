@@ -344,6 +344,12 @@ is reported. Leases and finalization claims coordinate concurrent writers;
 recovery verifies published evidence rather than inferring success from the
 presence of a directory.
 
+Buffered observations hard-link result files from the published buffer after
+verifying the evaluated result tree. Evaluators receive private copies.
+Repeated buffer files share storage by digest and executable bit, and an
+attempt reuses identical evaluated metrics by artifact ID. Run filesystems
+that store buffered results must support hard links between artifact directories.
+
 Resume preserves accepted slots and fills eligible unfinished work. Retrying
 failed work requires explicit authorization and creates a distinct attempt.
 Inspection reads committed evidence without recovering or modifying the store.
@@ -357,8 +363,10 @@ Portable result archives preserve a whole committed snapshot after every started
 attempt is terminal. They package versioned records and registered artifacts,
 including profile snapshots and traces. Offline verification checks identities,
 coordination relationships, inventories, and hashes. It validates buffered traces
-one row at a time. Imported collections support inspection and export without the
-original run directory or checkout. They remain read-only and retain the original
+one row at a time. On filesystems that support hard links, import and restore
+rejoin matching immutable payloads by verified digest, length, and executable
+bit. Imported collections support inspection and export without the original
+run directory or checkout. They remain read-only and retain the original
 execution guarantees. Archives preserve the recorded provenance of external
-sources and data without gathering their bytes or provisioning an environment for
-another execution.
+sources and data without gathering their bytes or provisioning an environment
+for another execution.
