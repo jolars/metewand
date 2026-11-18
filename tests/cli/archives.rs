@@ -9,6 +9,11 @@ use std::{
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
+use crate::{
+    core::archive::ArchiveReport,
+    runtime::archive::{ArchiveLimits, verify_archive},
+};
+
 fn copy(source: &Path, target: &Path) {
     fs::create_dir_all(target).unwrap();
     for entry in fs::read_dir(source).unwrap() {
@@ -741,6 +746,200 @@ fn fresh_sequence_archive_preserves_controls_budgets_and_target_skips() {
 #[test]
 fn buffered_archive_preserves_trace_rows_and_instrumented_coordinates() {
     profile_round_trip("buffered-profile");
+}
+
+#[test]
+fn long_buffered_trace_round_trips_and_reports_a_malformed_last_row() {
+    const TRACE_POINTS: usize = 25_001;
+    let root = tempfile::tempdir().unwrap();
+    let root = root.path();
+    let project = Path::new(env!("CARGO_MANIFEST_DIR"));
+    copy(&project.join("examples/buffered-profile"), root);
+    copy(
+        &project.join("packages/python/src/metewand"),
+        &root.join("metewand"),
+    );
+    let manifest = root.join("metewand.yaml");
+    let mut source = fs::read_to_string(&manifest).unwrap();
+    let fixed = source.find("  - name: fixed\n").unwrap();
+    let policies = source.find("execution-policies:\n").unwrap();
+    source.replace_range(fixed..policies, "");
+    fs::write(
+        manifest,
+        source
+            .replace("[observer, direct]", "[observer]")
+            .replace("measurement-repetitions: 2", "measurement-repetitions: 1")
+            .replace("warmup-runs: 1", "warmup-runs: 0")
+            .replace("timeout: 5 s", "timeout: 45 s")
+            .replace("max-buffer-bytes: 65536", "max-buffer-bytes: 8388608")
+            .replace(
+                "max-trace-points: 100\n",
+                &format!("max-trace-points: {TRACE_POINTS}\n"),
+            )
+            + "\nworker-timeouts:\n  hello: 30 s\n",
+    )
+    .unwrap();
+    let worker = root.join("worker.py");
+    let last = TRACE_POINTS - 1;
+    let source = fs::read_to_string(&worker)
+        .unwrap()
+        .replace(
+            "index = 0",
+            "index = 0\n        trace.clock = lambda: index + 1",
+        )
+        .replace("index >= self.maximum_updates", &format!("index >= {last}"))
+        .replace(
+            "x *= 0.5",
+            &format!("x = 0.0 if index + 1 == {last} else x"),
+        );
+    fs::write(worker, source).unwrap();
+    success(root, &["run", "--output-dir", "run"]);
+
+    let archive = |args: &[&str]| -> ArchiveReport {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_metewand"));
+        command
+            .current_dir(root)
+            .arg("archive")
+            .args(args)
+            .args(["--output", "json"]);
+        #[cfg(target_os = "linux")]
+        {
+            use std::os::unix::process::CommandExt;
+
+            // The child has enough memory for metadata and one row. Keeping a
+            // full attempt record per trace point exceeds this limit.
+            // SAFETY: The child changes only its own address space limit.
+            unsafe {
+                command.pre_exec(|| {
+                    let limit = libc::rlimit {
+                        rlim_cur: 256 * 1024 * 1024,
+                        rlim_max: 256 * 1024 * 1024,
+                    };
+                    if libc::setrlimit(libc::RLIMIT_AS, &limit) != 0 {
+                        return Err(std::io::Error::last_os_error());
+                    }
+                    Ok(())
+                });
+            }
+        }
+        let output = command.output().unwrap();
+        assert!(output.status.success(), "{args:?}: {output:?}");
+        let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+        serde_json::from_value(value["data"].clone()).unwrap()
+    };
+
+    let collection = root.join("imported");
+    let restored = root.join("restored");
+    let created = archive(&[
+        "create",
+        "--output-dir",
+        "run",
+        "--destination",
+        "results.tar.gz",
+    ]);
+    for args in [
+        &["verify", "--archive", "results.tar.gz"][..],
+        &[
+            "import",
+            "--archive",
+            "results.tar.gz",
+            "--destination",
+            "imported",
+        ],
+        &[
+            "restore",
+            "--archive",
+            "results.tar.gz",
+            "--destination",
+            "restored",
+        ],
+    ] {
+        assert_eq!(archive(args).manifest_sha256, created.manifest_sha256);
+    }
+
+    let manifest = read_json(&collection.join("archive.json"));
+    let archive_trace = manifest["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|file| file["path"].as_str())
+        .find(|path| path.ends_with("/trace.jsonl"))
+        .unwrap();
+    let trace = archive_trace.strip_prefix("data/").unwrap();
+    let recorded = fs::read(root.join("run").join(trace)).unwrap();
+    assert_eq!(
+        recorded.iter().filter(|&&byte| byte == b'\n').count(),
+        TRACE_POINTS
+    );
+    assert_eq!(fs::read(collection.join(archive_trace)).unwrap(), recorded);
+    assert_eq!(fs::read(restored.join(trace)).unwrap(), recorded);
+    archive(&[
+        "create",
+        "--output-dir",
+        "restored",
+        "--destination",
+        "restored.tar.gz",
+    ]);
+    assert_eq!(
+        fs::read(root.join("results.tar.gz")).unwrap(),
+        fs::read(root.join("restored.tar.gz")).unwrap(),
+    );
+
+    let mut rows = recorded
+        .strip_suffix(b"\n")
+        .unwrap()
+        .rsplitn(2, |byte| *byte == b'\n');
+    let mut terminal: Value = serde_json::from_slice(rows.next().unwrap()).unwrap();
+    terminal["check_index"] = Value::String("invalid".into());
+    let mut malformed = rows.next().unwrap().to_vec();
+    malformed.push(b'\n');
+    malformed.extend(serde_json::to_vec(&terminal).unwrap());
+    malformed.push(b'\n');
+    fs::write(collection.join(archive_trace), malformed).unwrap();
+
+    // Refresh the registered digests so verification reaches the malformed row.
+    let (buffer, _) = trace.rsplit_once('/').unwrap();
+    let directory = collection.join("data").join(buffer);
+    refresh_inventory(&directory.join("buffer.json"));
+    let marker = directory.join("manifest.json");
+    refresh_inventory(&marker);
+    let digest = crate::core::materialization::hex(
+        crate::runtime::local_tree::hash_local_tree(&directory).unwrap(),
+    );
+    let evidence_path = collection.join("evidence.json");
+    let mut evidence = read_json(&evidence_path);
+    let artifact = &mut evidence["records"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|record| record["kind"] == "stored-artifact" && record["record"]["path"] == buffer)
+        .unwrap()["record"];
+    artifact["sha256"] = serde_json::json!(digest);
+    artifact["manifest_sha256"] = serde_json::json!(sha256(&fs::read(marker).unwrap()));
+    let old_id = artifact["id"].clone();
+    let new_id = serde_json::json!(format!("run-store-v1:other-{digest}"));
+    let attempt_id = evidence["records"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|record| record["kind"] == "attempt")
+        .unwrap()["record"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    replace_id(&mut evidence, &old_id, &new_id);
+    write_json(&evidence_path, evidence);
+    refresh_inventory(&collection.join("archive.json"));
+
+    let error = verify_archive(&collection, ArchiveLimits::default())
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains(&attempt_id), "{error}");
+    assert!(
+        error.contains(&format!("trace.jsonl line {TRACE_POINTS}")),
+        "{error}"
+    );
+    assert!(error.contains("invalid type"), "{error}");
 }
 
 #[test]

@@ -23,7 +23,9 @@ use thiserror::Error;
 mod analysis;
 
 use crate::runtime::{
-    evidence::EvidenceSnapshot,
+    evidence::{
+        EvidenceSnapshot, document_profile, validate_observation_document, visit_buffered_trace,
+    },
     inspection::{Inspection, InspectionError},
 };
 
@@ -42,7 +44,7 @@ impl ResultSet {
         Self::from_snapshot(&snapshot)
     }
 
-    pub(crate) fn from_snapshot(snapshot: &EvidenceSnapshot) -> Result<Self, ExportError> {
+    fn from_snapshot(snapshot: &EvidenceSnapshot) -> Result<Self, ExportError> {
         let mut inspection = Inspection::default();
         inspection.add_snapshot(snapshot)?;
         let comparisons = inspection.comparison_rows();
@@ -72,23 +74,8 @@ impl ResultSet {
             let Some(profile) = &attempt.profile else {
                 continue;
             };
-            let artifact = &profile["buffer"]["artifact"];
             let manifest = &profile["buffer"]["manifest"];
-            let Some(directory) = artifact["directory"].as_str() else {
-                continue;
-            };
-            let Some(trace) = manifest["trace"].as_str() else {
-                continue;
-            };
-            let directory = safe_profile_path(&snapshot.data_root, directory)?;
-            let path = safe_profile_path(&directory, trace)?;
-            for (index, line) in fs::read(path)?
-                .split(|b| *b == b'\n')
-                .filter(|l| !l.is_empty())
-                .enumerate()
-            {
-                let point: crate::core::profile::TracePoint =
-                    serde_json::from_value(CanonicalValue::from_slice(line)?.as_json().clone())?;
+            visit_buffered_trace(&snapshot.data_root, &attempt.id, profile, |index, point| {
                 let mut row = attempt.clone();
                 row.record_type = ExportRecordType::Trace;
                 row.id = format!("{}:check:{index}", attempt.id);
@@ -100,7 +87,7 @@ impl ResultSet {
                     json!({"delivery":"buffered_profile","measurement_basis":"instrumented","instrumented_scope":manifest["instrumented_scope"],"clock":manifest["clock"],"instrumented_time_ns":point.instrumented_time_ns,"instrumented_total_time_ns":manifest["instrumented_total_time_ns"],"trace_index":index,"check_index":point.check_index,"work":point.work,"terminal":point.terminal,"provisional_metrics":point.provisional_metrics,"independently_validated":false}),
                 );
                 traces.push(row);
-            }
+            })?;
         }
         records.extend(traces);
         records.sort_by(|a, b| {
@@ -335,15 +322,8 @@ fn project(
         .or_else(|| text(&run, "candidate_id"))
         .ok_or(ExportError::InvalidEvidence("missing candidate identity"))?;
     let document = &row["document"];
-    if record_type == ExportRecordType::Observation
-        && (document["id"] != row["id"]
-            || document["slot_id"] != row["slot_id"]
-            || document["attempt_id"] != row["attempt_id"]
-            || document["validity"]["valid"] != row["valid"])
-    {
-        return Err(ExportError::InvalidEvidence(
-            "observation document disagrees with committed coordination",
-        ));
+    if record_type == ExportRecordType::Observation {
+        validate_observation_document(row)?;
     }
     let observation_slot_id = if record_type == ExportRecordType::Slot {
         text(&slot["fresh_sequence"], "observation_slot_id")
@@ -480,10 +460,7 @@ fn project(
     };
     let metrics = lookup(graph, document["metrics"]["id"].as_str());
     let result = lookup(graph, document["result"]["id"].as_str());
-    let mut profile = document
-        .get("profile")
-        .cloned()
-        .or_else(|| provenance["data"].get("profile").cloned());
+    let mut profile = document_profile(document).cloned();
     if let Some(fresh) = slot.get("fresh_sequence") {
         if profile.is_none() {
             profile = Some(fresh.clone());
@@ -540,19 +517,6 @@ fn project(
         provenance,
         evidence: json!({"source": row, "attempt": attempt, "attempt_slot": slot, "observation_slot": observation_slot, "resolved_run": run, "metrics": metrics, "result": result}),
     })
-}
-
-fn safe_profile_path(root: &Path, relative: &str) -> Result<PathBuf, ExportError> {
-    let path: crate::core::manifest::RepositoryPath = serde_json::from_value(json!(relative))
-        .map_err(|_| ExportError::InvalidEvidence("unsafe buffered artifact path"))?;
-    let target = root.join(path.as_path());
-    let canonical = fs::canonicalize(&target)?;
-    if !canonical.starts_with(fs::canonicalize(root)?) {
-        return Err(ExportError::InvalidEvidence(
-            "buffer path escapes its artifact",
-        ));
-    }
-    Ok(target)
 }
 
 fn coverage(value: &Value) -> Value {

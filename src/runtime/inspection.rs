@@ -884,6 +884,13 @@ pub enum InspectionError {
     Invalid(&'static str),
     #[error("committed artifact `{0}` does not match its recorded contents")]
     CorruptArtifact(String),
+    #[error("invalid buffered trace for attempt `{attempt_id}` at {} line {line}: {reason}", path.display())]
+    InvalidTrace {
+        attempt_id: String,
+        path: PathBuf,
+        line: usize,
+        reason: String,
+    },
     #[error(transparent)]
     Store(#[from] RunStoreError),
     #[error(transparent)]

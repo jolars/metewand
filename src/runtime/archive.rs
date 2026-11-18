@@ -25,7 +25,12 @@ use tempfile::{Builder, TempDir};
 use thiserror::Error;
 
 use crate::runtime::{
-    evidence::EvidenceSnapshot, export::ResultSet, platform_fs, publication::rename_no_replace,
+    evidence::{
+        EvidenceSnapshot, document_profile, validate_observation_document, visit_buffered_trace,
+    },
+    inspection::Inspection,
+    platform_fs,
+    publication::rename_no_replace,
 };
 
 /// Bounds apply to actual uncompressed entries, including archive metadata.
@@ -61,7 +66,7 @@ pub fn create_archive(root: &Path, destination: &Path) -> Result<ArchiveReport, 
     }
     let evidence = snapshot.archive_evidence()?;
     validate_evidence(&evidence)?;
-    ResultSet::from_snapshot(&snapshot).map_err(evidence_error)?;
+    validate_snapshot(&snapshot)?;
     let parent = destination.parent().expect("destination parent exists");
     let stage = private_stage(Some(parent))?;
     write_new(
@@ -271,7 +276,7 @@ pub fn restore_archive(
             "restored coordination state differs from portable evidence",
         ));
     }
-    ResultSet::from_snapshot(&restored).map_err(evidence_error)?;
+    validate_snapshot(&restored)?;
     for name in walk_files(&stage)?.keys() {
         platform_fs::sync_owned_file(&stage.join(name))?;
     }
@@ -337,9 +342,29 @@ pub(crate) fn collection_snapshot(
     validate_evidence(&evidence)?;
     let snapshot = EvidenceSnapshot::archived(root, evidence, manifest.files);
     validate_payload_closure(&snapshot)?;
-    ResultSet::from_snapshot(&snapshot).map_err(evidence_error)?;
+    validate_snapshot(&snapshot)?;
     validate_documents(&snapshot, limits)?;
     Ok(snapshot)
+}
+
+fn validate_snapshot(snapshot: &EvidenceSnapshot) -> Result<(), ArchiveError> {
+    let mut inspection = Inspection::default();
+    inspection.add_snapshot(snapshot).map_err(evidence_error)?;
+    for record in inspection.into_records().into_values() {
+        match record.kind.as_str() {
+            "observation" => {
+                validate_observation_document(&record.record).map_err(evidence_error)?
+            }
+            "attempt" => {
+                if let Some(profile) = document_profile(&record.record["document"]) {
+                    visit_buffered_trace(&snapshot.data_root, &record.id, profile, |_, _| {})
+                        .map_err(evidence_error)?;
+                }
+            }
+            _ => (),
+        }
+    }
+    Ok(())
 }
 
 fn validate_payload_closure(snapshot: &EvidenceSnapshot) -> Result<(), ArchiveError> {

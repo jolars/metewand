@@ -2,18 +2,25 @@
 
 use std::{
     collections::BTreeMap,
+    fs::{self, OpenOptions},
+    io::{BufRead, BufReader},
     path::{Path, PathBuf},
 };
 
 use crate::core::{
     archive::{ArchiveEvidence, ArchiveFile, ArchiveRecord, RESULT_ARCHIVE_VERSION},
+    canonical::CanonicalValue,
+    manifest::RepositoryPath,
+    profile::TracePoint,
     records::ContentDigest,
 };
+use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::runtime::{
     inspection::InspectionError,
     local_tree::{LocalTreeHashError, hash_local_tree, hash_tree},
+    platform_fs,
     run_store::reader::StoreSnapshot,
 };
 
@@ -132,4 +139,78 @@ impl EvidenceSnapshot {
             relative.to_owned()
         }
     }
+}
+
+pub(crate) fn validate_observation_document(row: &Value) -> Result<(), InspectionError> {
+    let document = &row["document"];
+    if document["id"] != row["id"]
+        || document["slot_id"] != row["slot_id"]
+        || document["attempt_id"] != row["attempt_id"]
+        || document["validity"]["valid"] != row["valid"]
+    {
+        return Err(InspectionError::Invalid(
+            "observation document disagrees with committed coordination",
+        ));
+    }
+    Ok(())
+}
+
+pub(crate) fn document_profile(document: &Value) -> Option<&Value> {
+    document
+        .get("profile")
+        .or_else(|| document["provenance"]["data"].get("profile"))
+}
+
+/// Visits decoded points in file order, retaining only the current trace row.
+pub(crate) fn visit_buffered_trace(
+    data_root: &Path,
+    attempt_id: &str,
+    profile: &Value,
+    mut visit: impl FnMut(usize, TracePoint),
+) -> Result<(), InspectionError> {
+    let buffer = &profile["buffer"];
+    let (Some(directory), Some(trace)) = (
+        buffer["artifact"]["directory"].as_str(),
+        buffer["manifest"]["trace"].as_str(),
+    ) else {
+        return Ok(());
+    };
+    let directory = safe_profile_path(data_root, directory)?;
+    let path = safe_profile_path(&directory, trace)?;
+    let file = platform_fs::open_regular(&path, OpenOptions::new().read(true))?;
+    let mut reader = BufReader::new(file);
+    let mut line = Vec::new();
+    let mut index = 0;
+    for line_number in 1.. {
+        line.clear();
+        if reader.read_until(b'\n', &mut line)? == 0 {
+            break;
+        }
+        let row = line.strip_suffix(b"\n").unwrap_or(&line);
+        if row.is_empty() {
+            continue;
+        }
+        let invalid_row = |reason: &dyn std::fmt::Display| InspectionError::InvalidTrace {
+            attempt_id: attempt_id.to_owned(),
+            path: path.clone(),
+            line: line_number,
+            reason: reason.to_string(),
+        };
+        let value = CanonicalValue::from_slice(row).map_err(|error| invalid_row(&error))?;
+        let point =
+            TracePoint::deserialize(value.as_json()).map_err(|error| invalid_row(&error))?;
+        visit(index, point);
+        index += 1;
+    }
+    Ok(())
+}
+
+fn safe_profile_path(root: &Path, relative: &str) -> Result<PathBuf, InspectionError> {
+    let path: RepositoryPath = serde_json::from_value(json!(relative))
+        .map_err(|_| InspectionError::Invalid("unsafe buffered artifact path"))?;
+    let target = root.join(path.as_path());
+    if !fs::canonicalize(&target)?.starts_with(fs::canonicalize(root)?) {
+        return Err(InspectionError::Invalid("buffer path escapes its artifact"));
+    }
+    Ok(target)
 }

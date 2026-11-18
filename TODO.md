@@ -126,14 +126,11 @@ runs and scientific identities as the storage model evolves.
 - [x] Restore resumable local run state from verified portable evidence,
   preserving pending work, failures, retries, accepted observations, and
   profile accounting without the original coordination database.
-- [ ] Bound memory during archive validation. `ResultSet::from_snapshot`
-  clones the full attempt record for every buffered trace point. In the
-  clustlasso-cd smoke test on GenomeDK, Metewand 0.8.0 exhausted 32 GiB during
-  archive creation. The retry peaked at 39.35 GiB with 20,893 trace points,
-  including 19,008 from one PG profile. Validate traces one row at a time.
-  Add a long-trace regression for archive creation, verification, import, and
-  restore that preserves the recorded evidence and rejects malformed rows.
-  [Trace expansion](src/runtime/export.rs)
+- [x] Validate buffered traces one row at a time during archive creation,
+  verification, import, and restore. Test evidence preservation and malformed
+  rows with a 25,001-point trace. Archive creation peaked at 209 MiB on a local
+  copy of the GenomeDK clustlasso-cd smoke run with 20,893 trace points. The
+  original retry with Metewand 0.8.0 peaked at 39.35 GiB.
 - [x] Publish versioned durable records incrementally to shared storage.
   Include ownership, retry authorization, acceptance, and budget decisions.
   Commit completed work before reporting success; preserve streaming
