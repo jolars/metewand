@@ -512,11 +512,64 @@ fn validate_payload_closure(snapshot: &EvidenceSnapshot) -> Result<(), ArchiveEr
     Ok(())
 }
 
+fn fresh_repetition_key(row: &serde_json::Value) -> Result<(&str, u64), ArchiveError> {
+    row["resolved_run_id"]
+        .as_str()
+        .zip(row["measurement_index"].as_u64())
+        .ok_or_else(|| invalid("invalid fresh repetition identity"))
+}
+
+struct FreshMembership {
+    document: serde_json::Value,
+    digest: String,
+    path: String,
+}
+
+fn fresh_membership_documents(
+    snapshot: &EvidenceSnapshot,
+) -> Result<BTreeMap<String, FreshMembership>, ArchiveError> {
+    use crate::runtime::run_store::fresh::{membership_address, membership_document};
+    use serde_json::{Value, json};
+
+    let mut members = BTreeMap::<_, Vec<Value>>::new();
+    for row in snapshot.tables.get("fresh-member").into_iter().flatten() {
+        members
+            .entry(fresh_repetition_key(row)?)
+            .or_default()
+            .push(json!({
+                "slot_id": row["slot_id"],
+                "schedule_index": row["schedule_index"],
+                "control": row["control"],
+            }));
+    }
+    let mut documents = BTreeMap::new();
+    for row in snapshot.tables.get("fresh-policy").into_iter().flatten() {
+        let key = fresh_repetition_key(row)?;
+        let mut members = members.remove(&key).unwrap_or_default();
+        members.sort_by_key(|row| row["schedule_index"].as_u64());
+        let document = membership_document(key.0, key.1, row["policy"].clone(), members);
+        let digest = digest(&canonical_bytes(&document)?);
+        let (id, path) = membership_address(key.0, key.1);
+        documents.insert(
+            id,
+            FreshMembership {
+                document,
+                digest,
+                path,
+            },
+        );
+    }
+    Ok(documents)
+}
+
 fn validate_documents(
     snapshot: &EvidenceSnapshot,
     limits: ArchiveLimits,
 ) -> Result<(), ArchiveError> {
-    use crate::runtime::evidence::index_rows;
+    use crate::runtime::{
+        evidence::index_rows,
+        run_store::fresh::{MEMBERSHIP_ROLE, membership_address},
+    };
 
     let attempts = index_rows(&snapshot.tables["attempt"], "artifact_id");
     let observations = index_rows(&snapshot.tables["observation"], "artifact_id");
@@ -528,6 +581,35 @@ fn validate_documents(
             .map_or(&[], Vec::as_slice),
         "attempt_id",
     );
+    let fresh_documents = fresh_membership_documents(snapshot)?;
+    let fresh_members = index_rows(
+        snapshot
+            .tables
+            .get("fresh-member")
+            .map_or(&[], Vec::as_slice),
+        "slot_id",
+    );
+    let mut stored_memberships = BTreeSet::new();
+    for artifact in &snapshot.tables["stored-artifact"] {
+        let id = artifact["id"].as_str().expect("validated artifact id");
+        if id.starts_with("fresh-membership-v1:") {
+            let expected = fresh_documents
+                .get(id)
+                .ok_or_else(|| invalid("stored fresh membership has no repetition"))?;
+            if artifact["path"] != expected.path
+                || artifact["sha256"] != expected.digest
+                || artifact["kind"] != "other"
+                || artifact["storage_kind"] != "file"
+                || !artifact["manifest_sha256"].is_null()
+            {
+                return Err(invalid(
+                    "stored fresh membership disagrees with its repetition",
+                ));
+            }
+            stored_memberships.insert(id);
+        }
+    }
+    let attempt_artifacts = index_rows(&snapshot.tables["attempt-artifact"], "attempt_id");
     for artifact in &snapshot.tables["stored-artifact"] {
         let relative = artifact["path"]
             .as_str()
@@ -599,7 +681,74 @@ fn validate_documents(
         }
         if artifact["kind"] == "attempt" && snapshot.tables.contains_key("fresh-budget") {
             let outcome = CanonicalValue::from_slice(&fs::read(directory.join("outcome.json"))?)?;
-            let budget = outcome.as_json()["attempt_id"]
+            let outcome = outcome.as_json();
+            let attempt = artifact["id"]
+                .as_str()
+                .and_then(|id| attempts.get(id))
+                .and_then(|rows| rows.first())
+                .ok_or_else(|| invalid("missing terminal attempt for coordination outcome"))?;
+            if outcome["attempt_id"] != attempt["id"] || outcome["slot_id"] != attempt["slot_id"] {
+                return Err(invalid("coordination outcome disagrees with its attempt"));
+            }
+            let fresh = &outcome["coordination"]["fresh"];
+            let references = outcome["references"]
+                .as_array()
+                .ok_or_else(|| invalid("missing outcome dependencies"))?;
+            let mut references = references
+                .iter()
+                .filter(|row| row["role"] == MEMBERSHIP_ROLE);
+            let reference = references.next();
+            let member = attempt["slot_id"]
+                .as_str()
+                .and_then(|slot| fresh_members.get(slot))
+                .and_then(|rows| rows.first());
+            if let Some(member) = member {
+                let key = fresh_repetition_key(member)?;
+                let (id, _) = membership_address(key.0, key.1);
+                let FreshMembership {
+                    document,
+                    digest,
+                    path,
+                } = fresh_documents
+                    .get(&id)
+                    .ok_or_else(|| invalid("missing fresh repetition policy"))?;
+                if fresh_repetition_key(fresh)? != key {
+                    return Err(invalid("fresh outcome disagrees with its repetition"));
+                }
+                if let Some(reference) = reference {
+                    let committed = attempt["id"]
+                        .as_str()
+                        .and_then(|id| attempt_artifacts.get(id))
+                        .is_some_and(|rows| {
+                            rows.iter().any(|row| {
+                                row["role"] == MEMBERSHIP_ROLE && row["artifact_id"] == id
+                            })
+                        });
+                    if references.next().is_some()
+                        || fresh.get("members").is_some()
+                        || fresh.get("policy").is_some()
+                        || !committed
+                        || reference
+                            != &serde_json::json!({
+                                "role": MEMBERSHIP_ROLE, "id": id, "relative_path": path,
+                                "kind": "other", "storage_kind": "file",
+                                "content_sha256": digest, "manifest_sha256": null,
+                            })
+                        || !stored_memberships.contains(id.as_str())
+                    {
+                        return Err(invalid("invalid durable fresh membership reference"));
+                    }
+                } else if fresh["members"] != document["members"]
+                    || fresh["policy"] != document["policy"]
+                {
+                    return Err(invalid(
+                        "inline fresh membership disagrees with coordination records",
+                    ));
+                }
+            } else if reference.is_some() || !fresh.is_null() {
+                return Err(invalid("fresh membership requires a fresh attempt"));
+            }
+            let budget = outcome["attempt_id"]
                 .as_str()
                 .and_then(|id| budgets.get(id))
                 .and_then(|rows| rows.first())
@@ -609,7 +758,7 @@ fn validate_documents(
                         "charged_ns": budget["charged_ns"],
                     })
                 });
-            if budget != outcome.as_json()["coordination"]["fresh"]["budget"] {
+            if budget != fresh["budget"] {
                 return Err(invalid(
                     "fresh budget disagrees with its immutable outcome snapshot",
                 ));

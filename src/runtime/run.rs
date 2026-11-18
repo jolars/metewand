@@ -415,6 +415,13 @@ pub(crate) fn run_repository_with_progress(
     if !registrations.is_empty() {
         store.register_slots(registrations.drain(..))?;
     }
+    let fresh_repetitions = fresh_repetitions.into_iter().collect::<Vec<_>>();
+    for batch in fresh_repetitions.chunks(REGISTRATION_BATCH_SIZE) {
+        store.publish_fresh_repetitions(
+            batch.iter().map(|&(_, run, repetition)| (run, repetition)),
+            attempt::now(),
+        )?;
+    }
     let mut schedule = Vec::new();
     for batch in resolved.schedule.chunks(REGISTRATION_BATCH_SIZE) {
         let mut positions = Vec::with_capacity(batch.len());

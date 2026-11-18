@@ -538,6 +538,19 @@ fn profile_round_trip(example: &str) -> tempfile::TempDir {
         format!("{source}\nworker-timeouts:\n  hello: 30 s\n"),
     )
     .unwrap();
+    if example == "fresh-sequence" {
+        success(
+            &repo,
+            &["run", "--output-dir", "run", "--max-attempts", "1"],
+        );
+        assert_eq!(
+            fs::read_dir(repo.join("run/fresh-memberships"))
+                .unwrap()
+                .count(),
+            3,
+            "membership is available for the two repetitions without attempts",
+        );
+    }
     success(&repo, &["run", "--output-dir", "run"]);
     let before = success(&repo, &["status", "--output-dir", "run"]);
     let mut expected = Vec::new();
@@ -711,6 +724,92 @@ fn fresh_sequence_archive_preserves_controls_budgets_and_target_skips() {
     let root = profile_round_trip("fresh-sequence");
     let original = read_json(&root.path().join("imported/evidence.json"));
     let records = original["records"].as_array().unwrap();
+    let membership_files = records
+        .iter()
+        .filter(|row| row["kind"] == "stored-artifact")
+        .map(|row| &row["record"])
+        .filter(|row| {
+            row["path"]
+                .as_str()
+                .unwrap()
+                .starts_with("fresh-memberships/")
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        membership_files.len(),
+        records
+            .iter()
+            .filter(|row| row["kind"] == "fresh-policy")
+            .count(),
+    );
+    for membership in &membership_files {
+        let path = root
+            .path()
+            .join("imported/data")
+            .join(membership["path"].as_str().unwrap());
+        let document = read_json(&path);
+        assert_eq!(document["schema_version"], 1);
+        assert_eq!(document["members"].as_array().unwrap().len(), 4);
+        let edges = records.iter().filter(|row| {
+            row["kind"] == "attempt-artifact"
+                && row["record"]["role"] == "fresh-membership"
+                && row["record"]["artifact_id"] == membership["id"]
+        });
+        assert!(edges.clone().count() > 1);
+        for edge in edges {
+            let attempt = &records
+                .iter()
+                .find(|row| {
+                    row["kind"] == "attempt" && row["record"]["id"] == edge["record"]["attempt_id"]
+                })
+                .unwrap()["record"];
+            let artifact = &records
+                .iter()
+                .find(|row| {
+                    row["kind"] == "stored-artifact"
+                        && row["record"]["id"] == attempt["artifact_id"]
+                })
+                .unwrap()["record"];
+            let path = root
+                .path()
+                .join("imported/data")
+                .join(artifact["path"].as_str().unwrap());
+            let outcome = read_json(&path.join("outcome.json"));
+            let fresh = &outcome["coordination"]["fresh"];
+            assert!(fresh.get("members").is_none());
+            assert!(fresh.get("policy").is_none());
+            assert_eq!(fresh["measurement_index"], document["measurement_index"]);
+            assert_eq!(fresh["resolved_run_id"], document["resolved_run_id"]);
+        }
+    }
+    let collection = root.path().join("changed-membership");
+    copy(&root.path().join("imported"), &collection);
+    let mut evidence = original.clone();
+    let stored = &mut evidence["records"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|row| {
+            row["kind"] == "stored-artifact" && row["record"]["id"] == membership_files[0]["id"]
+        })
+        .unwrap()["record"];
+    let path = collection
+        .join("data")
+        .join(stored["path"].as_str().unwrap());
+    let mut membership = read_json(&path);
+    membership["members"][0]["control"] = serde_json::json!({"iterations": 99});
+    write_json(&path, membership);
+    stored["sha256"] = serde_json::json!(sha256(&fs::read(path).unwrap()));
+    write_json(&collection.join("evidence.json"), evidence);
+    refresh_inventory(&collection.join("archive.json"));
+    let error = verify_archive(&collection, ArchiveLimits::default()).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("stored fresh membership disagrees"),
+        "{error}"
+    );
+
     let budget = &records
         .iter()
         .find(|record| {

@@ -492,13 +492,22 @@ fn assert_terminal_artifacts(root: &Path, db: &Connection, successes: &BTreeSet<
             Ok((
                 r.get::<_, String>(0)?,
                 r.get::<_, String>(1)?,
-                r.get::<_, String>(2)?,
+                r.get::<_, Option<String>>(2)?,
             ))
         })
         .unwrap();
     for row in rows {
         let (relative, content, manifest) = row.unwrap();
         let directory = root.join(relative);
+        let Some(manifest) = manifest else {
+            assert_eq!(
+                crate::core::materialization::hex(crate::core::records::ContentDigest::new(
+                    Sha256::digest(fs::read(directory).unwrap()).into()
+                )),
+                content,
+            );
+            continue;
+        };
         verify_finalized_directory(&directory).unwrap();
         assert_eq!(
             Sha256::digest(fs::read(directory.join("manifest.json")).unwrap())
@@ -1108,6 +1117,8 @@ fn fresh_sequence_budget_and_target_survive_publication_crashes() {
         assert!(output.status.success(), "{output:?}");
         audit(baseline.path(), scenario);
         for needle in [
+            "rename.after",
+            "INSERT INTO artifacts VALUES",
             "INSERT INTO fresh_budget",
             "UPDATE fresh_budget",
             "INSERT INTO fresh_dispositions",
@@ -1120,6 +1131,56 @@ fn fresh_sequence_budget_and_target_survive_publication_crashes() {
             assert!(!output.status.success());
             audit(root.path(), scenario);
         }
+    }
+}
+
+#[test]
+fn fresh_recovery_accepts_inline_and_referenced_orphans() {
+    for inline in [true, false] {
+        let root = tempfile::tempdir().unwrap();
+        let mut store = RunStore::open_fresh(root.path()).unwrap();
+        seed(&mut store, true);
+        let attempt = reserve(&mut store);
+        store.reserve_fresh_time(&attempt, None, 10).unwrap();
+        store.record_fresh_time(&attempt, 25, 11).unwrap();
+        let observation = observe(&mut store, &attempt, 12, None);
+        let attempt = claim(&mut store, &attempt);
+        let mut references = vec![("observation".into(), observation)];
+        if !inline {
+            references.extend(
+                super::fresh::membership_reference(&store.connection, &attempt.slot().to_string())
+                    .unwrap(),
+            );
+        }
+        let tx = store.transaction().unwrap();
+        let document = super::publisher::build_outcome_document(
+            &tx,
+            &attempt,
+            &TerminalOutcome::Accepted,
+            &references,
+            20,
+        )
+        .unwrap();
+        tx.commit().unwrap();
+        assert_eq!(
+            document.as_json()["coordination"]["fresh"]["members"].is_array(),
+            inline
+        );
+        let staged = tempfile::tempdir_in(root.path()).unwrap();
+        fs::write(
+            staged.path().join("outcome.json"),
+            document.to_canonical_bytes().unwrap(),
+        )
+        .unwrap();
+        crate::runtime::publication::prepare_directory(staged.path()).unwrap();
+        let digest = crate::core::materialization::hex(hash_local_tree(staged.path()).unwrap());
+        crate::runtime::publication::publish_prepared_directory(
+            staged.path(),
+            &root.path().join(format!("artifacts/attempt-{digest}")),
+        )
+        .unwrap();
+        drop(store);
+        audit(root.path(), "fresh-accepted");
     }
 }
 

@@ -441,12 +441,23 @@ impl RunStore {
             )?,
         };
         let mut query = tx.prepare("SELECT DISTINCT 'retained', a.artifact_id FROM leased_artifacts a JOIN leases l ON l.id = a.lease_id WHERE l.attempt_id = ?1 ORDER BY a.artifact_id")?;
-        let references = query
+        let mut references = query
             .query_map([attempt.id().to_string()], |r| {
                 Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
             })?
             .collect::<Result<Vec<_>, _>>()?;
         drop(query);
+        if let Some(reference) =
+            super::fresh::membership_reference(&tx, &attempt.slot().to_string())?
+        {
+            super::fresh::verify_membership_reference(
+                &tx,
+                &attempt.slot().to_string(),
+                &reference,
+            )?;
+            verify_registered(root, &registered_metadata(&tx, &reference.1)?)?;
+            references.push(reference);
+        }
         let document = build_outcome_document(&tx, attempt, &outcome, &references, finished)?;
         tx.commit()?;
         // The global recovery lock leases this private stage, including the
@@ -630,6 +641,12 @@ fn validate_orphan(
         .iter()
         .map(|v| Ok((string(v, "role")?.to_owned(), string(v, "id")?.to_owned())))
         .collect::<Result<Vec<_>, RunStoreError>>()?;
+    for reference in references
+        .iter()
+        .filter(|(role, _)| role == super::fresh::MEMBERSHIP_ROLE)
+    {
+        super::fresh::verify_membership_reference(tx, &attempt.slot().to_string(), reference)?;
+    }
     if build_outcome_document(tx, attempt, &outcome, &references, finished)? != orphan.document {
         return Err(invalid(
             "completed outcome disagrees with authoritative coordination records",

@@ -154,7 +154,12 @@ impl RunStore {
         let finished = clock().max(stage.acquired_at_ns);
         #[cfg(test)]
         crate::runtime::fault_injection::hit("finalization.outcome.before");
-        let document = self.outcome_document(attempt, &outcome, references, finished, &stage)?;
+        let mut references = references.to_vec();
+        references.extend(super::fresh::membership_reference(
+            &self.connection,
+            &attempt.slot().to_string(),
+        )?);
+        let document = self.outcome_document(attempt, &outcome, &references, finished, &stage)?;
         write_file(
             &stage.object.join("outcome.json"),
             &document.to_canonical_bytes()?,
@@ -164,7 +169,7 @@ impl RunStore {
         let now = clock().max(finished);
         artifact.verified_at_ns = now;
         check_stage(&tx, attempt, &stage, now)?;
-        if coordination_snapshot(&tx, attempt, &outcome, finished)?
+        if coordination_snapshot(&tx, attempt, &outcome, &references, finished)?
             != document.as_json()["coordination"]
         {
             return Err(invalid("coordination records changed during publication"));
@@ -176,7 +181,7 @@ impl RunStore {
             attempt,
             outcome,
             artifact.clone(),
-            references,
+            &references,
             finished,
             now,
         )?;
@@ -329,7 +334,7 @@ pub(super) fn build_outcome_document(
         [attempt.id().to_string()],
         |r| r.get(0),
     )?;
-    let coordination = coordination_snapshot(tx, attempt, outcome, finished)?;
+    let coordination = coordination_snapshot(tx, attempt, outcome, &references, finished)?;
     let document = CanonicalValue::try_from(json!({
         "run_store_version": tx.pragma_query_value(None,"user_version",|r|r.get::<_,u32>(0))?,
         "attempt_id": attempt.id(), "slot_id":attempt.slot(), "retry_index":attempt.retry_index(),
@@ -344,6 +349,7 @@ fn coordination_snapshot(
     tx: &Transaction<'_>,
     attempt: &OwnedAttempt,
     outcome: &TerminalOutcome,
+    references: &[(String, String)],
     finished: u64,
 ) -> Result<serde_json::Value, RunStoreError> {
     fn rows(
@@ -391,7 +397,10 @@ fn coordination_snapshot(
             }
         }
     }
-    if let Some(fresh) = super::fresh::snapshot(tx, attempt, outcome)? {
+    let referenced = references
+        .iter()
+        .any(|(role, _)| role == super::fresh::MEMBERSHIP_ROLE);
+    if let Some(fresh) = super::fresh::snapshot(tx, attempt, outcome, referenced)? {
         snapshot["fresh"] = fresh;
     }
     Ok(snapshot)

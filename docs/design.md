@@ -274,6 +274,11 @@ records commit before success or a streaming checkpoint reply. Recovery rebuilds
 local coordination from that history, retaining interrupted ownership leases
 until expiry and preserving conservative charges for unknown execution time.
 
+Fresh sequences publish one immutable membership record per registered repetition
+before dispatch. Attempt outcomes reference that record and retain their own
+budget and disposition. Recovery and archive verification validate these
+references and the inline membership in older outcomes.
+
 The current local backend runs trusted code in development environments. It
 records observed controls and limitations. Private directories and integrity
 checks do not establish a complete dependency closure, network isolation, or

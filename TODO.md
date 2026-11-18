@@ -112,7 +112,7 @@ benchmark](examples/overhead)
 - [x] Stream payloads directly into the archive to reduce scratch usage. Verify
   the streamed bytes before atomic publication and preserve full
   verification on import and restore.
-- [ ] Publish fresh sequence membership as one durable record per repetition and
+- [x] Publish fresh sequence membership as one durable record per repetition and
   reference it from attempt outcomes. Verify recovery and archive restore
   with inline membership in existing outcomes and with the new references.
 - [ ] Locate rows by indexed keys during shared journal replay and verify the

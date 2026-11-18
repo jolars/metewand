@@ -195,6 +195,7 @@ impl RunStore {
         now_ns: u64,
     ) -> Result<OwnedAttempt, RunStoreError> {
         let shared = self.shared.is_some();
+        let root = self.root.clone();
         let now = timestamp(now_ns)?;
         validate_lease(&lease, now)?;
         let tx = self.transaction()?;
@@ -237,6 +238,7 @@ impl RunStore {
             _ => return Err(invalid("retry is unauthorized, stale, or exhausted")),
         }
         let id = run_attempt_id(slot, next as u64)?;
+        super::fresh::ensure_membership(&tx, &root, &slot.to_string(), now)?;
         tx.execute("INSERT INTO attempts(id, slot_id, retry_index, state, revision, started_at_ns, updated_at_ns)
             VALUES (?1, ?2, ?3, 'reserved', 0, ?4, ?4)", params![id.to_string(), slot.to_string(), next, now])?;
         insert_lease(&tx, &id.to_string(), "reservation", &lease, now)?;

@@ -1,12 +1,18 @@
 //! Fresh executions share a durable budget and a terminal target decision.
 
+use std::{fs, io, path::Path};
+
 use crate::core::{
     canonical::CanonicalValue,
+    materialization::hex,
     profile::{FreshControl, FreshSequenceProgress, ProfilePolicy},
-    records::{RecordId, ResolvedAttemptSlotRecord, ResolvedOneShotSpecificationRecord},
+    records::{
+        ContentDigest, RecordId, ResolvedAttemptSlotRecord, ResolvedOneShotSpecificationRecord,
+    },
 };
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 
 use super::{
     OwnedAttempt, RunStore, RunStoreError, TerminalOutcome,
@@ -235,26 +241,174 @@ pub(super) fn finish(
     Ok(())
 }
 
-pub(super) fn snapshot(
-    tx: &Transaction<'_>,
-    attempt: &OwnedAttempt,
-    outcome: &TerminalOutcome,
-) -> Result<Option<Value>, RunStoreError> {
-    let Some((run, index)) = membership(tx, &attempt.slot().to_string())? else {
-        return Ok(None);
-    };
-    let mut query=tx.prepare("SELECT json_object('slot_id',slot_id,'schedule_index',schedule_index,'control',json(control_json)) FROM fresh_members WHERE resolved_run_id=?1 AND measurement_index=?2 ORDER BY schedule_index")?;
+pub(crate) const MEMBERSHIP_ROLE: &str = "fresh-membership";
+
+fn membership_digest(bytes: &[u8]) -> String {
+    hex(ContentDigest::new(Sha256::digest(bytes).into()))
+}
+
+pub(crate) fn membership_address(run: &str, index: u64) -> (String, String) {
+    let key = membership_digest(format!("{run}/{index}").as_bytes());
+    (
+        format!("fresh-membership-v1:{key}"),
+        format!("fresh-memberships/{key}.json"),
+    )
+}
+
+pub(crate) fn membership_document(
+    run: &str,
+    index: u64,
+    policy: Value,
+    members: Vec<Value>,
+) -> Value {
+    json!({"schema_version":1,"resolved_run_id":run,"measurement_index":index,"policy":policy,"members":members})
+}
+
+fn repetition(db: &Connection, run: &str, index: u64) -> Result<Value, RunStoreError> {
+    let mut query=db.prepare("SELECT json_object('slot_id',slot_id,'schedule_index',schedule_index,'control',json(control_json)) FROM fresh_members WHERE resolved_run_id=?1 AND measurement_index=?2 ORDER BY schedule_index")?;
     let members = query
         .query_map(params![run, timestamp(index)?], |r| r.get::<_, String>(0))?
         .map(|r| {
             serde_json::from_str::<Value>(&r?).map_err(|_| invalid("invalid fresh membership"))
         })
         .collect::<Result<Vec<_>, _>>()?;
-    let policy: String = tx.query_row(
+    let policy: String = db.query_row(
         "SELECT policy_json FROM fresh_sequences WHERE resolved_run_id=?1 AND measurement_index=?2",
         params![run, timestamp(index)?],
         |r| r.get(0),
     )?;
+    let policy = serde_json::from_str(&policy).map_err(|_| invalid("invalid profile policy"))?;
+    Ok(membership_document(run, index, policy, members))
+}
+
+impl RunStore {
+    pub(crate) fn publish_fresh_repetitions(
+        &mut self,
+        repetitions: impl IntoIterator<Item = (RecordId<ResolvedOneShotSpecificationRecord>, u64)>,
+        now: u64,
+    ) -> Result<(), RunStoreError> {
+        let root = self.root.clone();
+        let tx = self.transaction()?;
+        let now = timestamp(now)?;
+        for (run, index) in repetitions {
+            publish_membership(&tx, &root, &run.to_string(), index, now)?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+}
+
+pub(super) fn ensure_membership(
+    tx: &Transaction<'_>,
+    root: &Path,
+    slot: &str,
+    now: i64,
+) -> Result<(), RunStoreError> {
+    if let Some((run, index)) = membership(tx, slot)? {
+        publish_membership(tx, root, &run, index, now)?;
+    }
+    Ok(())
+}
+
+fn publish_membership(
+    tx: &Transaction<'_>,
+    root: &Path,
+    run: &str,
+    index: u64,
+    now: i64,
+) -> Result<(), RunStoreError> {
+    let (id, relative) = membership_address(run, index);
+    if registered_membership(tx, &id, &relative)? {
+        return Ok(());
+    }
+    let bytes = CanonicalValue::try_from(repetition(tx, run, index)?)?.to_canonical_bytes()?;
+    let destination = root.join(&relative);
+    let parent = destination.parent().expect("membership directory");
+    match fs::create_dir(parent) {
+        Ok(()) => (),
+        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => (),
+        Err(error) => return Err(error.into()),
+    }
+    if !crate::runtime::platform_fs::is_real_directory(&fs::symlink_metadata(parent)?) {
+        return Err(RunStoreError::UnsafePath(parent.to_owned()));
+    }
+    crate::runtime::platform_fs::complete_namespace_change(root)?;
+    let stage = tempfile::tempdir_in(parent)?;
+    let source = stage.path().join("membership.json");
+    crate::runtime::publication::write_file(&source, &bytes)?;
+    match crate::runtime::publication::rename_no_replace(&source, &destination) {
+        Ok(()) => (),
+        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+            if !crate::runtime::platform_fs::is_regular_file(&fs::symlink_metadata(&destination)?)
+                || fs::read(&destination)? != bytes
+            {
+                return Err(invalid("conflicting durable fresh membership"));
+            }
+            crate::runtime::platform_fs::sync_owned_file(&destination)?;
+        }
+        Err(error) => return Err(error.into()),
+    }
+    crate::runtime::platform_fs::complete_namespace_change(parent)?;
+    tx.execute(
+        "INSERT INTO artifacts VALUES (?1,'other',?2,?3,'file',NULL,?4)",
+        params![id, relative, membership_digest(&bytes), now],
+    )?;
+    Ok(())
+}
+
+pub(super) fn membership_reference(
+    db: &Connection,
+    slot: &str,
+) -> Result<Option<(String, String)>, RunStoreError> {
+    let Some((run, index)) = membership(db, slot)? else {
+        return Ok(None);
+    };
+    let (id, path) = membership_address(&run, index);
+    Ok(registered_membership(db, &id, &path)?.then(|| (MEMBERSHIP_ROLE.to_owned(), id)))
+}
+
+fn registered_membership(db: &Connection, id: &str, path: &str) -> Result<bool, RunStoreError> {
+    Ok(db.query_row(
+        "SELECT EXISTS(SELECT 1 FROM artifacts WHERE id=?1 AND relative_path=?2 AND kind='other' AND storage_kind='file')",
+        params![id, path],
+        |r| r.get(0),
+    )?)
+}
+
+pub(super) fn verify_membership_reference(
+    db: &Connection,
+    slot: &str,
+    reference: &(String, String),
+) -> Result<(), RunStoreError> {
+    if membership_reference(db, slot)?.as_ref() != Some(reference) {
+        return Err(invalid(
+            "fresh membership reference disagrees with its repetition",
+        ));
+    }
+    let (run, index) = membership(db, slot)?.expect("referenced repetition");
+    let expected = CanonicalValue::try_from(repetition(db, &run, index)?)?.to_canonical_bytes()?;
+    let digest: String = db.query_row(
+        "SELECT content_sha256 FROM artifacts WHERE id=?1",
+        [&reference.1],
+        |r| r.get(0),
+    )?;
+    if digest != membership_digest(&expected) {
+        return Err(invalid(
+            "durable fresh membership disagrees with coordination records",
+        ));
+    }
+    Ok(())
+}
+
+pub(super) fn snapshot(
+    tx: &Transaction<'_>,
+    attempt: &OwnedAttempt,
+    outcome: &TerminalOutcome,
+    referenced: bool,
+) -> Result<Option<Value>, RunStoreError> {
+    let Some((run, index)) = membership(tx, &attempt.slot().to_string())? else {
+        return Ok(None);
+    };
     let budget: Option<(u64, Option<u64>)> = tx
         .query_row(
             "SELECT reserved_ns,charged_ns FROM fresh_budget WHERE attempt_id=?1",
@@ -267,9 +421,18 @@ pub(super) fn snapshot(
             },
         )
         .optional()?;
-    Ok(Some(
-        json!({"resolved_run_id":run,"measurement_index":index,"policy":serde_json::from_str::<Value>(&policy).map_err(|_|invalid("invalid profile policy"))?,"members":members,"budget":budget.map(|(reserved,measured)|json!({"reserved_ns":reserved,"charged_ns":measured})),"disposition":effect(tx,attempt,outcome)?}),
-    ))
+    let mut snapshot = json!({
+        "resolved_run_id": run,
+        "measurement_index": index,
+        "budget": budget.map(|(reserved, measured)| json!({"reserved_ns":reserved,"charged_ns":measured})),
+        "disposition": effect(tx, attempt, outcome)?,
+    });
+    if !referenced {
+        let repetition = repetition(tx, &run, index)?;
+        snapshot["policy"] = repetition["policy"].clone();
+        snapshot["members"] = repetition["members"].clone();
+    }
+    Ok(Some(snapshot))
 }
 
 pub(crate) fn progress(db: &Connection) -> Result<Vec<FreshSequenceProgress>, RunStoreError> {
