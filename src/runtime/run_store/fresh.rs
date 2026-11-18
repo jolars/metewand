@@ -3,10 +3,7 @@
 use crate::core::{
     canonical::CanonicalValue,
     profile::{FreshControl, FreshSequenceProgress, ProfilePolicy},
-    records::{
-        IdentifiedRecord, LogicalCandidateRecord, RecordId, ResolvedAttemptSlotRecord,
-        ResolvedObservationSlotRecord, ResolvedOneShotSpecificationRecord,
-    },
+    records::{RecordId, ResolvedAttemptSlotRecord, ResolvedOneShotSpecificationRecord},
 };
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use serde_json::{Value, json};
@@ -26,68 +23,56 @@ pub(crate) struct FreshPointRegistration<'a> {
     pub policy: &'a ProfilePolicy,
 }
 
-impl RunStore {
-    pub(crate) fn register_fresh(
-        &mut self,
-        candidate: RecordId<LogicalCandidateRecord>,
-        run: &IdentifiedRecord<ResolvedOneShotSpecificationRecord>,
-        attempt: &IdentifiedRecord<ResolvedAttemptSlotRecord>,
-        observation: &IdentifiedRecord<ResolvedObservationSlotRecord>,
-        point: FreshPointRegistration<'_>,
-    ) -> Result<(), RunStoreError> {
-        let FreshPointRegistration {
-            measurement_index,
-            control,
-            policy,
-        } = point;
-        if !supported(&self.connection)? {
-            return Err(invalid(
-                "fresh sequences require a new version-3 output directory",
-            ));
-        }
-        self.register_execution(
-            candidate,
-            run,
-            attempt,
-            std::slice::from_ref(observation),
-            "fresh_observation",
-        )?;
-        let policy = canonical(serde_json::to_value(policy).expect("profile policy"))?;
-        let control_json = canonical(control.observation_control.clone())?;
-        let tx = self.transaction()?;
-        tx.execute(
-            "INSERT INTO fresh_sequences VALUES (?1,?2,?3) ON CONFLICT DO NOTHING",
-            params![run.id.to_string(), timestamp(measurement_index)?, policy],
-        )?;
-        let previous: String = tx.query_row("SELECT policy_json FROM fresh_sequences WHERE resolved_run_id=?1 AND measurement_index=?2", params![run.id.to_string(),timestamp(measurement_index)?], |r| r.get(0))?;
-        if previous != policy {
-            return Err(invalid("conflicting fresh-sequence policy"));
-        }
-        tx.execute(
-            "INSERT INTO fresh_members VALUES (?1,?2,?3,?4,?5) ON CONFLICT DO NOTHING",
-            params![
-                attempt.id.to_string(),
-                run.id.to_string(),
-                timestamp(measurement_index)?,
-                timestamp(control.schedule_index)?,
-                control_json
-            ],
-        )?;
-        let previous: (String,u64,u64,String) = tx.query_row("SELECT resolved_run_id,measurement_index,schedule_index,control_json FROM fresh_members WHERE slot_id=?1", [attempt.id.to_string()], |r| Ok((r.get(0)?,unsigned(r,1)?,unsigned(r,2)?,r.get(3)?)))?;
-        if previous
-            != (
-                run.id.to_string(),
-                measurement_index,
-                control.schedule_index,
-                control_json,
-            )
-        {
-            return Err(invalid("conflicting fresh-sequence membership"));
-        }
-        tx.commit()?;
-        Ok(())
+pub(super) fn register_member(
+    tx: &Transaction<'_>,
+    run: RecordId<ResolvedOneShotSpecificationRecord>,
+    attempt: RecordId<ResolvedAttemptSlotRecord>,
+    point: FreshPointRegistration<'_>,
+) -> Result<(), RunStoreError> {
+    let FreshPointRegistration {
+        measurement_index,
+        control,
+        policy,
+    } = point;
+    let policy = canonical(serde_json::to_value(policy).expect("profile policy"))?;
+    let control_json = canonical(control.observation_control.clone())?;
+    tx.execute(
+        "INSERT INTO fresh_sequences VALUES (?1,?2,?3) ON CONFLICT DO NOTHING",
+        params![run.to_string(), timestamp(measurement_index)?, policy],
+    )?;
+    let previous: String = tx.query_row(
+        "SELECT policy_json FROM fresh_sequences WHERE resolved_run_id=?1 AND measurement_index=?2",
+        params![run.to_string(), timestamp(measurement_index)?],
+        |r| r.get(0),
+    )?;
+    if previous != policy {
+        return Err(invalid("conflicting fresh-sequence policy"));
     }
+    tx.execute(
+        "INSERT INTO fresh_members VALUES (?1,?2,?3,?4,?5) ON CONFLICT DO NOTHING",
+        params![
+            attempt.to_string(),
+            run.to_string(),
+            timestamp(measurement_index)?,
+            timestamp(control.schedule_index)?,
+            control_json
+        ],
+    )?;
+    let previous: (String,u64,u64,String) = tx.query_row("SELECT resolved_run_id,measurement_index,schedule_index,control_json FROM fresh_members WHERE slot_id=?1", [attempt.to_string()], |r| Ok((r.get(0)?,unsigned(r,1)?,unsigned(r,2)?,r.get(3)?)))?;
+    if previous
+        != (
+            run.to_string(),
+            measurement_index,
+            control.schedule_index,
+            control_json,
+        )
+    {
+        return Err(invalid("conflicting fresh-sequence membership"));
+    }
+    Ok(())
+}
 
+impl RunStore {
     /// Reserve immediately before entering the selected timing scope, after warm-ups.
     pub(crate) fn reserve_fresh_time(
         &mut self,

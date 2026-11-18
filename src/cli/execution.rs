@@ -186,14 +186,22 @@ fn execute(
         .stage("Planning benchmark", repository.manifest.name.to_string())
         .map_err(|e| CommandError::output_write(e.to_string()))?;
     let plan = repository
-        .logical_plan()
-        .map_err(|error| CommandError::planning("run", &error))?;
+        .selected_logical_plan(&options.experiments, &options.filters)
+        .map_err(|error| match error {
+            crate::runtime::repository::SelectedPlanError::Experiment(error)
+            | crate::runtime::repository::SelectedPlanError::Candidate(error) => {
+                CommandError::execution(&crate::runtime::run::RunError::Selection(error))
+            }
+            crate::runtime::repository::SelectedPlanError::Planning(error) => {
+                CommandError::planning("run", &error)
+            }
+        })?;
     progress
         .labels(&repository, &plan)
         .map_err(|e| CommandError::output_write(e.to_string()))?;
     let report = crate::runtime::run::run_repository_with_progress(
         &repository,
-        &plan,
+        plan,
         output_directory,
         &crate::runtime::run::LocalRunSettings {
             cache_directory,

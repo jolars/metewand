@@ -10,6 +10,7 @@ pub(crate) mod adaptive;
 mod attempts;
 #[cfg(any(unix, windows))]
 mod coordination;
+pub(crate) use coordination::{SlotDelivery, SlotRegistration};
 #[cfg(any(unix, windows))]
 mod durable;
 #[cfg(any(unix, windows))]

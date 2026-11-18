@@ -130,10 +130,15 @@ pub fn check_repository_workers_for_experiments(
     repository: &CheckedRepository,
     experiments: &[String],
 ) -> Result<WorkerCheckReport, WorkerCheckError> {
+    use crate::runtime::repository::SelectedPlanError;
     let plan = repository
-        .logical_plan()?
-        .select_experiments(experiments, repository.manifest.default_experiment.as_ref())
-        .map_err(WorkerCheckError::Conformance)?;
+        .selected_logical_plan(experiments, &Default::default())
+        .map_err(|error| match error {
+            SelectedPlanError::Planning(error) => WorkerCheckError::Planning(error),
+            SelectedPlanError::Experiment(message) | SelectedPlanError::Candidate(message) => {
+                WorkerCheckError::Conformance(message)
+            }
+        })?;
     check_repository_workers_for_plan(repository, &plan)
 }
 

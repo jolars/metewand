@@ -301,16 +301,8 @@ fn check_command(arguments: &[OsString]) -> Result<CommandResult, CommandError> 
         .map_err(runtime_config::error)?;
     let mut result = CommandResult::check(&repository);
     let plan = repository
-        .logical_plan()
-        .map_err(|error| CommandError::planning("check", &error))?
-        .select_experiments(
-            &experiments,
-            repository.manifest.default_experiment.as_ref(),
-        )
-        .map_err(|message| CommandError::usage("invalid_experiment_selection", message))?;
-    let plan = plan
-        .filter_candidates(&filters, &repository.planning_catalog)
-        .map_err(|message| CommandError::usage("invalid_candidate_selection", message))?;
+        .selected_logical_plan(&experiments, &filters)
+        .map_err(|error| selected_plan_error("check", error))?;
     if workers == 1 {
         #[cfg(any(unix, windows))]
         {
@@ -365,17 +357,25 @@ fn plan_command(arguments: &[OsString]) -> Result<CommandResult, CommandError> {
     let repository =
         check_repository(&manifest).map_err(|error| CommandError::repository("plan", &error))?;
     let plan = repository
-        .logical_plan()
-        .map_err(|error| CommandError::planning("plan", &error))?
-        .select_experiments(
-            &experiments,
-            repository.manifest.default_experiment.as_ref(),
-        )
-        .map_err(|message| CommandError::usage("invalid_experiment_selection", message))?;
-    let plan = plan
-        .filter_candidates(&filters, &repository.planning_catalog)
-        .map_err(|message| CommandError::usage("invalid_candidate_selection", message))?;
+        .selected_logical_plan(&experiments, &filters)
+        .map_err(|error| selected_plan_error("plan", error))?;
     Ok(CommandResult::plan(&repository, &plan, verbose))
+}
+
+fn selected_plan_error(
+    command: &'static str,
+    error: crate::runtime::repository::SelectedPlanError,
+) -> CommandError {
+    use crate::runtime::repository::SelectedPlanError;
+    match error {
+        SelectedPlanError::Experiment(message) => {
+            CommandError::usage("invalid_experiment_selection", message)
+        }
+        SelectedPlanError::Candidate(message) => {
+            CommandError::usage("invalid_candidate_selection", message)
+        }
+        SelectedPlanError::Planning(error) => CommandError::planning(command, &error),
+    }
 }
 
 fn experiment_arguments(

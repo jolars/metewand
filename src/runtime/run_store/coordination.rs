@@ -26,6 +26,21 @@ pub struct SlotProgress {
     pub interrupted: bool,
 }
 
+pub(crate) struct SlotRegistration<'a> {
+    pub candidate: RecordId<LogicalCandidateRecord>,
+    pub specification: &'a IdentifiedRecord<ResolvedOneShotSpecificationRecord>,
+    pub attempt: IdentifiedRecord<ResolvedAttemptSlotRecord>,
+    pub observations: Vec<IdentifiedRecord<ResolvedObservationSlotRecord>>,
+    pub delivery: SlotDelivery<'a>,
+}
+
+pub(crate) enum SlotDelivery<'a> {
+    OneShot,
+    Buffered,
+    Streaming,
+    Fresh(super::fresh::FreshPointRegistration<'a>),
+}
+
 impl RunStore {
     /// Persists an immutable support decision without allocating attempt slots.
     pub fn register_applicability(
@@ -57,75 +72,84 @@ impl RunStore {
         Ok(())
     }
 
-    /// Registers immutable one-shot coordination records in one transaction.
-    ///
-    /// Checked runs require an already registered applicable decision. Legacy
-    /// unconditional runs retain their existing coordination identity.
-    pub fn register_one_shot(
-        &mut self,
-        candidate: RecordId<LogicalCandidateRecord>,
-        run: &IdentifiedRecord<ResolvedOneShotSpecificationRecord>,
-        attempt: &IdentifiedRecord<ResolvedAttemptSlotRecord>,
-        observation: &IdentifiedRecord<ResolvedObservationSlotRecord>,
-    ) -> Result<(), RunStoreError> {
-        self.register_execution(
-            candidate,
-            run,
-            attempt,
-            std::slice::from_ref(observation),
-            "one_shot",
-        )
-    }
-
-    pub fn register_streaming(
-        &mut self,
-        candidate: RecordId<LogicalCandidateRecord>,
-        run: &IdentifiedRecord<ResolvedOneShotSpecificationRecord>,
-        attempt: &IdentifiedRecord<ResolvedAttemptSlotRecord>,
-        observations: &[IdentifiedRecord<ResolvedObservationSlotRecord>],
-    ) -> Result<(), RunStoreError> {
-        let version: u32 = self
-            .connection
-            .pragma_query_value(None, "user_version", |r| r.get(0))?;
-        if version != super::FRESH_RUN_STORE_SCHEMA_VERSION {
-            return Err(invalid(
-                "streaming profiles require a version-3 output directory",
-            ));
-        }
-        self.register_execution(candidate, run, attempt, observations, "stream")
-    }
-
     pub fn register_buffered(
         &mut self,
         candidate: RecordId<LogicalCandidateRecord>,
         run: &IdentifiedRecord<ResolvedOneShotSpecificationRecord>,
-        attempt: &IdentifiedRecord<ResolvedAttemptSlotRecord>,
-        observations: &[IdentifiedRecord<ResolvedObservationSlotRecord>],
+        attempt: IdentifiedRecord<ResolvedAttemptSlotRecord>,
+        observations: Vec<IdentifiedRecord<ResolvedObservationSlotRecord>>,
     ) -> Result<(), RunStoreError> {
+        self.register_slots([SlotRegistration {
+            candidate,
+            specification: run,
+            attempt,
+            observations,
+            delivery: SlotDelivery::Buffered,
+        }])
+    }
+
+    /// Publishes a bounded group of coordination records atomically.
+    pub(crate) fn register_slots<'a>(
+        &mut self,
+        slots: impl IntoIterator<Item = SlotRegistration<'a>>,
+    ) -> Result<(), RunStoreError> {
+        let slots = slots.into_iter();
         let version: u32 = self
             .connection
             .pragma_query_value(None, "user_version", |r| r.get(0))?;
-        if ![
-            super::BUFFERED_RUN_STORE_SCHEMA_VERSION,
-            super::FRESH_RUN_STORE_SCHEMA_VERSION,
-        ]
-        .contains(&version)
-        {
-            return Err(invalid(
-                "buffered profiles require a new version-2 output directory",
-            ));
+        let tx = self.transaction()?;
+        for slot in slots {
+            let kind = match slot.delivery {
+                SlotDelivery::OneShot => "one_shot",
+                SlotDelivery::Buffered
+                    if matches!(
+                        version,
+                        super::BUFFERED_RUN_STORE_SCHEMA_VERSION
+                            | super::FRESH_RUN_STORE_SCHEMA_VERSION
+                    ) =>
+                {
+                    "buffered"
+                }
+                SlotDelivery::Streaming if version == super::FRESH_RUN_STORE_SCHEMA_VERSION => {
+                    "stream"
+                }
+                SlotDelivery::Fresh(_) if version == super::FRESH_RUN_STORE_SCHEMA_VERSION => {
+                    "fresh_observation"
+                }
+                SlotDelivery::Buffered => {
+                    return Err(invalid(
+                        "buffered profiles require a new version-2 output directory",
+                    ));
+                }
+                SlotDelivery::Streaming => {
+                    return Err(invalid(
+                        "streaming profiles require a version-3 output directory",
+                    ));
+                }
+                SlotDelivery::Fresh(_) => {
+                    return Err(invalid(
+                        "fresh sequences require a new version-3 output directory",
+                    ));
+                }
+            };
+            Self::register_execution(&tx, &slot, kind)?;
+            if let SlotDelivery::Fresh(point) = slot.delivery {
+                super::fresh::register_member(&tx, slot.specification.id, slot.attempt.id, point)?;
+            }
         }
-        self.register_execution(candidate, run, attempt, observations, "buffered")
+        tx.commit()?;
+        Ok(())
     }
 
-    pub(super) fn register_execution(
-        &mut self,
-        candidate: RecordId<LogicalCandidateRecord>,
-        run: &IdentifiedRecord<ResolvedOneShotSpecificationRecord>,
-        attempt: &IdentifiedRecord<ResolvedAttemptSlotRecord>,
-        observations: &[IdentifiedRecord<ResolvedObservationSlotRecord>],
+    fn register_execution(
+        tx: &rusqlite::Transaction<'_>,
+        registration: &SlotRegistration<'_>,
         kind: &str,
     ) -> Result<(), RunStoreError> {
+        let candidate = registration.candidate;
+        let run = registration.specification;
+        let attempt = &registration.attempt;
+        let observations = &registration.observations;
         let observation = observations
             .first()
             .ok_or_else(|| invalid("execution requires observation slots"))?;
@@ -138,9 +162,8 @@ impl RunStore {
         if attempt.record.specification != run.id || observation.record.specification != run.id {
             return Err(invalid("slot and run identities disagree"));
         }
-        let tx = self.transaction()?;
         let decision = if let Some(decision) = run.record.applicability {
-            let valid: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM applicability_decisions WHERE id = ?1 AND candidate_id = ?2 AND applicable = 1)",
+            let valid: bool = tx.prepare_cached("SELECT EXISTS(SELECT 1 FROM applicability_decisions WHERE id = ?1 AND candidate_id = ?2 AND applicable = 1)")?.query_row(
                 params![decision.to_string(), candidate.to_string()], |r| r.get(0))?;
             if !valid {
                 return Err(invalid("run requires a registered applicable decision"));
@@ -149,37 +172,37 @@ impl RunStore {
         } else {
             let decision = format!("run-store-v1:unconditional:{candidate}");
             let decision_record = json!({"candidate_id": candidate, "applicable": true, "outcome": "applicable", "code": "unconditional_one_shot", "reason": "The implementation declares support for every admitted configuration.", "checked_inputs": null, "basis": "unconditional_one_shot"}).to_string();
-            tx.execute("INSERT INTO applicability_decisions VALUES (?1, ?2, 1, ?3) ON CONFLICT(id) DO NOTHING",
+            tx.prepare_cached("INSERT INTO applicability_decisions VALUES (?1, ?2, 1, ?3) ON CONFLICT(id) DO NOTHING")?.execute(
                 params![decision, candidate.to_string(), decision_record])?;
             decision
         };
         let run_record =
             String::from_utf8(canonical_identity_bytes(&run.record)?).expect("canonical UTF-8");
-        tx.execute(
+        tx.prepare_cached(
             "INSERT INTO resolved_runs VALUES (?1, ?2, ?3, ?4, 1, ?5) ON CONFLICT(id) DO NOTHING",
-            params![
-                run.id.to_string(),
-                run.record.logical_specification.to_string(),
-                candidate.to_string(),
-                decision,
-                run_record
-            ],
-        )?;
+        )?
+        .execute(params![
+            run.id.to_string(),
+            run.record.logical_specification.to_string(),
+            candidate.to_string(),
+            decision,
+            run_record
+        ])?;
         let attempt_record =
             String::from_utf8(canonical_identity_bytes(&attempt.record)?).expect("canonical UTF-8");
-        tx.execute("INSERT INTO attempt_slots VALUES (?1, ?2, ?3, ?5, 'measurement', ?4) ON CONFLICT(id) DO NOTHING", params![attempt.id.to_string(), attempt.record.logical_slot.to_string(), run.id.to_string(), attempt_record,kind])?;
+        tx.prepare_cached("INSERT INTO attempt_slots VALUES (?1, ?2, ?3, ?5, 'measurement', ?4) ON CONFLICT(id) DO NOTHING")?.execute( params![attempt.id.to_string(), attempt.record.logical_slot.to_string(), run.id.to_string(), attempt_record,kind])?;
         let observation_record = String::from_utf8(canonical_identity_bytes(&observation.record)?)
             .expect("canonical UTF-8");
-        tx.execute(
+        tx.prepare_cached(
             "INSERT INTO observation_slots VALUES (?1, ?2, ?3, ?4) ON CONFLICT(id) DO NOTHING",
-            params![
-                observation.id.to_string(),
-                observation.record.logical_slot.to_string(),
-                run.id.to_string(),
-                observation_record
-            ],
-        )?;
-        tx.execute("INSERT INTO attempt_observation_slots VALUES (?1, ?2, ?3) ON CONFLICT(observation_slot_id) DO NOTHING", params![attempt.id.to_string(), observation.id.to_string(), run.id.to_string()])?;
+        )?
+        .execute(params![
+            observation.id.to_string(),
+            observation.record.logical_slot.to_string(),
+            run.id.to_string(),
+            observation_record
+        ])?;
+        tx.prepare_cached("INSERT INTO attempt_observation_slots VALUES (?1, ?2, ?3) ON CONFLICT(observation_slot_id) DO NOTHING")?.execute( params![attempt.id.to_string(), observation.id.to_string(), run.id.to_string()])?;
         for (table, id, record) in [
             ("resolved_runs", run.id.to_string(), run_record),
             ("attempt_slots", attempt.id.to_string(), attempt_record),
@@ -189,11 +212,9 @@ impl RunStore {
                 observation_record,
             ),
         ] {
-            let existing: String = tx.query_row(
-                &format!("SELECT record_json FROM {table} WHERE id = ?1"),
-                [id],
-                |r| r.get(0),
-            )?;
+            let existing: String = tx
+                .prepare_cached(&format!("SELECT record_json FROM {table} WHERE id = ?1"))?
+                .query_row([id], |r| r.get(0))?;
             if existing != record {
                 return Err(invalid("registered identity has conflicting contents"));
             }
@@ -204,34 +225,29 @@ impl RunStore {
             }
             let document = String::from_utf8(canonical_identity_bytes(&extra.record)?)
                 .expect("canonical UTF-8");
-            tx.execute(
+            tx.prepare_cached(
                 "INSERT INTO observation_slots VALUES (?1,?2,?3,?4) ON CONFLICT(id) DO NOTHING",
-                params![
-                    extra.id.to_string(),
-                    extra.record.logical_slot.to_string(),
-                    run.id.to_string(),
-                    document
-                ],
-            )?;
-            let existing: String = tx.query_row(
-                "SELECT record_json FROM observation_slots WHERE id=?1",
-                [extra.id.to_string()],
-                |r| r.get(0),
-            )?;
+            )?
+            .execute(params![
+                extra.id.to_string(),
+                extra.record.logical_slot.to_string(),
+                run.id.to_string(),
+                document
+            ])?;
+            let existing: String = tx
+                .prepare_cached("SELECT record_json FROM observation_slots WHERE id=?1")?
+                .query_row([extra.id.to_string()], |r| r.get(0))?;
             if existing != document {
                 return Err(invalid("conflicting buffered observation identity"));
             }
-            tx.execute("INSERT INTO attempt_observation_slots VALUES (?1,?2,?3) ON CONFLICT(observation_slot_id) DO NOTHING",params![attempt.id.to_string(),extra.id.to_string(),run.id.to_string()])?;
+            tx.prepare_cached("INSERT INTO attempt_observation_slots VALUES (?1,?2,?3) ON CONFLICT(observation_slot_id) DO NOTHING")?.execute(params![attempt.id.to_string(),extra.id.to_string(),run.id.to_string()])?;
         }
-        let existing_kind: String = tx.query_row(
-            "SELECT kind FROM attempt_slots WHERE id=?1",
-            [attempt.id.to_string()],
-            |r| r.get(0),
-        )?;
+        let existing_kind: String = tx
+            .prepare_cached("SELECT kind FROM attempt_slots WHERE id=?1")?
+            .query_row([attempt.id.to_string()], |r| r.get(0))?;
         if existing_kind != kind {
             return Err(invalid("conflicting execution delivery kind"));
         }
-        tx.commit()?;
         Ok(())
     }
 

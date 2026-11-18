@@ -155,6 +155,15 @@ pub fn run_repository_with_options(
     options: &RunOptions,
     event_sink: impl FnMut(&RunEvent) -> io::Result<()>,
 ) -> Result<RunReport, RunError> {
+    let plan = plan
+        .clone()
+        .select_experiments(
+            &options.experiments,
+            repository.manifest.default_experiment.as_ref(),
+        )
+        .map_err(RunError::Selection)?
+        .filter_candidates(&options.filters, &repository.planning_catalog)
+        .map_err(RunError::Selection)?;
     run_repository_with_progress(
         repository,
         plan,
@@ -171,7 +180,7 @@ pub fn run_repository_with_options(
 
 pub(crate) fn run_repository_with_progress(
     repository: &CheckedRepository,
-    plan: &LogicalPlan,
+    plan: LogicalPlan,
     output_directory: &Path,
     settings: &LocalRunSettings<'_>,
     options: &RunOptions,
@@ -180,17 +189,7 @@ pub(crate) fn run_repository_with_progress(
 ) -> Result<RunReport, RunError> {
     crate::runtime::runtime_config::validate_runtime_config(repository, &settings.runtime)
         .map_err(|error| RunError::Unsupported(error.to_string()))?;
-    let plan = plan
-        .clone()
-        .select_experiments(
-            &options.experiments,
-            repository.manifest.default_experiment.as_ref(),
-        )
-        .map_err(RunError::Selection)?;
-    let plan = plan
-        .filter_candidates(&options.filters, &repository.planning_catalog)
-        .map_err(RunError::Selection)?;
-    let plan = selection::preselect(&plan, options)?;
+    let plan = selection::preselect(plan, options)?;
     let (output_directory, resume) = destination(output_directory)?;
     if resume && options.shared && !crate::runtime::run_store::shared::is_shared(&output_directory)
     {
@@ -247,9 +246,21 @@ pub(crate) fn run_repository_with_progress(
         cache_directory.as_deref(),
         &settings.runtime,
         locked.as_ref(),
-        resume && cache_directory.is_none() && selection::preselected_ids(&options.selected_ids),
+        resolution::SlotSelection {
+            reuse_committed_inputs: resume
+                && cache_directory.is_none()
+                && selection::preselected_ids(&options.selected_ids),
+            explicit_ids: !options.selected_ids.is_empty(),
+        },
         &mut progress,
     )?;
+    let selected_candidates = plan
+        .experiments
+        .iter()
+        .flat_map(|e| &e.candidates)
+        .map(|c| c.candidate.id.to_string())
+        .collect::<std::collections::BTreeSet<_>>();
+    drop(plan);
     progress(&RunProgress::Preparing(PreparationProgress {
         phase: PreparationPhase::OpeningRunStore,
         component: output_directory.display().to_string(),
@@ -266,9 +277,6 @@ pub(crate) fn run_repository_with_progress(
         None
     };
     let mut selected = std::collections::BTreeSet::new();
-    if options.selected_ids.is_empty() {
-        selected.extend(resolved.schedule.iter().copied());
-    }
     // An empty resolved run here means the preselected slots were all accepted.
     for id in options
         .selected_ids
@@ -288,7 +296,7 @@ pub(crate) fn run_repository_with_progress(
         });
         for &(candidate, measurement) in &resolved.schedule {
             let slot = &resolved.candidates[candidate].measurements[measurement];
-            if slot.selection_ids.contains(id) || previous.contains(&slot.attempt_slot.id) {
+            if slot.selection_ids.contains(id) || previous.contains(&slot.attempt_slot) {
                 selected.insert((candidate, measurement));
                 matched = true;
             }
@@ -299,6 +307,7 @@ pub(crate) fn run_repository_with_progress(
             )));
         }
     }
+    let is_selected = |position| options.selected_ids.is_empty() || selected.contains(&position);
     if !resume {
         crate::runtime::platform_fs::create_private_directory(&output_directory)?;
         crate::runtime::platform_fs::complete_namespace_change(
@@ -350,7 +359,7 @@ pub(crate) fn run_repository_with_progress(
         &mut resolved,
         &mut store,
         options,
-        &selected,
+        is_selected,
         &mut progress,
     )?;
     let mut measured_options = options.clone();
@@ -358,8 +367,14 @@ pub(crate) fn run_repository_with_progress(
         .max_attempts
         .map(|n| n.saturating_sub(calibration_attempts.len() as u64));
     let options = &measured_options;
-    let fresh_repetitions = selected
+    use crate::runtime::run_store::{SlotDelivery, SlotRegistration};
+    // Register the entire selection before dispatch, including slots beyond the
+    // invocation's attempt bound. Keep each durable transaction bounded.
+    const REGISTRATION_BATCH_SIZE: usize = 256;
+    let fresh_repetitions = resolved
+        .schedule
         .iter()
+        .filter(|&&position| is_selected(position))
         .filter_map(|&(candidate, measurement)| {
             let slot = &resolved.candidates[candidate].measurements[measurement];
             slot.fresh.as_ref().map(|_| {
@@ -371,73 +386,83 @@ pub(crate) fn run_repository_with_progress(
             })
         })
         .collect::<std::collections::BTreeSet<_>>();
+    let mut registrations = Vec::with_capacity(REGISTRATION_BATCH_SIZE);
     for (index, candidate) in resolved.candidates.iter().enumerate() {
         if let Some(policy) = &candidate.fresh_profile {
             for slot in &candidate.measurements {
                 let repetition = slot.scheduling.comparison_block.measurement_index;
                 if fresh_repetitions.contains(&(index, slot.specification.id, repetition)) {
-                    store.register_fresh(
-                        slot.candidate,
-                        &slot.specification,
-                        &slot.attempt_slot,
-                        &slot.observation_slot,
-                        crate::runtime::run_store::fresh::FreshPointRegistration {
-                            measurement_index: repetition,
-                            control: slot.fresh.as_ref().expect("fresh control"),
-                            policy,
-                        },
-                    )?;
+                    registrations.push(SlotRegistration {
+                        candidate: slot.candidate,
+                        specification: &slot.specification,
+                        attempt: slot.resolve_attempt(),
+                        observations: slot.resolve_observations()?,
+                        delivery: SlotDelivery::Fresh(
+                            crate::runtime::run_store::fresh::FreshPointRegistration {
+                                measurement_index: repetition,
+                                control: slot.fresh.as_ref().expect("fresh control"),
+                                policy,
+                            },
+                        ),
+                    });
+                    if registrations.len() == REGISTRATION_BATCH_SIZE {
+                        store.register_slots(registrations.drain(..))?;
+                    }
                 }
             }
         }
     }
-    let mut schedule = Vec::new();
-    for &(candidate, measurement) in &resolved.schedule {
-        let slot = &resolved.candidates[candidate].measurements[measurement];
-        if !selected.contains(&(candidate, measurement)) {
-            continue;
-        }
-        if resolved.candidates[candidate]
-            .profile
-            .as_ref()
-            .is_some_and(|p| p.policy.adaptive_budget.is_some())
-        {
-            continue;
-        }
-        if cache_directory.is_some() {
-            retain_inputs(&resolved.candidates[candidate])?;
-        }
-        if resolved.candidates[candidate].streaming_profile.is_some() {
-            store.register_streaming(
-                slot.candidate,
-                &slot.specification,
-                &slot.attempt_slot,
-                &slot.observation_slots,
-            )?;
-        } else if resolved.candidates[candidate].profile.is_some() {
-            store.register_buffered(
-                slot.candidate,
-                &slot.specification,
-                &slot.attempt_slot,
-                &slot.observation_slots,
-            )?;
-        } else if resolved.candidates[candidate].fresh_profile.is_none() {
-            store.register_one_shot(
-                slot.candidate,
-                &slot.specification,
-                &slot.attempt_slot,
-                &slot.observation_slot,
-            )?;
-        }
-        let progress = store.slot_progress(slot.attempt_slot.id)?;
-        if progress.accepted
-            || progress.disposition.is_some()
-            || (progress.attempts > 0 && !options.retry && !progress.interrupted)
-        {
-            continue;
-        }
-        schedule.push((candidate, measurement));
+    if !registrations.is_empty() {
+        store.register_slots(registrations.drain(..))?;
     }
+    let mut schedule = Vec::new();
+    for batch in resolved.schedule.chunks(REGISTRATION_BATCH_SIZE) {
+        let mut positions = Vec::with_capacity(batch.len());
+        for &(candidate_index, measurement_index) in batch {
+            let candidate = &resolved.candidates[candidate_index];
+            if !is_selected((candidate_index, measurement_index))
+                || candidate
+                    .profile
+                    .as_ref()
+                    .is_some_and(|p| p.policy.adaptive_budget.is_some())
+            {
+                continue;
+            }
+            if cache_directory.is_some() {
+                retain_inputs(candidate)?;
+            }
+            let slot = &candidate.measurements[measurement_index];
+            positions.push(((candidate_index, measurement_index), slot.attempt_slot));
+            if candidate.fresh_profile.is_none() {
+                registrations.push(SlotRegistration {
+                    candidate: slot.candidate,
+                    specification: &slot.specification,
+                    attempt: slot.resolve_attempt(),
+                    observations: slot.resolve_observations()?,
+                    delivery: if candidate.streaming_profile.is_some() {
+                        SlotDelivery::Streaming
+                    } else if candidate.profile.is_some() {
+                        SlotDelivery::Buffered
+                    } else {
+                        SlotDelivery::OneShot
+                    },
+                });
+            }
+        }
+        if !registrations.is_empty() {
+            store.register_slots(registrations.drain(..))?;
+        }
+        for (position, slot) in positions {
+            let progress = store.slot_progress(slot)?;
+            if !progress.accepted
+                && progress.disposition.is_none()
+                && (progress.attempts == 0 || options.retry || progress.interrupted)
+            {
+                schedule.push(position);
+            }
+        }
+    }
+    drop(registrations);
     selection::rebuild_batches(&mut resolved, schedule)?;
     let attempt_slots = resolved.schedule.len();
     let display_bound = options
@@ -506,12 +531,11 @@ pub(crate) fn run_repository_with_progress(
             }
         }
         for (lane, &(candidate, measurement)) in slots.iter().enumerate() {
-            let provenance =
-                &mut resolved.candidates[candidate].measurements[measurement].provenance;
-            let mut value = provenance.as_json().clone();
-            value["concurrency"]["batch_size"] = json!(slots.len());
-            value["concurrency"]["lane_index"] = json!(lane);
-            *provenance = canonical(value)?;
+            let slot = &mut resolved.candidates[candidate].measurements[measurement];
+            let position = slot.concurrency.as_mut().expect("scheduled batch");
+            position.batch_size = slots.len();
+            position.lane_index = lane;
+            slot.execution_provenance = Some(slot.build_provenance()?);
         }
         for &(candidate_index, measurement_index) in &slots {
             let measurement = &resolved.candidates[candidate_index].measurements[measurement_index];
@@ -520,7 +544,7 @@ pub(crate) fn run_repository_with_progress(
                 &mut event_sink,
                 RunEventKind::AttemptStarted {
                     logical_slot_id: measurement.logical_slot,
-                    resolved_slot_id: measurement.attempt_slot.id,
+                    resolved_slot_id: measurement.attempt_slot,
                 },
             )?;
         }
@@ -532,6 +556,9 @@ pub(crate) fn run_repository_with_progress(
             resolved.private_root.path(),
             &mut workers,
         )?;
+        for &(candidate, measurement) in &slots {
+            resolved.candidates[candidate].measurements[measurement].execution_provenance = None;
+        }
         for attempt in completed {
             let attempt = Arc::new(attempt);
             emit(
@@ -578,16 +605,10 @@ pub(crate) fn run_repository_with_progress(
     )?;
     let inspection = crate::runtime::inspection::Inspection::read_for_run(&output_directory)
         .map_err(io::Error::other)?;
-    let selected = plan
-        .experiments
-        .iter()
-        .flat_map(|e| &e.candidates)
-        .map(|c| c.candidate.id.to_string())
-        .collect::<std::collections::BTreeSet<_>>();
     let comparison = inspection
         .run_comparison_rows()
         .into_iter()
-        .filter(|row| selected.contains(&row.candidate_id))
+        .filter(|row| selected_candidates.contains(&row.candidate_id))
         .collect();
     Ok(RunReport {
         calibration_attempts,
@@ -786,7 +807,7 @@ fn execute(
         use crate::runtime::worker_reuse::WorkerReuseError;
         let result = worker.run_slot_for_specification(
             candidate.reuse_key.clone(),
-            measurement.attempt_slot.record.specification,
+            measurement.specification.id,
             || {
                 let started = std::time::Instant::now();
                 let launched = (|| {
@@ -883,7 +904,7 @@ fn execute(
         execution.record_fresh_time(&measurements)?;
     }
     let mut measurement = measurement.clone();
-    let mut context = measurement.provenance.as_json().clone();
+    let mut context = measurement.provenance().as_json().clone();
     if let (Some(policy), Some(fresh)) = (&candidate.fresh_profile, &measurement.fresh) {
         context["fresh_sequence"] = json!({"policy":policy,"measurement_index":measurement.scheduling.comparison_block.measurement_index,"control":fresh});
     }
@@ -914,7 +935,7 @@ fn execute(
         context["control_failure"] =
             json!({"control": control, "code": "control_enforcement_lost"});
     }
-    measurement.provenance = canonical(context)?;
+    measurement.execution_provenance = Some(canonical(context)?);
     let measurement = &measurement;
     let inputs_verified = candidate.verify();
     if let Err(error) = inputs_verified
@@ -1014,10 +1035,10 @@ fn execute(
         PublicationRequest {
             primary_time: candidate.reuse_key.policy.primary_time,
             root: &output_root,
-            attempt_slot: measurement.attempt_slot.id,
-            observation_slot: measurement.observation_slot.id,
+            attempt_slot: measurement.attempt_slot,
+            observation_slot: measurement.resolve_anchor()?.id,
             retry_index,
-            provenance_data: measurement.provenance.clone(),
+            provenance_data: measurement.provenance().clone(),
         },
     )?;
     let (status, diagnostic) = match &attempt.record.outcome {
@@ -1036,7 +1057,7 @@ fn execute(
     Ok(RunAttemptOutput {
         observations: vec![],
         logical_slot_id: measurement.logical_slot,
-        resolved_slot_id: measurement.attempt_slot.id,
+        resolved_slot_id: measurement.attempt_slot,
         attempt_id: attempt.id,
         status,
         observation_id: Some(observation.record.id),
@@ -1071,7 +1092,7 @@ fn failed_attempt(
         && code == "scientific_timeout"
         && execution.fresh_budget_exhausted()?;
     let record = RunAttemptRecord {
-        slot: measurement.attempt_slot.id,
+        slot: measurement.attempt_slot,
         retry_index: execution.retry_index(),
         outcome: if censored {
             RunAttemptOutcome::Censored {
@@ -1095,7 +1116,7 @@ fn failed_attempt(
             wire_protocol_version: crate::protocol::WIRE_PROTOCOL_VERSION,
             execution_semantics_version: EXECUTION_SEMANTICS_VERSION,
             data: canonical(
-                json!({"context": measurement.provenance.as_json(), "logs_available": false, "measurements": measurements, "storage": crate::runtime::platform_fs::storage_evidence()}),
+                json!({"context": measurement.provenance().as_json(), "logs_available": false, "measurements": measurements, "storage": crate::runtime::platform_fs::storage_evidence()}),
             )?,
         },
     };
@@ -1104,7 +1125,7 @@ fn failed_attempt(
     Ok(RunAttemptOutput {
         observations: vec![],
         logical_slot_id: measurement.logical_slot,
-        resolved_slot_id: measurement.attempt_slot.id,
+        resolved_slot_id: measurement.attempt_slot,
         attempt_id: attempt.id,
         status: if censored {
             RunAttemptStatus::Censored

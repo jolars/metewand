@@ -77,12 +77,16 @@ benchmark](examples/overhead)
   to 5.33 seconds with a primed cache. Resuming both accepted slots without a
   cache fell from 0.85 to 0.07 seconds. Input and slot identities and scientific
   outputs matched.
-- [ ] Reuse parameter expansion from repository validation. Apply name filters
+- [x] Reuse parameter expansion from repository validation. Apply name filters
   before building logical slots. Index observation slots within each
   specification. Resolve and register large schedules in batches to bound
-  memory while keeping pending work visible. Exercise a small selection
-  beside a large grid and a run with many repetitions under
-  `--max-attempts 1`.
+  memory while keeping pending work visible. With release builds and
+  `--max-attempts 1`, selecting one configuration beside a 4,096-configuration
+  grid fell from 1.12 to 0.19 seconds and from 100 to 40 MiB peak CLI RSS.
+  Scheduling 20,000 measurement repetitions fell from 21.27 to 3.88 seconds
+  and from 1,352 to 265 MiB peak CLI RSS. The coordination records and
+  scientific output bytes matched. Status reported 31 and 19,999 pending
+  slots, respectively.
 - [ ] Index attempts and observations by slot for inspection. Use targeted
   queries for status summaries, exact-ID explanations, and the final run
   comparison. Use exact and prefix lookups in the archive inventory and

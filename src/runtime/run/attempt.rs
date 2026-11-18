@@ -82,7 +82,7 @@ impl AttemptExecution {
         let owner = token.path().to_string_lossy().into_owned();
         let started = now();
         let owned = match store.reserve(
-            measurement.attempt_slot.id,
+            measurement.attempt_slot,
             RetryAuthorization::Next { retry },
             LeaseRequest {
                 id: format!("reservation:{owner}"),

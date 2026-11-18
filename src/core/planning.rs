@@ -306,6 +306,20 @@ pub struct OneShotSpecificationPlan {
     pub attempt_slots: Vec<IdentifiedRecord<LogicalAttemptSlotRecord>>,
 }
 
+impl OneShotSpecificationPlan {
+    pub(crate) fn observations_by_id(
+        &self,
+    ) -> BTreeMap<
+        RecordId<LogicalObservationSlotRecord>,
+        &IdentifiedRecord<LogicalObservationSlotRecord>,
+    > {
+        self.observation_slots
+            .iter()
+            .map(|slot| (slot.id, slot))
+            .collect()
+    }
+}
+
 /// Expands and identifies the complete unresolved one-shot logical plan.
 ///
 /// This pass performs no filesystem access, materialization, environment
@@ -316,6 +330,7 @@ pub struct OneShotSpecificationPlan {
 ///
 /// Returns the first deterministic configuration, catalog, seed, or identity
 /// error in manifest expansion order.
+#[cfg(test)]
 pub fn expand_manifest_logical_plan(
     manifest: &Manifest,
     problem_contracts: &BTreeMap<Name, ProblemContract>,
@@ -324,13 +339,35 @@ pub fn expand_manifest_logical_plan(
 ) -> Result<LogicalPlan, LogicalPlanningError> {
     let expanded_experiments =
         expand_manifest_configurations(manifest, problem_contracts, schemas)?;
-    let experiments = manifest
-        .experiments
-        .iter()
-        .zip(expanded_experiments)
-        .map(|(experiment, expanded)| plan_experiment(manifest, catalog, experiment, expanded))
-        .collect::<Result<Vec<_>, LogicalPlanningError>>()?;
+    plan_expanded_experiments(manifest, catalog, expanded_experiments.iter(), |_| true)
+}
 
+pub(crate) fn plan_expanded_experiments<'a>(
+    manifest: &Manifest,
+    catalog: &LogicalPlanningCatalog,
+    experiments: impl IntoIterator<Item = &'a ExpandedExperiment>,
+    mut filter: impl FnMut(&ExpandedCandidate) -> bool,
+) -> Result<LogicalPlan, LogicalPlanningError> {
+    let experiments = experiments
+        .into_iter()
+        .map(|expanded| {
+            let experiment = manifest
+                .experiments
+                .iter()
+                .find(|experiment| experiment.name == expanded.name)
+                .expect("expanded experiment belongs to manifest");
+            plan_experiment(
+                manifest,
+                catalog,
+                experiment,
+                expanded
+                    .candidates
+                    .iter()
+                    .filter(|candidate| filter(candidate))
+                    .cloned(),
+            )
+        })
+        .collect::<Result<Vec<_>, _>>()?;
     Ok(LogicalPlan { experiments })
 }
 
@@ -409,10 +446,8 @@ fn plan_experiment(
     manifest: &Manifest,
     catalog: &LogicalPlanningCatalog,
     experiment: &ExperimentDefinition,
-    expanded: ExpandedExperiment,
+    expanded: impl Iterator<Item = ExpandedCandidate>,
 ) -> Result<LogicalExperimentPlan, LogicalPlanningError> {
-    debug_assert_eq!(experiment.name, expanded.name);
-
     let execution_policy_definition = manifest
         .execution_policies
         .get(&experiment.execution_policy)
@@ -440,8 +475,6 @@ fn plan_experiment(
     )?;
 
     let candidates = expanded
-        .candidates
-        .into_iter()
         .map(|candidate| {
             plan_candidate(
                 manifest,
@@ -457,7 +490,7 @@ fn plan_experiment(
         .collect::<Result<Vec<_>, LogicalPlanningError>>()?;
 
     Ok(LogicalExperimentPlan {
-        name: expanded.name,
+        name: experiment.name.clone(),
         scheduling_seed,
         execution_policy,
         observation_policy,

@@ -4,7 +4,7 @@ use crate::core::{canonical::MAX_SAFE_INTEGER, planning::LogicalPlan, records::A
 
 use super::{
     RunError, RunOptions,
-    resolution::{ResolvedBatch, ResolvedRun, canonical},
+    resolution::{DispatchPosition, ResolvedBatch, ResolvedRun},
 };
 
 fn is_logical_id(id: &str) -> bool {
@@ -22,7 +22,10 @@ pub(super) fn preselected_ids(ids: &[String]) -> bool {
     ids.iter().all(|id| is_logical_id(id))
 }
 
-pub(super) fn preselect(plan: &LogicalPlan, options: &RunOptions) -> Result<LogicalPlan, RunError> {
+pub(super) fn preselect(
+    mut plan: LogicalPlan,
+    options: &RunOptions,
+) -> Result<LogicalPlan, RunError> {
     if options
         .max_attempts
         .is_some_and(|bound| bound == 0 || bound > MAX_SAFE_INTEGER)
@@ -32,7 +35,7 @@ pub(super) fn preselect(plan: &LogicalPlan, options: &RunOptions) -> Result<Logi
         ));
     }
     if options.selected_ids.is_empty() {
-        return Ok(plan.clone());
+        return Ok(plan);
     }
     for id in &options.selected_ids {
         let public = id.strip_prefix("run-store-v1:unconditional:").unwrap_or(id);
@@ -70,11 +73,17 @@ pub(super) fn preselect(plan: &LogicalPlan, options: &RunOptions) -> Result<Logi
         .collect::<BTreeSet<_>>();
     // Resolved identities require acquisition before their dependencies are known.
     if !preselected_ids(&options.selected_ids) {
-        return Ok(plan.clone());
+        return Ok(plan);
     }
     let mut matched = BTreeSet::new();
-    let mut selected = plan.clone();
-    for (experiment, original) in selected.experiments.iter_mut().zip(&plan.experiments) {
+    for experiment in &mut plan.experiments {
+        let original = experiment
+            .observation_policy
+            .record
+            .profile
+            .as_ref()
+            .filter(|profile| profile.as_json().get("adaptive-budget").is_some())
+            .map(|_| experiment.candidates.clone());
         let bound = experiment
             .observation_policy
             .record
@@ -163,13 +172,7 @@ pub(super) fn preselect(plan: &LogicalPlan, options: &RunOptions) -> Result<Logi
         experiment
             .candidates
             .retain(|candidate| !candidate.specifications.is_empty());
-        if original
-            .observation_policy
-            .record
-            .profile
-            .as_ref()
-            .is_some_and(|profile| profile.as_json().get("adaptive-budget").is_some())
-        {
+        if let Some(original) = original {
             // ID filters preserve the cohort and its first planned pilot seed.
             // Resolved IDs are matched after acquisition against the same cohort.
             let comparisons = experiment
@@ -183,20 +186,17 @@ pub(super) fn preselect(plan: &LogicalPlan, options: &RunOptions) -> Result<Logi
                 })
                 .collect::<BTreeSet<_>>();
             experiment.candidates = original
-                .candidates
-                .iter()
+                .into_iter()
                 .filter(|candidate| {
                     comparisons.contains(&(
                         candidate.dataset_configuration.id,
                         candidate.problem_configuration.id,
                     ))
                 })
-                .cloned()
                 .collect();
         }
     }
-    selected
-        .experiments
+    plan.experiments
         .retain(|experiment| !experiment.candidates.is_empty());
     for id in logical {
         if !matched.contains(id) {
@@ -205,7 +205,7 @@ pub(super) fn preselect(plan: &LogicalPlan, options: &RunOptions) -> Result<Logi
             )));
         }
     }
-    Ok(selected)
+    Ok(plan)
 }
 
 pub(super) fn rebuild_batches(
@@ -253,11 +253,13 @@ pub(super) fn rebuild_batches(
             for (lane, &(candidate, measurement)) in
                 schedule[batch_start..batch_end].iter().enumerate()
             {
-                let provenance =
-                    &mut resolved.candidates[candidate].measurements[measurement].provenance;
-                let mut value = provenance.as_json().clone();
-                value["concurrency"] = serde_json::json!({"max_concurrency": bound, "dispatch": "fixed_batches", "batch_index": batch_index, "batch_size": batch_end-batch_start, "lane_index": lane});
-                *provenance = canonical(value)?;
+                resolved.candidates[candidate].measurements[measurement].concurrency =
+                    Some(DispatchPosition {
+                        max_concurrency: bound,
+                        batch_index,
+                        batch_size: batch_end - batch_start,
+                        lane_index: lane,
+                    });
             }
             batches.push(ResolvedBatch {
                 slots: batch_start..batch_end,

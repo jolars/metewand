@@ -205,6 +205,7 @@ impl Progress {
                     experiment.name, candidate.dataset_configuration.id
                 );
                 for (repetition, specification) in candidate.specifications.iter().enumerate() {
+                    let observations = specification.observations_by_id();
                     for slot in &specification.attempt_slots {
                         let point = match slot.record.role {
                             crate::core::records::AttemptSlotRole::Warmup { warmup_index } => {
@@ -213,13 +214,8 @@ impl Progress {
                             crate::core::records::AttemptSlotRole::Measured {
                                 observation_slot,
                             } => {
-                                let measurement = specification
-                                    .observation_slots
-                                    .iter()
-                                    .find(|point| point.id == observation_slot)
-                                    .expect("planned observation")
-                                    .record
-                                    .measurement_index;
+                                let measurement =
+                                    observations[&observation_slot].record.measurement_index;
                                 format!("measurement {}", measurement + 1)
                             }
                         };

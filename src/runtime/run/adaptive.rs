@@ -6,9 +6,9 @@ use crate::core::{
         AdaptiveBudget, AdaptiveBudgetDecision, AdaptiveBudgetGroupResource, CalibrationPilot,
     },
     duration::positive_nanoseconds,
-    identity::{canonical_identity_bytes, identify_canonical, identify_record},
+    identity::{identify_canonical, identify_record},
 };
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 struct Group {
     id: String,
@@ -34,7 +34,7 @@ fn groups(candidates: &[ResolvedCandidate]) -> Result<Vec<Group>, RunError> {
             "experiment":candidate.experiment,
             "problem_instance":measurement.specification.record.problem_instance,
             "policy":profile.policy,
-            "execution_policy":candidate.measurements[0].provenance.as_json()["execution_policy"],
+            "execution_policy":measurement.provenance_base["execution_policy"],
         }))?
         .to_canonical_bytes()?;
         let group_index = *keys.entry(key).or_insert_with(|| {
@@ -88,7 +88,9 @@ pub(super) fn bind_groups(candidates: &mut [ResolvedCandidate]) -> Result<(), Ru
         let id = group.id.parse().expect("typed group identity");
         for index in group.candidates {
             for measurement in &mut candidates[index].measurements {
-                measurement.specification.record.adaptive_budget_group = Some(id);
+                Arc::make_mut(&mut measurement.specification)
+                    .record
+                    .adaptive_budget_group = Some(id);
                 rebind_measurement(measurement)?;
             }
         }
@@ -103,7 +105,7 @@ pub(super) fn calibrate(
     resolved: &mut resolution::ResolvedRun,
     store: &mut RunStore,
     options: &RunOptions,
-    selected: &BTreeSet<(usize, usize)>,
+    is_selected: impl Fn((usize, usize)) -> bool,
     progress: &mut impl FnMut(&RunProgress) -> io::Result<()>,
 ) -> Result<(Vec<AdaptiveBudgetDecision>, Vec<CalibrationAttemptOutput>), RunError> {
     // Validate complete cohorts before allocating any pilot slots.
@@ -112,10 +114,10 @@ pub(super) fn calibrate(
     let mut attempts = Vec::new();
     let mut verified_saved = false;
     for group in groups {
-        if !selected
-            .iter()
-            .any(|(index, _)| group.candidates.contains(index))
-        {
+        if !group.candidates.iter().any(|&index| {
+            (0..resolved.candidates[index].measurements.len())
+                .any(|measurement| is_selected((index, measurement)))
+        }) {
             continue;
         }
         let saved = store.adaptive_decision(&group.id)?;
@@ -141,11 +143,12 @@ pub(super) fn calibrate(
             for &index in &group.candidates {
                 let candidate = &mut resolved.candidates[index];
                 apply_limit(candidate, decision.effective_limit_ns, &group.budget)?;
+                let mut value = candidate.measurements[0].provenance_base.as_ref().clone();
+                value["adaptive_budget"] = json!(decision);
+                record_limits(&mut value, candidate.timing, candidate.timeouts);
+                let value = Arc::new(value);
                 for measurement in &mut candidate.measurements {
-                    let mut value = measurement.provenance.as_json().clone();
-                    value["adaptive_budget"] = json!(decision);
-                    record_limits(&mut value, candidate.timing, candidate.timeouts);
-                    measurement.provenance = canonical(value)?;
+                    measurement.provenance_base = Arc::clone(&value);
                 }
             }
             decisions.push(decision);
@@ -180,18 +183,18 @@ fn calibrate_group(
         for &index in &group.candidates {
             let candidate = &mut resolved.candidates[index];
             let pilot = pilot_measurement(candidate, &coordinate)?;
-            let implementation = pilot.provenance.as_json()["comparison"]["implementation"]
+            let implementation = pilot.provenance().as_json()["comparison"]["implementation"]
                 .as_str()
                 .expect("resolved implementation name")
                 .to_owned();
             store.register_buffered(
                 pilot.candidate,
                 &pilot.specification,
-                &pilot.attempt_slot,
-                &pilot.observation_slots,
+                pilot.resolve_attempt(),
+                pilot.resolve_observations()?,
             )?;
             let evidence = store.pilot_evidence(
-                pilot.attempt_slot.id,
+                pilot.attempt_slot,
                 pilot.candidate.to_string(),
                 &implementation,
                 &coordinate,
@@ -200,7 +203,7 @@ fn calibrate_group(
                 round_pilots.push(evidence);
                 continue;
             }
-            if store.slot_progress(pilot.attempt_slot.id)?.active
+            if store.slot_progress(pilot.attempt_slot)?.active
                 || options
                     .max_attempts
                     .is_some_and(|n| attempts.len() as u64 >= n)
@@ -212,7 +215,7 @@ fn calibrate_group(
                 phase: PreparationPhase::CalibratingBudget,
                 component: format!(
                     "{}: pilot round {}, {} ms",
-                    pilot.provenance.as_json()["comparison"]["implementation"]
+                    pilot.provenance().as_json()["comparison"]["implementation"]
                         .as_str()
                         .unwrap_or("solver"),
                     round + 1,
@@ -231,9 +234,9 @@ fn calibrate_group(
             );
             apply_limit(candidate, limit, &group.budget)?;
             let mut pilot = pilot;
-            let mut value = pilot.provenance.as_json().clone();
+            let mut value = pilot.provenance().as_json().clone();
             record_limits(&mut value, candidate.timing, candidate.timeouts);
-            pilot.provenance = canonical(value)?;
+            pilot.execution_provenance = Some(canonical(value)?);
             let result = profile::execute(
                 repository,
                 candidate,
@@ -253,7 +256,7 @@ fn calibrate_group(
                 attempt: result?,
             });
             let evidence = store.pilot_evidence(
-                pilot.attempt_slot.id,
+                pilot.attempt_slot,
                 pilot.candidate.to_string(),
                 &implementation,
                 &coordinate,
@@ -362,54 +365,33 @@ fn pilot_measurement(
     coordinate: &CalibrationPilot,
 ) -> Result<ResolvedMeasurement, RunError> {
     let mut pilot = candidate.measurements[0].clone();
-    pilot.specification.record.calibration = Some(coordinate.clone());
+    Arc::make_mut(&mut pilot.specification).record.calibration = Some(coordinate.clone());
     rebind_measurement(&mut pilot)?;
-    let mut value = pilot.provenance.as_json().clone();
+    let mut value = pilot.build_provenance()?.as_json().clone();
     value["calibration"] = json!(coordinate);
-    pilot.provenance = canonical(value)?;
+    pilot.execution_provenance = Some(canonical(value)?);
     Ok(pilot)
 }
 
 fn rebind_measurement(measurement: &mut ResolvedMeasurement) -> Result<(), RunError> {
-    measurement.specification = identify_record(measurement.specification.record.clone())?;
-    measurement.attempt_slot.record.specification = measurement.specification.id;
-    measurement.attempt_slot = identify_record(measurement.attempt_slot.record.clone())?;
-    for observation in &mut measurement.observation_slots {
-        observation.record.specification = measurement.specification.id;
-        *observation = identify_record(observation.record.clone())?;
-    }
-    measurement.observation_slot = measurement.observation_slots[0].clone();
-    for warmup in &mut measurement.warmups {
+    measurement.specification =
+        Arc::new(identify_record(measurement.specification.record.clone())?);
+    measurement.attempt_slot = crate::core::identity::record_id(&measurement.attempt_record())?;
+    for warmup in Arc::make_mut(&mut measurement.warmups) {
         warmup.record.specification = measurement.specification.id;
         *warmup = identify_record(warmup.record.clone())?;
     }
-    measurement.selection_ids.extend([
-        measurement.specification.id.to_string(),
-        measurement.attempt_slot.id.to_string(),
-    ]);
-    measurement.selection_ids.extend(
-        measurement
-            .observation_slots
-            .iter()
-            .map(|o| o.id.to_string()),
-    );
-    let mut value = measurement.provenance.as_json().clone();
-    for (key, bytes) in [
-        (
-            "resolved_specification",
-            canonical_identity_bytes(&measurement.specification.record)?,
-        ),
-        (
-            "resolved_attempt_slot",
-            canonical_identity_bytes(&measurement.attempt_slot.record)?,
-        ),
-        (
-            "resolved_observation_slot",
-            canonical_identity_bytes(&measurement.observation_slot.record)?,
-        ),
-    ] {
-        value[key] = serde_json::from_slice(&bytes).expect("canonical identity");
+    if !measurement.selection_ids.is_empty() {
+        measurement.selection_ids.extend([
+            measurement.specification.id.to_string(),
+            measurement.attempt_slot.to_string(),
+        ]);
+        measurement.selection_ids.extend(
+            measurement
+                .resolve_observations()?
+                .iter()
+                .map(|o| o.id.to_string()),
+        );
     }
-    measurement.provenance = canonical(value)?;
     Ok(())
 }

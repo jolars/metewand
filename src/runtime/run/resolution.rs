@@ -99,17 +99,100 @@ pub(super) struct ResolvedCandidate {
 #[derive(Clone)]
 pub(super) struct ResolvedMeasurement {
     pub fresh: Option<crate::core::profile::FreshControl>,
-    pub observation_slots: Vec<IdentifiedRecord<ResolvedObservationSlotRecord>>,
+    additional_observations: Vec<RecordId<crate::core::records::LogicalObservationSlotRecord>>,
     pub candidate: RecordId<crate::core::records::LogicalCandidateRecord>,
-    pub specification: IdentifiedRecord<ResolvedOneShotSpecificationRecord>,
+    pub specification: Arc<IdentifiedRecord<ResolvedOneShotSpecificationRecord>>,
     pub selection_ids: Vec<String>,
     pub scheduling: SchedulingSlot,
-    pub warmups: Vec<IdentifiedRecord<ResolvedAttemptSlotRecord>>,
+    pub warmups: Arc<[IdentifiedRecord<ResolvedAttemptSlotRecord>]>,
     pub logical_slot: RecordId<LogicalAttemptSlotRecord>,
-    pub attempt_slot: IdentifiedRecord<ResolvedAttemptSlotRecord>,
-    pub observation_slot: IdentifiedRecord<ResolvedObservationSlotRecord>,
+    pub attempt_slot: RecordId<ResolvedAttemptSlotRecord>,
+    logical_observation: RecordId<crate::core::records::LogicalObservationSlotRecord>,
     pub seed: u64,
-    pub provenance: CanonicalValue,
+    pub provenance_base: Arc<Value>,
+    pub concurrency: Option<DispatchPosition>,
+    pub execution_provenance: Option<CanonicalValue>,
+}
+
+#[derive(Clone, Copy)]
+pub(super) struct DispatchPosition {
+    pub max_concurrency: u64,
+    pub batch_index: usize,
+    pub batch_size: usize,
+    pub lane_index: usize,
+}
+
+impl ResolvedMeasurement {
+    pub fn attempt_record(&self) -> ResolvedAttemptSlotRecord {
+        ResolvedAttemptSlotRecord {
+            logical_slot: self.logical_slot,
+            specification: self.specification.id,
+        }
+    }
+
+    pub fn resolve_attempt(&self) -> IdentifiedRecord<ResolvedAttemptSlotRecord> {
+        IdentifiedRecord {
+            id: self.attempt_slot,
+            record: self.attempt_record(),
+        }
+    }
+
+    fn resolve_observation(
+        &self,
+        logical_slot: RecordId<crate::core::records::LogicalObservationSlotRecord>,
+    ) -> Result<IdentifiedRecord<ResolvedObservationSlotRecord>, RunError> {
+        Ok(identify_record(ResolvedObservationSlotRecord {
+            logical_slot,
+            specification: self.specification.id,
+        })?)
+    }
+
+    pub fn resolve_anchor(
+        &self,
+    ) -> Result<IdentifiedRecord<ResolvedObservationSlotRecord>, RunError> {
+        self.resolve_observation(self.logical_observation)
+    }
+
+    pub fn resolve_observations(
+        &self,
+    ) -> Result<Vec<IdentifiedRecord<ResolvedObservationSlotRecord>>, RunError> {
+        std::iter::once(self.logical_observation)
+            .chain(self.additional_observations.iter().copied())
+            .map(|logical_slot| self.resolve_observation(logical_slot))
+            .collect()
+    }
+
+    pub fn build_provenance(&self) -> Result<CanonicalValue, RunError> {
+        let mut context = self.provenance_base.as_ref().clone();
+        let block = self.scheduling.comparison_block;
+        context["logical_slot_id"] = json!(self.logical_slot);
+        context["implementation_seed"] = json!(self.seed);
+        context["scheduling"]["comparison_block"]["implementation_repetition"] =
+            json!(block.implementation_repetition);
+        context["scheduling"]["comparison_block"]["measurement_index"] =
+            json!(block.measurement_index);
+        context["scheduling"]["slot_priority"] =
+            json!(hex(self.scheduling.scheduling_priority.bytes()));
+        context["resolved_specification"] = record_document(&self.specification.record)?;
+        context["resolved_attempt_slot"] = record_document(&self.attempt_record())?;
+        context["resolved_observation_slot"] = record_document(&self.resolve_anchor()?.record)?;
+        if let Some(position) = self.concurrency {
+            context["concurrency"] = json!({
+                "max_concurrency": position.max_concurrency,
+                "dispatch": "fixed_batches",
+                "batch_index": position.batch_index,
+                "batch_size": position.batch_size,
+                "lane_index": position.lane_index,
+            });
+        }
+        canonical(context)
+    }
+
+    pub fn provenance(&self) -> &CanonicalValue {
+        self.execution_provenance
+            .as_ref()
+            .expect("dispatch builds attempt provenance")
+    }
 }
 
 pub(crate) struct ResolvedWorker {
@@ -281,6 +364,11 @@ fn validate_snapshot_destination(snapshot: &Snapshot, output: &Path) -> Result<(
     Ok(())
 }
 
+pub(super) struct SlotSelection {
+    pub reuse_committed_inputs: bool,
+    pub explicit_ids: bool,
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(super) fn resolve(
     repository: &CheckedRepository,
@@ -289,7 +377,7 @@ pub(super) fn resolve(
     cache_directory: Option<&Path>,
     runtime: &crate::protocol::RuntimeSettings,
     locked: Option<&crate::runtime::lockfile::VerifiedLock>,
-    reuse_committed_inputs: bool,
+    selection: SlotSelection,
     progress: &mut impl FnMut(&super::RunProgress) -> io::Result<()>,
 ) -> Result<ResolvedRun, RunError> {
     for experiment in &plan.experiments {
@@ -333,6 +421,7 @@ pub(super) fn resolve(
             }
         }
     }
+    drop(logical_slots);
     let timeouts = resolve_worker_timeouts(repository)?;
     let private_root = Builder::new().prefix("metewand-run-").tempdir()?;
     let executor = identify_record(ExecutorDefinitionRecord {
@@ -521,7 +610,8 @@ pub(super) fn resolve(
             }
         }
     }
-    let resume_store = reuse_committed_inputs
+    let resume_store = selection
+        .reuse_committed_inputs
         .then(|| RunStore::open(output))
         .transpose()?;
     if let Some(store) = &resume_store {
@@ -746,31 +836,43 @@ pub(super) fn resolve(
             evaluator,
             &datasets[&key],
             preparations.get(&preparation_key),
+            selection.explicit_ids,
         )?);
     }
-    let runner = crate::runtime::build_evidence::executable_evidence(&env::current_exe()?)?;
-    let host = crate::runtime::build_evidence::host_observation();
-    let checkout = crate::runtime::build_evidence::repository_observation(&repository.root);
+    let mut invocation_provenance = json!({
+        "runner": crate::runtime::build_evidence::executable_evidence(&env::current_exe()?)?,
+        "host_observation": crate::runtime::build_evidence::host_observation(),
+        "repository": crate::runtime::build_evidence::repository_observation(&repository.root),
+    });
+    if !runtime.is_empty() {
+        invocation_provenance["runtime"] = json!(runtime);
+    }
+    let invocation_provenance = invocation_provenance
+        .as_object()
+        .expect("invocation object");
     let mut slots = BTreeSet::new();
     for candidate in &mut candidates {
-        for measurement in &mut candidate.measurements {
-            let mut context = measurement.provenance.as_json().clone();
-            context["runner"] = runner.clone();
-            context["host_observation"] = host.clone();
-            context["repository"] = checkout.clone();
-            if !runtime.is_empty() {
-                context["runtime"] = json!(runtime);
+        if let Some(first) = candidate.measurements.first() {
+            let mut context = first.provenance_base.as_ref().clone();
+            context
+                .as_object_mut()
+                .expect("candidate context")
+                .extend(invocation_provenance.clone());
+            let context = Arc::new(context);
+            for measurement in &mut candidate.measurements {
+                measurement.provenance_base = Arc::clone(&context);
             }
-            measurement.provenance = canonical(context)?;
-            if !slots.insert(measurement.attempt_slot.id) {
+        }
+        for measurement in &candidate.measurements {
+            if !slots.insert(measurement.attempt_slot) {
                 return Err(unsupported(
                     "the plan selects a resolved attempt slot more than once; use distinct experiment seeds for independent executions",
                 ));
             }
         }
     }
+    drop(slots);
     let mut schedule = Vec::new();
-    let mut batches = Vec::new();
     let mut candidate_offset = 0;
     for experiment in &plan.experiments {
         let mut positions = Vec::new();
@@ -816,23 +918,14 @@ pub(super) fn resolve(
                 let group = &ordered[offset..offset + group_size];
                 for batch in group.chunks(lane_count) {
                     for (lane_index, &(candidate, measurement)) in batch.iter().enumerate() {
-                        let provenance =
-                            &mut candidates[candidate].measurements[measurement].provenance;
-                        let mut value = provenance.as_json().clone();
-                        value["concurrency"] = json!({
-                            "max_concurrency": max_concurrency,
-                            "dispatch": "fixed_batches",
-                            "batch_index": batch_index,
-                            "batch_size": batch.len(),
-                            "lane_index": lane_index,
-                        });
-                        *provenance = canonical(value)?;
+                        candidates[candidate].measurements[measurement].concurrency =
+                            Some(DispatchPosition {
+                                max_concurrency,
+                                batch_index,
+                                batch_size: batch.len(),
+                                lane_index,
+                            });
                     }
-                    let start = schedule.len() + offset;
-                    batches.push(ResolvedBatch {
-                        slots: start..start + batch.len(),
-                        lane_count,
-                    });
                     offset += batch.len();
                     batch_index += 1;
                 }
@@ -844,7 +937,7 @@ pub(super) fn resolve(
     Ok(ResolvedRun {
         candidates,
         schedule,
-        batches,
+        batches: Vec::new(),
         private_root,
         resume_store,
     })
@@ -1087,6 +1180,7 @@ fn resolve_candidate(
     evaluator: ResolvedWorker,
     dataset: &ResolvedDataset,
     preparation: Option<&ResolvedPreparation>,
+    explicit_ids: bool,
 ) -> Result<ResolvedCandidate, RunError> {
     let policy = experiment.execution_policy.record.clone();
     let timing = ExecutionTimingPolicy {
@@ -1195,6 +1289,62 @@ fn resolve_candidate(
         repository.manifest.worker_timeouts.into(),
         preparation,
     )?;
+    let mut provenance = json!({
+            "comparison": comparison,
+            "analysis": analysis_settings,
+            "applicability": applicability.record,
+            "controls": crate::core::controls::local_control_report(&policy),
+            "execution_policy": record_document(&policy)?,
+            "manifest_hash": repository.manifest_hash.to_string(),
+            "timing_scope": timing.scope.to_string(),
+            "operation_scope": timing.scope == crate::core::manifest::TimingScope::ExecuteOnly,
+            "scientific_timeout_ns": timing.timeout.map(|limit| limit.as_nanos().to_string()),
+            "operational_timeouts_ns": PhaseTimeouts::from(repository.manifest.worker_timeouts).provenance(),
+            "logical_candidate_id": candidate.candidate.id,
+            "scheduling": {
+                "run_order": match policy.run_order {
+                    RunOrder::Sequential => "sequential",
+                    RunOrder::Randomized => "randomized",
+                },
+                "policy_version": SCHEDULING_POLICY_VERSION,
+                "seed": experiment.scheduling_seed.value,
+                "seed_digest": hex(experiment.scheduling_seed.derivation_digest.bytes()),
+                "comparison_block": {
+                    "dataset_instance": dataset_instance.id,
+                    "problem_configuration": candidate.problem_configuration.id,
+                },
+            },
+            "dataset_materialization": dataset_provenance.map(CanonicalValue::as_json),
+            "dataset_immutability": {
+                "view": "copy", "enforcement": "best_effort",
+                "verification": "each_worker_operation",
+            },
+            "dataset_instance": record_document(&dataset_instance.record)?,
+            "problem_instance": record_document(&problem_instance.record)?,
+            "implementation": implementation.provenance,
+            "evaluator": evaluator.provenance,
+            "repository_commit": null, "dirty_tree_hash": null, "build_fingerprint": null,
+            "cpu_model": null, "selected_cores": null, "memory": null, "kernel": null,
+            "language_runtime": null, "blas": null, "thread_settings": null,
+    });
+    if let Some(preparation) = preparation {
+        provenance["problem_preparation"] = preparation.provenance.as_json().clone();
+        provenance["problem_preparation_time_ns"] =
+            json!(preparation.snapshot.materialization_time_ns);
+    }
+    if let Some(streaming) = &streaming_profile {
+        provenance["streaming_profile"] = json!(streaming);
+    }
+    let provenance_base = Arc::new(provenance);
+    let observation_bound = profile
+        .as_ref()
+        .map(|p| p.policy.max_observations)
+        .or_else(|| {
+            streaming_profile
+                .as_ref()
+                .map(|p| p.policy.max_observations)
+        })
+        .unwrap_or(1);
     let mut measurements = Vec::new();
     for specification in candidate.specifications.iter().filter(|_| {
         applicability.record.outcome
@@ -1226,23 +1376,27 @@ fn resolve_candidate(
                 }
             })
             .collect::<Result<Vec<_>, _>>()?;
+        let resolved = Arc::new(resolved);
+        let warmups: Arc<[_]> = Arc::from(warmups);
+        let observations_by_id = specification.observations_by_id();
+        let observations_by_index = if fresh_profile.is_none() && observation_bound > 1 {
+            specification
+                .observation_slots
+                .iter()
+                .map(|observation| (observation.record.measurement_index, observation))
+                .collect::<BTreeMap<_, _>>()
+        } else {
+            BTreeMap::new()
+        };
         for slot in specification
             .attempt_slots
             .iter()
             .filter(|slot| matches!(slot.record.role, AttemptSlotRole::Measured { .. }))
         {
-            let anchor = match slot.record.role {
-                AttemptSlotRole::Measured { observation_slot } => observation_slot,
-                _ => unreachable!(),
-            };
-            let logical_observation = specification
-                .observation_slots
-                .iter()
-                .find(|o| o.id == anchor)
-                .expect("planned observation");
             let AttemptSlotRole::Measured { observation_slot } = slot.record.role else {
                 unreachable!("only measured slots were selected");
             };
+            let logical_observation = observations_by_id[&observation_slot];
             let scheduling = SchedulingSlot {
                 observation_round: logical_observation
                     .record
@@ -1266,134 +1420,57 @@ fn resolve_candidate(
                 },
                 scheduling_priority: slot.record.scheduling_priority,
             };
-            let block = &scheduling.comparison_block;
-            let attempt_slot = identify_record(ResolvedAttemptSlotRecord {
+            let attempt_slot = crate::core::identity::record_id(&ResolvedAttemptSlotRecord {
                 logical_slot: slot.id,
                 specification: resolved.id,
             })?;
-            let observation_slot = identify_record(ResolvedObservationSlotRecord {
-                logical_slot: observation_slot,
-                specification: resolved.id,
-            })?;
-            let mut provenance = canonical(json!({
-                "comparison": comparison,
-                "analysis": analysis_settings,
-                "applicability": applicability.record,
-                "controls": crate::core::controls::local_control_report(&policy),
-                "execution_policy": record_document(&policy)?,
-                "manifest_hash": repository.manifest_hash.to_string(),
-                "timing_scope": timing.scope.to_string(),
-                "operation_scope": timing.scope == crate::core::manifest::TimingScope::ExecuteOnly,
-                "scientific_timeout_ns": timing.timeout.map(|limit| limit.as_nanos().to_string()),
-                "operational_timeouts_ns": PhaseTimeouts::from(repository.manifest.worker_timeouts).provenance(),
-                "logical_candidate_id": candidate.candidate.id,
-                "logical_slot_id": slot.id,
-                "implementation_seed": specification.specification.record.implementation_seed.value,
-                "scheduling": {
-                    "run_order": match policy.run_order {
-                        RunOrder::Sequential => "sequential",
-                        RunOrder::Randomized => "randomized",
-                    },
-                    "policy_version": SCHEDULING_POLICY_VERSION,
-                    "seed": experiment.scheduling_seed.value,
-                    "seed_digest": hex(experiment.scheduling_seed.derivation_digest.bytes()),
-                    "comparison_block": {
-                        "dataset_instance": block.dataset_instance,
-                        "problem_configuration": block.problem_configuration,
-                        "implementation_repetition": block.implementation_repetition,
-                        "measurement_index": block.measurement_index,
-                    },
-                    "slot_priority": hex(scheduling.scheduling_priority.bytes()),
-                },
-                "dataset_materialization": dataset_provenance.map(CanonicalValue::as_json),
-                "dataset_immutability": {
-                    "view": "copy", "enforcement": "best_effort",
-                    "verification": "each_worker_operation",
-                },
-                "dataset_instance": record_document(&dataset_instance.record)?,
-                "problem_instance": record_document(&problem_instance.record)?,
-                "resolved_specification": record_document(&resolved.record)?,
-                "resolved_attempt_slot": record_document(&attempt_slot.record)?,
-                "resolved_observation_slot": record_document(&observation_slot.record)?,
-                "implementation": implementation.provenance,
-                "evaluator": evaluator.provenance,
-                "repository_commit": null, "dirty_tree_hash": null, "build_fingerprint": null,
-                "cpu_model": null, "selected_cores": null, "memory": null, "kernel": null,
-                "language_runtime": null, "blas": null, "thread_settings": null,
-            }))?;
-            if let Some(preparation) = preparation {
-                let mut value = provenance.as_json().clone();
-                value["problem_preparation"] = preparation.provenance.as_json().clone();
-                value["problem_preparation_time_ns"] =
-                    json!(preparation.snapshot.materialization_time_ns);
-                provenance = canonical(value)?;
-            }
-            if let Some(streaming) = &streaming_profile {
-                let mut value = provenance.as_json().clone();
-                value["streaming_profile"] =
-                    serde_json::to_value(streaming).expect("selected stream");
-                provenance = canonical(value)?;
-            }
-            let bound = profile
-                .as_ref()
-                .map(|p| p.policy.max_observations)
-                .or_else(|| {
-                    streaming_profile
-                        .as_ref()
-                        .map(|p| p.policy.max_observations)
-                })
-                .unwrap_or(1);
-            let observation_slots = specification
-                .observation_slots
-                .iter()
-                .filter(|o| {
-                    if fresh_profile.is_some() {
-                        o.id == logical_observation.id
-                    } else {
-                        o.record.measurement_index >= logical_observation.record.measurement_index
-                            && o.record.measurement_index
-                                < logical_observation.record.measurement_index + bound
-                    }
-                })
-                .map(|o| {
-                    identify_record(ResolvedObservationSlotRecord {
-                        logical_slot: o.id,
-                        specification: resolved.id,
-                    })
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-            let mut selection_ids = vec![
-                candidate.candidate.id.to_string(),
-                specification.specification.id.to_string(),
-                resolved.id.to_string(),
-                slot.id.to_string(),
-                attempt_slot.id.to_string(),
-                logical_observation.id.to_string(),
-                observation_slot.id.to_string(),
-                if applicability.record.checked_inputs.is_some() {
-                    applicability.id.to_string()
-                } else {
-                    format!("run-store-v1:unconditional:{}", candidate.candidate.id)
-                },
-            ];
-            for observation in &observation_slots {
-                selection_ids.push(observation.id.to_string());
-                selection_ids.push(observation.record.logical_slot.to_string());
-            }
-            measurements.push(ResolvedMeasurement {
+            let additional_observations = if observations_by_index.is_empty() {
+                Vec::new()
+            } else {
+                let start = logical_observation.record.measurement_index;
+                observations_by_index
+                    .range(start..start.saturating_add(observation_bound))
+                    .map(|(_, observation)| observation.id)
+                    .filter(|id| *id != observation_slot)
+                    .collect()
+            };
+            let mut measurement = ResolvedMeasurement {
                 fresh: logical_observation.record.fresh.clone(),
-                observation_slots,
+                additional_observations,
                 candidate: candidate.candidate.id,
                 specification: resolved.clone(),
-                selection_ids,
+                selection_ids: Vec::new(),
                 scheduling,
                 warmups: warmups.clone(),
                 logical_slot: slot.id,
                 attempt_slot,
-                observation_slot,
+                logical_observation: observation_slot,
                 seed: specification.specification.record.implementation_seed.value,
-                provenance,
-            });
+                provenance_base: Arc::clone(&provenance_base),
+                concurrency: None,
+                execution_provenance: None,
+            };
+            if explicit_ids {
+                measurement.selection_ids = vec![
+                    candidate.candidate.id.to_string(),
+                    specification.specification.id.to_string(),
+                    resolved.id.to_string(),
+                    slot.id.to_string(),
+                    measurement.attempt_slot.to_string(),
+                    if applicability.record.checked_inputs.is_some() {
+                        applicability.id.to_string()
+                    } else {
+                        format!("run-store-v1:unconditional:{}", candidate.candidate.id)
+                    },
+                ];
+                for observation in measurement.resolve_observations()? {
+                    measurement.selection_ids.push(observation.id.to_string());
+                    measurement
+                        .selection_ids
+                        .push(observation.record.logical_slot.to_string());
+                }
+            }
+            measurements.push(measurement);
         }
     }
     let reuse_key = crate::runtime::worker_reuse::WorkerReuseKey {
@@ -1417,12 +1494,20 @@ fn resolve_candidate(
         streaming_profile,
         experiment: experiment.name.to_string(),
         applicability,
-        logical_selection_ids: std::iter::once(candidate.candidate.id.to_string())
-            .chain(candidate.specifications.iter().flat_map(|s| {
-                std::iter::once(s.specification.id.to_string())
-                    .chain(s.attempt_slots.iter().map(|slot| slot.id.to_string()))
-                    .chain(s.observation_slots.iter().map(|slot| slot.id.to_string()))
-            }))
+        logical_selection_ids: explicit_ids
+            .then(|| candidate.candidate.id.to_string())
+            .into_iter()
+            .chain(
+                candidate
+                    .specifications
+                    .iter()
+                    .filter(|_| explicit_ids)
+                    .flat_map(|s| {
+                        std::iter::once(s.specification.id.to_string())
+                            .chain(s.attempt_slots.iter().map(|slot| slot.id.to_string()))
+                            .chain(s.observation_slots.iter().map(|slot| slot.id.to_string()))
+                    }),
+            )
             .collect(),
         reuse_key,
         dataset,

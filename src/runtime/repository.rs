@@ -18,9 +18,10 @@ use crate::core::{
     },
     manifest_hash::{ManifestHash, ManifestHashError, hash_manifest},
     planning::{
-        ConfigurationExpansionError, DatasetConfigurationDefinition, LogicalPlan,
-        LogicalPlanningCatalog, LogicalPlanningError, expand_manifest_configurations,
-        expand_manifest_logical_plan, identify_builtin_unit_dataset_definition,
+        CandidateFilters, ConfigurationExpansionError, DatasetConfigurationDefinition,
+        ExpandedCandidate, ExpandedExperiment, LogicalPlan, LogicalPlanningCatalog,
+        LogicalPlanningError, expand_manifest_configurations,
+        identify_builtin_unit_dataset_definition, plan_expanded_experiments,
     },
     problem_contract::{
         ContractDeclaration, ProblemContract, ProblemContractError,
@@ -57,6 +58,7 @@ pub struct CheckedRepository {
     pub schemas: SchemaCatalog,
     /// Content-derived definition identities consumed by logical planning.
     pub planning_catalog: LogicalPlanningCatalog,
+    configurations: Vec<ExpandedExperiment>,
     /// Content identities for repository resources required by the plan.
     pub resources: RepositoryResources,
     /// Number of repository schema documents in the offline catalog.
@@ -87,13 +89,102 @@ impl CheckedRepository {
     /// Returns a deterministic planning error if identity construction or
     /// expansion invariants fail.
     pub fn logical_plan(&self) -> Result<LogicalPlan, LogicalPlanningError> {
-        expand_manifest_logical_plan(
+        plan_expanded_experiments(
             &self.manifest,
-            &self.problem_contracts,
-            &self.schemas,
             &self.planning_catalog,
+            self.configurations.iter(),
+            |_| true,
         )
     }
+
+    pub(crate) fn selected_logical_plan(
+        &self,
+        names: &[String],
+        filters: &CandidateFilters,
+    ) -> Result<LogicalPlan, SelectedPlanError> {
+        let default = self
+            .manifest
+            .default_experiment
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>();
+        let names = if names.is_empty() { &default } else { names };
+        for name in names {
+            if !self
+                .configurations
+                .iter()
+                .any(|experiment| experiment.name.as_str() == name)
+            {
+                return Err(SelectedPlanError::Experiment(format!(
+                    "experiment `{name}` is not declared"
+                )));
+            }
+        }
+        for (kind, names) in [
+            ("dataset", &filters.datasets),
+            ("problem", &filters.problems),
+            ("implementation", &filters.implementations),
+        ] {
+            for name in names {
+                let declared = match kind {
+                    "dataset" => self.manifest.datasets.contains_key(name.as_str()),
+                    "problem" => self.manifest.problems.contains_key(name.as_str()),
+                    _ => self.manifest.implementations.contains_key(name.as_str()),
+                };
+                if !declared {
+                    return Err(SelectedPlanError::Candidate(format!(
+                        "{kind} `{name}` is not declared"
+                    )));
+                }
+            }
+        }
+        let matches = |candidate: &ExpandedCandidate| {
+            let dataset = match &candidate.dataset.definition {
+                DatasetConfigurationDefinition::Unit => None,
+                DatasetConfigurationDefinition::Named(name) => Some(name.as_str()),
+            };
+            (filters.datasets.is_empty()
+                || filters
+                    .datasets
+                    .iter()
+                    .any(|name| Some(name.as_str()) == dataset))
+                && (filters.problems.is_empty()
+                    || filters
+                        .problems
+                        .iter()
+                        .any(|name| name == candidate.problem.definition.as_str()))
+                && (filters.implementations.is_empty()
+                    || filters
+                        .implementations
+                        .iter()
+                        .any(|name| name == candidate.implementation.definition.as_str()))
+        };
+        let filtered = !filters.datasets.is_empty()
+            || !filters.problems.is_empty()
+            || !filters.implementations.is_empty();
+        let experiments = self
+            .configurations
+            .iter()
+            .filter(|experiment| {
+                names.is_empty() || names.iter().any(|name| name == experiment.name.as_str())
+            })
+            .filter(|experiment| !filtered || experiment.candidates.iter().any(matches));
+        let plan =
+            plan_expanded_experiments(&self.manifest, &self.planning_catalog, experiments, matches)
+                .map_err(SelectedPlanError::Planning)?;
+        if filtered && plan.experiments.is_empty() {
+            return Err(SelectedPlanError::Candidate(
+                "name filters match no candidates in the selected experiments".into(),
+            ));
+        }
+        Ok(plan)
+    }
+}
+
+pub(crate) enum SelectedPlanError {
+    Experiment(String),
+    Candidate(String),
+    Planning(LogicalPlanningError),
 }
 
 /// Loads and validates a benchmark repository without modifying it.
@@ -163,7 +254,7 @@ pub fn check_repository(manifest_path: &Path) -> Result<CheckedRepository, Repos
         )?;
     }
 
-    expand_manifest_configurations(&manifest, &problem_contracts, &schemas)?;
+    let configurations = expand_manifest_configurations(&manifest, &problem_contracts, &schemas)?;
     let (planning_catalog, resources) = build_planning_catalog(
         &root,
         &manifest_diagnostic_path,
@@ -186,6 +277,7 @@ pub fn check_repository(manifest_path: &Path) -> Result<CheckedRepository, Repos
         problem_contracts,
         schemas,
         planning_catalog,
+        configurations,
         resources,
         schema_count: schema_documents.len(),
         schema_files,

@@ -111,11 +111,12 @@ pub(super) fn execute(
         timing: candidate.timing,
         log_limits: WorkerLogLimits::new(64 * 1024, 64 * 1024),
     };
+    let observation_slots = measurement.resolve_observations()?;
     let mut observations = Vec::new();
     let mut buffer_evidence = Value::Null;
     let mut target_reached = false;
     let mut late_target = false;
-    let adaptive = measurement.provenance.as_json()["adaptive_budget"].is_object()
+    let adaptive = measurement.provenance().as_json()["adaptive_budget"].is_object()
         || measurement.specification.record.calibration.is_some();
     let mut stop_reason = "unreturned_buffer".to_owned();
     let mut expected_snapshots = 0;
@@ -170,10 +171,10 @@ pub(super) fn execute(
                         PublicationRequest {
                             primary_time: candidate.reuse_key.policy.primary_time,
                             root: &root,
-                            attempt_slot: measurement.attempt_slot.id,
-                            observation_slot: measurement.observation_slots[ordinal].id,
+                            attempt_slot: measurement.attempt_slot,
+                            observation_slot: observation_slots[ordinal].id,
                             retry_index,
-                            provenance_data: measurement.provenance.clone(),
+                            provenance_data: measurement.provenance().clone(),
                         },
                     )
                     .map_err(&publication_error)?;
@@ -206,7 +207,7 @@ pub(super) fn execute(
         worker
             .run_slot_for_specification(
                 candidate.reuse_key.clone(),
-                measurement.attempt_slot.record.specification,
+                measurement.specification.id,
                 || {
                     let started = std::time::Instant::now();
                     let launched = (|| {
@@ -347,11 +348,11 @@ pub(super) fn execute(
         wire_protocol_version: crate::protocol::WIRE_PROTOCOL_VERSION,
         execution_semantics_version: EXECUTION_SEMANTICS_VERSION,
         data: canonical(
-            json!({"context":measurement.provenance.as_json(),"measurements":measurements,"storage":crate::runtime::platform_fs::storage_evidence(),"profile":{"selected":profile_value,"buffer":buffer_evidence,"worker_reuse":candidate.reuse_key.policy.worker_reuse,"worker_startup_time_ns":startup.get(),"warmups":warmups}}),
+            json!({"context":measurement.provenance().as_json(),"measurements":measurements,"storage":crate::runtime::platform_fs::storage_evidence(),"profile":{"selected":profile_value,"buffer":buffer_evidence,"worker_reuse":candidate.reuse_key.policy.worker_reuse,"worker_startup_time_ns":startup.get(),"warmups":warmups}}),
         )?,
     };
     let mut record = RunAttemptRecord {
-        slot: measurement.attempt_slot.id,
+        slot: measurement.attempt_slot,
         retry_index,
         outcome: RunAttemptOutcome::Profile {
             status,
@@ -377,7 +378,7 @@ pub(super) fn execute(
     Ok(RunAttemptOutput {
         observations,
         logical_slot_id: measurement.logical_slot,
-        resolved_slot_id: measurement.attempt_slot.id,
+        resolved_slot_id: measurement.attempt_slot,
         attempt_id: attempt.id,
         status,
         observation_id: None,

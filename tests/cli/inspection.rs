@@ -109,6 +109,50 @@ fn status_reports_pending_slots_and_explains_every_planned_identity_without_writ
 }
 
 #[test]
+fn bounded_name_filtered_runs_register_pending_slots_across_batches() {
+    let root = repository();
+    let path = root.path().join("metewand.yaml");
+    let manifest = fs::read_to_string(&path).unwrap();
+    let implementation = manifest
+        .split_once("  reference:\n")
+        .unwrap()
+        .1
+        .split_once("environments:")
+        .unwrap()
+        .0;
+    let grid = (0..32)
+        .map(|value| value.to_string())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let manifest = manifest
+        .replace("measurement-repetitions: 3", "measurement-repetitions: 260")
+        .replace("environments:", &format!("  grid:\n{implementation}    parameters:\n      setting: {{ type: integer, grid: [{grid}] }}\nenvironments:"))
+        .replace("implementations: [\"reference\"]", "implementations: [\"reference\", grid]");
+    fs::write(&path, manifest).unwrap();
+
+    for accepted in 1..=2 {
+        let (code, report) = command(
+            root.path(),
+            &[
+                "run",
+                "--implementation",
+                "reference",
+                "--max-attempts",
+                "1",
+            ],
+        );
+        assert_eq!(code, 0, "{report}");
+        assert_eq!(report["data"]["summary"]["accepted_attempts"], 1);
+        assert_eq!(report["data"]["events"][0]["attempt_slots"], 261 - accepted);
+
+        let (code, status) = command(root.path(), &["status", "--output-dir", ".metewand"]);
+        assert_eq!(code, 0, "{status}");
+        assert_eq!(status["data"]["summary"]["satisfied_slots"], accepted);
+        assert_eq!(status["data"]["summary"]["pending_slots"], 260 - accepted);
+    }
+}
+
+#[test]
 fn status_preserves_history_and_explains_committed_artifacts_without_the_repository() {
     let root = repository();
     let (code, report) = command(root.path(), &["run", "--max-attempts", "1"]);
