@@ -1,10 +1,10 @@
 #![cfg(unix)]
 
-use std::{fs, time::Duration};
+use std::{fs, io::BufRead, time::Duration};
 
 use crate::core::{
     canonical::CanonicalValue,
-    export::{ExportFormat, ExportRecordType},
+    export::{ExportFormat, ExportRecord, ExportRecordType},
     identity::identify_record,
     manifest::PrimaryTime,
     records::{
@@ -187,8 +187,17 @@ fn every_terminal_outcome_retains_earlier_observations_and_distinct_guarantees()
     drop(db);
     drop(store);
     let results = ResultSet::read(root.path()).unwrap();
-    let attempts = results
-        .records
+    let index_path = root.path().canonicalize().unwrap().join("index.jsonl");
+    let report = results
+        .export_checked(None, ExportFormat::Jsonl, &[], true, false)
+        .unwrap();
+    assert_eq!(report.index_path.as_deref(), index_path.to_str());
+    let index = fs::read(&index_path).unwrap();
+    let records = index
+        .lines()
+        .map(|line| serde_json::from_str::<ExportRecord>(&line.unwrap()).unwrap())
+        .collect::<Vec<_>>();
+    let attempts = records
         .iter()
         .filter(|r| r.record_type == ExportRecordType::Attempt)
         .collect::<Vec<_>>();
@@ -201,13 +210,24 @@ fn every_terminal_outcome_retains_earlier_observations_and_distinct_guarantees()
             "{outcome}"
         );
     }
-    let observations = results
-        .records
+    let observations = records
         .iter()
         .filter(|r| r.record_type == ExportRecordType::Observation)
         .collect::<Vec<_>>();
     assert_eq!(observations.len(), 4);
-    assert_eq!(results.select(&["decision".into()]).unwrap().len(), 10);
+    assert_eq!(
+        results
+            .export_checked(
+                None,
+                ExportFormat::Jsonl,
+                &["decision".into()],
+                false,
+                false
+            )
+            .unwrap()
+            .records,
+        10
+    );
     assert!(observations.iter().all(|r| r.valid == Some(true)));
     assert_eq!(
         observations
@@ -222,8 +242,7 @@ fn every_terminal_outcome_retains_earlier_observations_and_distinct_guarantees()
             .any(|r| r.attempt_state.as_deref() == Some("failed"))
     );
     assert!(
-        results
-            .records
+        records
             .iter()
             .any(|r| r.outcome.as_deref() == Some("not_applicable"))
     );
@@ -245,34 +264,26 @@ fn every_terminal_outcome_retains_earlier_observations_and_distinct_guarantees()
         observations[2].compatibility_id,
         observations[3].compatibility_id
     );
-    let index = results.index_bytes().unwrap();
-    assert_eq!(
-        results.rebuild_index().unwrap(),
-        root.path().canonicalize().unwrap().join("index.jsonl")
-    );
-    fs::write(root.path().join("index.jsonl"), "stale").unwrap();
-    assert_eq!(
-        ResultSet::read(root.path()).unwrap().index_bytes().unwrap(),
-        index
-    );
-    let selected = results.select(&[observations[0].id.clone()]).unwrap();
-    assert_eq!(
-        selected
-            .iter()
-            .filter(|r| r.record_type == ExportRecordType::Attempt)
-            .count(),
-        1
-    );
-    assert_eq!(
-        selected
-            .iter()
-            .filter(|r| r.record_type == ExportRecordType::Observation)
-            .count(),
-        1
-    );
+    fs::write(&index_path, "stale").unwrap();
+    ResultSet::read(root.path())
+        .unwrap()
+        .export_checked(None, ExportFormat::Jsonl, &[], true, false)
+        .unwrap();
+    assert_eq!(fs::read(&index_path).unwrap(), index);
+    let selected = results
+        .export_checked(
+            None,
+            ExportFormat::Jsonl,
+            &[observations[0].id.clone()],
+            false,
+            false,
+        )
+        .unwrap();
+    assert_eq!(selected.manifest.attempt_ids.len(), 1);
+    assert_eq!(selected.manifest.observation_ids.len(), 1);
     let target = root.path().join("table");
     let report = results
-        .export(Some(&target), ExportFormat::Csv, &[], false)
+        .export_checked(Some(&target), ExportFormat::Csv, &[], false, false)
         .unwrap();
     assert_eq!(report.records, 11);
     assert_eq!(report.rows, 19);
@@ -292,13 +303,16 @@ fn every_terminal_outcome_retains_earlier_observations_and_distinct_guarantees()
     assert_eq!(text["cpu_time_status"], "partial");
     assert!(
         results
-            .export(Some(&target), ExportFormat::Jsonl, &[], false)
+            .export_checked(Some(&target), ExportFormat::Jsonl, &[], false, false)
             .is_err()
     );
-    let unsafe_index = root.path().join("index.jsonl");
-    fs::remove_file(&unsafe_index).unwrap();
-    std::os::unix::fs::symlink("table/results.csv", &unsafe_index).unwrap();
-    assert!(results.rebuild_index().is_err());
+    fs::remove_file(&index_path).unwrap();
+    std::os::unix::fs::symlink("table/results.csv", &index_path).unwrap();
+    assert!(
+        results
+            .export_checked(None, ExportFormat::Jsonl, &[], true, false)
+            .is_err()
+    );
     assert_eq!(fs::read_to_string(target.join("results.csv")).unwrap(), csv);
     // Export re-verifies artifacts even when an index from the same run exists.
     let artifact = observations[0].evidence["source"]["artifact_id"]

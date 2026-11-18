@@ -9,6 +9,7 @@ use std::{
 
 use crate::core::{
     canonical::{CanonicalJsonError, CanonicalValue},
+    comparison::ComparisonRow,
     identity::{IdentityError, IdentityRecord},
     inspection::{
         AttemptStatus, Explanation, InspectionRecord, ObservationStatus, SlotState, SlotStatus,
@@ -81,8 +82,7 @@ pub struct Inspection {
 
 impl Inspection {
     /// Projects comparisons only from committed records and verified artifacts.
-    pub fn comparison_rows(&self) -> Vec<crate::core::comparison::ComparisonRow> {
-        let empty = Value::Null;
+    pub fn comparison_rows(&self) -> Vec<ComparisonRow> {
         let mut rows = Vec::new();
         for attempt in self.attempts.iter().filter(|a| !a.calibration) {
             let observations = self
@@ -96,116 +96,11 @@ impl Inspection {
             } else {
                 observations
             };
-            for observation in observations {
-                let source_id = observation.map_or(attempt.id.as_str(), |o| o.id.as_str());
-                let document = self
-                    .records
-                    .get(source_id)
-                    .map(|r| &r.record["document"])
-                    .unwrap_or(&empty);
-                let provenance = &document["provenance"]["data"];
-                let context = &provenance["context"];
-                let display = &context["comparison"];
-                let label = |key: &str| display[key].as_str().map(str::to_owned);
-                let slot = self
-                    .records
-                    .get(&attempt.slot_id)
-                    .map(|r| &r.record)
-                    .unwrap_or(&empty);
-                let run = slot["resolved_run_id"]
-                    .as_str()
-                    .and_then(|id| self.records.get(id))
-                    .map(|r| &r.record)
-                    .unwrap_or(&empty);
-                let candidate_id = context["logical_candidate_id"]
-                    .as_str()
-                    .or_else(|| run["candidate_id"].as_str())
-                    .unwrap_or(&attempt.slot_id)
-                    .to_owned();
-                let metrics = document["metrics"]["id"]
-                    .as_str()
-                    .and_then(|id| self.records.get(id))
-                    .map(|r| r.record["document"]["data"].clone())
-                    .unwrap_or(Value::Null);
-                let block = &context["scheduling"]["comparison_block"];
-                let timing = |key: &str| {
-                    document["timing"][key]
-                        .as_u64()
-                        .or_else(|| document["timing"][key]["value"].as_u64())
-                        .or_else(|| provenance["measurements"][key]["value"].as_u64())
-                };
-                let timing_status = |key: &str| {
-                    if document["timing"][key].is_u64() {
-                        "complete".to_owned()
-                    } else {
-                        document["timing"][key]["status"]
-                            .as_str()
-                            .or_else(|| provenance["measurements"][key]["status"].as_str())
-                            .unwrap_or("unavailable")
-                            .to_owned()
-                    }
-                };
-                let primary_time = document["timing"]["primary_time"]
-                    .as_str()
-                    .or_else(|| context["execution_policy"]["primary_time"].as_str());
-                let primary_key = match primary_time {
-                    Some("timed_wall_time") => Some("timed_wall_time_ns"),
-                    Some("implementation_time") => Some("implementation_time_ns"),
-                    Some("cpu_time") => Some("cpu_time_ns"),
-                    _ => None,
-                };
-                let diagnostic = attempt
-                    .diagnostic_id
-                    .as_ref()
-                    .and_then(|id| self.records.get(id))
-                    .map(|r| crate::core::run_output::RunDiagnostic {
-                        code: r.record["code"].as_str().unwrap_or("unknown").to_owned(),
-                        message: r.record["message"]
-                            .as_str()
-                            .unwrap_or("No diagnostic message recorded.")
-                            .to_owned(),
-                    });
-                let parameters = if display["parameters"].is_object() {
-                    display["parameters"].clone()
-                } else {
-                    json!({"dataset": context["dataset_materialization"]["derivation"]["parameters"],
-                        "problem": provenance["execution"]["problem_parameters"],
-                        "implementation": provenance["execution"]["implementation_parameters"]})
-                };
-                rows.push(crate::core::comparison::ComparisonRow {
-                    profile: document.get("profile").cloned(),
-                    candidate_id,
-                    attempt_id: attempt.id.clone(),
-                    observation_id: observation.map(|o| o.id.clone()),
-                    experiment: label("experiment"),
-                    case: label("case"),
-                    dataset: label("dataset"),
-                    problem: label("problem"),
-                    implementation: label("implementation"),
-                    parameters,
-                    implementation_repetition: block["implementation_repetition"].as_u64(),
-                    measurement_index: block["measurement_index"].as_u64(),
-                    retry_index: attempt.retry_index,
-                    status: attempt.state.clone(),
-                    valid: observation.map(|o| o.valid),
-                    completion: observation.map(|o| o.completion.clone()),
-                    selected: observation.map(|o| o.selected),
-                    metrics,
-                    primary_time: primary_time.map(str::to_owned),
-                    primary_time_ns: primary_key.and_then(timing),
-                    primary_time_status: primary_key
-                        .map(timing_status)
-                        .unwrap_or_else(|| "unavailable".to_owned()),
-                    timed_wall_time_ns: timing("timed_wall_time_ns"),
-                    timed_wall_time_status: timing_status("timed_wall_time_ns"),
-                    timing_scope: context["timing_scope"].as_str().map(str::to_owned),
-                    instrumented_time_ns: document["profile"]["instrumented_time_ns"].as_u64(),
-                    instrumented_scope: document["profile"]["instrumented_scope"]
-                        .as_str()
-                        .map(str::to_owned),
-                    diagnostic,
-                });
-            }
+            rows.extend(
+                observations
+                    .into_iter()
+                    .map(|observation| self.comparison_row(attempt, observation)),
+            );
         }
         rows.sort_by(|a, b| {
             (
@@ -226,6 +121,142 @@ impl Inspection {
                 ))
         });
         rows
+    }
+
+    pub(crate) fn observation_comparisons(&self) -> impl Iterator<Item = (&str, ComparisonRow)> {
+        let attempts = self
+            .attempts
+            .iter()
+            .filter(|attempt| !attempt.calibration)
+            .map(|attempt| (attempt.id.as_str(), attempt))
+            .collect::<BTreeMap<_, _>>();
+        self.observations.iter().filter_map(move |observation| {
+            let attempt = attempts.get(observation.attempt_id.as_str())?;
+            Some((
+                observation.id.as_str(),
+                self.comparison_row(attempt, Some(observation)),
+            ))
+        })
+    }
+
+    fn comparison_row(
+        &self,
+        attempt: &AttemptStatus,
+        observation: Option<&ObservationStatus>,
+    ) -> ComparisonRow {
+        let empty = Value::Null;
+        let source_id = observation.map_or(attempt.id.as_str(), |o| o.id.as_str());
+        let document = self
+            .records
+            .get(source_id)
+            .map(|r| &r.record["document"])
+            .unwrap_or(&empty);
+        let provenance = &document["provenance"]["data"];
+        let context = &provenance["context"];
+        let display = &context["comparison"];
+        let label = |key: &str| display[key].as_str().map(str::to_owned);
+        let slot = self
+            .records
+            .get(&attempt.slot_id)
+            .map(|r| &r.record)
+            .unwrap_or(&empty);
+        let run = slot["resolved_run_id"]
+            .as_str()
+            .and_then(|id| self.records.get(id))
+            .map(|r| &r.record)
+            .unwrap_or(&empty);
+        let candidate_id = context["logical_candidate_id"]
+            .as_str()
+            .or_else(|| run["candidate_id"].as_str())
+            .unwrap_or(&attempt.slot_id)
+            .to_owned();
+        let metrics = document["metrics"]["id"]
+            .as_str()
+            .and_then(|id| self.records.get(id))
+            .map(|r| r.record["document"]["data"].clone())
+            .unwrap_or(Value::Null);
+        let block = &context["scheduling"]["comparison_block"];
+        let timing = |key: &str| {
+            document["timing"][key]
+                .as_u64()
+                .or_else(|| document["timing"][key]["value"].as_u64())
+                .or_else(|| provenance["measurements"][key]["value"].as_u64())
+        };
+        let timing_status = |key: &str| {
+            if document["timing"][key].is_u64() {
+                "complete".to_owned()
+            } else {
+                document["timing"][key]["status"]
+                    .as_str()
+                    .or_else(|| provenance["measurements"][key]["status"].as_str())
+                    .unwrap_or("unavailable")
+                    .to_owned()
+            }
+        };
+        let primary_time = document["timing"]["primary_time"]
+            .as_str()
+            .or_else(|| context["execution_policy"]["primary_time"].as_str());
+        let primary_key = match primary_time {
+            Some("timed_wall_time") => Some("timed_wall_time_ns"),
+            Some("implementation_time") => Some("implementation_time_ns"),
+            Some("cpu_time") => Some("cpu_time_ns"),
+            _ => None,
+        };
+        let diagnostic = attempt
+            .diagnostic_id
+            .as_ref()
+            .and_then(|id| self.records.get(id))
+            .map(|r| crate::core::run_output::RunDiagnostic {
+                code: r.record["code"].as_str().unwrap_or("unknown").to_owned(),
+                message: r.record["message"]
+                    .as_str()
+                    .unwrap_or("No diagnostic message recorded.")
+                    .to_owned(),
+            });
+        let parameters = if display["parameters"].is_object() {
+            display["parameters"].clone()
+        } else {
+            json!({"dataset": context["dataset_materialization"]["derivation"]["parameters"],
+                "problem": provenance["execution"]["problem_parameters"],
+                "implementation": provenance["execution"]["implementation_parameters"]})
+        };
+        ComparisonRow {
+            profile: document.get("profile").cloned(),
+            candidate_id,
+            attempt_id: attempt.id.clone(),
+            observation_id: observation.map(|o| o.id.clone()),
+            experiment: label("experiment"),
+            case: label("case"),
+            dataset: label("dataset"),
+            problem: label("problem"),
+            implementation: label("implementation"),
+            parameters,
+            implementation_repetition: block["implementation_repetition"].as_u64(),
+            measurement_index: block["measurement_index"].as_u64(),
+            retry_index: attempt.retry_index,
+            status: attempt.state.clone(),
+            valid: observation.map(|o| o.valid),
+            completion: observation.map(|o| o.completion.clone()),
+            selected: observation.map(|o| o.selected),
+            metrics,
+            primary_time: primary_time.map(str::to_owned),
+            primary_time_ns: primary_key.and_then(timing),
+            primary_time_status: primary_key
+                .map(timing_status)
+                .unwrap_or_else(|| "unavailable".to_owned()),
+            timed_wall_time_ns: timing("timed_wall_time_ns"),
+            timed_wall_time_status: timing_status("timed_wall_time_ns"),
+            timing_scope: context["timing_scope"].as_str().map(str::to_owned),
+            instrumented_time_ns: document["profile"]["instrumented_time_ns"].as_u64(),
+            instrumented_scope: document["profile"]["instrumented_scope"]
+                .as_str()
+                .map(str::to_owned),
+            diagnostic,
+        }
+    }
+
+    pub(crate) fn records(&self) -> &BTreeMap<String, InspectionRecord> {
+        &self.records
     }
 
     pub(crate) fn into_records(self) -> BTreeMap<String, InspectionRecord> {

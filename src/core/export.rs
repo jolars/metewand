@@ -76,8 +76,8 @@ pub struct ExportRecord {
 }
 
 /// One metric coordinate, or a null coordinate for an entity without metrics.
-#[derive(Clone, Debug, PartialEq, Serialize)]
-pub struct TidyRow {
+#[derive(Debug, Serialize)]
+pub struct TidyRow<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub active_time_ns: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -93,7 +93,7 @@ pub struct TidyRow {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub provisional_metric_value: Option<Value>,
     #[serde(flatten)]
-    pub record: ExportRecord,
+    pub record: &'a ExportRecord,
     /// RFC 6901 pointer into evaluator-owned metric data.
     pub metric_name: Option<String>,
     pub metric_value: Value,
@@ -127,35 +127,24 @@ impl ExportRecord {
     /// Preserves unavailable and partial accounting when projecting a quantity.
     #[must_use]
     pub fn measurement(&self, key: &str) -> (Option<u64>, String) {
-        if let Some(value) = self.timing[key].as_u64() {
-            return (Some(value), "complete".to_owned());
-        }
-        let measurement = self
-            .timing
-            .get(key)
-            .filter(|v| v.is_object())
-            .unwrap_or(&self.provenance["data"]["measurements"][key]);
-        (
-            measurement["value"].as_u64(),
-            measurement["status"]
-                .as_str()
-                .unwrap_or("unavailable")
-                .to_owned(),
-        )
+        measurement(&self.timing, &self.provenance, key)
     }
 
-    #[must_use]
-    pub fn tidy_rows(&self) -> Vec<TidyRow> {
+    /// Each metric shares its record's evidence. The coordinate carries the value.
+    pub fn visit_tidy_rows<E>(
+        &mut self,
+        mut visit: impl FnMut(TidyRow<'_>) -> Result<(), E>,
+    ) -> Result<(), E> {
         let diagnostic = self.record_type == ExportRecordType::Trace;
+        let metrics = std::mem::take(&mut self.metrics);
         let values = if diagnostic {
             metric_values(
-                &self
-                    .profile
+                self.profile
                     .as_ref()
-                    .map_or(Value::Null, |p| p["provisional_metrics"].clone()),
+                    .map_or(&Value::Null, |p| &p["provisional_metrics"]),
             )
         } else {
-            metric_values(&self.metrics)
+            metric_values(&metrics)
         };
         let values = if values.is_empty() {
             vec![(None, Value::Null)]
@@ -165,24 +154,19 @@ impl ExportRecord {
                 .map(|(name, value)| (Some(name), value))
                 .collect()
         };
-        values
+        let (timed_wall_time_ns, timed_wall_time_status) = self.measurement("timed_wall_time_ns");
+        let (cpu_time_ns, cpu_time_status) = self.measurement("cpu_time_ns");
+        let (peak_rss_bytes, peak_rss_status) = self.measurement("peak_rss_bytes");
+        let (primary_time_ns, primary_time_status) = self.primary_measurement();
+        let result = values
             .into_iter()
-            .map(|(metric_name, metric_value)| {
-                let mut record = self.clone();
-                // The metric coordinate carries the value; the immutable evidence
-                // still retains the complete original metrics envelope.
-                record.metrics = Value::Null;
-                let (timed_wall_time_ns, timed_wall_time_status) =
-                    self.measurement("timed_wall_time_ns");
-                let (cpu_time_ns, cpu_time_status) = self.measurement("cpu_time_ns");
-                let (peak_rss_bytes, peak_rss_status) = self.measurement("peak_rss_bytes");
-                let (primary_time_ns, primary_time_status) = self.primary_measurement();
+            .try_for_each(|(metric_name, metric_value)| {
                 let profile = self.profile.as_ref();
                 let provisional = metric_name
                     .as_ref()
                     .and_then(|name| profile.and_then(|p| p["provisional_metrics"].pointer(name)))
                     .cloned();
-                TidyRow {
+                visit(TidyRow {
                     active_time_ns: profile.and_then(|p| p["active_time_ns"].as_u64()),
                     elapsed_wall_time_ns: profile.and_then(|p| p["elapsed_wall_time_ns"].as_u64()),
                     checkpoint_sequence: profile.and_then(|p| p["checkpoint_sequence"].as_u64()),
@@ -199,7 +183,7 @@ impl ExportRecord {
                     } else {
                         provisional
                     },
-                    record,
+                    record: self,
                     metric_name: if diagnostic { None } else { metric_name },
                     metric_value: if diagnostic {
                         Value::Null
@@ -209,19 +193,37 @@ impl ExportRecord {
                     metric_unit: None,
                     metric_direction: None,
                     primary_time_ns,
-                    primary_time_status,
+                    primary_time_status: primary_time_status.clone(),
                     timed_wall_time_ns,
-                    timed_wall_time_status,
+                    timed_wall_time_status: timed_wall_time_status.clone(),
                     implementation_time_ns: self.timing["implementation_time_ns"].as_u64(),
                     evaluation_time_ns: self.measurement("evaluation_time_ns").0,
                     cpu_time_ns,
-                    cpu_time_status,
+                    cpu_time_status: cpu_time_status.clone(),
                     peak_rss_bytes,
-                    peak_rss_status,
-                }
-            })
-            .collect()
+                    peak_rss_status: peak_rss_status.clone(),
+                })
+            });
+        self.metrics = metrics;
+        result
     }
+}
+
+pub(crate) fn measurement(timing: &Value, provenance: &Value, key: &str) -> (Option<u64>, String) {
+    if let Some(value) = timing[key].as_u64() {
+        return (Some(value), "complete".to_owned());
+    }
+    let measurement = timing
+        .get(key)
+        .filter(|v| v.is_object())
+        .unwrap_or(&provenance["data"]["measurements"][key]);
+    (
+        measurement["value"].as_u64(),
+        measurement["status"]
+            .as_str()
+            .unwrap_or("unavailable")
+            .to_owned(),
+    )
 }
 
 /// Flattens objects in bytewise key order while retaining arrays as metric values.
@@ -243,6 +245,14 @@ pub fn metric_values(value: &Value) -> Vec<(String, Value)> {
         visit(value, String::new(), &mut rows);
     }
     rows
+}
+
+/// Counts metric coordinates, including the null coordinate for an empty entity.
+pub(crate) fn metric_row_count(value: &Value) -> usize {
+    value
+        .as_object()
+        .filter(|object| !object.is_empty())
+        .map_or(1, |object| object.values().map(metric_row_count).sum())
 }
 
 /// Escapes a UTF-8 CSV cell without changing its contents.

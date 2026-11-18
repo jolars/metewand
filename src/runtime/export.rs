@@ -3,52 +3,80 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
-    io::{self, Write},
+    io::{self, BufWriter, Write},
     path::{Path, PathBuf},
 };
 
-use crate::core::{
-    canonical::{CanonicalJsonError, CanonicalValue},
-    export::{
-        CompatibilityClass, EXPORT_SCHEMA_VERSION, ExportFormat, ExportManifest, ExportRecord,
-        ExportRecordType, ExportReport, TidyRow, csv_cell,
-    },
-    inspection::InspectionRecord,
-};
 use serde::Serialize;
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
 use thiserror::Error;
 
-mod analysis;
-
-use crate::runtime::{
-    evidence::{
-        EvidenceSnapshot, document_profile, validate_observation_document, visit_buffered_trace,
+use crate::{
+    core::{
+        canonical::{CanonicalJsonError, CanonicalValue},
+        export::{
+            EXPORT_SCHEMA_VERSION, ExportFormat, ExportManifest, ExportRecord, ExportRecordType,
+            ExportReport, analysis::AnalysisSnapshot, metric_row_count,
+        },
     },
-    inspection::{Inspection, InspectionError},
+    runtime::{
+        evidence::{EvidenceSnapshot, document_profile, validate_observation_document},
+        inspection::{Inspection, InspectionError, calibration_slots},
+    },
 };
+
+mod analysis;
+mod record;
+mod table;
+mod trace;
+
+use record::Record;
+use trace::Trace;
 
 /// A deterministic projection of one committed snapshot and its verified artifacts.
 pub struct ResultSet {
-    root: PathBuf,
-    read_only: bool,
-    pub records: Vec<ExportRecord>,
-    analysis: crate::core::export::analysis::AnalysisSnapshot,
+    snapshot: EvidenceSnapshot,
+    inspection: Inspection,
+    pilot_slots: BTreeSet<String>,
+    traces: BTreeMap<String, Trace>,
 }
 
 impl ResultSet {
     /// Reads authoritative evidence directly, ignoring any existing index.
     pub fn read(root: &Path) -> Result<Self, ExportError> {
         let snapshot = EvidenceSnapshot::read(root)?;
-        Self::from_snapshot(&snapshot)
+        let mut inspection = Inspection::default();
+        inspection.add_snapshot(&snapshot)?;
+        let pilot_slots = calibration_slots(&snapshot.tables);
+        let mut traces = BTreeMap::new();
+        for source in inspection.records().values() {
+            let row = &source.record;
+            match source.kind.as_str() {
+                "observation" => validate_observation_document(row)?,
+                "attempt"
+                    if !row["slot_id"]
+                        .as_str()
+                        .is_some_and(|id| pilot_slots.contains(id)) =>
+                {
+                    if let Some(profile) = document_profile(&row["document"])
+                        && let Some(trace) = Trace::read(&snapshot.data_root, &source.id, profile)?
+                    {
+                        traces.insert(source.id.clone(), trace);
+                    }
+                }
+                _ => (),
+            }
+        }
+        Ok(Self {
+            snapshot,
+            inspection,
+            pilot_slots,
+            traces,
+        })
     }
 
-    fn from_snapshot(snapshot: &EvidenceSnapshot) -> Result<Self, ExportError> {
-        let mut inspection = Inspection::default();
-        inspection.add_snapshot(snapshot)?;
-        let comparisons = inspection.comparison_rows();
-        let graph = inspection.into_records();
+    fn records(&self) -> Result<Vec<Record<'_>>, ExportError> {
+        let graph = self.inspection.records();
         let mut records = Vec::new();
         for source in graph.values().filter(|record| {
             matches!(
@@ -57,152 +85,64 @@ impl ResultSet {
             ) || (record.kind == "resolved-attempt-slot"
                 && record.record["fresh_sequence"]["disposition"].is_string())
         }) {
-            records.push(project(source, &graph)?);
+            let record = Record::new(source, graph)?;
+            if !record
+                .slot_id
+                .is_some_and(|id| self.pilot_slots.contains(id))
+            {
+                records.push(record);
+            }
         }
-        let pilot_slots = crate::runtime::inspection::calibration_slots(&snapshot.tables);
-        records.retain(|record| {
-            !record
-                .resolved_slot_id
-                .as_ref()
-                .is_some_and(|id| pilot_slots.contains(id))
-        });
-        let mut traces = Vec::new();
-        for attempt in records
-            .iter()
-            .filter(|r| r.record_type == ExportRecordType::Attempt)
-        {
-            let Some(profile) = &attempt.profile else {
-                continue;
-            };
-            let manifest = &profile["buffer"]["manifest"];
-            visit_buffered_trace(&snapshot.data_root, &attempt.id, profile, |index, point| {
-                let mut row = attempt.clone();
-                row.record_type = ExportRecordType::Trace;
-                row.id = format!("{}:check:{index}", attempt.id);
-                row.metrics = Value::Null;
-                row.valid = None;
-                row.selected = None;
-                row.completion = None;
-                row.profile = Some(
-                    json!({"delivery":"buffered_profile","measurement_basis":"instrumented","instrumented_scope":manifest["instrumented_scope"],"clock":manifest["clock"],"instrumented_time_ns":point.instrumented_time_ns,"instrumented_total_time_ns":manifest["instrumented_total_time_ns"],"trace_index":index,"check_index":point.check_index,"work":point.work,"terminal":point.terminal,"provisional_metrics":point.provisional_metrics,"independently_validated":false}),
-                );
-                traces.push(row);
-            })?;
-        }
-        records.extend(traces);
-        records.sort_by(|a, b| {
-            (
-                &a.candidate_id,
-                &a.resolved_slot_id,
-                a.retry_index,
-                &a.attempt_id,
-                &a.id,
-            )
-                .cmp(&(
-                    &b.candidate_id,
-                    &b.resolved_slot_id,
-                    b.retry_index,
-                    &b.attempt_id,
-                    &b.id,
-                ))
-        });
-        let analysis = analysis::project(&records, comparisons, &graph, &snapshot.tables)?;
-        Ok(Self {
-            root: snapshot.root.clone(),
-            read_only: snapshot.files.is_some(),
-            records,
-            analysis,
-        })
+        records.sort_by(|a, b| a.order_key().cmp(&b.order_key()));
+        Ok(records)
     }
 
-    pub fn index_bytes(&self) -> Result<Vec<u8>, ExportError> {
-        json_lines(&self.records)
-    }
-
-    /// Atomically replaces only the explicitly requested, nonauthoritative index.
-    pub fn rebuild_index(&self) -> Result<PathBuf, ExportError> {
-        let target = self.index_target()?;
-        let mut stage = tempfile::NamedTempFile::new_in(&self.root)?;
-        stage.write_all(&self.index_bytes()?)?;
-        stage.persist(&target).map_err(|error| error.error)?;
-        Ok(target)
-    }
-
-    fn index_target(&self) -> Result<PathBuf, ExportError> {
-        if self.read_only {
-            return Err(ExportError::ReadOnlyCollection);
-        }
-        if crate::runtime::run_store::shared::is_shared(&self.root) {
-            return Err(ExportError::SharedIndex);
-        }
-        let target = self.root.join("index.jsonl");
-        match fs::symlink_metadata(&target) {
-            Ok(metadata) if !metadata.is_file() => return Err(ExportError::UnsafeIndex),
-            Ok(_) => (),
-            Err(error) if error.kind() == io::ErrorKind::NotFound => (),
-            Err(error) => return Err(error.into()),
-        }
-        Ok(target)
-    }
-
-    /// Selects exact identities and retains producing attempts and applicability.
-    pub fn select(&self, ids: &[String]) -> Result<Vec<ExportRecord>, ExportError> {
+    /// Selects exact identities and retains the producing attempts and applicability.
+    fn select<'a>(
+        &self,
+        records: &'a [Record<'a>],
+        ids: &[String],
+    ) -> Result<Vec<&'a Record<'a>>, ExportError> {
         if ids.is_empty() {
-            return Ok(self.records.clone());
+            return Ok(records.iter().collect());
         }
         let mut selected = BTreeSet::new();
+        let mut attempts = BTreeSet::new();
+        let mut candidates = BTreeSet::new();
         for id in ids {
-            let mut found = false;
-            for record in &self.records {
-                if selection_ids(record).contains(&id.as_str()) {
-                    selected.insert(record.id.clone());
-                    found = true;
-                }
-            }
-            if !found {
+            // A point selector is equivalent to selecting its producing attempt.
+            // The suffix must be the exact ordinal used in the v1 trace ID.
+            let trace_attempt = id.rsplit_once(":check:").and_then(|(attempt, suffix)| {
+                let trace = self.traces.get(attempt)?;
+                let index = suffix.parse::<usize>().ok()?;
+                (index < trace.len && suffix == index.to_string()).then_some(attempt)
+            });
+            let mut matches = records
+                .iter()
+                .filter(|record| record.matches(id) || Some(record.id) == trace_attempt)
+                .peekable();
+            if matches.peek().is_none() {
                 return Err(ExportError::UnknownIdentity(id.clone()));
             }
+            for record in matches {
+                selected.insert(record.id);
+                attempts.extend(record.attempt_id);
+                candidates.insert(record.candidate_id);
+            }
         }
-        let attempts = self
-            .records
-            .iter()
-            .filter(|record| selected.contains(&record.id))
-            .filter_map(|record| record.attempt_id.as_deref())
-            .collect::<BTreeSet<_>>();
-        let candidates = self
-            .records
-            .iter()
-            .filter(|record| selected.contains(&record.id))
-            .map(|record| record.candidate_id.as_str())
-            .collect::<BTreeSet<_>>();
-        Ok(self
-            .records
+        Ok(records
             .iter()
             .filter(|record| {
-                selected.contains(&record.id)
-                    || record
-                        .attempt_id
-                        .as_deref()
-                        .is_some_and(|id| attempts.contains(id))
-                    || (record.record_type == ExportRecordType::Applicability
-                        && candidates.contains(record.candidate_id.as_str()))
+                selected.contains(record.id)
+                    || record.attempt_id.is_some_and(|id| attempts.contains(id))
+                    || (record.kind == ExportRecordType::Applicability
+                        && candidates.contains(record.candidate_id))
             })
-            .cloned()
             .collect())
     }
 
     /// Writes a new directory with one table and its adjacent lineage manifest.
     /// Existing destinations, including symlinks, are never replaced.
-    pub fn export(
-        &self,
-        destination: Option<&Path>,
-        format: ExportFormat,
-        ids: &[String],
-        rebuild_index: bool,
-    ) -> Result<ExportReport, ExportError> {
-        self.export_checked(destination, format, ids, rebuild_index, false)
-    }
-
     pub fn export_checked(
         &self,
         destination: Option<&Path>,
@@ -211,13 +151,22 @@ impl ResultSet {
         rebuild_index: bool,
         require_complete: bool,
     ) -> Result<ExportReport, ExportError> {
-        let records = self.select(ids)?;
-        let analysis = if ids.is_empty() {
-            self.analysis.clone()
+        let records = self.records()?;
+        let selected = self.select(&records, ids)?;
+        let analysis = if format == ExportFormat::Json || require_complete {
+            let analysis = analysis::project(&records, &self.inspection, &self.snapshot.tables)?;
+            Some(if ids.is_empty() {
+                analysis
+            } else {
+                analysis::select(analysis, &selected)
+            })
         } else {
-            analysis::select(&self.analysis, &records)
+            None
         };
-        if require_complete && !analysis.completeness.complete {
+        if require_complete
+            && let Some(analysis) = &analysis
+            && !analysis.completeness.complete
+        {
             let messages = analysis
                 .completeness
                 .issues
@@ -231,361 +180,177 @@ impl ResultSet {
         if rebuild_index {
             self.index_target()?;
         }
-        let rows = records
-            .iter()
-            .flat_map(ExportRecord::tidy_rows)
-            .collect::<Vec<_>>();
-        let data = match format {
-            ExportFormat::Json => canonical_bytes(&analysis)?,
-            ExportFormat::Jsonl => json_lines(&rows)?,
-            ExportFormat::Csv => csv(&rows)?,
+        let mut manifest = lineage(&selected, ids);
+        let analysis = analysis.as_ref().filter(|_| format == ExportFormat::Json);
+        let rows = match analysis {
+            Some(analysis) => analysis.observations.len(),
+            None => selected
+                .iter()
+                .map(|record| {
+                    metric_row_count(record.metric_values())
+                        + self.traces.get(record.id).map_or(0, |trace| trace.rows)
+                })
+                .sum(),
         };
-        let mut manifest = lineage(&records, ids);
-        let mut destination_path = None;
-        if let Some(destination) = destination {
-            let filename = destination
-                .file_name()
-                .filter(|name| !name.is_empty())
-                .ok_or(ExportError::InvalidDestination)?;
-            let parent = destination
-                .parent()
-                .filter(|path| !path.as_os_str().is_empty())
-                .unwrap_or(Path::new("."));
-            let parent = fs::canonicalize(parent)?;
-            let target = parent.join(filename);
-            if self.read_only && target.starts_with(&self.root) {
-                return Err(ExportError::ReadOnlyCollection);
-            }
-            manifest
-                .files
-                .insert(format.filename().into(), hex(&Sha256::digest(&data)));
-            let stage = tempfile::Builder::new()
-                .prefix(".metewand-export-")
-                .tempdir_in(&parent)?;
-            fs::write(stage.path().join(format.filename()), &data)?;
-            fs::write(
-                stage.path().join("export.json"),
-                canonical_bytes(&manifest)?,
-            )?;
-            crate::runtime::publication::rename_no_replace(stage.path(), &target)?;
-            destination_path = Some(target.to_string_lossy().into_owned());
-        }
-        let index_path = if rebuild_index {
-            Some(self.rebuild_index()?.to_string_lossy().into_owned())
-        } else {
-            None
-        };
+        let destination = destination
+            .map(|path| self.write_destination(path, format, &selected, analysis, &mut manifest))
+            .transpose()?;
+        let index_path = rebuild_index
+            .then(|| self.write_index(&records))
+            .transpose()?;
         Ok(ExportReport {
             command: "export",
             schema_version: EXPORT_SCHEMA_VERSION,
-            records: records.len(),
-            rows: if format == ExportFormat::Json {
-                analysis.observations.len()
-            } else {
-                rows.len()
-            },
-            destination: destination_path,
-            index_path,
+            records: selected.len()
+                + selected
+                    .iter()
+                    .filter_map(|record| self.traces.get(record.id))
+                    .map(|trace| trace.len)
+                    .sum::<usize>(),
+            rows,
+            destination: destination.map(|path| path.to_string_lossy().into_owned()),
+            index_path: index_path.map(|path| path.to_string_lossy().into_owned()),
             manifest,
         })
     }
-}
 
-fn project(
-    source: &InspectionRecord,
-    graph: &BTreeMap<String, InspectionRecord>,
-) -> Result<ExportRecord, ExportError> {
-    let row = &source.record;
-    let record_type = match source.kind.as_str() {
-        "applicability" => ExportRecordType::Applicability,
-        "attempt" => ExportRecordType::Attempt,
-        "resolved-attempt-slot" => ExportRecordType::Slot,
-        _ => ExportRecordType::Observation,
-    };
-    let attempt_id = if record_type == ExportRecordType::Attempt {
-        Some(source.id.clone())
-    } else {
-        text(row, "attempt_id")
-    };
-    let attempt = lookup(graph, attempt_id.as_deref());
-    let slot_id = if record_type == ExportRecordType::Slot {
-        Some(source.id.clone())
-    } else if record_type == ExportRecordType::Observation {
-        text(row, "attempt_slot_id")
-    } else {
-        text(row, "slot_id")
-    };
-    let slot = lookup(graph, slot_id.as_deref());
-    let run_id = text(&slot, "resolved_run_id");
-    let run = lookup(graph, run_id.as_deref());
-    let candidate_id = text(row, "candidate_id")
-        .or_else(|| text(&run, "candidate_id"))
-        .ok_or(ExportError::InvalidEvidence("missing candidate identity"))?;
-    let document = &row["document"];
-    if record_type == ExportRecordType::Observation {
-        validate_observation_document(row)?;
-    }
-    let observation_slot_id = if record_type == ExportRecordType::Slot {
-        text(&slot["fresh_sequence"], "observation_slot_id")
-    } else if record_type == ExportRecordType::Observation {
-        text(row, "slot_id")
-    } else {
-        None
-    };
-    let observation_slot = lookup(graph, observation_slot_id.as_deref());
-    let provenance = document.get("provenance").cloned().unwrap_or(Value::Null);
-    let context = &provenance["data"]["context"];
-    let execution = &provenance["data"]["execution"];
-    let measurements = &provenance["data"]["measurements"];
-    let controls = execution
-        .get("controls")
-        .or_else(|| context.get("controls"))
-        .cloned()
-        .unwrap_or(Value::Null);
-    let control_evidence = if execution["controls"].is_array() {
-        "observed"
-    } else if context["controls"].is_array() {
-        "declared"
-    } else {
-        "unavailable"
-    };
-    let mut statuses = BTreeSet::new();
-    if let Some(controls) = controls.as_array() {
-        for control in controls {
-            statuses.insert(control["status"].as_str().unwrap_or("unknown"));
+    fn write_destination(
+        &self,
+        destination: &Path,
+        format: ExportFormat,
+        records: &[&Record<'_>],
+        analysis: Option<&AnalysisSnapshot>,
+        manifest: &mut ExportManifest,
+    ) -> Result<PathBuf, ExportError> {
+        let filename = destination
+            .file_name()
+            .filter(|name| !name.is_empty())
+            .ok_or(ExportError::InvalidDestination)?;
+        let parent = destination
+            .parent()
+            .filter(|path| !path.as_os_str().is_empty())
+            .unwrap_or(Path::new("."));
+        let parent = fs::canonicalize(parent)?;
+        let target = parent.join(filename);
+        if self.snapshot.files.is_some() && target.starts_with(&self.snapshot.root) {
+            return Err(ExportError::ReadOnlyCollection);
         }
-    }
-    let control_class = if control_evidence != "observed"
-        || statuses.is_empty()
-        || statuses
-            .iter()
-            .any(|status| !matches!(*status, "enforced" | "best_effort" | "unsupported"))
-    {
-        "unknown"
-    } else if statuses.contains("unsupported") {
-        "unsupported"
-    } else if statuses.contains("best_effort") {
-        "best_effort"
-    } else if statuses.iter().all(|s| *s == "enforced") {
-        "enforced"
-    } else {
-        "unknown"
-    };
-    let policy = context
-        .get("execution_policy")
-        .cloned()
-        .unwrap_or(Value::Null);
-    let selected_profile = execution
-        .get("profile_policy")
-        .or_else(|| provenance["data"]["profile"].get("selected"));
-    let profile_class = if context.get("fresh_sequence").is_some()
-        || slot.get("fresh_sequence").is_some()
-        || document["profile"]["delivery"] == "fresh_sequence"
-    {
-        Some(json!({"delivery":"fresh_sequence","measurement_basis":"executor_observed"}))
-    } else {
-        selected_profile.map(|p|json!({"delivery":"buffered_profile","measurement_basis":"instrumented","instrumented_scope":p["instrumented_scope"],"clock":"monotonic_ns","scope":p["scope"]}))
-    };
-    let profile_class = if document["profile"]["delivery"] == "streaming_profile"
-        || provenance["data"]["profile"]["buffer"]["delivery"] == "streaming_profile"
-        || context.get("streaming_profile").is_some()
-    {
-        Some(
-            json!({"delivery":"streaming_profile","measurement_basis":"executor_observed","clock":"active_wall_time","excluded_phases":["checkpoint_validation","evaluation","publication","stop_acknowledgment"]}),
-        )
-    } else {
-        profile_class
-    };
-    let mut compatibility = CompatibilityClass {
-        profile: profile_class,
-        execution_semantics_version: provenance["execution_semantics_version"]
-            .as_u64()
-            .and_then(|n| n.try_into().ok()),
-        timing_scope: text(execution, "timing_scope").or_else(|| text(context, "timing_scope")),
-        primary_time: text(&document["timing"], "primary_time")
-            .or_else(|| text(&policy, "primary_time")),
-        environment_class: text(execution, "environment_class").or_else(|| {
-            text(
-                &context["implementation"]["environment"]["fingerprint"],
-                "class",
-            )
-        }),
-        control_class: control_class.into(),
-        control_evidence: control_evidence.into(),
-        controls,
-        execution_policy: policy,
-        measurements_version: measurements["version"]
-            .as_u64()
-            .and_then(|n| n.try_into().ok()),
-        accounting: {
-            let mut accounting = json!({"cpu_time_scope": measurements["cpu_time_scope"], "peak_rss_scope": measurements["peak_rss_scope"], "cpu_time": coverage(&measurements["cpu_time_ns"]), "peak_rss": coverage(&measurements["peak_rss_bytes"])});
-            if let Some(source) = measurements.get("cpu_accounting") {
-                accounting["cpu_accounting"] = source.clone();
-            }
-            accounting
-        },
-        unclassified_record: None,
-    };
-    if compatibility.execution_semantics_version.is_none()
-        || compatibility.timing_scope.is_none()
-        || compatibility.primary_time.is_none()
-        || compatibility.environment_class.is_none()
-        || control_class == "unknown"
-        || compatibility.execution_policy.is_null()
-        || compatibility.measurements_version.is_none()
-    {
-        compatibility.unclassified_record = Some(source.id.clone());
-    }
-    let compatibility_id = format!(
-        "export-v1:{}",
-        hex(&Sha256::digest(canonical_bytes(&compatibility)?))
-    );
-    let state = text(&attempt, "state");
-    let failure_code = text(&attempt, "failure_code");
-    let outcome = if record_type == ExportRecordType::Slot {
-        text(&slot["fresh_sequence"], "disposition")
-    } else if record_type == ExportRecordType::Applicability {
-        Some(
-            if row["applicable"] == true {
-                "applicable"
-            } else {
-                "not_applicable"
-            }
-            .into(),
-        )
-    } else if failure_code.as_deref() == Some("invalid_result") {
-        Some("invalid".into())
-    } else {
-        state.clone()
-    };
-    let metrics = lookup(graph, document["metrics"]["id"].as_str());
-    let result = lookup(graph, document["result"]["id"].as_str());
-    let mut profile = document_profile(document).cloned();
-    if let Some(fresh) = slot.get("fresh_sequence") {
-        if profile.is_none() {
-            profile = Some(fresh.clone());
-        }
-        if let Some(profile) = profile.as_mut() {
-            profile["progress"] = fresh["progress"].clone();
-            profile["budget"] = row
-                .get("fresh_budget")
-                .or_else(|| attempt.get("fresh_budget"))
-                .cloned()
-                .unwrap_or(Value::Null);
-        }
-    }
-    Ok(ExportRecord {
-        profile,
-        schema_version: EXPORT_SCHEMA_VERSION,
-        record_type,
-        id: source.id.clone(),
-        candidate_id,
-        logical_run_id: text(&run, "logical_specification_id"),
-        resolved_run_id: run_id,
-        logical_slot_id: text(&slot, "logical_slot_id"),
-        resolved_slot_id: slot_id,
-        logical_observation_slot_id: text(&observation_slot, "logical_slot_id"),
-        resolved_observation_slot_id: observation_slot_id,
-        attempt_id,
-        retry_index: attempt["retry_index"].as_u64(),
-        attempt_state: state,
-        outcome,
-        valid: if record_type == ExportRecordType::Observation {
-            row["valid"].as_bool()
-        } else if failure_code.as_deref() == Some("invalid_result") {
-            Some(false)
+        let stage = tempfile::Builder::new()
+            .prefix(".metewand-export-")
+            .tempdir_in(&parent)?;
+        let mut output = table::Table::create(&stage.path().join(format.filename()), format)?;
+        if let Some(analysis) = analysis {
+            output.write(&canonical_bytes(analysis)?)?;
         } else {
-            None
-        },
-        selected: row["selected"].as_bool(),
-        completion: text(row, "completion"),
-        failure_code,
-        warmup: slot["role"].as_str().map(|role| role == "warmup"),
-        compatibility_id,
-        compatibility,
-        timing: if document["timing"].is_object() {
-            document["timing"].clone()
-        } else {
-            measurements.clone()
-        },
-        metrics: metrics["document"]
-            .get("data")
-            .cloned()
-            .unwrap_or(Value::Null),
-        metric_schema: text(&metrics["document"], "schema"),
-        result_schema: text(&result["document"], "schema"),
-        provenance,
-        evidence: json!({"source": row, "attempt": attempt, "attempt_slot": slot, "observation_slot": observation_slot, "resolved_run": run, "metrics": metrics, "result": result}),
-    })
-}
-
-fn coverage(value: &Value) -> Value {
-    json!({"status": value["status"], "reason": value["reason"]})
-}
-fn text(value: &Value, key: &str) -> Option<String> {
-    value[key].as_str().map(str::to_owned)
-}
-fn lookup(graph: &BTreeMap<String, InspectionRecord>, id: Option<&str>) -> Value {
-    id.and_then(|id| graph.get(id))
-        .map(|record| record.record.clone())
-        .unwrap_or(Value::Null)
-}
-fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
-}
-
-fn selection_ids(record: &ExportRecord) -> Vec<&str> {
-    [
-        Some(record.id.as_str()),
-        Some(record.candidate_id.as_str()),
-        record.logical_run_id.as_deref(),
-        record.resolved_run_id.as_deref(),
-        record.logical_slot_id.as_deref(),
-        record.resolved_slot_id.as_deref(),
-        record.logical_observation_slot_id.as_deref(),
-        record.resolved_observation_slot_id.as_deref(),
-        record.attempt_id.as_deref(),
-        record.evidence["source"]["slot_id"].as_str(),
-        record.evidence["resolved_run"]["applicability_id"].as_str(),
-    ]
-    .into_iter()
-    .flatten()
-    .collect()
-}
-
-fn canonical_bytes<T: Serialize>(value: &T) -> Result<Vec<u8>, ExportError> {
-    Ok(CanonicalValue::try_from(serde_json::to_value(value)?)?.to_canonical_bytes()?)
-}
-fn json_lines<T: Serialize>(values: &[T]) -> Result<Vec<u8>, ExportError> {
-    let mut bytes = Vec::new();
-    for value in values {
-        bytes.extend(canonical_bytes(value)?);
-        bytes.push(b'\n');
+            self.visit_records(records.iter().copied(), |record| {
+                record.visit_tidy_rows(|row| output.write_row(&row))
+            })?;
+        }
+        manifest
+            .files
+            .insert(format.filename().into(), output.finish()?);
+        fs::write(stage.path().join("export.json"), canonical_bytes(manifest)?)?;
+        crate::runtime::publication::rename_no_replace(stage.path(), &target)?;
+        Ok(target)
     }
-    Ok(bytes)
+
+    fn index_target(&self) -> Result<PathBuf, ExportError> {
+        if self.snapshot.files.is_some() {
+            return Err(ExportError::ReadOnlyCollection);
+        }
+        if crate::runtime::run_store::shared::is_shared(&self.snapshot.root) {
+            return Err(ExportError::SharedIndex);
+        }
+        let target = self.snapshot.root.join("index.jsonl");
+        match fs::symlink_metadata(&target) {
+            Ok(metadata) if !metadata.is_file() => return Err(ExportError::UnsafeIndex),
+            Ok(_) => (),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => (),
+            Err(error) => return Err(error.into()),
+        }
+        Ok(target)
+    }
+
+    /// Atomically replaces only the explicitly requested, nonauthoritative index.
+    fn write_index(&self, records: &[Record<'_>]) -> Result<PathBuf, ExportError> {
+        let target = self.index_target()?;
+        let mut stage = tempfile::NamedTempFile::new_in(&self.snapshot.root)?;
+        {
+            let mut writer = BufWriter::new(stage.as_file_mut());
+            self.visit_records(records, |record| table::write_line(&mut writer, record))?;
+            writer.flush()?;
+        }
+        stage.persist(&target).map_err(|error| error.error)?;
+        Ok(target)
+    }
+
+    fn visit_records<'a>(
+        &self,
+        records: impl IntoIterator<Item = &'a Record<'a>>,
+        mut visit: impl FnMut(&mut ExportRecord) -> Result<(), ExportError>,
+    ) -> Result<(), ExportError> {
+        for source in records {
+            let mut record = source.index_record();
+            visit(&mut record)?;
+            if let Some(trace) = self.traces.get(source.id) {
+                // Trace rows share the attempt's sort key up to the ID, so
+                // their :check: suffixes place them directly after the attempt.
+                let profile = record.profile.take().expect("registered trace profile");
+                let manifest = &profile["buffer"]["manifest"];
+                record.record_type = ExportRecordType::Trace;
+                record.metrics = Value::Null;
+                record.valid = None;
+                record.selected = None;
+                record.completion = None;
+                trace.visit(source.id, |index, point| {
+                    record.id = format!("{}:check:{index}", source.id);
+                    record.profile = Some(json!({
+                        "delivery": "buffered_profile",
+                        "measurement_basis": "instrumented",
+                        "instrumented_scope": manifest["instrumented_scope"],
+                        "clock": manifest["clock"],
+                        "instrumented_time_ns": point.instrumented_time_ns,
+                        "instrumented_total_time_ns": manifest["instrumented_total_time_ns"],
+                        "trace_index": index,
+                        "check_index": point.check_index,
+                        "work": point.work,
+                        "terminal": point.terminal,
+                        "provisional_metrics": point.provisional_metrics,
+                        "independently_validated": false,
+                    }));
+                    visit(&mut record)
+                })?;
+            }
+        }
+        Ok(())
+    }
 }
 
-fn lineage(records: &[ExportRecord], ids: &[String]) -> ExportManifest {
-    fn ordered(values: impl Iterator<Item = String>) -> Vec<String> {
-        values.collect::<BTreeSet<_>>().into_iter().collect()
+fn lineage(records: &[&Record<'_>], ids: &[String]) -> ExportManifest {
+    fn ordered<'a>(values: impl Iterator<Item = &'a str>) -> Vec<String> {
+        values
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .map(str::to_owned)
+            .collect()
     }
     ExportManifest {
         schema_version: EXPORT_SCHEMA_VERSION,
         tool_version: env!("CARGO_PKG_VERSION").into(),
-        selector: ordered(ids.iter().cloned()),
-        candidate_ids: ordered(records.iter().map(|r| r.candidate_id.clone())),
+        selector: ordered(ids.iter().map(String::as_str)),
+        candidate_ids: ordered(records.iter().map(|r| r.candidate_id)),
         attempt_ids: records
             .iter()
-            .filter(|r| r.record_type == ExportRecordType::Attempt)
-            .map(|r| r.id.clone())
+            .filter(|r| r.kind == ExportRecordType::Attempt)
+            .map(|r| r.id.to_owned())
             .collect(),
         observation_ids: records
             .iter()
-            .filter(|r| r.record_type == ExportRecordType::Observation)
-            .map(|r| r.id.clone())
+            .filter(|r| r.kind == ExportRecordType::Observation)
+            .map(|r| r.id.to_owned())
             .collect(),
-        result_schemas: ordered(records.iter().filter_map(|r| r.result_schema.clone())),
-        metric_schemas: ordered(records.iter().filter_map(|r| r.metric_schema.clone())),
+        result_schemas: ordered(records.iter().filter_map(|r| r.result_schema())),
+        metric_schemas: ordered(records.iter().filter_map(|r| r.metric_schema())),
         compatibility_classes: records
             .iter()
             .map(|r| (r.compatibility_id.clone(), r.compatibility.clone()))
@@ -594,98 +359,16 @@ fn lineage(records: &[ExportRecord], ids: &[String]) -> ExportManifest {
     }
 }
 
-fn csv(rows: &[TidyRow]) -> Result<Vec<u8>, ExportError> {
-    // Nested values use canonical JSON cells, preserving types and explicit nulls.
-    const COLUMNS: &[&str] = &[
-        "schema_version",
-        "record_type",
-        "id",
-        "candidate_id",
-        "logical_run_id",
-        "resolved_run_id",
-        "logical_slot_id",
-        "resolved_slot_id",
-        "logical_observation_slot_id",
-        "resolved_observation_slot_id",
-        "attempt_id",
-        "retry_index",
-        "attempt_state",
-        "outcome",
-        "valid",
-        "selected",
-        "completion",
-        "failure_code",
-        "warmup",
-        "compatibility_id",
-        "timing_scope",
-        "primary_time",
-        "primary_time_ns",
-        "primary_time_status",
-        "environment_class",
-        "control_class",
-        "control_evidence",
-        "metric_name",
-        "metric_value",
-        "metric_unit",
-        "metric_direction",
-        "instrumented_time_ns",
-        "active_time_ns",
-        "elapsed_wall_time_ns",
-        "checkpoint_sequence",
-        "instrumented_total_time_ns",
-        "provisional_metric_name",
-        "provisional_metric_value",
-        "profile",
-        "timed_wall_time_ns",
-        "timed_wall_time_status",
-        "implementation_time_ns",
-        "evaluation_time_ns",
-        "cpu_time_ns",
-        "cpu_time_status",
-        "peak_rss_bytes",
-        "peak_rss_status",
-        "metric_schema",
-        "result_schema",
-        "timing",
-        "compatibility",
-        "provenance",
-        "evidence",
-    ];
-    let mut output = COLUMNS.join(",");
-    output.push_str("\r\n");
-    for row in rows {
-        let r = serde_json::to_value(row)?;
-        let cells = COLUMNS
-            .iter()
-            .map(|column| {
-                let value = if matches!(
-                    *column,
-                    "timing_scope"
-                        | "primary_time"
-                        | "environment_class"
-                        | "control_class"
-                        | "control_evidence"
-                ) {
-                    &r["compatibility"][column]
-                } else {
-                    &r[column]
-                };
-                let cell = if *column == "metric_value" {
-                    String::from_utf8(canonical_bytes(value)?).expect("JSON is UTF-8")
-                } else if value.is_null() {
-                    String::new()
-                } else if let Some(value) = value.as_str() {
-                    value.to_owned()
-                } else {
-                    String::from_utf8(canonical_bytes(value)?).expect("JSON is UTF-8")
-                };
-                Ok(csv_cell(&cell))
-            })
-            .collect::<Result<Vec<_>, ExportError>>()?;
-        output.push_str(&cells.join(","));
-        output.push_str("\r\n");
-    }
-    Ok(output.into_bytes())
+fn canonical_bytes<T: Serialize>(value: &T) -> Result<Vec<u8>, ExportError> {
+    Ok(CanonicalValue::try_from(serde_json::to_value(value)?)?.to_canonical_bytes()?)
+}
+
+fn text(value: &Value, key: &str) -> Option<String> {
+    value[key].as_str().map(str::to_owned)
+}
+
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
 #[derive(Debug, Error)]

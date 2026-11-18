@@ -29,24 +29,23 @@ reject unreturned buffers.
 
 ## Performance and storage
 
-Fix buffered trace export first. In the local performance review, JSON export
-for a 1,001-point trace peaked at 1.84 GiB RSS. Then prioritize memory that
-grows with completed results and validation inside the measured interval. Use
-the [long buffered trace test](tests/cli/archives.rs) and the [orchestration
-overhead benchmark](examples/overhead) as starting points. Compare release-build
-peak RSS, wall time, scratch usage, and retained bytes and file counts as
-workloads grow.
+Prioritize memory that grows with completed results and validation inside the
+measured interval. Compare release-build peak RSS, wall time, scratch usage, and
+retained bytes and file counts as workloads grow. Start with the long buffered
+trace test and the orchestration overhead benchmark.
+[Long buffered trace test](tests/cli/archives.rs) ·
+[Orchestration overhead benchmark](examples/overhead)
 
 ### Export
 
-- [ ] Build JSON analysis directly from observation and coordination records.
-  Resolve `--id` selectors before expanding traces. Exercise the
-  25,001-point fixture under the same Linux address-space limit as archive
-  validation. Preserve exact-ID selection and lineage.
-- [ ] Stream CSV, JSONL, and index output in deterministic order, sharing
-  attempt evidence across trace points and metrics. Check exact v1 bytes on
-  small fixtures. Measure the remaining disk cost before adding a compact,
-  versioned format that references provenance by ID.
+- [x] Build JSON analysis directly from observation and coordination records.
+  Resolve exact `--id` selectors before expanding traces and preserve lineage.
+  The 25,001-point fixture passes under the same 256 MiB Linux address-space
+  limit as archive validation.
+- [x] Stream CSV, JSONL, and index output in deterministic order while sharing
+  attempt evidence across trace points and metrics. Release builds produced
+  identical v1 bytes on the smaller fixtures. For 1,001 points, JSONL retained
+  107 MiB, CSV retained 115 MiB, and the index retained 106 MiB.
 
 ### Execution and inspection
 

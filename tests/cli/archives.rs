@@ -795,11 +795,10 @@ fn long_buffered_trace_round_trips_and_reports_a_malformed_last_row() {
     fs::write(worker, source).unwrap();
     success(root, &["run", "--output-dir", "run"]);
 
-    let archive = |args: &[&str]| -> ArchiveReport {
+    let limited = |args: &[&str]| -> Output {
         let mut command = Command::new(env!("CARGO_BIN_EXE_metewand"));
         command
             .current_dir(root)
-            .arg("archive")
             .args(args)
             .args(["--output", "json"]);
         #[cfg(target_os = "linux")]
@@ -822,10 +821,19 @@ fn long_buffered_trace_round_trips_and_reports_a_malformed_last_row() {
                 });
             }
         }
-        let output = command.output().unwrap();
+        command.output().unwrap()
+    };
+    let report = |args: &[&str]| -> Value {
+        let output = limited(args);
         assert!(output.status.success(), "{args:?}: {output:?}");
         let value: Value = serde_json::from_slice(&output.stdout).unwrap();
-        serde_json::from_value(value["data"].clone()).unwrap()
+        value["data"].clone()
+    };
+    let archive = |args: &[&str]| -> ArchiveReport {
+        let args = std::iter::once("archive")
+            .chain(args.iter().copied())
+            .collect::<Vec<_>>();
+        serde_json::from_value(report(&args)).unwrap()
     };
 
     let collection = root.join("imported");
@@ -885,6 +893,53 @@ fn long_buffered_trace_round_trips_and_reports_a_malformed_last_row() {
         fs::read(root.join("restored.tar.gz")).unwrap(),
     );
 
+    let export = |source, destination| {
+        [
+            "export",
+            "--output-dir",
+            source,
+            "--format",
+            "json",
+            "--destination",
+            destination,
+            "--require-complete",
+        ]
+    };
+    let exported = report(&export("run", "analysis"));
+    assert_eq!(exported["records"], TRACE_POINTS + 3);
+    assert_eq!(exported["rows"], 1);
+    let attempt_id = exported["manifest"]["attempt_ids"][0].as_str().unwrap();
+    let analysis = root.join("analysis/results.json");
+    assert_eq!(
+        read_json(&analysis)["observations"][0]["profile"]["trace_index"],
+        last
+    );
+    let selector = format!("{attempt_id}:check:{last}");
+    let mut args = export("imported", "selected").to_vec();
+    args.extend(["--id", &selector]);
+    let selected = report(&args);
+    assert_eq!(selected["records"], exported["records"]);
+    assert_eq!(selected["rows"], exported["rows"]);
+    let mut manifest = exported["manifest"].clone();
+    manifest["selector"] = serde_json::json!([selector]);
+    assert_eq!(selected["manifest"], manifest);
+    assert_eq!(
+        fs::read(root.join("selected/results.json")).unwrap(),
+        fs::read(analysis).unwrap()
+    );
+    for missing in [
+        format!("{attempt_id}:check:{TRACE_POINTS}"),
+        format!("{attempt_id}:check:0{last}"),
+    ] {
+        let mut args = export("run", "missing").to_vec();
+        args.extend(["--id", &missing]);
+        let output = limited(&args);
+        assert!(!output.status.success(), "{output:?}");
+        let error: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(error["data"]["code"], "export_id_not_found");
+        assert!(!root.join("missing").exists());
+    }
+
     let mut rows = recorded
         .strip_suffix(b"\n")
         .unwrap()
@@ -918,15 +973,6 @@ fn long_buffered_trace_round_trips_and_reports_a_malformed_last_row() {
     artifact["manifest_sha256"] = serde_json::json!(sha256(&fs::read(marker).unwrap()));
     let old_id = artifact["id"].clone();
     let new_id = serde_json::json!(format!("run-store-v1:other-{digest}"));
-    let attempt_id = evidence["records"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|record| record["kind"] == "attempt")
-        .unwrap()["record"]["id"]
-        .as_str()
-        .unwrap()
-        .to_owned();
     replace_id(&mut evidence, &old_id, &new_id);
     write_json(&evidence_path, evidence);
     refresh_inventory(&collection.join("archive.json"));
@@ -934,7 +980,7 @@ fn long_buffered_trace_round_trips_and_reports_a_malformed_last_row() {
     let error = verify_archive(&collection, ArchiveLimits::default())
         .unwrap_err()
         .to_string();
-    assert!(error.contains(&attempt_id), "{error}");
+    assert!(error.contains(attempt_id), "{error}");
     assert!(
         error.contains(&format!("trace.jsonl line {TRACE_POINTS}")),
         "{error}"

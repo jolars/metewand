@@ -1,16 +1,31 @@
 //! Analysis uses persisted evidence, never the exporting host or current sources.
 
-use super::*;
-use crate::core::{comparison::ComparisonRow, export::analysis::*, profile::FreshSequenceProgress};
+use std::collections::{BTreeMap, BTreeSet};
+
+use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
+
+use crate::{
+    core::{
+        export::{ExportRecordType, analysis::*, measurement},
+        profile::FreshSequenceProgress,
+    },
+    runtime::{
+        evidence::document_profile,
+        inspection::{Inspection, adaptive_decisions, calibration_slots},
+    },
+};
+
+use super::{ExportError, Record, canonical_bytes, hex, text};
 
 pub(super) fn project(
-    records: &[ExportRecord],
-    comparisons: Vec<ComparisonRow>,
-    graph: &BTreeMap<String, InspectionRecord>,
+    records: &[Record<'_>],
+    inspection: &Inspection,
     tables: &BTreeMap<&str, Vec<Value>>,
 ) -> Result<AnalysisSnapshot, ExportError> {
+    let graph = inspection.records();
     let mut snapshot = AnalysisSnapshot {
-        adaptive_budgets: crate::runtime::inspection::adaptive_decisions(tables)?,
+        adaptive_budgets: adaptive_decisions(tables)?,
         schema_version: ANALYSIS_SCHEMA_VERSION,
         candidates: Vec::new(),
         observations: Vec::new(),
@@ -22,13 +37,12 @@ pub(super) fn project(
         compatibility_classes: BTreeMap::new(),
         completeness: AnalysisCompleteness::default(),
     };
-    let comparisons = comparisons
-        .into_iter()
-        .filter_map(|row| row.observation_id.clone().map(|id| (id, row)))
+    let mut comparisons = inspection
+        .observation_comparisons()
         .collect::<BTreeMap<_, _>>();
     let candidate_ids = records
         .iter()
-        .map(|r| r.candidate_id.clone())
+        .map(|r| r.candidate_id.to_owned())
         .chain(
             tables["resolved-specification"]
                 .iter()
@@ -41,12 +55,12 @@ pub(super) fn project(
             .filter(|r| r.candidate_id == id)
             .max_by_key(|r| {
                 (
-                    r.provenance["data"]["context"]["analysis"].is_object(),
-                    r.record_type == ExportRecordType::Observation,
+                    r.provenance()["data"]["context"]["analysis"].is_object(),
+                    r.kind == ExportRecordType::Observation,
                 )
             });
         let context = record
-            .map(|r| &r.provenance["data"]["context"])
+            .map(|r| &r.provenance()["data"]["context"])
             .unwrap_or(&Value::Null);
         let display = &context["comparison"];
         let settings = &context["analysis"];
@@ -65,14 +79,14 @@ pub(super) fn project(
         });
     }
     for record in records {
-        match record.record_type {
+        match record.kind {
             ExportRecordType::Observation => {
-                let mut comparison = comparisons
-                    .get(&record.id)
-                    .ok_or(ExportError::InvalidEvidence(
-                        "observation is missing its comparison projection",
-                    ))?
-                    .clone();
+                let mut comparison =
+                    comparisons
+                        .remove(record.id)
+                        .ok_or(ExportError::InvalidEvidence(
+                            "observation is missing its comparison projection",
+                        ))?;
                 if comparison
                     .profile
                     .as_ref()
@@ -96,9 +110,9 @@ pub(super) fn project(
                     record.compatibility_id.clone(),
                     record.compatibility.clone(),
                 );
-                let context = &record.provenance["data"]["context"];
+                let context = &record.provenance()["data"]["context"];
                 let provenance = AnalysisProvenance {
-                    tool_version: text(&record.provenance, "tool_version"),
+                    tool_version: text(record.provenance(), "tool_version"),
                     benchmark: text(&context["analysis"], "benchmark"),
                     manifest_hash: text(context, "manifest_hash"),
                     runner: context["runner"].clone(),
@@ -116,50 +130,50 @@ pub(super) fn project(
                 snapshot
                     .provenance
                     .insert(provenance_id.clone(), provenance);
+                let profile = document_profile(&record.row["document"])
+                    .or_else(|| record.slot.get("fresh_sequence"));
                 snapshot.observations.push(AnalysisObservation {
                     comparison,
-                    warmup: record.warmup,
-                    implementation_time_ns: record.timing["implementation_time_ns"].as_u64(),
-                    evaluation_time_ns: record.measurement("evaluation_time_ns").0,
-                    active_time_ns: record
-                        .profile
-                        .as_ref()
-                        .and_then(|p| p["active_time_ns"].as_u64()),
-                    elapsed_wall_time_ns: record
-                        .profile
-                        .as_ref()
-                        .and_then(|p| p["elapsed_wall_time_ns"].as_u64()),
-                    statistics: record.provenance["data"]["implementation_statistics"].clone(),
+                    warmup: record.warmup(),
+                    implementation_time_ns: record.timing()["implementation_time_ns"].as_u64(),
+                    evaluation_time_ns: measurement(
+                        record.timing(),
+                        record.provenance(),
+                        "evaluation_time_ns",
+                    )
+                    .0,
+                    active_time_ns: profile.and_then(|p| p["active_time_ns"].as_u64()),
+                    elapsed_wall_time_ns: profile.and_then(|p| p["elapsed_wall_time_ns"].as_u64()),
+                    statistics: record.provenance()["data"]["implementation_statistics"].clone(),
                     compatibility_id: record.compatibility_id.clone(),
                     provenance_id,
                 });
             }
             ExportRecordType::Attempt => {
-                let source = &record.evidence["source"];
                 snapshot.attempts.push(AnalysisAttempt {
-                    id: record.id.clone(),
-                    candidate_id: record.candidate_id.clone(),
-                    slot_id: record.resolved_slot_id.clone(),
-                    retry_index: record.retry_index,
-                    state: record.attempt_state.clone(),
-                    failure_code: record.failure_code.clone(),
-                    warmup: record.warmup,
-                    started_at_ns: text(source, "started_at_ns"),
-                    finished_at_ns: text(source, "finished_at_ns"),
+                    id: record.id.to_owned(),
+                    candidate_id: record.candidate_id.to_owned(),
+                    slot_id: record.slot_id.map(str::to_owned),
+                    retry_index: record.attempt["retry_index"].as_u64(),
+                    state: text(record.attempt, "state"),
+                    failure_code: text(record.attempt, "failure_code"),
+                    warmup: record.warmup(),
+                    started_at_ns: text(record.row, "started_at_ns"),
+                    finished_at_ns: text(record.row, "finished_at_ns"),
                 });
             }
             ExportRecordType::Applicability => {
                 snapshot.applicability.push(AnalysisApplicability {
-                    id: record.id.clone(),
-                    candidate_id: record.candidate_id.clone(),
-                    applicable: record.evidence["source"]["applicable"] == true,
-                    evidence: record.evidence["source"].clone(),
+                    id: record.id.to_owned(),
+                    candidate_id: record.candidate_id.to_owned(),
+                    applicable: record.row["applicable"] == true,
+                    evidence: record.row.clone(),
                 });
             }
             _ => (),
         }
     }
-    let pilot_slots = crate::runtime::inspection::calibration_slots(tables);
+    let pilot_slots = calibration_slots(tables);
     for slot in tables["resolved-attempt-slot"].iter().filter(|s| {
         s["role"] == "measurement" && !s["id"].as_str().is_some_and(|id| pilot_slots.contains(id))
     }) {
@@ -262,11 +276,10 @@ pub(super) fn project(
                     .as_u64()
                     .is_some_and(|count| observations.len() as u64 == count)
             };
-        let attempt_record = records.iter().find(|r| {
-            r.record_type == ExportRecordType::Attempt
-                && r.resolved_slot_id.as_ref() == Some(&slot.id)
-        });
-        let context = attempt_record.map(|r| &r.provenance["data"]["context"]);
+        let attempt_record = records
+            .iter()
+            .find(|r| r.kind == ExportRecordType::Attempt && r.slot_id == Some(slot.id.as_str()));
+        let context = attempt_record.map(|r| &r.provenance()["data"]["context"]);
         snapshot.profiles.push(AnalysisProfile {
             candidate_id: slot.candidate_id.clone(),
             resolved_specification_id: slot.resolved_specification_id.clone(),
@@ -333,16 +346,12 @@ pub(super) fn project(
     Ok(snapshot)
 }
 
-pub(super) fn select(source: &AnalysisSnapshot, records: &[ExportRecord]) -> AnalysisSnapshot {
+pub(super) fn select(mut snapshot: AnalysisSnapshot, records: &[&Record<'_>]) -> AnalysisSnapshot {
     let candidates = records
         .iter()
-        .map(|r| r.candidate_id.as_str())
+        .map(|r| r.candidate_id)
         .collect::<BTreeSet<_>>();
-    let ids = records
-        .iter()
-        .map(|r| r.id.as_str())
-        .collect::<BTreeSet<_>>();
-    let mut snapshot = source.clone();
+    let ids = records.iter().map(|r| r.id).collect::<BTreeSet<_>>();
     snapshot.adaptive_budgets.retain(|budget| {
         budget
             .pilots
@@ -397,7 +406,7 @@ fn required_text(value: &Value, key: &str) -> Result<String, ExportError> {
     ))
 }
 
-fn observation_policy(context: &Value, record: Option<&ExportRecord>) -> Value {
+fn observation_policy(context: &Value, record: Option<&Record<'_>>) -> Value {
     if context.is_null() {
         return Value::Null;
     }
@@ -416,7 +425,7 @@ fn observation_policy(context: &Value, record: Option<&ExportRecord>) -> Value {
         }
     }
     if let Some(profile) =
-        record.and_then(|r| r.provenance["data"]["execution"].get("profile_policy"))
+        record.and_then(|r| r.provenance()["data"]["execution"].get("profile_policy"))
     {
         return json!({"kind":"profile","profile":{"policy":profile["policy"],"binding":{"delivery":"buffered_profile"}}});
     }

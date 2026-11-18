@@ -61,15 +61,21 @@ fn tidy_timing_keeps_partial_resource_values_distinct_from_complete_timing() {
     record.timing = json!({"timed_wall_time_ns": 123, "cpu_time_ns": null});
     record.provenance = json!({"data":{"measurements":{"cpu_time_ns":{"status":"partial","value":100,"reason":"process_only"}}}});
     record.metrics = json!({"value":null});
-    let row = record.tidy_rows().pop().unwrap();
-    assert_eq!(row.timed_wall_time_ns, Some(123));
-    assert_eq!(row.timed_wall_time_status, "complete");
-    assert_eq!(row.cpu_time_ns, Some(100));
-    assert_eq!(row.cpu_time_status, "partial");
-    assert_eq!(row.peak_rss_bytes, None);
-    assert_eq!(row.peak_rss_status, "unavailable");
-    assert_eq!(row.metric_name.as_deref(), Some("/value"));
-    assert_eq!(row.metric_value, json!(null));
+    record
+        .visit_tidy_rows(|row| {
+            assert_eq!(row.timed_wall_time_ns, Some(123));
+            assert_eq!(row.timed_wall_time_status, "complete");
+            assert_eq!(row.cpu_time_ns, Some(100));
+            assert_eq!(row.cpu_time_status, "partial");
+            assert_eq!(row.peak_rss_bytes, None);
+            assert_eq!(row.peak_rss_status, "unavailable");
+            assert_eq!(row.metric_name.as_deref(), Some("/value"));
+            assert_eq!(row.metric_value, json!(null));
+            assert_eq!(row.record.metrics, json!(null));
+            Ok::<_, std::convert::Infallible>(())
+        })
+        .unwrap();
+    assert_eq!(record.metrics, json!({"value":null}));
 }
 
 fn analysis_fixture() -> crate::core::export::analysis::AnalysisSnapshot {

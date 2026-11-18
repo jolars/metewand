@@ -2,8 +2,8 @@
 
 use std::{
     collections::BTreeMap,
-    fs::{self, OpenOptions},
-    io::{BufRead, BufReader},
+    fs::{self, File, OpenOptions},
+    io::{BufRead, BufReader, Seek, SeekFrom},
     path::{Path, PathBuf},
 };
 
@@ -168,41 +168,94 @@ pub(crate) fn visit_buffered_trace(
     profile: &Value,
     mut visit: impl FnMut(usize, TracePoint),
 ) -> Result<(), InspectionError> {
+    let Some(path) = buffered_trace_path(data_root, profile)? else {
+        return Ok(());
+    };
+    let mut reader = TraceReader::open(&path, attempt_id, TracePosition::default())?;
+    let mut index = 0;
+    while let Some((_, point)) = reader.next_point()? {
+        visit(index, point);
+        index += 1;
+    }
+    Ok(())
+}
+
+pub(crate) fn buffered_trace_path(
+    data_root: &Path,
+    profile: &Value,
+) -> Result<Option<PathBuf>, InspectionError> {
     let buffer = &profile["buffer"];
     let (Some(directory), Some(trace)) = (
         buffer["artifact"]["directory"].as_str(),
         buffer["manifest"]["trace"].as_str(),
     ) else {
-        return Ok(());
+        return Ok(None);
     };
     let directory = safe_profile_path(data_root, directory)?;
-    let path = safe_profile_path(&directory, trace)?;
-    let file = platform_fs::open_regular(&path, OpenOptions::new().read(true))?;
-    let mut reader = BufReader::new(file);
-    let mut line = Vec::new();
-    let mut index = 0;
-    for line_number in 1.. {
-        line.clear();
-        if reader.read_until(b'\n', &mut line)? == 0 {
-            break;
+    safe_profile_path(&directory, trace).map(Some)
+}
+
+#[derive(Clone, Copy, Default)]
+pub(crate) struct TracePosition {
+    offset: u64,
+    lines_read: usize,
+}
+
+pub(crate) struct TraceReader<'a> {
+    path: &'a Path,
+    attempt_id: &'a str,
+    reader: BufReader<File>,
+    line: Vec<u8>,
+    position: TracePosition,
+}
+
+impl<'a> TraceReader<'a> {
+    pub(crate) fn open(
+        path: &'a Path,
+        attempt_id: &'a str,
+        position: TracePosition,
+    ) -> Result<Self, InspectionError> {
+        let mut file = platform_fs::open_regular(path, OpenOptions::new().read(true))?;
+        if position.offset != 0 {
+            file.seek(SeekFrom::Start(position.offset))?;
         }
-        let row = line.strip_suffix(b"\n").unwrap_or(&line);
-        if row.is_empty() {
-            continue;
-        }
-        let invalid_row = |reason: &dyn std::fmt::Display| InspectionError::InvalidTrace {
-            attempt_id: attempt_id.to_owned(),
-            path: path.clone(),
-            line: line_number,
-            reason: reason.to_string(),
-        };
-        let value = CanonicalValue::from_slice(row).map_err(|error| invalid_row(&error))?;
-        let point =
-            TracePoint::deserialize(value.as_json()).map_err(|error| invalid_row(&error))?;
-        visit(index, point);
-        index += 1;
+        Ok(Self {
+            path,
+            attempt_id,
+            reader: BufReader::new(file),
+            line: Vec::new(),
+            position,
+        })
     }
-    Ok(())
+
+    pub(crate) fn next_point(
+        &mut self,
+    ) -> Result<Option<(TracePosition, TracePoint)>, InspectionError> {
+        loop {
+            self.line.clear();
+            let bytes_read = self.reader.read_until(b'\n', &mut self.line)?;
+            if bytes_read == 0 {
+                return Ok(None);
+            }
+            let start = self.position;
+            self.position.offset += bytes_read as u64;
+            self.position.lines_read += 1;
+            let row = self.line.strip_suffix(b"\n").unwrap_or(&self.line);
+            if row.is_empty() {
+                continue;
+            }
+            let invalid_row = |reason: &dyn std::fmt::Display| InspectionError::InvalidTrace {
+                attempt_id: self.attempt_id.to_owned(),
+                path: self.path.to_owned(),
+                line: self.position.lines_read,
+                reason: reason.to_string(),
+            };
+            let value = CanonicalValue::from_slice(row).map_err(|error| invalid_row(&error))?;
+            let point =
+                TracePoint::deserialize(value.as_json()).map_err(|error| invalid_row(&error))?;
+            return Ok(Some((start, point)));
+        }
+    }
 }
 
 fn safe_profile_path(root: &Path, relative: &str) -> Result<PathBuf, InspectionError> {
