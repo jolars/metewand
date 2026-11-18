@@ -5,7 +5,11 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
-use crate::core::{canonical::CanonicalValue, identity::run_attempt_id, records::ContentDigest};
+use crate::core::{
+    canonical::CanonicalValue,
+    identity::run_attempt_id,
+    records::{ContentDigest, RecordId, ResolvedAttemptSlotRecord},
+};
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -748,6 +752,55 @@ fn completed_metadata(
             verified_at_ns: now,
         },
     ))
+}
+
+impl RunStore {
+    pub(crate) fn accepted_input_contexts(
+        &self,
+        logical_slot: &str,
+    ) -> Result<Vec<serde_json::Value>, RunStoreError> {
+        let mut query = self.connection.prepare(
+            "SELECT a.id, a.slot_id, a.final_artifact_id
+             FROM attempt_slots s JOIN attempts a ON a.slot_id = s.id
+             WHERE s.logical_slot_id = ?1 AND a.state = 'accepted' ORDER BY a.id",
+        )?;
+        let mut contexts = Vec::new();
+        for row in query.query_map([logical_slot], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+            ))
+        })? {
+            let (attempt, slot, artifact) = row?;
+            let stored = registered_metadata(&self.connection, &artifact)?;
+            let root = self.root();
+            verify_registered(root, &stored)?;
+            let path = safe_path(root, &stored.artifact.relative_path)?;
+            let bytes = fs::read(path.join("attempt.json"))?;
+            let record = CanonicalValue::from_slice(&bytes)?;
+            let record = record.as_json();
+            if record["id"] != attempt
+                || record["slot_id"] != slot
+                || record["outcome"]["kind"] != "accepted"
+            {
+                return Err(invalid("accepted attempt does not match its stored record"));
+            }
+            contexts.push(record["provenance"]["data"]["context"].clone());
+        }
+        Ok(contexts)
+    }
+
+    pub(crate) fn slot_is_accepted(
+        &self,
+        slot: RecordId<ResolvedAttemptSlotRecord>,
+    ) -> Result<bool, RunStoreError> {
+        Ok(self.connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM attempts WHERE slot_id = ?1 AND state = 'accepted')",
+            [slot.to_string()],
+            |row| row.get(0),
+        )?)
+    }
 }
 
 fn registered_metadata(db: &Connection, id: &str) -> Result<StoredArtifact, RunStoreError> {

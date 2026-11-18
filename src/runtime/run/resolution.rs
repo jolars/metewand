@@ -1,6 +1,7 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     env, fs, io,
+    io::{BufRead, BufReader},
     path::{Path, PathBuf},
     sync::Arc,
     time::Duration,
@@ -33,7 +34,6 @@ use crate::core::{
 };
 use crate::protocol::{MaterializeResponse, WorkerIdentity};
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
 use tempfile::{Builder, TempDir};
 
 use crate::runtime::{
@@ -43,11 +43,14 @@ use crate::runtime::{
         DatasetMaterialization, identify_dataset_derivation, materialize_dataset,
     },
     fixed_dataset_run::ExecutionTimingPolicy,
-    local_tree::hash_local_tree,
+    local_tree::{file_sha256, hash_regular_tree},
     repository::CheckedRepository,
+    run_store::RunStore,
     source_acquisition::HttpAcquirer,
     source_bundle::{identify_source_bundle, source_bundle_overlaps_directory},
-    source_resolution::{SourceRequest, SourceResolutionError, resolve_source},
+    source_resolution::{
+        SourceRequest, SourceResolutionError, resolve_source, stage_repository_sources,
+    },
     worker_output::WorkerOutputValidator,
     worker_process::WorkerLogLimits,
     worker_session::PhaseTimeouts,
@@ -55,11 +58,14 @@ use crate::runtime::{
 
 use super::RunError;
 
+mod resume;
+
 pub(super) struct ResolvedRun {
     pub candidates: Vec<ResolvedCandidate>,
     pub schedule: Vec<(usize, usize)>,
     pub batches: Vec<ResolvedBatch>,
     pub private_root: TempDir,
+    pub resume_store: Option<RunStore>,
 }
 
 pub(super) struct ResolvedBatch {
@@ -110,23 +116,25 @@ pub(crate) struct ResolvedWorker {
     pub launch: ResolvedLaunchRecord,
     pub identity: WorkerIdentity,
     record: ResolvedWorkerRecord,
-    sources: Option<Snapshot>,
+    sources: Option<Arc<Snapshot>>,
     executable: PathBuf,
     executable_digest: String,
     provenance: Value,
 }
 
+type OriginalSource = (PathBuf, Vec<RepositoryPath>, RecordId<SourceBundleResource>);
+
 pub(super) struct Snapshot {
     pub directory: TempDir,
     digest: ContentDigest,
-    original: Option<(PathBuf, Vec<RepositoryPath>, RecordId<SourceBundleResource>)>,
+    original: Option<OriginalSource>,
 }
 
 pub(super) struct DatasetSnapshot {
     manifest: Option<String>,
     pub materialization_time_ns: Measurement,
     pub artifact: StoredArtifact,
-    original: Option<Snapshot>,
+    original: Option<Arc<Snapshot>>,
 }
 
 impl DatasetSnapshot {
@@ -161,7 +169,7 @@ fn launch_argument(argument: &str) -> Result<LaunchArgument, RunError> {
 
 impl Snapshot {
     pub fn verify(&self) -> Result<(), RunError> {
-        if hash_local_tree(self.directory.path())? != self.digest {
+        if hash_regular_tree(self.directory.path())? != self.digest {
             return Err(RunError::ChangedInput);
         }
         if let Some((root, patterns, expected)) = &self.original
@@ -225,7 +233,7 @@ impl ResolvedWorker {
         ) {
             return Ok(());
         }
-        if file_digest(&self.executable)? != self.executable_digest {
+        if file_sha256(&self.executable)? != self.executable_digest {
             return Err(RunError::ChangedInput);
         }
         Ok(())
@@ -273,6 +281,7 @@ fn validate_snapshot_destination(snapshot: &Snapshot, output: &Path) -> Result<(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn resolve(
     repository: &CheckedRepository,
     plan: &LogicalPlan,
@@ -280,6 +289,7 @@ pub(super) fn resolve(
     cache_directory: Option<&Path>,
     runtime: &crate::protocol::RuntimeSettings,
     locked: Option<&crate::runtime::lockfile::VerifiedLock>,
+    reuse_committed_inputs: bool,
     progress: &mut impl FnMut(&super::RunProgress) -> io::Result<()>,
 ) -> Result<ResolvedRun, RunError> {
     for experiment in &plan.experiments {
@@ -344,6 +354,8 @@ pub(super) fn resolve(
     }))?;
     // Resolve every launch and fixed dataset before any acquisition or worker runs.
     let mut prepared = Vec::new();
+    let mut worker_sources = WorkerSources::default();
+    let mut dataset_plans = BTreeMap::new();
     for experiment in &plan.experiments {
         for candidate in &experiment.candidates {
             let implementation_name = repository
@@ -360,17 +372,19 @@ pub(super) fn resolve(
                 .find(|(_, id)| **id == candidate.problem_configuration.record.definition)
                 .expect("checked problem")
                 .0;
-            let implementation = resolve_worker_with_lock(
+            let implementation = resolve_worker_with_sources(
                 repository,
                 &repository.manifest.implementations[implementation_name].worker,
                 private_root.path(),
                 locked,
+                &mut worker_sources,
             )?;
-            let evaluator = resolve_worker_with_lock(
+            let evaluator = resolve_worker_with_sources(
                 repository,
                 &repository.manifest.problems[problem_name].evaluator,
                 private_root.path(),
                 locked,
+                &mut worker_sources,
             )?;
             let executor = if matches!(
                 implementation.provenance["environment"]["fingerprint"]["backend"].as_str(),
@@ -399,18 +413,31 @@ pub(super) fn resolve(
             } else {
                 executor.clone()
             };
-            let dataset = prepare_dataset(repository, candidate, private_root.path(), locked)?;
+            let dataset = match dataset_plans
+                .entry(candidate.dataset_configuration.record.definition)
+            {
+                std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+                std::collections::btree_map::Entry::Vacant(entry) => entry.insert(prepare_dataset(
+                    repository,
+                    candidate,
+                    private_root.path(),
+                    locked,
+                    &mut worker_sources,
+                )?),
+            }
+            .clone();
             let preparation = repository.manifest.problems[problem_name]
                 .preparation
                 .as_ref()
                 .map(|definition| {
                     Ok::<_, RunError>((
                         definition,
-                        resolve_worker_with_lock(
+                        resolve_worker_with_sources(
                             repository,
                             &definition.worker,
                             private_root.path(),
                             locked,
+                            &mut worker_sources,
                         )?,
                     ))
                 })
@@ -494,6 +521,53 @@ pub(super) fn resolve(
             }
         }
     }
+    let resume_store = reuse_committed_inputs
+        .then(|| RunStore::open(output))
+        .transpose()?;
+    if let Some(store) = &resume_store {
+        let mut committed = resume::CommittedInputs::default();
+        let mut all_accepted = true;
+        for (candidate, experiment, implementation, evaluator, dataset, preparation, executor) in
+            &prepared
+        {
+            let adaptive = repository.manifest.observation_policies
+                [&experiment.observation_policy.record.name]
+                .profile
+                .as_ref()
+                .is_some_and(|profile| profile.policy.adaptive_budget.is_some());
+            if adaptive
+                || candidate
+                    .implementation_capabilities
+                    .iter()
+                    .any(|capability| {
+                        capability.capability
+                            == crate::core::manifest::ImplementationCapability::Applicability
+                    })
+                || !committed.accepted(
+                    repository,
+                    store,
+                    candidate,
+                    implementation,
+                    evaluator,
+                    dataset,
+                    preparation.as_ref().map(|(_, worker)| worker),
+                    executor.id,
+                )?
+            {
+                all_accepted = false;
+                break;
+            }
+        }
+        if all_accepted {
+            return Ok(ResolvedRun {
+                candidates: Vec::new(),
+                schedule: Vec::new(),
+                batches: Vec::new(),
+                private_root,
+                resume_store,
+            });
+        }
+    }
     let store = ArtifactStore::open(cache_directory)?;
     let mut datasets = BTreeMap::new();
     let mut preparations = BTreeMap::new();
@@ -518,7 +592,10 @@ pub(super) fn resolve(
             let (snapshot, output_schema, provenance) = match dataset_plan {
                 DatasetPlan::Ready(snapshot, schema) => {
                     snapshot.verify()?;
-                    let artifact = store.import_tree(snapshot.directory.path(), snapshot.digest)?;
+                    let artifact = match store.get(snapshot.digest)? {
+                        Some(artifact) => artifact,
+                        None => store.import_tree(snapshot.directory.path(), snapshot.digest)?,
+                    };
                     (
                         Arc::new(DatasetSnapshot {
                             materialization_time_ns: Measurement::unavailable(
@@ -769,14 +846,19 @@ pub(super) fn resolve(
         schedule,
         batches,
         private_root,
+        resume_store,
     })
 }
 
+#[derive(Clone)]
 enum DatasetPlan<'a> {
-    Ready(Snapshot, RecordId<crate::core::records::SchemaResource>),
+    Ready(
+        Arc<Snapshot>,
+        RecordId<crate::core::records::SchemaResource>,
+    ),
     Generated(
         &'a crate::core::manifest::GeneratedDatasetDefinition,
-        Box<ResolvedWorker>,
+        Arc<ResolvedWorker>,
     ),
 }
 
@@ -785,6 +867,7 @@ fn prepare_dataset<'a>(
     candidate: &LogicalCandidatePlan,
     private_root: &Path,
     locked: Option<&crate::runtime::lockfile::VerifiedLock>,
+    worker_sources: &mut WorkerSources,
 ) -> Result<DatasetPlan<'a>, RunError> {
     let catalog = &repository.planning_catalog;
     let dataset_definition = catalog
@@ -796,13 +879,13 @@ fn prepare_dataset<'a>(
     match dataset_definition {
         DatasetConfigurationDefinition::Unit => {
             let directory = Builder::new().prefix("unit-").tempdir_in(private_root)?;
-            let digest = hash_local_tree(directory.path())?;
+            let digest = hash_regular_tree(directory.path())?;
             Ok(DatasetPlan::Ready(
-                Snapshot {
+                Arc::new(Snapshot {
                     directory,
                     digest,
                     original: None,
-                },
+                }),
                 identify_builtin_unit_dataset_definition()?
                     .record
                     .output_schema,
@@ -824,39 +907,45 @@ fn prepare_dataset<'a>(
                             ));
                         }
                     }
-                    let worker = resolve_worker_with_lock(
+                    let worker = resolve_worker_with_sources(
                         repository,
                         &definition.worker,
                         private_root,
                         locked,
+                        worker_sources,
                     )?;
-                    return Ok(DatasetPlan::Generated(definition, Box::new(worker)));
+                    return Ok(DatasetPlan::Generated(definition, Arc::new(worker)));
                 }
             };
-            let mut snapshot = snapshot(repository, &definition.sources, private_root)?;
-            let manifest_path = snapshot.directory.path().join("dataset-manifest.json");
+            let (directory, original) =
+                stage_snapshot(repository, &definition.sources, private_root)?;
+            let manifest_path = directory.path().join("dataset-manifest.json");
             if manifest_path.exists() {
                 return Err(unsupported(
                     "fixed data reserves `dataset-manifest.json` for its generated inventory",
                 ));
             }
-            let files = file_inventory(snapshot.directory.path())?;
+            let files = file_inventory(directory.path())?;
             fs::write(
                 &manifest_path,
                 canonical(json!({"schema_version": 1, "complete": true, "files": files}))?
                     .to_canonical_bytes()?,
             )?;
             WorkerOutputValidator::new(&repository.schemas)?.validate_materialized_dataset(
-                snapshot.directory.path(),
+                directory.path(),
                 &MaterializeResponse::new(
                     "fixed".parse().expect("static request ID"),
                     "dataset-manifest.json",
                 ),
                 definition.output_schema.as_path(),
             )?;
-            snapshot.digest = hash_local_tree(snapshot.directory.path())?;
+            let digest = hash_regular_tree(directory.path())?;
             Ok(DatasetPlan::Ready(
-                snapshot,
+                Arc::new(Snapshot {
+                    directory,
+                    digest,
+                    original: Some(original),
+                }),
                 repository.resources.schemas[definition.output_schema.as_path()],
             ))
         }
@@ -964,6 +1053,28 @@ fn resolve_preparation(
         }),
         provenance,
     })
+}
+
+fn resolved_specification(
+    logical_specification: RecordId<crate::core::records::OneShotLogicalSpecificationRecord>,
+    problem_instance: RecordId<ProblemInstanceRecord>,
+    implementation: ResolvedWorkerRecord,
+    evaluator: ResolvedWorkerRecord,
+    executor: RecordId<ExecutorDefinitionRecord>,
+    applicability: Option<RecordId<crate::core::applicability::ApplicabilityDecisionRecord>>,
+) -> Result<IdentifiedRecord<ResolvedOneShotSpecificationRecord>, RunError> {
+    Ok(identify_record(ResolvedOneShotSpecificationRecord {
+        adaptive_budget_group: None,
+        calibration: None,
+        applicability,
+        logical_specification,
+        problem_instance,
+        implementation,
+        evaluator,
+        executor,
+        wire_protocol_version: crate::protocol::WIRE_PROTOCOL_VERSION,
+        execution_semantics_version: EXECUTION_SEMANTICS_VERSION,
+    })?)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1089,22 +1200,18 @@ fn resolve_candidate(
         applicability.record.outcome
             != crate::core::applicability::ApplicabilityOutcome::NotApplicable
     }) {
-        let resolved = identify_record(ResolvedOneShotSpecificationRecord {
-            adaptive_budget_group: None,
-            calibration: None,
-            applicability: applicability
+        let resolved = resolved_specification(
+            specification.specification.id,
+            problem_instance.id,
+            implementation.record.clone(),
+            evaluator.record.clone(),
+            executor,
+            applicability
                 .record
                 .checked_inputs
                 .as_ref()
                 .map(|_| applicability.id),
-            logical_specification: specification.specification.id,
-            problem_instance: problem_instance.id,
-            implementation: implementation.record.clone(),
-            evaluator: evaluator.record.clone(),
-            executor,
-            wire_protocol_version: crate::protocol::WIRE_PROTOCOL_VERSION,
-            execution_semantics_version: EXECUTION_SEMANTICS_VERSION,
-        })?;
+        )?;
         let warmups = specification
             .attempt_slots
             .iter()
@@ -1512,6 +1619,41 @@ pub(crate) fn resolve_worker_with_lock(
     private_root: &Path,
     locked: Option<&crate::runtime::lockfile::VerifiedLock>,
 ) -> Result<ResolvedWorker, RunError> {
+    resolve_worker_with_sources(
+        repository,
+        worker,
+        private_root,
+        locked,
+        &mut WorkerSources::default(),
+    )
+}
+
+#[derive(Default)]
+struct WorkerSources(BTreeMap<Vec<PathBuf>, Arc<Snapshot>>);
+
+impl WorkerSources {
+    fn snapshot(
+        &mut self,
+        repository: &CheckedRepository,
+        patterns: &[RepositoryPath],
+        private_root: &Path,
+    ) -> Result<Arc<Snapshot>, RunError> {
+        match self.0.entry(source_key(patterns)) {
+            std::collections::btree_map::Entry::Occupied(entry) => Ok(Arc::clone(entry.get())),
+            std::collections::btree_map::Entry::Vacant(entry) => Ok(Arc::clone(
+                entry.insert(Arc::new(snapshot(repository, patterns, private_root)?)),
+            )),
+        }
+    }
+}
+
+fn resolve_worker_with_sources(
+    repository: &CheckedRepository,
+    worker: &WorkerDefinition,
+    private_root: &Path,
+    locked: Option<&crate::runtime::lockfile::VerifiedLock>,
+    worker_sources: &mut WorkerSources,
+) -> Result<ResolvedWorker, RunError> {
     let (program, arguments, patterns, environment, transport) = match worker {
         WorkerDefinition::Command(worker) => (
             worker.program.clone(),
@@ -1574,6 +1716,7 @@ pub(crate) fn resolve_worker_with_lock(
             arguments,
             patterns,
             transport,
+            worker_sources,
         );
         #[cfg(not(target_os = "linux"))]
         {
@@ -1596,6 +1739,7 @@ pub(crate) fn resolve_worker_with_lock(
             arguments,
             patterns,
             transport,
+            worker_sources,
         );
         #[cfg(not(target_os = "linux"))]
         {
@@ -1609,7 +1753,7 @@ pub(crate) fn resolve_worker_with_lock(
         ));
     }
     let sources = patterns
-        .map(|patterns| snapshot(repository, patterns, private_root))
+        .map(|patterns| worker_sources.snapshot(repository, patterns, private_root))
         .transpose()?;
     let locked_environment = locked
         .map(|lock| lock.environment(environment))
@@ -1649,20 +1793,15 @@ pub(crate) fn resolve_worker_with_lock(
                 "the repository command program is absent from its declared `sources`",
             ));
         }
-        let bytes = fs::read(&executable)?;
-        if locked_environment.is_some() && !bytes.starts_with(b"#!") {
+        let shebang = read_shebang(&executable)?;
+        if locked_environment.is_some() && shebang.is_none() {
             return Err(RunError::Unsupported(
                 "locked native executables must come from a prepared environment; source executables require a locked shebang interpreter".into(),
             ));
         }
-        if bytes.starts_with(b"#!") {
-            let line = std::str::from_utf8(
-                bytes
-                    .split(|byte| *byte == b'\n')
-                    .next()
-                    .expect("nonempty shebang"),
-            )
-            .map_err(|_| unsupported("worker shebang must be UTF-8"))?;
+        if let Some(bytes) = shebang {
+            let line = std::str::from_utf8(&bytes)
+                .map_err(|_| unsupported("worker shebang must be UTF-8"))?;
             let parts = line[2..].split_whitespace().collect::<Vec<_>>();
             let interpreter = match parts.as_slice() {
                 ["/usr/bin/env", name] => *name,
@@ -1689,7 +1828,7 @@ pub(crate) fn resolve_worker_with_lock(
             arguments.insert(0, LaunchArgument::Source(relative.to_path_buf()));
         }
     }
-    let executable_digest = file_digest(&executable)?;
+    let executable_digest = file_sha256(&executable)?;
     let environment_record = identify_record(ResolvedEnvironmentRecord {
         definition: repository.planning_catalog.environment_definitions[environment],
         fingerprint: canonical(if let Some(environment) = locked_environment {
@@ -1836,7 +1975,7 @@ pub(crate) fn resolve_worker_with_lock(
     let record = ResolvedWorkerRecord {
         source_bundle: sources
             .as_ref()
-            .map(Snapshot::artifact::<SourceBundleArtifact>)
+            .map(|snapshot| snapshot.artifact::<SourceBundleArtifact>())
             .transpose()?,
         environment: environment_record.id,
         launch: normalized_launch.id,
@@ -1931,27 +2070,37 @@ fn adapter_language(
     }
 }
 
-fn snapshot(
-    repository: &CheckedRepository,
-    patterns: &[RepositoryPath],
-    private_root: &Path,
-) -> Result<Snapshot, RunError> {
+fn source_key(patterns: &[RepositoryPath]) -> Vec<PathBuf> {
     let mut key = patterns
         .iter()
         .map(|path| path.as_path().to_path_buf())
         .collect::<Vec<_>>();
     key.sort();
     key.dedup();
-    let expected = repository.resources.source_bundles[&key];
-    let source = resolve_source(
-        &SourceRequest::Repository {
-            root: &repository.root,
-            sources: patterns,
-            expected,
-        },
-        None,
-        private_root,
-    )
+    key
+}
+
+fn snapshot(
+    repository: &CheckedRepository,
+    patterns: &[RepositoryPath],
+    private_root: &Path,
+) -> Result<Snapshot, RunError> {
+    let (directory, original) = stage_snapshot(repository, patterns, private_root)?;
+    let digest = hash_regular_tree(directory.path())?;
+    Ok(Snapshot {
+        directory,
+        digest,
+        original: Some(original),
+    })
+}
+
+fn stage_snapshot(
+    repository: &CheckedRepository,
+    patterns: &[RepositoryPath],
+    private_root: &Path,
+) -> Result<(TempDir, OriginalSource), RunError> {
+    let expected = repository.resources.source_bundles[&source_key(patterns)];
+    let directory = stage_repository_sources(&repository.root, patterns, expected, private_root)
     .map_err(|error| match error {
         SourceResolutionError::ChangedSource => RunError::ChangedInput,
         SourceResolutionError::UnsupportedEntry { .. } => unsupported(
@@ -1960,13 +2109,10 @@ fn snapshot(
         SourceResolutionError::Io(error) => RunError::Io(error),
         error => RunError::SourceResolution(error),
     })?;
-    let digest = source.tree_digest();
-    let directory = source.into_directory();
-    Ok(Snapshot {
+    Ok((
         directory,
-        digest,
-        original: Some((repository.root.clone(), patterns.to_vec(), expected)),
-    })
+        (repository.root.clone(), patterns.to_vec(), expected),
+    ))
 }
 
 pub(super) fn file_inventory(root: &Path) -> Result<Vec<Value>, RunError> {
@@ -1985,7 +2131,7 @@ pub(super) fn file_inventory(root: &Path) -> Result<Vec<Value>, RunError> {
                     .strip_prefix(root)
                     .expect("inventory stays beneath root")
                     .to_path_buf();
-                files.insert(relative.clone(), json!({"path": crate::runtime::platform_fs::relative_path(&relative)?, "sha256": file_digest(&path)?, "size_bytes": entry.metadata()?.len(), "media_type": if path.extension().is_some_and(|extension| extension == "json") { "application/json" } else { "application/octet-stream" }}));
+                files.insert(relative.clone(), json!({"path": crate::runtime::platform_fs::relative_path(&relative)?, "sha256": file_sha256(&path)?, "size_bytes": entry.metadata()?.len(), "media_type": if path.extension().is_some_and(|extension| extension == "json") { "application/json" } else { "application/octet-stream" }}));
             }
         }
         Ok(())
@@ -2149,8 +2295,14 @@ fn record_document<T: IdentityRecord>(record: &T) -> Result<Value, RunError> {
     )
 }
 
-fn file_digest(path: &Path) -> Result<String, io::Error> {
-    Ok(hex(&Sha256::digest(fs::read(path)?)))
+fn read_shebang(path: &Path) -> io::Result<Option<Vec<u8>>> {
+    let mut reader = BufReader::new(fs::File::open(path)?);
+    if !reader.fill_buf()?.starts_with(b"#!") {
+        return Ok(None);
+    }
+    let mut line = Vec::new();
+    reader.read_until(b'\n', &mut line)?;
+    Ok(Some(line))
 }
 
 fn hex(bytes: &[u8]) -> String {
@@ -2225,6 +2377,7 @@ fn resolve_image_worker(
     arguments: Vec<LaunchArgument>,
     patterns: Option<&[RepositoryPath]>,
     transport: Option<ProtocolTransport>,
+    worker_sources: &mut WorkerSources,
 ) -> Result<ResolvedWorker, RunError> {
     if transport.is_some_and(|t| t != ProtocolTransport::Socket) {
         return Err(unsupported(
@@ -2232,15 +2385,15 @@ fn resolve_image_worker(
         ));
     }
     let sources = patterns
-        .map(|p| snapshot(repository, p, private_root))
+        .map(|p| worker_sources.snapshot(repository, p, private_root))
         .transpose()?;
     let mut program = program;
     let mut arguments = arguments;
     if !Path::new(&program).is_absolute() && Path::new(&program).components().count() > 1 {
         let relative = PathBuf::from(&program);
         let script=sources.as_ref().map(|s|s.directory.path().join(&relative)).filter(|p|p.is_file()).ok_or_else(||unsupported("relative container programs must be declared source scripts; image programs require a bare name or absolute path"))?;
-        let bytes = fs::read(script)?;
-        let line = std::str::from_utf8(bytes.split(|v| *v == b'\n').next().unwrap_or_default())
+        let bytes = read_shebang(&script)?.unwrap_or_default();
+        let line = std::str::from_utf8(&bytes)
             .map_err(|_| unsupported("container source programs require a UTF-8 shebang"))?;
         let parts = line
             .strip_prefix("#!")
@@ -2355,7 +2508,7 @@ fn resolve_image_worker(
     let record = ResolvedWorkerRecord {
         source_bundle: sources
             .as_ref()
-            .map(Snapshot::artifact::<SourceBundleArtifact>)
+            .map(|snapshot| snapshot.artifact::<SourceBundleArtifact>())
             .transpose()?,
         environment: environment.id,
         launch: normalized.id,

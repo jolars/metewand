@@ -173,16 +173,16 @@ impl ArtifactStore {
         let _guard = self.lock()?;
         let snapshot = Catalog::read(self)?;
         let leases = self.leases_by_digest()?;
-        if add {
-            self.verify_registered(&self.object_path(digest), digest, &snapshot)?;
-        } else if !snapshot
+        let already_rooted = snapshot
             .roots
             .get(&hex(digest))
-            .is_some_and(|roots| roots.iter().any(|name| name == root))
-        {
+            .is_some_and(|roots| roots.iter().any(|name| name == root));
+        if add {
+            self.verify_registered(&self.object_path(digest), digest, &snapshot)?;
+        } else if !already_rooted {
             return Err(ArtifactStoreError::UnknownRoot(root.to_owned()));
         }
-        if !dry_run {
+        if !dry_run && !(add && already_rooted) {
             let catalog = if add {
                 self.register_object(digest)?
             } else {

@@ -5,7 +5,7 @@ use std::{
     env,
     ffi::OsString,
     fs,
-    io::Write,
+    io::{BufRead, BufReader, Write},
     path::{Component, Path, PathBuf},
     process::{Command, Stdio},
 };
@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::runtime::{
+    local_tree::file_sha256,
     lockfile::{LockError, error, sha256},
     repository::CheckedRepository,
 };
@@ -235,36 +236,14 @@ fn inventory(
             crate::runtime::platform_fs::relative_path(relative)?
         };
         let executable = crate::runtime::lockfile::is_executable(&actual);
-        let content = if actual.is_file() {
-            Some(fs::read(path)?)
-        } else {
-            None
-        };
         if !actual.is_file() && !actual.is_dir() {
             return Err(error(
                 "invalid_uv_evidence",
                 format!("unsupported installed entry: {}", path.display()),
             ));
         }
-        let launcher = (name.starts_with("bin/") || name.starts_with("Scripts/"))
-            && content.as_ref().is_some_and(|bytes| {
-                bytes.starts_with(b"#!")
-                    || (cfg!(windows)
-                        && !matches!(
-                            path.file_name().and_then(|n| n.to_str()),
-                            Some("python.exe" | "pythonw.exe")
-                        )
-                        && replacements
-                            .iter()
-                            .filter(|(_, new)| new == "{environment}")
-                            .any(|(old, _)| {
-                                let prefix = format!("#!{old}");
-                                bytes
-                                    .windows(prefix.len())
-                                    .any(|part| part == prefix.as_bytes())
-                            }))
-            });
-        let activation = (name.starts_with("bin/") || name.starts_with("Scripts/"))
+        let bin = name.starts_with("bin/") || name.starts_with("Scripts/");
+        let activation = bin
             && matches!(
                 path.file_name().and_then(|name| name.to_str()),
                 Some(
@@ -279,17 +258,47 @@ fn inventory(
                         | "deactivate.bat"
                 )
             );
-        let generated = name == "pyvenv.cfg"
-            || name.ends_with(".dist-info/direct_url.json")
-            || launcher
-            || activation;
-        let digest = content.as_ref().map(|bytes| sha256(bytes));
-        let identity_sha256 = if generated {
-            content
-                .as_ref()
-                .map(|bytes| sha256(&normalized(bytes, replacements)))
+        let (digest, identity_sha256) = if actual.is_file() {
+            let mut input = BufReader::new(fs::File::open(path)?);
+            let shebang = bin && input.fill_buf()?.starts_with(b"#!");
+            let windows_launcher = cfg!(windows)
+                && bin
+                && !matches!(
+                    path.file_name().and_then(|name| name.to_str()),
+                    Some("python.exe" | "pythonw.exe")
+                );
+            let generated = name == "pyvenv.cfg"
+                || name.ends_with(".dist-info/direct_url.json")
+                || activation
+                || shebang;
+            if generated || windows_launcher {
+                let mut bytes = Vec::new();
+                std::io::Read::read_to_end(&mut input, &mut bytes)?;
+                let launcher = windows_launcher
+                    && replacements
+                        .iter()
+                        .filter(|(_, new)| new == "{environment}")
+                        .any(|(old, _)| {
+                            let prefix = format!("#!{old}");
+                            bytes
+                                .windows(prefix.len())
+                                .any(|part| part == prefix.as_bytes())
+                        });
+                let digest = sha256(&bytes);
+                let identity = if generated || launcher {
+                    sha256(&normalized(&bytes, replacements))
+                } else {
+                    digest.clone()
+                };
+                (Some(digest), Some(identity))
+            } else {
+                let digest = crate::core::materialization::hex(
+                    crate::runtime::local_tree::hash_reader(input)?.0,
+                );
+                (Some(digest.clone()), Some(digest))
+            }
         } else {
-            digest.clone()
+            (None, None)
         };
         entries.insert(
             name,
@@ -499,10 +508,8 @@ pub(crate) fn program_identity(
             .ok_or_else(|| error("invalid_locked_launch", "program is absent from uv receipt"))?;
         Ok((format!("{{environment}}/{relative}"), digest))
     } else {
-        Ok((
-            format!("sha256:{}", sha256(&fs::read(path)?)),
-            sha256(&fs::read(path)?),
-        ))
+        let digest = file_sha256(path)?;
+        Ok((format!("sha256:{digest}"), digest))
     }
 }
 
@@ -715,7 +722,7 @@ fn prepare_with(
         version: info.version,
         abi: info.abi,
         platform: info.platform,
-        executable_sha256: sha256(&fs::read(&info.executable)?),
+        executable_sha256: file_sha256(&info.executable)?,
         runtime_sha256: sha256(&canonical_bytes(&runtime_document)?),
     };
     let key = sha256(&canonical_bytes(

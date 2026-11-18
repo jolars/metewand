@@ -2170,7 +2170,7 @@ fn generated_datasets_record_derivation_and_share_materialization() {
     let report: Value = serde_json::from_slice(&output.stdout).unwrap();
     let attempts = report["data"]["attempts"].as_array().unwrap();
     assert_eq!(attempts.len(), 4);
-    assert_eq!(fs::read_to_string(marker).unwrap(), "1");
+    assert_eq!(fs::read_to_string(&marker).unwrap(), "1");
     let mut derivations = Vec::new();
     for attempt in attempts {
         let path = root
@@ -2200,6 +2200,50 @@ fn generated_datasets_record_derivation_and_share_materialization() {
             .iter()
             .all(|derivation| derivation == &derivations[0])
     );
+    let resume = metewand(
+        root.path(),
+        &["run", "--output-dir", "run", "--output", "json"],
+    );
+    assert!(resume.status.success(), "{resume:?}");
+    let resumed: Value = serde_json::from_slice(&resume.stdout).unwrap();
+    assert_eq!(resumed["data"]["summary"]["attempt_slots"], 0);
+    assert_eq!(resumed["data"]["comparison"], report["data"]["comparison"]);
+    assert_eq!(fs::read_to_string(&marker).unwrap(), "1");
+
+    let logical_slot = attempts[0]["logical_slot_id"].as_str().unwrap();
+    let selected = metewand(
+        root.path(),
+        &[
+            "run",
+            "--output-dir",
+            "run",
+            "--select",
+            logical_slot,
+            "--output",
+            "json",
+        ],
+    );
+    assert!(selected.status.success(), "{selected:?}");
+    let selected: Value = serde_json::from_slice(&selected.stdout).unwrap();
+    assert_eq!(selected["data"]["summary"]["attempt_slots"], 0);
+    assert_eq!(fs::read_to_string(&marker).unwrap(), "1");
+
+    // A changed materializer is a new construction even when every old slot
+    // was accepted and the worker returns the same scientific payload.
+    let worker = root.path().join("worker.py");
+    fs::write(
+        &worker,
+        format!("{}\n", fs::read_to_string(&worker).unwrap()),
+    )
+    .unwrap();
+    let changed = metewand(
+        root.path(),
+        &["run", "--output-dir", "run", "--output", "json"],
+    );
+    assert!(changed.status.success(), "{changed:?}");
+    let changed: Value = serde_json::from_slice(&changed.stdout).unwrap();
+    assert_eq!(changed["data"]["summary"]["accepted_attempts"], 4);
+    assert_eq!(fs::read_to_string(marker).unwrap(), "11");
 }
 
 #[test]
@@ -2522,6 +2566,15 @@ fn pinned_transform_downloads_only_during_run() {
         source["selection"]["sha256"],
         "4cf6ac7faa18ca1751f7b12a1391efef4e57a497c909157394ec9072d29f0641"
     );
+    // The pinned source server has closed. The accepted construction receipt
+    // names the same URL and digest, so a resume requires no acquisition.
+    let resume = metewand(
+        root.path(),
+        &["run", "--output-dir", "run", "--output", "json"],
+    );
+    assert!(resume.status.success(), "{resume:?}");
+    let resume: Value = serde_json::from_slice(&resume.stdout).unwrap();
+    assert_eq!(resume["data"]["summary"]["attempt_slots"], 0);
 }
 
 #[test]

@@ -14,6 +14,33 @@ use crate::runtime::LOCAL_TREE_HASH_VERSION;
 
 const TRANSCRIPT_DOMAIN: &[u8] = b"metewand-local-tree\0";
 
+pub(crate) fn hash_file_contents(path: &Path) -> io::Result<(ContentDigest, u64)> {
+    hash_reader(File::open(path)?)
+}
+
+pub(crate) fn file_sha256(path: &Path) -> io::Result<String> {
+    Ok(crate::core::materialization::hex(
+        hash_file_contents(path)?.0,
+    ))
+}
+
+pub(crate) fn hash_reader(mut file: impl Read) -> io::Result<(ContentDigest, u64)> {
+    let mut hasher = Sha256::new();
+    let mut buffer = [0; 64 * 1024];
+    let mut size = 0;
+    loop {
+        let count = match file.read(&mut buffer) {
+            Ok(0) => break,
+            Ok(count) => count,
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+            Err(error) => return Err(error),
+        };
+        hasher.update(&buffer[..count]);
+        size += count as u64;
+    }
+    Ok((ContentDigest::new(hasher.finalize().into()), size))
+}
+
 /// Hashes all entries below a local directory using the version-1 tree
 /// transcript.
 ///
@@ -41,6 +68,19 @@ pub(crate) fn hash_tree(
     supplied_root: &Path,
     executable: &impl Fn(&str, &Metadata) -> bool,
 ) -> Result<ContentDigest, LocalTreeHashError> {
+    hash_tree_with(supplied_root, executable, false)
+}
+
+/// Hashes a tree of regular files and directories without opening links as files.
+pub(crate) fn hash_regular_tree(root: &Path) -> Result<ContentDigest, LocalTreeHashError> {
+    hash_tree_with(root, &|_, metadata| is_executable(metadata), true)
+}
+
+fn hash_tree_with(
+    supplied_root: &Path,
+    executable: &impl Fn(&str, &Metadata) -> bool,
+    regular_only: bool,
+) -> Result<ContentDigest, LocalTreeHashError> {
     let root = fs::canonicalize(supplied_root).map_err(|source| LocalTreeHashError::Root {
         path: supplied_root.to_path_buf(),
         source,
@@ -58,7 +98,12 @@ pub(crate) fn hash_tree(
     hasher.update(LOCAL_TREE_HASH_VERSION.to_be_bytes());
     hasher.update((entries.len() as u64).to_be_bytes());
     for entry in entries {
-        hash_entry(&root, &entry, &mut hasher, executable)?;
+        if regular_only && !matches!(entry.kind, EntryKind::Directory | EntryKind::File) {
+            return Err(LocalTreeHashError::UnsupportedEntryType {
+                path: entry.path.into(),
+            });
+        }
+        hash_entry(&root, &entry, &mut hasher, executable, regular_only)?;
     }
 
     Ok(ContentDigest::new(hasher.finalize().into()))
@@ -174,6 +219,7 @@ fn hash_entry(
     entry: &TreeEntry,
     hasher: &mut Sha256,
     executable: &impl Fn(&str, &Metadata) -> bool,
+    regular_only: bool,
 ) -> Result<(), LocalTreeHashError> {
     let path = Path::new(&entry.path);
     let absolute = root.join(path);
@@ -195,7 +241,7 @@ fn hash_entry(
         EntryKind::File => {
             hasher.update(b"f");
             hasher.update([u8::from(executable(&entry.path, &metadata))]);
-            hash_file(&absolute, path, metadata.len(), hasher)?;
+            hash_file(&absolute, path, metadata.len(), hasher, regular_only)?;
         }
         EntryKind::Symlink => {
             hasher.update(b"l");
@@ -240,9 +286,15 @@ fn hash_file(
     relative: &Path,
     expected_size: u64,
     hasher: &mut Sha256,
+    regular_only: bool,
 ) -> Result<(), LocalTreeHashError> {
     hasher.update(expected_size.to_be_bytes());
-    let mut file = File::open(absolute).map_err(|source| LocalTreeHashError::ReadFile {
+    let mut file = if regular_only {
+        crate::runtime::platform_fs::open_regular(absolute, fs::OpenOptions::new().read(true))
+    } else {
+        File::open(absolute)
+    }
+    .map_err(|source| LocalTreeHashError::ReadFile {
         path: relative.to_path_buf(),
         source,
     })?;

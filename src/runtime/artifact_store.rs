@@ -23,14 +23,13 @@ use crate::core::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use sha2::{Digest, Sha256};
 use tempfile::{Builder, TempDir};
 use thiserror::Error;
 
 use crate::runtime::{
     LOCAL_TREE_HASH_VERSION,
     dataset_materialization::MaterializedDataset,
-    local_tree::{LocalTreeHashError, hash_local_tree},
+    local_tree::{LocalTreeHashError, hash_regular_tree},
     publication::{
         PublicationError, publish, rename_no_replace, sync_directories, verify_finalized_directory,
         write_file,
@@ -563,8 +562,8 @@ pub(crate) fn verify_dataset_tree(
     expected: ContentDigest,
 ) -> Result<(), ArtifactStoreError> {
     real_directory(directory)?;
-    inventory(directory)?;
-    if hash_local_tree(directory)? != expected {
+    tree_entries(directory, false)?;
+    if hash_regular_tree(directory)? != expected {
         return Err(ArtifactStoreError::ChangedContent);
     }
     Ok(())
@@ -593,7 +592,16 @@ impl Entry {
 }
 
 fn inventory(root: &Path) -> Result<Vec<Entry>, ArtifactStoreError> {
-    fn visit(root: &Path, dir: &Path, entries: &mut Vec<Entry>) -> Result<(), ArtifactStoreError> {
+    tree_entries(root, true)
+}
+
+fn tree_entries(root: &Path, hash_contents: bool) -> Result<Vec<Entry>, ArtifactStoreError> {
+    fn visit(
+        root: &Path,
+        dir: &Path,
+        hash_contents: bool,
+        entries: &mut Vec<Entry>,
+    ) -> Result<(), ArtifactStoreError> {
         real_directory(dir)?;
         crate::runtime::platform_fs::validate_directory_names(dir)?;
         for entry in fs::read_dir(dir)? {
@@ -608,26 +616,23 @@ fn inventory(root: &Path) -> Result<Vec<Entry>, ArtifactStoreError> {
             let metadata = fs::symlink_metadata(&absolute)?;
             if crate::runtime::platform_fs::is_real_directory(&metadata) {
                 entries.push(Entry::Directory { path });
-                visit(root, &absolute, entries)?;
+                visit(root, &absolute, hash_contents, entries)?;
             } else if crate::runtime::platform_fs::is_regular_file(&metadata) {
-                let mut file = regular_file(&absolute)?;
-                let mut hasher = Sha256::new();
-                let mut size_bytes = 0;
-                let mut buffer = [0_u8; 64 * 1024];
-                loop {
-                    let count = match file.read(&mut buffer) {
-                        Ok(0) => break,
-                        Ok(count) => count,
-                        Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
-                        Err(error) => return Err(error.into()),
-                    };
-                    hasher.update(&buffer[..count]);
-                    size_bytes += count as u64;
-                }
+                let size_bytes = metadata.len();
+                let sha256 = if hash_contents {
+                    let (digest, size) =
+                        crate::runtime::local_tree::hash_reader(regular_file(&absolute)?)?;
+                    if size != size_bytes {
+                        return Err(ArtifactStoreError::ChangedContent);
+                    }
+                    hex(digest)
+                } else {
+                    String::new()
+                };
                 entries.push(Entry::File {
                     path,
                     size_bytes,
-                    sha256: hex(ContentDigest::new(hasher.finalize().into())),
+                    sha256,
                     executable: crate::runtime::platform_fs::is_executable(&metadata),
                 });
             } else {
@@ -637,7 +642,7 @@ fn inventory(root: &Path) -> Result<Vec<Entry>, ArtifactStoreError> {
         Ok(())
     }
     let mut entries = Vec::new();
-    visit(root, root, &mut entries)?;
+    visit(root, root, hash_contents, &mut entries)?;
     entries.sort_by(|a, b| a.path().as_bytes().cmp(b.path().as_bytes()));
     Ok(entries)
 }
@@ -647,8 +652,9 @@ fn copy_verified(
     target: &Path,
     expected: ContentDigest,
 ) -> Result<(), ArtifactStoreError> {
-    let entries = inventory(source)?;
-    if hash_local_tree(source)? != expected {
+    // The expected tree hash verifies file contents and modes at both boundaries.
+    let entries = tree_entries(source, false)?;
+    if hash_regular_tree(source)? != expected {
         return Err(ArtifactStoreError::ChangedContent);
     }
     if !target.exists() {
@@ -674,10 +680,10 @@ fn copy_verified(
             }
         }
     }
-    if inventory(source)? != entries
-        || inventory(target)? != entries
-        || hash_local_tree(source)? != expected
-        || hash_local_tree(target)? != expected
+    if tree_entries(source, false)? != entries
+        || tree_entries(target, false)? != entries
+        || hash_regular_tree(source)? != expected
+        || hash_regular_tree(target)? != expected
     {
         return Err(ArtifactStoreError::ChangedContent);
     }
@@ -701,7 +707,7 @@ fn verify_object(object: &Path, digest: ContentDigest) -> Result<(), ArtifactSto
         || marker.as_json()["tree_sha256"] != hex(digest)
         || serde_json::from_value::<Vec<Entry>>(marker.as_json()["entries"].clone())?
             != inventory(&object.join("data"))?
-        || hash_local_tree(object.join("data"))? != digest
+        || hash_regular_tree(&object.join("data"))? != digest
     {
         return Err(ArtifactStoreError::ChangedContent);
     }

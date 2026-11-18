@@ -19,10 +19,9 @@ use regex_automata::{
     util::syntax,
 };
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
 use thiserror::Error;
 
-use crate::runtime::local_tree::{LocalTreeHashError, hash_local_tree};
+use crate::runtime::local_tree::{LocalTreeHashError, hash_file_contents, hash_local_tree};
 
 /// A source bundle expanded to normalized logical repository paths.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -178,17 +177,18 @@ fn source_entry(root: &Path, path: &Path) -> Result<Value, SourceBundleIdentityE
             "tree_sha256": hex(digest.bytes()),
         }))
     } else if metadata.is_file() {
-        let contents =
-            fs::read(&absolute).map_err(|source| SourceBundleIdentityError::EntryRead {
+        let (digest, size) = hash_file_contents(&absolute).map_err(|source| {
+            SourceBundleIdentityError::EntryRead {
                 path: path.to_path_buf(),
                 source,
-            })?;
+            }
+        })?;
         let after =
             fs::metadata(&absolute).map_err(|source| SourceBundleIdentityError::EntryAccess {
                 path: path.to_path_buf(),
                 source,
             })?;
-        if metadata.len() != contents.len() as u64 || metadata.len() != after.len() {
+        if metadata.len() != size || metadata.len() != after.len() {
             return Err(SourceBundleIdentityError::ChangedDuringRead {
                 path: path.to_path_buf(),
             });
@@ -197,7 +197,7 @@ fn source_entry(root: &Path, path: &Path) -> Result<Value, SourceBundleIdentityE
             "executable": is_executable(&metadata),
             "kind": "file",
             "path": path_text,
-            "sha256": hex(&Sha256::digest(contents)),
+            "sha256": hex(digest.bytes()),
         }))
     } else if metadata.file_type().is_symlink() {
         let target =

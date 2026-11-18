@@ -65,14 +65,18 @@ benchmark](examples/overhead)
   65 snapshots, wall time fell from 41 to 3 seconds and peak CLI RSS fell from
   162 to 69 MiB. The trace, snapshots, and buffer manifest matched byte for
   byte.
-- [ ] Hash source bundles and worker executables in chunks where the code reads
-  whole files. Reuse snapshots of fixed datasets and worker sources across
-  candidates. Register cache roots once per object and run. Consolidate
-  repeated dataset tree scans while preserving mutation detection and timing
-  scopes. Reuse committed inputs on resume when their identities can be
-  verified from saved evidence. Measure a large fixed dataset, cached and
-  uncached generated datasets, and resume with every selected slot already
-  accepted.
+- [x] Hash source files and worker executables in chunks. Share fixed dataset
+  and worker source snapshots across candidates, register cache roots once per
+  object and run, and consolidate redundant dataset scans while preserving
+  mutation checks and timing scopes. On resume without a persistent cache,
+  reuse committed dataset and preparation identities when saved evidence
+  verifies that all selected slots are accepted. With 64 MiB datasets in
+  release builds, the fixed case with eight candidates and one attempt fell
+  from 7.72 to 3.28 seconds and from 99 to 35 MiB peak CLI RSS. The two-attempt
+  generated case fell from 7.01 to 5.92 seconds without a cache and from 6.98
+  to 5.33 seconds with a primed cache. Resuming both accepted slots without a
+  cache fell from 0.85 to 0.07 seconds. Input and slot identities and scientific
+  outputs matched.
 - [ ] Reuse parameter expansion from repository validation. Apply name filters
   before building logical slots. Index observation slots within each
   specification. Resolve and register large schedules in batches to bound

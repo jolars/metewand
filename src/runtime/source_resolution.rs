@@ -189,12 +189,6 @@ impl ResolvedSource {
         }
         Ok(())
     }
-
-    /// Transfers ownership of the verified staging directory to the caller.
-    #[must_use]
-    pub fn into_directory(self) -> TempDir {
-        self.directory
-    }
 }
 
 /// Resolves an explicit request to verified files and provenance in private storage.
@@ -222,29 +216,7 @@ pub fn resolve_source(
             sources,
             expected,
         } => {
-            let root = fs::canonicalize(root)?;
-            let parent = fs::canonicalize(private_parent)?;
-            if source_bundle_overlaps_directory(&root, sources, &parent)? {
-                return Err(SourceResolutionError::StagingOverlapsSource);
-            }
-            if identify_source_bundle(&root, sources)? != *expected {
-                return Err(SourceResolutionError::ChangedSource);
-            }
-            let expanded = expand_source_bundle(&root, sources)?;
-            let directory = staging(private_parent)?;
-            let mut copied = Vec::<&Path>::new();
-            for path in expanded.paths() {
-                if copied.iter().any(|parent| path.starts_with(parent)) {
-                    continue;
-                }
-                copy_entry(&root.join(path), &directory.path().join(path))?;
-                copied.push(path);
-            }
-            if identify_source_bundle(&root, sources)? != *expected
-                || identify_source_bundle(directory.path(), sources)? != *expected
-            {
-                return Err(SourceResolutionError::ChangedSource);
-            }
+            let directory = stage_repository_sources(root, sources, *expected, private_parent)?;
             (
                 directory,
                 SourceOrigin::Repository {
@@ -318,6 +290,39 @@ pub fn resolve_source(
     };
     resolved.verify()?;
     Ok(resolved)
+}
+
+/// Copies a checked repository selection and verifies the source and copy.
+pub(crate) fn stage_repository_sources(
+    root: &Path,
+    sources: &[RepositoryPath],
+    expected: RecordId<SourceBundleResource>,
+    private_parent: &Path,
+) -> Result<TempDir, SourceResolutionError> {
+    let root = fs::canonicalize(root)?;
+    let parent = fs::canonicalize(private_parent)?;
+    if source_bundle_overlaps_directory(&root, sources, &parent)? {
+        return Err(SourceResolutionError::StagingOverlapsSource);
+    }
+    if identify_source_bundle(&root, sources)? != expected {
+        return Err(SourceResolutionError::ChangedSource);
+    }
+    let expanded = expand_source_bundle(&root, sources)?;
+    let directory = staging(private_parent)?;
+    let mut copied = Vec::<&Path>::new();
+    for path in expanded.paths() {
+        if copied.iter().any(|parent| path.starts_with(parent)) {
+            continue;
+        }
+        copy_entry(&root.join(path), &directory.path().join(path))?;
+        copied.push(path);
+    }
+    if identify_source_bundle(&root, sources)? != expected
+        || identify_source_bundle(directory.path(), sources)? != expected
+    {
+        return Err(SourceResolutionError::ChangedSource);
+    }
+    Ok(directory)
 }
 
 fn staging(parent: &Path) -> Result<TempDir, io::Error> {

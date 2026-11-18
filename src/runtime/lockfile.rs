@@ -332,7 +332,7 @@ fn source_files_excluding(
             SourceEntry {
                 sha256: metadata
                     .is_file()
-                    .then(|| fs::read(&path).map(|b| sha256(&b)))
+                    .then(|| crate::runtime::local_tree::file_sha256(&path))
                     .transpose()?,
                 executable: metadata.is_file() && executable,
             },

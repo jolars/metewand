@@ -260,6 +260,24 @@ fn problem_preparation_is_shared_cached_and_bound_to_problem_settings() {
 }
 
 #[test]
+fn accepted_run_reuses_committed_dataset_and_problem_preparation() {
+    let root = repository();
+    let (success, original) = invoke(root.path(), &["run", "--output-dir", "run"]);
+    assert!(success, "{original}");
+    assert_eq!(original["data"]["summary"]["accepted_attempts"], 8);
+    let events = trace(root.path());
+
+    let (success, resumed) = invoke(root.path(), &["run", "--output-dir", "run"]);
+    assert!(success, "{resumed}");
+    assert_eq!(resumed["data"]["summary"]["attempt_slots"], 0);
+    assert_eq!(
+        resumed["data"]["comparison"],
+        original["data"]["comparison"]
+    );
+    assert_eq!(trace(root.path()), events);
+}
+
+#[test]
 fn problem_preparation_outputs_must_satisfy_the_declared_schema() {
     let root = repository();
     let path = root.path().join("metewand.yaml");

@@ -7,6 +7,21 @@ use super::{
     resolution::{ResolvedBatch, ResolvedRun, canonical},
 };
 
+fn is_logical_id(id: &str) -> bool {
+    [
+        "mw1-logical-candidate-",
+        "mw1-logical-specification-",
+        "mw1-logical-observation-slot-",
+        "mw1-logical-attempt-slot-",
+    ]
+    .iter()
+    .any(|prefix| id.starts_with(prefix))
+}
+
+pub(super) fn preselected_ids(ids: &[String]) -> bool {
+    ids.iter().all(|id| is_logical_id(id))
+}
+
 pub(super) fn preselect(plan: &LogicalPlan, options: &RunOptions) -> Result<LogicalPlan, RunError> {
     if options
         .max_attempts
@@ -51,19 +66,10 @@ pub(super) fn preselect(plan: &LogicalPlan, options: &RunOptions) -> Result<Logi
     let logical = options
         .selected_ids
         .iter()
-        .filter(|id| {
-            [
-                "mw1-logical-candidate-",
-                "mw1-logical-specification-",
-                "mw1-logical-observation-slot-",
-                "mw1-logical-attempt-slot-",
-            ]
-            .iter()
-            .any(|prefix| id.starts_with(prefix))
-        })
+        .filter(|id| is_logical_id(id))
         .collect::<BTreeSet<_>>();
     // Resolved identities require acquisition before their dependencies are known.
-    if options.selected_ids.iter().any(|id| !logical.contains(id)) {
+    if !preselected_ids(&options.selected_ids) {
         return Ok(plan.clone());
     }
     let mut matched = BTreeSet::new();

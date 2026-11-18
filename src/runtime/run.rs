@@ -247,6 +247,7 @@ pub(crate) fn run_repository_with_progress(
         cache_directory.as_deref(),
         &settings.runtime,
         locked.as_ref(),
+        resume && cache_directory.is_none() && selection::preselected_ids(&options.selected_ids),
         &mut progress,
     )?;
     progress(&RunProgress::Preparing(PreparationProgress {
@@ -257,7 +258,9 @@ pub(crate) fn run_repository_with_progress(
         candidate.validate_destination(&output_directory)?;
     }
     adaptive::bind_groups(&mut resolved.candidates)?;
-    let mut store = if resume {
+    let mut store = if let Some(store) = resolved.resume_store.take() {
+        Some(store)
+    } else if resume {
         Some(RunStore::open(&output_directory)?)
     } else {
         None
@@ -266,7 +269,12 @@ pub(crate) fn run_repository_with_progress(
     if options.selected_ids.is_empty() {
         selected.extend(resolved.schedule.iter().copied());
     }
-    for id in &options.selected_ids {
+    // An empty resolved run here means the preselected slots were all accepted.
+    for id in options
+        .selected_ids
+        .iter()
+        .filter(|_| !resolved.candidates.is_empty())
+    {
         let previous = store
             .as_ref()
             .map(|store| store.slots_for_record(id))
@@ -314,6 +322,15 @@ pub(crate) fn run_repository_with_progress(
     if resume {
         store.recover(attempt::now)?;
     }
+    let mut retained = std::collections::BTreeSet::new();
+    let mut retain_inputs = |candidate: &resolution::ResolvedCandidate| -> Result<(), RunError> {
+        for input in std::iter::once(&candidate.dataset).chain(&candidate.preparation) {
+            if retained.insert(input.artifact.digest()) {
+                input.artifact.retain_for_run(&output_directory)?;
+            }
+        }
+        Ok(())
+    };
     for candidate in &resolved.candidates {
         if candidate.applicability.record.checked_inputs.is_some() {
             store.register_applicability(&candidate.applicability)?;
@@ -325,13 +342,7 @@ pub(crate) fn run_repository_with_progress(
                 .is_some_and(|p| p.policy.adaptive_budget.is_some())
             && !candidate.measurements.is_empty()
         {
-            candidate
-                .dataset
-                .artifact
-                .retain_for_run(&output_directory)?;
-            if let Some(preparation) = &candidate.preparation {
-                preparation.artifact.retain_for_run(&output_directory)?;
-            }
+            retain_inputs(candidate)?;
         }
     }
     let (adaptive_budgets, calibration_attempts) = adaptive::calibrate(
@@ -394,13 +405,7 @@ pub(crate) fn run_repository_with_progress(
             continue;
         }
         if cache_directory.is_some() {
-            resolved.candidates[candidate]
-                .dataset
-                .artifact
-                .retain_for_run(&output_directory)?;
-            if let Some(preparation) = &resolved.candidates[candidate].preparation {
-                preparation.artifact.retain_for_run(&output_directory)?;
-            }
+            retain_inputs(&resolved.candidates[candidate])?;
         }
         if resolved.candidates[candidate].streaming_profile.is_some() {
             store.register_streaming(
