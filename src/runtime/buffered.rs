@@ -2,18 +2,26 @@
 
 use crate::core::{
     canonical::{CanonicalValue, MAX_SAFE_INTEGER},
+    materialization::hex,
     profile::*,
+    records::ContentDigest,
 };
 use crate::runtime::worker_sdk::{WorkerError, WorkerResult};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
     time::Instant,
 };
+
+mod validation;
+pub(crate) use validation::validate_buffer;
+
+const TRACE_PATH: &str = "trace.jsonl";
+const PLACEHOLDER_DIGEST: &str = "0000000000000000000000000000000000000000000000000000000000000000";
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
@@ -36,8 +44,10 @@ pub struct BufferedTrace {
     points: Vec<TracePoint>,
     snapshots: Vec<(BufferedSnapshot, Vec<u8>)>,
     trace_bytes: u64,
-    snapshot_bytes: u64,
-    reached: Vec<f64>,
+    size: BufferSize,
+    thresholds: Vec<f64>,
+    all_threshold_bytes: u64,
+    reached: usize,
     stopped: Option<StopReason>,
     finished: bool,
     clock: Box<dyn Fn() -> u64>,
@@ -61,6 +71,90 @@ fn bytes(value: Value) -> WorkerResult<Vec<u8>> {
     Ok(CanonicalValue::try_from(value)?.to_canonical_bytes()?)
 }
 
+fn encoded_len(value: impl Serialize) -> WorkerResult<u64> {
+    Ok(bytes(serde_json::to_value(value)?)?.len() as u64)
+}
+
+fn manifest_header(
+    scope: &str,
+    trace: PathBuf,
+    total: u64,
+    reason: StopReason,
+) -> BufferedManifest {
+    BufferedManifest {
+        schema_version: 1,
+        complete: true,
+        clock: "monotonic_ns".into(),
+        instrumented_scope: scope.into(),
+        instrumented_total_time_ns: total,
+        stop_reason: reason,
+        trace,
+        snapshots: vec![],
+        files: vec![],
+    }
+}
+
+/// Size of the payload plus its canonical manifest with the reserved header.
+#[derive(Clone, Copy)]
+struct BufferSize {
+    manifest_base: u64,
+    snapshot_entries: u64,
+    other_files: u64,
+}
+
+impl BufferSize {
+    fn new(scope: &str, trace: BufferFile) -> WorkerResult<Self> {
+        let mut manifest = manifest_header(
+            scope,
+            trace.path.clone(),
+            MAX_SAFE_INTEGER,
+            StopReason::ImplementationStopped,
+        );
+        manifest.files.push(BufferFile {
+            size_bytes: 0,
+            ..trace
+        });
+        Ok(Self {
+            // Replace the one digit for `size_bytes: 0` with the current trace size.
+            manifest_base: encoded_len(&manifest)? - 1,
+            snapshot_entries: 0,
+            other_files: 0,
+        })
+    }
+
+    fn snapshot(&mut self, entry_bytes: u64) {
+        self.snapshot_entries += entry_bytes + u64::from(self.snapshot_entries != 0);
+    }
+
+    fn file_charge(entry: &BufferFile) -> WorkerResult<u64> {
+        // The files array already contains the trace, so each other entry adds a comma.
+        Ok(entry.size_bytes + encoded_len(entry)? + 1)
+    }
+
+    fn total(self, trace_bytes: u64) -> u64 {
+        let digits = u64::from(trace_bytes.checked_ilog10().unwrap_or(0)) + 1;
+        self.manifest_base + self.snapshot_entries + self.other_files + digits + trace_bytes
+    }
+}
+
+fn file_entry(path: PathBuf, size_bytes: u64, sha256: &str) -> BufferFile {
+    BufferFile {
+        path,
+        size_bytes,
+        sha256: sha256.into(),
+    }
+}
+
+// The policy orders thresholds from least to most demanding. Once a threshold
+// has been reached, only the uncrossed suffix can trigger another capture.
+fn crossings<'a>(policy: &ProfilePolicy, remaining: &'a [f64], metric: Option<f64>) -> &'a [f64] {
+    let count = remaining
+        .iter()
+        .take_while(|&&t| metric.is_some_and(|v| policy.reaches(v, t)))
+        .count();
+    &remaining[..count]
+}
+
 impl BufferedTrace {
     pub fn new(profile: SelectedBufferedProfile, directory: PathBuf) -> WorkerResult<Self> {
         let mut trace = Self::with_clock(profile, directory, || 0)?;
@@ -78,14 +172,22 @@ impl BufferedTrace {
         profile.policy.validate().map_err(invalid)?;
         profile.policy.validate_buffered().map_err(invalid)?;
         profile.check_schedule.validate().map_err(invalid)?;
+        let size = BufferSize::new(
+            &profile.instrumented_scope,
+            file_entry(TRACE_PATH.into(), 0, PLACEHOLDER_DIGEST),
+        )?;
+        let thresholds = profile.policy.thresholds();
+        let all_threshold_bytes = encoded_len(&thresholds)? - 2;
         Ok(Self {
             profile,
             directory,
             points: vec![],
             snapshots: vec![],
             trace_bytes: 0,
-            snapshot_bytes: 0,
-            reached: vec![],
+            size,
+            thresholds,
+            all_threshold_bytes,
+            reached: 0,
             stopped: None,
             finished: false,
             clock: Box::new(clock),
@@ -179,16 +281,11 @@ impl BufferedTrace {
                     .ok_or_else(|| invalid("provisional target metric must be finite and numeric"))
             })
             .transpose()?;
-        let crossed: Vec<_> = self
-            .profile
-            .policy
-            .thresholds()
-            .into_iter()
-            .filter(|t| {
-                !self.reached.contains(t)
-                    && target_value.is_some_and(|v| self.profile.policy.reaches(v, *t))
-            })
-            .collect();
+        let crossed = crossings(
+            &self.profile.policy,
+            &self.thresholds[self.reached..],
+            target_value,
+        );
         let mut reason = if target_value
             .zip(self.profile.policy.threshold)
             .is_some_and(|(v, t)| self.profile.policy.reaches(v, t))
@@ -222,118 +319,85 @@ impl BufferedTrace {
             instrumented_time_ns: elapsed,
             terminal: reason.is_some(),
         };
-        let mut encoded = bytes(serde_json::to_value(&point)?)?;
+        let mut trace_bytes = self.trace_bytes + encoded_len(&point)? + 1;
         // Account for the complete manifest, including its file inventory, before
         // allowing regular collection to consume the terminal allowance.
         let regular_limit =
             self.profile.policy.max_buffer_bytes - self.profile.policy.terminal_reserve_bytes;
-        if reason.is_none() && self.estimated_bytes(encoded.len() as u64 + 1, None)? > regular_limit
-        {
+        if reason.is_none() && self.size.total(trace_bytes) > regular_limit {
             reason = Some(StopReason::ByteLimit);
             point.terminal = true;
-            encoded = bytes(serde_json::to_value(&point)?)?;
+            trace_bytes -= 1; // `true` is one byte shorter than `false`.
         }
-        let mut captured = if capture || reason.is_some() {
-            Some(bytes(
-                json!({"schema_version":1,"data":snapshot()?,"files":[]}),
-            )?)
-        } else {
-            None
+        let captured = (capture || reason.is_some())
+            .then(|| snapshot().and_then(snapshot_bytes))
+            .transpose()?;
+        let estimate = match &captured {
+            Some(data) => self.estimate_capture(data.len() as u64)?,
+            None => self.size,
         };
-        if captured.as_ref().is_some_and(|data| {
-            !CanonicalValue::from_slice(data)
-                .expect("encoded result")
-                .as_json()["data"]
-                .is_object()
-        }) {
-            return Err(invalid("snapshot data must be an object"));
-        }
-        if reason.is_none()
-            && self.estimated_bytes(encoded.len() as u64 + 1, captured.as_deref())? > regular_limit
-        {
+        if reason.is_none() && estimate.total(trace_bytes) > regular_limit {
             reason = Some(StopReason::ByteLimit);
             point.terminal = true;
-            encoded = bytes(serde_json::to_value(&point)?)?;
+            trace_bytes -= 1;
         }
-        if self.estimated_bytes(encoded.len() as u64 + 1, captured.as_deref())?
-            > self.profile.policy.max_buffer_bytes
-        {
+        if estimate.total(trace_bytes) > self.profile.policy.max_buffer_bytes {
             return Err(limit("terminal check and snapshot exceed max-buffer-bytes"));
         }
-        self.trace_bytes += encoded.len() as u64 + 1;
-        self.points.push(point);
-        if let Some(data) = captured.take() {
-            if self.snapshots.len() as u64 >= self.profile.policy.max_observations {
-                return Err(limit("terminal snapshot exceeds max-observations"));
-            }
-            let ordinal = self.snapshots.len() as u64;
-            self.snapshot_bytes += data.len() as u64;
-            self.snapshots.push((
-                BufferedSnapshot {
-                    capture_ordinal: ordinal,
-                    trace_index: self.points.len() as u64 - 1,
-                    thresholds: crossed.clone(),
-                    manifest: format!("snapshots/{ordinal}/result.json").into(),
-                },
-                data,
-            ));
+        let crossed_count = crossed.len();
+        if let Some(data) = captured {
+            self.capture(self.points.len() as u64, crossed.to_vec(), data)?;
         }
-        self.reached.extend(crossed);
+        self.trace_bytes = trace_bytes;
+        self.points.push(point);
+        self.reached += crossed_count;
         self.stopped = reason.clone();
         Ok(reason.map_or(Decision::Continue, Decision::Stop))
     }
 
-    fn manifest(&self, total: u64, reason: StopReason, files: Vec<BufferFile>) -> BufferedManifest {
-        BufferedManifest {
-            schema_version: 1,
-            complete: true,
-            clock: "monotonic_ns".into(),
-            instrumented_scope: self.profile.instrumented_scope.clone(),
-            instrumented_total_time_ns: total,
-            stop_reason: reason,
-            trace: "trace.jsonl".into(),
-            snapshots: self.snapshots.iter().map(|(s, _)| s.clone()).collect(),
-            files,
+    fn next_snapshot(&self, trace_index: u64, thresholds: Vec<f64>) -> BufferedSnapshot {
+        let ordinal = self.snapshots.len() as u64;
+        BufferedSnapshot {
+            capture_ordinal: ordinal,
+            trace_index,
+            thresholds,
+            manifest: format!("snapshots/{ordinal}/result.json").into(),
         }
     }
 
-    fn estimated_bytes(
-        &self,
-        extra_trace: u64,
-        extra_snapshot: Option<&[u8]>,
-    ) -> WorkerResult<u64> {
-        let mut files = vec![BufferFile {
-            path: "trace.jsonl".into(),
-            sha256: "0".repeat(64),
-            size_bytes: self.trace_bytes + extra_trace,
-        }];
-        files.extend(self.snapshots.iter().map(|(s, b)| BufferFile {
-            path: s.manifest.clone(),
-            sha256: "0".repeat(64),
-            size_bytes: b.len() as u64,
-        }));
-        let mut manifest =
-            self.manifest(MAX_SAFE_INTEGER, StopReason::ImplementationStopped, files);
-        if let Some(data) = extra_snapshot {
-            let ordinal = self.snapshots.len() as u64;
-            let path: PathBuf = format!("snapshots/{ordinal}/result.json").into();
-            manifest.files.push(BufferFile {
-                path: path.clone(),
-                sha256: "0".repeat(64),
-                size_bytes: data.len() as u64,
-            });
-            manifest.snapshots.push(BufferedSnapshot {
-                capture_ordinal: ordinal,
-                trace_index: self.points.len() as u64,
-                thresholds: self.profile.policy.thresholds(),
-                manifest: path,
-            });
+    fn estimate_capture(&self, payload_bytes: u64) -> WorkerResult<BufferSize> {
+        let mut size = self.size;
+        // Budget for every configured threshold on a prospective capture, as
+        // before. The committed size then charges only the recorded thresholds.
+        let snapshot = self.next_snapshot(self.points.len() as u64, vec![]);
+        size.snapshot(encoded_len(&snapshot)? + self.all_threshold_bytes);
+        size.other_files += BufferSize::file_charge(&file_entry(
+            snapshot.manifest,
+            payload_bytes,
+            PLACEHOLDER_DIGEST,
+        ))?;
+        Ok(size)
+    }
+
+    fn capture(
+        &mut self,
+        trace_index: u64,
+        thresholds: Vec<f64>,
+        data: Vec<u8>,
+    ) -> WorkerResult<()> {
+        if self.snapshots.len() as u64 >= self.profile.policy.max_observations {
+            return Err(limit("terminal snapshot exceeds max-observations"));
         }
-        Ok(self.trace_bytes
-            + extra_trace
-            + self.snapshot_bytes
-            + extra_snapshot.map_or(0, |b| b.len() as u64)
-            + bytes(serde_json::to_value(manifest)?)?.len() as u64)
+        let snapshot = self.next_snapshot(trace_index, thresholds);
+        let entry_bytes = encoded_len(&snapshot)?;
+        self.size.other_files += BufferSize::file_charge(&file_entry(
+            snapshot.manifest.clone(),
+            data.len() as u64,
+            PLACEHOLDER_DIGEST,
+        ))?;
+        self.size.snapshot(entry_bytes);
+        self.snapshots.push((snapshot, data));
+        Ok(())
     }
 
     pub fn finish(
@@ -358,24 +422,15 @@ impl BufferedTrace {
                 .last()
                 .is_none_or(|(s, _)| s.trace_index != self.points.len() as u64 - 1)
             {
-                let data = bytes(json!({"schema_version":1,"data":snapshot()?,"files":[]}))?;
-                if self.estimated_bytes(0, Some(&data))? > self.profile.policy.max_buffer_bytes {
+                let data = snapshot_bytes(snapshot()?)?;
+                if self
+                    .estimate_capture(data.len() as u64)?
+                    .total(self.trace_bytes)
+                    > self.profile.policy.max_buffer_bytes
+                {
                     return Err(limit("terminal snapshot does not fit"));
                 }
-                let ordinal = self.snapshots.len() as u64;
-                if ordinal >= self.profile.policy.max_observations {
-                    return Err(limit("terminal snapshot count exceeded"));
-                }
-                self.snapshot_bytes += data.len() as u64;
-                self.snapshots.push((
-                    BufferedSnapshot {
-                        capture_ordinal: ordinal,
-                        trace_index: self.points.len() as u64 - 1,
-                        thresholds: vec![],
-                        manifest: format!("snapshots/{ordinal}/result.json").into(),
-                    },
-                    data,
-                ));
+                self.capture(self.points.len() as u64 - 1, vec![], data)?;
             }
             self.points.last_mut().expect("checked point").terminal = true;
         } else {
@@ -426,23 +481,25 @@ impl BufferedTrace {
             trace.extend(bytes(serde_json::to_value(point)?)?);
             trace.push(b'\n');
         }
-        fs::write(self.directory.join("trace.jsonl"), &trace)?;
-        let mut files = vec![file("trace.jsonl".into(), &trace)];
+        fs::write(self.directory.join(TRACE_PATH), &trace)?;
+        let mut files = vec![file(TRACE_PATH.into(), &trace)];
         for (snapshot, data) in &self.snapshots {
             let path = self.directory.join(&snapshot.manifest);
             fs::create_dir_all(path.parent().expect("snapshot parent"))?;
             fs::write(path, data)?;
             files.push(file(snapshot.manifest.clone(), data));
         }
-        let manifest = self.manifest(
+        let payload_bytes: u64 = files.iter().map(|file| file.size_bytes).sum();
+        let mut manifest = manifest_header(
+            &self.profile.instrumented_scope,
+            TRACE_PATH.into(),
             self.total,
             self.stopped.clone().expect("finished stop reason"),
-            files,
         );
+        manifest.snapshots = self.snapshots.iter().map(|(s, _)| s.clone()).collect();
+        manifest.files = files;
         let data = bytes(serde_json::to_value(manifest)?)?;
-        if trace.len() as u64 + self.snapshot_bytes + data.len() as u64
-            > self.profile.policy.max_buffer_bytes
-        {
+        if payload_bytes + data.len() as u64 > self.profile.policy.max_buffer_bytes {
             return Err(limit("completed buffer exceeds byte bound"));
         }
         fs::write(self.directory.join("buffer.json"), data)?;
@@ -453,302 +510,14 @@ impl BufferedTrace {
 fn file(path: PathBuf, data: &[u8]) -> BufferFile {
     BufferFile {
         path,
-        sha256: Sha256::digest(data)
-            .iter()
-            .map(|b| format!("{b:02x}"))
-            .collect(),
+        sha256: hex(ContentDigest::new(Sha256::digest(data).into())),
         size_bytes: data.len() as u64,
     }
 }
 
-/// Validates a completed buffer before any snapshot can become an observation.
-pub fn validate_buffer(
-    root: &Path,
-    path: &Path,
-    profile: &SelectedBufferedProfile,
-) -> Result<(BufferedManifest, Vec<TracePoint>), String> {
-    let fail = |e: std::io::Error| e.to_string();
-    profile.policy.validate()?;
-    profile.policy.validate_buffered()?;
-    let mut actual = BTreeMap::new();
-    inventory_files(root, root, &mut actual)?;
-    let total = actual
-        .values()
-        .try_fold(0u64, |sum, value| sum.checked_add(*value))
-        .ok_or("buffer size overflow")?;
-    if total > profile.policy.max_buffer_bytes {
-        return Err("buffer exceeds max-buffer-bytes".into());
+fn snapshot_bytes(data: Value) -> WorkerResult<Vec<u8>> {
+    if !data.is_object() {
+        return Err(invalid("snapshot data must be an object"));
     }
-    let inventory = crate::runtime::local_tree::hash_local_tree(root).map_err(|e| e.to_string())?;
-    safe_path(path)?;
-    let data = fs::read(root.join(path)).map_err(fail)?;
-    let canonical = CanonicalValue::from_slice(&data).map_err(|e| e.to_string())?;
-    let manifest: BufferedManifest =
-        serde_json::from_value(canonical.as_json().clone()).map_err(|e| e.to_string())?;
-    if manifest.schema_version != 1
-        || !manifest.complete
-        || manifest.clock != "monotonic_ns"
-        || manifest.instrumented_scope != profile.instrumented_scope
-        || manifest.instrumented_total_time_ns > MAX_SAFE_INTEGER
-    {
-        return Err("invalid buffer version, completion, clock, scope, or total duration".into());
-    }
-    actual.remove(path);
-    let mut declared = BTreeSet::new();
-    for entry in &manifest.files {
-        safe_path(&entry.path)?;
-        if !declared.insert(entry.path.clone())
-            || actual.get(&entry.path) != Some(&entry.size_bytes)
-        {
-            return Err("duplicate, missing, or incorrectly sized buffer file".into());
-        }
-        let data = fs::read(root.join(&entry.path)).map_err(fail)?;
-        if file(entry.path.clone(), &data).sha256 != entry.sha256 {
-            return Err("buffer file hash mismatch".into());
-        }
-    }
-    if declared != actual.keys().cloned().collect() {
-        return Err("buffer contains undeclared files".into());
-    }
-    if !declared.contains(&manifest.trace) {
-        return Err("trace is not declared".into());
-    }
-    let trace = fs::read(root.join(&manifest.trace)).map_err(fail)?;
-    if !trace.ends_with(b"\n") {
-        return Err("trace must end with a complete JSONL row".into());
-    }
-    let mut points: Vec<TracePoint> = vec![];
-    for line in trace.split(|b| *b == b'\n').filter(|l| !l.is_empty()) {
-        let value = CanonicalValue::from_slice(line).map_err(|e| e.to_string())?;
-        points.push(serde_json::from_value(value.as_json().clone()).map_err(|e| e.to_string())?);
-        if points.len() as u64 > profile.policy.max_trace_points {
-            return Err("trace point bound exceeded".into());
-        }
-    }
-    if points.is_empty()
-        || !points.last().expect("nonempty").terminal
-        || points[..points.len() - 1].iter().any(|p| p.terminal)
-    {
-        return Err("buffer requires exactly one terminal check at its end".into());
-    }
-    let mut expected = profile.check_schedule.next_after(None);
-    for (i, p) in points.iter().enumerate() {
-        if p.check_index > MAX_SAFE_INTEGER
-            || p.instrumented_time_ns > manifest.instrumented_total_time_ns
-            || !p.provisional_metrics.is_object()
-            || (!p.terminal && Some(p.check_index) != expected)
-            || (p.terminal && expected.is_some_and(|n| p.check_index > n))
-            || p.work.values().any(|v| *v > MAX_SAFE_INTEGER)
-        {
-            return Err("invalid trace clock, progress, metrics, or check schedule".into());
-        }
-        if let Some(previous) = i.checked_sub(1).map(|j| &points[j])
-            && (p.check_index <= previous.check_index
-                || p.instrumented_time_ns < previous.instrumented_time_ns
-                || previous
-                    .work
-                    .iter()
-                    .any(|(k, v)| p.work.get(k).is_none_or(|n| n < v)))
-        {
-            return Err("trace progress, times, and work counts must be monotonic".into());
-        }
-        if let Some(metric) = &profile.policy.metric
-            && p.provisional_metrics
-                .get(metric)
-                .and_then(Value::as_f64)
-                .is_none_or(|v| !v.is_finite())
-        {
-            return Err("trace target metric must be finite and numeric".into());
-        }
-        if !p.terminal
-            && (p.instrumented_time_ns >= profile.policy.active_time_ns()?
-                || profile
-                    .policy
-                    .metric
-                    .as_ref()
-                    .zip(profile.policy.threshold)
-                    .is_some_and(|(m, t)| {
-                        p.provisional_metrics[m]
-                            .as_f64()
-                            .is_some_and(|v| profile.policy.reaches(v, t))
-                    }))
-        {
-            return Err("execution continued after a required local stop".into());
-        }
-        expected = profile.check_schedule.next_after(Some(p.check_index));
-    }
-    if manifest.snapshots.is_empty()
-        || manifest.snapshots.len() as u64 > profile.policy.max_observations
-    {
-        return Err("snapshot count is empty or exceeds bound".into());
-    }
-    if profile.policy.metric.is_none() && manifest.snapshots.len() != points.len() {
-        return Err("fixed-count profiles must save every checked iterate".into());
-    }
-    let mut seen = BTreeSet::new();
-    let mut thresholds = vec![];
-    for (i, snapshot) in manifest.snapshots.iter().enumerate() {
-        let index = usize::try_from(snapshot.trace_index).map_err(|_| "invalid trace reference")?;
-        if snapshot.capture_ordinal != i as u64
-            || index >= points.len()
-            || !seen.insert(index)
-            || !declared.contains(&snapshot.manifest)
-            || (i > 0 && snapshot.trace_index <= manifest.snapshots[i - 1].trace_index)
-        {
-            return Err("invalid snapshot ordinal, order, or trace reference".into());
-        }
-        for threshold in &snapshot.thresholds {
-            let metric = profile
-                .policy
-                .metric
-                .as_ref()
-                .and_then(|m| points[index].provisional_metrics[m].as_f64());
-            if !profile.policy.thresholds().contains(threshold)
-                || thresholds.contains(threshold)
-                || metric.is_none_or(|v| !profile.policy.reaches(v, *threshold))
-                || points[..index].iter().any(|p| {
-                    profile
-                        .policy
-                        .metric
-                        .as_ref()
-                        .and_then(|m| p.provisional_metrics[m].as_f64())
-                        .is_some_and(|v| profile.policy.reaches(v, *threshold))
-                })
-            {
-                return Err("invalid first-observed threshold claim".into());
-            }
-            thresholds.push(*threshold);
-        }
-    }
-    if manifest.snapshots.last().expect("nonempty").trace_index != points.len() as u64 - 1 {
-        return Err("terminal iterate requires a snapshot".into());
-    }
-    for threshold in profile.policy.thresholds() {
-        if points.iter().any(|p| {
-            profile
-                .policy
-                .metric
-                .as_ref()
-                .and_then(|m| p.provisional_metrics[m].as_f64())
-                .is_some_and(|v| profile.policy.reaches(v, threshold))
-        }) && !thresholds.contains(&threshold)
-        {
-            return Err("first threshold crossing was not saved".into());
-        }
-    }
-    let last = points.last().expect("terminal check");
-    match manifest.stop_reason {
-        StopReason::TargetReached
-            if profile
-                .policy
-                .threshold
-                .zip(
-                    profile
-                        .policy
-                        .metric
-                        .as_ref()
-                        .and_then(|m| last.provisional_metrics[m].as_f64()),
-                )
-                .is_none_or(|(t, v)| !profile.policy.reaches(v, t)) =>
-        {
-            return Err("unsubstantiated local target stop".into());
-        }
-        StopReason::FixedCount
-            if profile.policy.metric.is_some()
-                || manifest.snapshots.len() as u64 != profile.policy.max_observations =>
-        {
-            return Err("unsubstantiated fixed-count stop".into());
-        }
-        StopReason::TraceLimit if points.len() as u64 != profile.policy.max_trace_points => {
-            return Err("unsubstantiated trace-limit stop".into());
-        }
-        StopReason::ObservationLimit
-            if manifest.snapshots.len() as u64 != profile.policy.max_observations =>
-        {
-            return Err("unsubstantiated observation-limit stop".into());
-        }
-        StopReason::ActiveTimeLimit
-            if last.instrumented_time_ns < profile.policy.active_time_ns()? =>
-        {
-            return Err("unsubstantiated active-time stop".into());
-        }
-        _ => {}
-    }
-    let mut prefix_trace_bytes = 0u64;
-    for (index, line) in trace
-        .split(|b| *b == b'\n')
-        .filter(|l| !l.is_empty())
-        .enumerate()
-        .take(points.len() - 1)
-    {
-        prefix_trace_bytes += line.len() as u64 + 1;
-        let mut prefix = manifest.clone();
-        prefix.snapshots.retain(|s| s.trace_index <= index as u64);
-        let parents = prefix
-            .snapshots
-            .iter()
-            .map(|s| s.manifest.parent().expect("snapshot parent").to_owned())
-            .collect::<Vec<_>>();
-        prefix
-            .files
-            .retain(|f| f.path == manifest.trace || parents.iter().any(|p| f.path.starts_with(p)));
-        for file in &mut prefix.files {
-            if file.path == manifest.trace {
-                file.size_bytes = prefix_trace_bytes;
-            }
-        }
-        prefix.instrumented_total_time_ns = MAX_SAFE_INTEGER;
-        prefix.stop_reason = StopReason::ImplementationStopped;
-        let size = prefix.files.iter().map(|f| f.size_bytes).sum::<u64>()
-            + CanonicalValue::try_from(serde_json::to_value(prefix).map_err(|e| e.to_string())?)
-                .map_err(|e| e.to_string())?
-                .to_canonical_bytes()
-                .map_err(|e| e.to_string())?
-                .len() as u64;
-        if size > profile.policy.max_buffer_bytes - profile.policy.terminal_reserve_bytes {
-            return Err("regular collection consumed the terminal byte reserve".into());
-        }
-    }
-    if crate::runtime::local_tree::hash_local_tree(root).map_err(|e| e.to_string())? != inventory {
-        return Err("buffer changed during validation".into());
-    }
-    Ok((manifest, points))
-}
-
-fn safe_path(path: &Path) -> Result<(), String> {
-    let text = path.to_str().ok_or("buffer path must be UTF-8")?;
-    if text.is_empty()
-        || text.starts_with('/')
-        || text.contains(['\\', '\0'])
-        || text
-            .split('/')
-            .any(|p| p.is_empty() || p == "." || p == ".." || p.contains(':'))
-    {
-        return Err("buffer path must be normalized and relative".into());
-    }
-    Ok(())
-}
-fn inventory_files(
-    root: &Path,
-    dir: &Path,
-    files: &mut BTreeMap<PathBuf, u64>,
-) -> Result<(), String> {
-    for entry in fs::read_dir(dir).map_err(|e| e.to_string())? {
-        let entry = entry.map_err(|e| e.to_string())?;
-        let metadata = fs::symlink_metadata(entry.path()).map_err(|e| e.to_string())?;
-        let path = entry.path();
-        let relative = crate::runtime::platform_fs::relative_path(
-            path.strip_prefix(root).map_err(|e| e.to_string())?,
-        )
-        .map_err(|e| e.to_string())?;
-        safe_path(Path::new(&relative))?;
-        if metadata.is_dir() {
-            inventory_files(root, &path, files)?;
-        } else if metadata.is_file() {
-            files.insert(relative.into(), metadata.len());
-        } else {
-            return Err("buffer entries must be regular files or directories".into());
-        }
-    }
-    Ok(())
+    bytes(json!({"schema_version":1,"data":data,"files":[]}))
 }

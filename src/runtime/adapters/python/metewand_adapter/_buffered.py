@@ -10,6 +10,10 @@ from ._artifacts import _relative_path
 from ._canonical import MAX_SAFE_INTEGER, canonical_bytes, parse_json
 
 
+_TRACE_PATH = "trace.jsonl"
+_PLACEHOLDER_DIGEST = "0" * 64
+
+
 @dataclass(frozen=True)
 class Decision:
     reason: str | None = None
@@ -27,8 +31,12 @@ def _fail(message, code="operation_failed"):
     raise WorkerError(code, message)
 
 
+def _file_entry(path, size, digest):
+    return {"path": path, "sha256": digest, "size_bytes": size}
+
+
 def _file(path, data):
-    return {"path": path, "sha256": hashlib.sha256(data).hexdigest(), "size_bytes": len(data)}
+    return _file_entry(path, len(data), hashlib.sha256(data).hexdigest())
 
 
 class BufferedTrace:
@@ -46,13 +54,12 @@ class BufferedTrace:
         self.points = []
         self.snapshots = []
         self.data = []
-        self.reached = []
+        self._reached = 0
         self.reason = None
         self.finished = False
         self.adopted = None
         self.total = 0
         self.trace_bytes = 0
-        self.snapshot_bytes = 0
         for key in ("max-observations", "max-trace-points", "max-buffer-bytes", "terminal-reserve-bytes"):
             value = self.policy[key]
             if type(value) is not int or not 0 < value <= MAX_SAFE_INTEGER:
@@ -61,6 +68,12 @@ class BufferedTrace:
             _fail("Terminal reserve exceeds buffer capacity.")
         self.schedule = CheckSchedule(self.profile["check_schedule"])
         self.thresholds = self.policy.get("record-thresholds") or ([self.policy["threshold"]] if "threshold" in self.policy else [])
+        # Start with empty snapshots and a one-digit placeholder trace size.
+        files = [_file_entry(_TRACE_PATH, 0, _PLACEHOLDER_DIGEST)]
+        manifest = self._manifest(MAX_SAFE_INTEGER, "implementation_stopped", files)
+        self._manifest_base = len(canonical_bytes(manifest)) - 1
+        self._snapshot_bytes = 0
+        self._all_threshold_bytes = len(canonical_bytes(self.thresholds)) - 2
         expression = self.policy["max-active-time"].strip()
         for suffix, multiplier in (("ms", 1_000_000), ("s", 1_000_000_000), ("min", 60_000_000_000), ("h", 3_600_000_000_000)):
             if expression.endswith(suffix):
@@ -117,7 +130,11 @@ class BufferedTrace:
         value = metrics.get(metric) if metric else None
         if metric and (type(value) not in (int, float)):
             _fail("Provisional target metric must be finite and numeric.")
-        crossed = [t for t in self.thresholds if t not in self.reached and self._reaches(value, t)]
+        # Thresholds go from least to most demanding. Only new crossings advance.
+        end = self._reached
+        while end < len(self.thresholds) and self._reaches(value, self.thresholds[end]):
+            end += 1
+        crossed = self.thresholds[self._reached:end]
         reason = ("target_reached" if metric and self._reaches(value, self.policy["threshold"]) else
                   "implementation_stopped" if terminal else
                   "active_time_limit" if elapsed >= self.active_ns else
@@ -127,51 +144,59 @@ class BufferedTrace:
             reason = "observation_limit" if metric else "fixed_count"
         point = {"check_index": index, "work": parse_json(canonical_bytes(work)), "provisional_metrics": metrics,
                  "instrumented_time_ns": elapsed, "terminal": reason is not None}
-        extra = len(canonical_bytes(point)) + 1
+        trace_bytes = self.trace_bytes + len(canonical_bytes(point)) + 1
         regular = self.policy["max-buffer-bytes"] - self.policy["terminal-reserve-bytes"]
-        if reason is None and self._estimate(extra, None) > regular:
+        if reason is None and self._size(trace_bytes) > regular:
             reason = "byte_limit"
             point["terminal"] = True
-            extra = len(canonical_bytes(point)) + 1
+            trace_bytes -= 1  # true is one byte shorter than false.
         data = self._snapshot(snapshot) if capture or reason else None
-        if reason is None and self._estimate(extra, data) > regular:
+        estimate = self._estimate_capture(len(data)) if data is not None else 0
+        if reason is None and self._size(trace_bytes, estimate) > regular:
             reason = "byte_limit"
             point["terminal"] = True
-            extra = len(canonical_bytes(point)) + 1
-        if self._estimate(extra, data) > self.policy["max-buffer-bytes"]:
+            trace_bytes -= 1
+        if self._size(trace_bytes, estimate) > self.policy["max-buffer-bytes"]:
             _fail("Terminal check and snapshot exceed max-buffer-bytes.", "resource_limit")
-        self.trace_bytes += extra
-        self.points.append(point)
         if data is not None:
-            self._capture(data, crossed)
-        self.reached.extend(crossed)
+            self._capture(len(self.points), data, crossed)
+        self.trace_bytes = trace_bytes
+        self.points.append(point)
+        self._reached = end
         self.reason = reason
         return Decision(reason)
 
-    def _capture(self, data, thresholds):
+    def _next_snapshot(self, trace_index, thresholds):
         ordinal = len(self.snapshots)
-        if ordinal >= self.policy["max-observations"]:
+        return {"capture_ordinal": ordinal, "trace_index": trace_index,
+                "thresholds": thresholds, "manifest": f"snapshots/{ordinal}/result.json"}
+
+    def _capture(self, trace_index, data, thresholds):
+        if len(self.snapshots) >= self.policy["max-observations"]:
             _fail("Terminal snapshot exceeds max-observations.", "resource_limit")
-        self.snapshots.append({"capture_ordinal": ordinal, "trace_index": len(self.points) - 1,
-                               "thresholds": thresholds, "manifest": f"snapshots/{ordinal}/result.json"})
+        snapshot = self._next_snapshot(trace_index, thresholds)
+        self._snapshot_bytes += self._snapshot_charge(snapshot, len(data))
+        self.snapshots.append(snapshot)
         self.data.append(data)
-        self.snapshot_bytes += len(data)
 
     def _manifest(self, total, reason, files):
         return {"schema_version": 1, "complete": True, "clock": "monotonic_ns",
                 "instrumented_scope": self.profile["instrumented_scope"], "instrumented_total_time_ns": total,
-                "stop_reason": reason, "trace": "trace.jsonl", "snapshots": self.snapshots.copy(), "files": files}
+                "stop_reason": reason, "trace": _TRACE_PATH, "snapshots": self.snapshots.copy(), "files": files}
 
-    def _estimate(self, extra, data):
-        files = [{"path": "trace.jsonl", "sha256": "0" * 64, "size_bytes": self.trace_bytes + extra}]
-        files.extend({"path": s["manifest"], "sha256": "0" * 64, "size_bytes": len(b)} for s, b in zip(self.snapshots, self.data))
-        manifest = self._manifest(MAX_SAFE_INTEGER, "implementation_stopped", files)
-        if data is not None:
-            ordinal = len(self.snapshots)
-            path = f"snapshots/{ordinal}/result.json"
-            manifest["snapshots"].append({"capture_ordinal": ordinal, "trace_index": len(self.points), "thresholds": self.thresholds, "manifest": path})
-            files.append({"path": path, "sha256": "0" * 64, "size_bytes": len(data)})
-        return self.trace_bytes + extra + self.snapshot_bytes + (len(data) if data is not None else 0) + len(canonical_bytes(manifest))
+    def _snapshot_charge(self, snapshot, payload_bytes):
+        entry = _file_entry(snapshot["manifest"], payload_bytes, _PLACEHOLDER_DIGEST)
+        # Add a comma before each new file and between snapshot entries.
+        return (payload_bytes + len(canonical_bytes(entry)) + 1
+                + len(canonical_bytes(snapshot)) + bool(self.snapshots))
+
+    def _estimate_capture(self, payload_bytes):
+        # A prospective snapshot budgets for every configured threshold.
+        snapshot = self._next_snapshot(len(self.points), [])
+        return self._snapshot_charge(snapshot, payload_bytes) + self._all_threshold_bytes
+
+    def _size(self, trace_bytes, extra=0):
+        return trace_bytes + len(str(trace_bytes)) + self._manifest_base + self._snapshot_bytes + extra
 
     def finish(self, progress, measure, snapshot):
         if self.finished:
@@ -181,9 +206,9 @@ class BufferedTrace:
                 _fail("Terminal work changed without advancing progress.")
             if not self.snapshots or self.snapshots[-1]["trace_index"] != len(self.points) - 1:
                 data = self._snapshot(snapshot)
-                if self._estimate(0, data) > self.policy["max-buffer-bytes"]:
+                if self._size(self.trace_bytes, self._estimate_capture(len(data))) > self.policy["max-buffer-bytes"]:
                     _fail("Terminal snapshot does not fit.", "resource_limit")
-                self._capture(data, [])
+                self._capture(len(self.points) - 1, data, [])
             self.points[-1]["terminal"] = True
         else:
             self._check(progress, measure, snapshot, True)
@@ -207,15 +232,15 @@ class BufferedTrace:
             return self.adopted
         self.directory.mkdir(parents=True, exist_ok=True)
         trace = b"".join(canonical_bytes(p) + b"\n" for p in self.points)
-        (self.directory / "trace.jsonl").write_bytes(trace)
-        files = [_file("trace.jsonl", trace)]
+        (self.directory / _TRACE_PATH).write_bytes(trace)
+        files = [_file(_TRACE_PATH, trace)]
         for saved, data in zip(self.snapshots, self.data):
             path = self.directory / saved["manifest"]
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(data)
             files.append(_file(saved["manifest"], data))
         manifest = canonical_bytes(self._manifest(self.total, self.reason, files))
-        if len(trace) + self.snapshot_bytes + len(manifest) > self.policy["max-buffer-bytes"]:
+        if sum(entry["size_bytes"] for entry in files) + len(manifest) > self.policy["max-buffer-bytes"]:
             _fail("Completed buffer exceeds byte bound.", "resource_limit")
         (self.directory / "buffer.json").write_bytes(manifest)
         return "buffer.json"

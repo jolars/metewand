@@ -167,20 +167,20 @@ fn run_workers(
     event(ProfileEvent::Phase(
         crate::runtime::run_store::AttemptPhase::Validating,
     ))?;
-    let (manifest, trace) = crate::runtime::buffered::validate_buffer(
+    let buffer = crate::runtime::buffered::validate_buffer(
         result_dir.path(),
         Path::new(executed.manifest()),
         profile,
     )
     .map_err(FixedDatasetRunError::InvalidBuffer)?;
+    let manifest = buffer.manifest;
     if u128::from(manifest.instrumented_total_time_ns) > timed_wall_time.as_nanos() {
         return Err(FixedDatasetRunError::InvalidBuffer(
             "instrumented scope exceeds the executor-observed duration".into(),
         ));
     }
     let frozen = private_directory(request.private_root, "frozen-buffer-")?;
-    let digest = hash_local_tree(result_dir.path())
-        .map_err(|source| FixedDatasetRunError::ResultTreeHash { source })?;
+    let digest = buffer.tree_digest;
     crate::runtime::publication::copy_prepared(result_dir.path(), frozen.path())
         .map_err(FixedDatasetRunError::PrivateDirectory)?;
     verify_result_tree(result_dir.path(), digest)?;
@@ -265,7 +265,7 @@ fn run_workers(
     ))?;
     let implementation_output = implementation.log_snapshot();
     let mut evaluation_total = Duration::ZERO;
-    for snapshot in &manifest.snapshots {
+    for (snapshot, point) in manifest.snapshots.iter().zip(buffer.snapshot_points) {
         let result_output = private_directory(request.private_root, "snapshot-")?;
         let snapshot_root = frozen.path().join(
             snapshot
@@ -343,7 +343,6 @@ fn run_workers(
         } else {
             CompletionStatus::NotRequired
         };
-        let point = &trace[snapshot.trace_index as usize];
         let profile_observation = BufferedObservationRecord {
             delivery: BufferedDelivery::BufferedProfile,
             measurement_basis: InstrumentedBasis::Instrumented,

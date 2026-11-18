@@ -57,11 +57,14 @@ benchmark](examples/overhead)
   attempts at a time under a 192 MiB Linux address-space limit. For 60 MiB of
   results and metrics, release-build peak RSS fell from 249–382 MiB to
   55–57 MiB across the three formats.
-- [ ] Validate returned buffered traces one row at a time and retain the points
+- [x] Validate returned buffered traces one row at a time and retain the points
   referenced by snapshots. Account for manifest growth incrementally in the
   Rust and Python collectors and during prefix checks in the validator.
   Check terminal reserves, first threshold crossings, and malformed rows
-  with long traces and many snapshots.
+  with long traces and many snapshots. For a release run with 25,001 checks and
+  65 snapshots, wall time fell from 41 to 3 seconds and peak CLI RSS fell from
+  162 to 69 MiB. The trace, snapshots, and buffer manifest matched byte for
+  byte.
 - [ ] Hash source bundles and worker executables in chunks where the code reads
   whole files. Reuse snapshots of fixed datasets and worker sources across
   candidates. Register cache roots once per object and run. Consolidate

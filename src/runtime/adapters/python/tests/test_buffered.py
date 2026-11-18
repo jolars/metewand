@@ -4,7 +4,7 @@ from pathlib import Path
 
 from binding_support import exchange, hello, request
 from metewand_adapter._buffered import BufferedTrace
-from metewand_adapter._canonical import parse_json
+from metewand_adapter._canonical import MAX_SAFE_INTEGER, canonical_bytes, parse_json
 from metewand_adapter._worker import WorkerError
 
 
@@ -133,6 +133,69 @@ class BufferedTests(unittest.TestCase):
                 )
             self.assertEqual(caught.exception.code, "resource_limit")
             self.assertFalse((Path(directory) / "buffer.json").exists())
+
+    def test_many_snapshots_fit_the_canonical_manifest_budget_exactly(self):
+        captures = 128
+        spacing = 32
+        last = captures * spacing
+        thresholds = list(range(captures - 1, -1, -1))
+        spec = profile()
+        spec["policy"].update({
+            "threshold": 0,
+            "record-thresholds": thresholds,
+            "max-observations": captures,
+            "max-trace-points": last + 1,
+            "max-buffer-bytes": 2_000_000,
+        })
+
+        def run(root, end):
+            trace = BufferedTrace(spec, root, clock=lambda: 100)
+            for index in range(end + 1):
+                gap = captures - index // spacing
+                if index % spacing >= 2:
+                    gap = captures + 1
+                decision = trace.record(
+                    {"check_index": index}, {"gap": gap}, lambda: {"x": index}
+                )
+                if index < end:
+                    self.assertFalse(decision.stop)
+            trace.finish(
+                {"check_index": end},
+                lambda: self.fail("duplicate measure"),
+                lambda: self.fail("duplicate snapshot"),
+            )
+            manifest = parse_json((root / trace.write()).read_bytes())
+            return decision, manifest, (root / "trace.jsonl").read_bytes().splitlines(keepends=True)
+
+        with tempfile.TemporaryDirectory() as directory:
+            decision, manifest, rows = run(Path(directory), last)
+        self.assertEqual(decision.reason, "target_reached")
+        self.assertEqual(len(manifest["snapshots"]), captures)
+        self.assertEqual(len(rows), last + 1)
+
+        end = last - spacing
+        prefix = {
+            **manifest,
+            "stop_reason": "implementation_stopped",
+            "instrumented_total_time_ns": MAX_SAFE_INTEGER,
+            "snapshots": manifest["snapshots"][:-2] + [
+                {**manifest["snapshots"][-2], "thresholds": thresholds}
+            ],
+            "files": manifest["files"][:-1],
+        }
+        prefix["files"][0] = {
+            **prefix["files"][0], "size_bytes": sum(map(len, rows[:end + 1]))
+        }
+        regular = len(canonical_bytes(prefix)) + sum(f["size_bytes"] for f in prefix["files"])
+        for limit, reason in [(regular, None), (regular - 1, "byte_limit")]:
+            with self.subTest(limit=limit), tempfile.TemporaryDirectory() as directory:
+                spec["policy"]["max-buffer-bytes"] = limit + spec["policy"]["terminal-reserve-bytes"]
+                decision, actual, actual_rows = run(Path(directory), end)
+                self.assertEqual(decision.reason, reason)
+                self.assertEqual(actual["snapshots"], manifest["snapshots"][:-1])
+                terminal = parse_json(rows[end])
+                terminal["terminal"] = True
+                self.assertEqual(actual_rows, rows[:end] + [canonical_bytes(terminal) + b"\n"])
 
     def test_schedule_skips_callbacks_and_fixed_count_stops_at_the_last_capture(self):
         with tempfile.TemporaryDirectory() as directory:
