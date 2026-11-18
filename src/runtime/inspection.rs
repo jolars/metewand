@@ -23,7 +23,7 @@ use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 use crate::runtime::{
-    evidence::EvidenceSnapshot,
+    evidence::{EvidenceSnapshot, index_rows},
     publication::{PublicationError, SavedData, verify_finalized_directory},
     repository::CheckedRepository,
     run_store::RunStoreError,
@@ -86,36 +86,49 @@ pub struct Inspection {
 impl Inspection {
     /// Projects comparisons only from committed records and verified artifacts.
     pub fn comparison_rows(&self) -> Vec<ComparisonRow> {
-        self.comparison_rows_with(|id| self.metrics(id))
+        self.comparison_rows_with(|_| true, |id| self.metrics(id))
     }
 
-    pub(crate) fn run_comparison_rows(&self) -> Vec<ComparisonRow<Option<SavedData>>> {
+    pub(crate) fn run_comparison_rows(
+        &self,
+        candidates: &BTreeSet<String>,
+    ) -> Vec<ComparisonRow<Option<SavedData>>> {
         let metrics = self.saved_metrics.as_ref().expect("run inspection");
-        self.comparison_rows_with(|id| id.and_then(|id| metrics.get(id)).cloned())
+        self.comparison_rows_with(
+            |row| candidates.contains(&row.candidate_id),
+            |id| id.and_then(|id| metrics.get(id)).cloned(),
+        )
     }
 
     fn comparison_rows_with<M>(
         &self,
+        include: impl Fn(&ComparisonRow<M>) -> bool,
         metrics: impl Fn(Option<&str>) -> M,
     ) -> Vec<ComparisonRow<M>> {
         let mut rows = Vec::new();
+        let mut by_attempt = BTreeMap::<_, Vec<_>>::new();
+        for observation in &self.observations {
+            by_attempt
+                .entry(observation.attempt_id.as_str())
+                .or_default()
+                .push(observation);
+        }
         for attempt in self.attempts.iter().filter(|a| !a.calibration) {
-            let observations = self
-                .observations
-                .iter()
-                .filter(|o| o.attempt_id == attempt.id)
-                .map(Some)
-                .collect::<Vec<_>>();
-            let observations = if observations.is_empty() {
-                vec![None]
+            if let Some(observations) = by_attempt.get(attempt.id.as_str()) {
+                rows.extend(
+                    observations
+                        .iter()
+                        .map(|observation| {
+                            self.comparison_row(attempt, Some(observation), &metrics)
+                        })
+                        .filter(&include),
+                );
             } else {
-                observations
-            };
-            rows.extend(
-                observations
-                    .into_iter()
-                    .map(|observation| self.comparison_row(attempt, observation, &metrics)),
-            );
+                let row = self.comparison_row(attempt, None, &metrics);
+                if include(&row) {
+                    rows.push(row);
+                }
+            }
         }
         rows.sort_by(|a, b| {
             (
@@ -342,7 +355,13 @@ impl Inspection {
     /// Reads committed coordination and verifies every registered artifact.
     /// No acceptance is inferred from orphan directories or staging contents.
     pub fn add_store(&mut self, root: &Path) -> Result<(), InspectionError> {
-        let snapshot = EvidenceSnapshot::read(root)?;
+        use crate::runtime::run_store::reader::SnapshotPurpose;
+        let purpose = if self.saved_metrics.is_some() {
+            SnapshotPurpose::Comparison
+        } else {
+            SnapshotPurpose::Inspection
+        };
+        let snapshot = EvidenceSnapshot::read_for(root, purpose)?;
         self.add_snapshot(&snapshot)
     }
 
@@ -404,7 +423,22 @@ impl Inspection {
         for artifact in &snapshot.tables["stored-artifact"] {
             self.read_artifact(snapshot, artifact)?;
         }
+        let dispositions = index_rows(
+            snapshot
+                .tables
+                .get("fresh-disposition")
+                .map_or(&[], Vec::as_slice),
+            "slot_id",
+        );
         if let Some(progress) = snapshot.tables.get("fresh-sequence") {
+            let progress_by_repetition = progress
+                .iter()
+                .filter_map(|row| {
+                    let id = row["resolved_specification_id"].as_str()?;
+                    let repetition = row["measurement_index"].as_u64()?;
+                    Some(((id, repetition), row))
+                })
+                .collect::<BTreeMap<_, _>>();
             self.fresh_sequences = progress
                 .iter()
                 .map(|p| {
@@ -414,13 +448,11 @@ impl Inspection {
                 .collect::<Result<_, _>>()?;
             for member in &snapshot.tables["fresh-member"] {
                 let id = string(member, "slot_id")?;
-                let progress = progress.iter().find(|p| {
-                    p["resolved_specification_id"] == member["resolved_run_id"]
-                        && p["measurement_index"] == member["measurement_index"]
-                });
-                let disposition = snapshot.tables["fresh-disposition"]
-                    .iter()
-                    .find(|d| d["slot_id"] == id);
+                let progress = member["resolved_run_id"]
+                    .as_str()
+                    .zip(member["measurement_index"].as_u64())
+                    .and_then(|key| progress_by_repetition.get(&key));
+                let disposition = dispositions.get(id.as_str()).and_then(|rows| rows.first());
                 if let Some(record) = self.records.get_mut(&id) {
                     record.record["fresh_sequence"] = json!({"delivery":"fresh_sequence","measurement_basis":"executor_observed","measurement_index":member["measurement_index"],"schedule_index":member["schedule_index"],"observation_slot_id":member["observation_slot_id"],"observation_control":member["control"],"progress":progress,"disposition":disposition.map(|d|&d["reason"]),"causing_attempt_id":disposition.map(|d|&d["causing_attempt_id"])});
                 }
@@ -431,6 +463,10 @@ impl Inspection {
                 }
             }
         }
+        let events_by_attempt = self
+            .saved_metrics
+            .is_none()
+            .then(|| index_rows(&snapshot.tables["event"], "attempt_id"));
         for row in &snapshot.tables["attempt"] {
             let id = string(row, "id")?;
             let finished_at_ns = optional_string(row, "finished_at_ns")?;
@@ -462,13 +498,11 @@ impl Inspection {
                 }
                 diagnostic = Some(diagnostic_identity);
             }
-            let events = snapshot.tables["event"]
-                .iter()
-                .filter(|event| event["attempt_id"] == id)
-                .cloned()
-                .collect::<Vec<_>>();
             let record = self.records.get_mut(&id).expect("registered attempt");
-            record.record["events"] = json!(events);
+            if let Some(events) = &events_by_attempt {
+                record.record["events"] =
+                    json!(events.get(id.as_str()).map_or(&[][..], Vec::as_slice));
+            }
             record.relate(diagnostic.iter().cloned());
             self.attempts.push(AttemptStatus {
                 calibration: row["slot_id"]
@@ -506,6 +540,16 @@ impl Inspection {
                     .ok_or(InspectionError::Invalid("invalid observation selection"))?,
             });
         }
+        if self.saved_metrics.is_some() {
+            for slot in &snapshot.tables["resolved-attempt-slot"] {
+                if slot["role"] == "measurement"
+                    && !self.records.contains_key(&string(slot, "resolved_run_id")?)
+                {
+                    return Err(InspectionError::Invalid("slot has no resolved run"));
+                }
+            }
+            return Ok(());
+        }
         for kind in ["attempt-artifact", "observation-artifact"] {
             for row in &snapshot.tables[kind] {
                 let ids = referenced_ids(row);
@@ -527,6 +571,15 @@ impl Inspection {
             .collect::<Result<BTreeSet<_>, _>>()?;
         self.slots
             .retain(|slot| !stored_logical.contains(&slot.logical_slot_id));
+        let mut attempts_by_slot = BTreeMap::<_, Vec<_>>::new();
+        for attempt in &self.attempts {
+            attempts_by_slot
+                .entry(attempt.slot_id.as_str())
+                .or_default()
+                .push(attempt);
+        }
+        let attempt_rows = index_rows(&snapshot.tables["attempt"], "slot_id");
+        let observations_by_slot = index_rows(&snapshot.tables["observation"], "attempt_slot_id");
         for row in &snapshot.tables["resolved-attempt-slot"] {
             if row["role"] != "measurement" {
                 continue;
@@ -538,11 +591,10 @@ impl Inspection {
                 .get(&run_id)
                 .ok_or(InspectionError::Invalid("slot has no resolved run"))?
                 .record;
-            let attempts = self
-                .attempts
-                .iter()
-                .filter(|attempt| attempt.slot_id == id)
-                .collect::<Vec<_>>();
+            let attempts = attempts_by_slot
+                .get(id.as_str())
+                .map_or(&[][..], Vec::as_slice);
+            let disposition = dispositions.get(id.as_str()).map_or(&[][..], Vec::as_slice);
             let state = if attempts.iter().any(|attempt| attempt.state == "accepted") {
                 SlotState::Satisfied
             } else if attempts
@@ -552,28 +604,21 @@ impl Inspection {
                 SlotState::Active
             } else if attempts.iter().any(|attempt| attempt.recovery_required) {
                 SlotState::RecoveryRequired
-            } else if snapshot
-                .tables
-                .get("fresh-disposition")
-                .is_some_and(|rows| {
-                    rows.iter()
-                        .any(|d| d["slot_id"] == id && d["reason"] == "skipped_target_reached")
-                })
+            } else if disposition
+                .iter()
+                .any(|d| d["reason"] == "skipped_target_reached")
             {
                 SlotState::SkippedTargetReached
-            } else if snapshot
-                .tables
-                .get("fresh-disposition")
-                .is_some_and(|rows| {
-                    rows.iter()
-                        .any(|d| d["slot_id"] == id && d["reason"] == "active_time_limit")
-                })
+            } else if disposition
+                .iter()
+                .any(|d| d["reason"] == "active_time_limit")
             {
                 SlotState::Censored
             } else if attempts.is_empty()
-                || snapshot.tables["attempt"]
-                    .iter()
-                    .filter(|attempt| attempt["slot_id"] == id)
+                || attempt_rows
+                    .get(id.as_str())
+                    .into_iter()
+                    .flatten()
                     .max_by_key(|attempt| attempt["retry_index"].as_u64())
                     .is_some_and(|attempt| attempt["failure_code"] == "interrupted_attempt")
             {
@@ -594,12 +639,11 @@ impl Inspection {
                 resolved_run_id: Some(run_id),
                 candidate_id: string(run, "candidate_id")?,
                 state,
-                selected_observation_ids: snapshot.tables["observation"]
-                    .iter()
-                    .filter(|observation| {
-                        observation["attempt_slot_id"] == row["id"]
-                            && observation["selected"] == true
-                    })
+                selected_observation_ids: observations_by_slot
+                    .get(row["id"].as_str().expect("validated slot ID"))
+                    .into_iter()
+                    .flatten()
+                    .filter(|observation| observation["selected"] == true)
                     .map(|observation| string(observation, "id"))
                     .collect::<Result<_, _>>()?,
                 attempt_ids: attempts.iter().map(|attempt| attempt.id.clone()).collect(),
@@ -778,40 +822,32 @@ impl Inspection {
         Ok(())
     }
 
-    fn connect_records(&mut self) {
-        let edges = self
-            .records
-            .iter()
-            .map(|(id, record)| (id.clone(), referenced_ids(&record.record)))
-            .collect::<Vec<_>>();
-        for (id, related) in edges {
-            for other in related {
-                if other == id {
-                    continue;
-                }
-                let kind = other
-                    .strip_prefix("mw1-")
-                    .and_then(|value| value.rsplit_once('-'))
-                    .map(|(kind, _)| kind)
-                    .unwrap_or("store-reference")
-                    .to_owned();
-                self.records
-                    .entry(other.clone())
-                    .or_insert_with(|| {
-                        InspectionRecord::new(
-                            other.clone(),
-                            kind,
-                            json!({"availability": "reference_only"}),
-                        )
-                    })
-                    .relate([id.clone()]);
-                self.records
-                    .get_mut(&id)
-                    .expect("existing record")
-                    .relate([other]);
+    fn connect_diagnostics(&mut self) {
+        let mut diagnostics = BTreeMap::<_, Vec<_>>::new();
+        for (id, record) in &self.records {
+            if record.kind == "diagnostic" {
+                diagnostics.insert(id.clone(), Vec::new());
             }
         }
-        for record in self.records.values_mut() {
+        if diagnostics.is_empty() {
+            return;
+        }
+        for (id, record) in &self.records {
+            for other in referenced_ids(&record.record) {
+                if other == *id {
+                    continue;
+                }
+                if let Some(related) = diagnostics.get_mut(&other) {
+                    related.push(id.clone());
+                }
+                if let Some(related) = diagnostics.get_mut(id) {
+                    related.push(other);
+                }
+            }
+        }
+        for (id, related) in diagnostics {
+            let record = self.records.get_mut(&id).expect("registered diagnostic");
+            record.relate(related);
             record.paths.sort();
             record.paths.dedup();
         }
@@ -819,11 +855,28 @@ impl Inspection {
 
     /// Exact lookup never accepts a prefix or falls back to a manifest name.
     pub fn explain(mut self, id: &str) -> Result<Explanation, InspectionError> {
-        self.connect_records();
-        let subject = self
-            .records
-            .remove(id)
+        let subject = self.records.remove(id);
+        let incoming = self.records.into_iter().filter_map(|(other_id, record)| {
+            crate::core::inspection::references_id(&record.record, id).then_some(other_id)
+        });
+        let mut incoming = incoming.peekable();
+        let mut subject = subject
+            .or_else(|| {
+                incoming.peek()?;
+                let kind = id
+                    .strip_prefix("mw1-")
+                    .and_then(|value| value.rsplit_once('-'))
+                    .map_or("store-reference", |(kind, _)| kind);
+                Some(InspectionRecord::new(
+                    id.to_owned(),
+                    kind,
+                    json!({"availability": "reference_only"}),
+                ))
+            })
             .ok_or_else(|| InspectionError::UnknownIdentity(id.to_owned()))?;
+        subject.relate(incoming.chain(referenced_ids(&subject.record)));
+        subject.paths.sort();
+        subject.paths.dedup();
         Ok(Explanation {
             command: "explain",
             subject,
@@ -831,7 +884,7 @@ impl Inspection {
     }
 
     pub fn status(mut self) -> StatusReport {
-        self.connect_records();
+        self.connect_diagnostics();
         self.slots.sort_by(|left, right| {
             (&left.logical_slot_id, &left.resolved_slot_id)
                 .cmp(&(&right.logical_slot_id, &right.resolved_slot_id))

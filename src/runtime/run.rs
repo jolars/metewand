@@ -605,11 +605,7 @@ pub(crate) fn run_repository_with_progress(
     )?;
     let inspection = crate::runtime::inspection::Inspection::read_for_run(&output_directory)
         .map_err(io::Error::other)?;
-    let comparison = inspection
-        .run_comparison_rows()
-        .into_iter()
-        .filter(|row| selected_candidates.contains(&row.candidate_id))
-        .collect();
+    let comparison = inspection.run_comparison_rows(&selected_candidates);
     Ok(RunReport {
         calibration_attempts,
         adaptive_budgets,

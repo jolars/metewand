@@ -87,12 +87,15 @@ benchmark](examples/overhead)
   and from 1,352 to 265 MiB peak CLI RSS. The coordination records and
   scientific output bytes matched. Status reported 31 and 19,999 pending
   slots, respectively.
-- [ ] Index attempts and observations by slot for inspection. Use targeted
+- [x] Index attempts and observations by slot for inspection. Use targeted
   queries for status summaries, exact-ID explanations, and the final run
   comparison. Use exact and prefix lookups in the archive inventory and
   index attempt and observation records by artifact ID. Preserve read-only
   access and integrity checks. Exercise many small attempts, including
-  retries and failed attempts.
+  retries and failed attempts. The 32-slot regression checks that run, status,
+  and the imported archive report the same comparison, including a retained
+  failure and its successful retry. It compares store bytes before and after
+  status and exact-ID explanation.
 
 ### Disk and shared storage
 

@@ -225,6 +225,14 @@ fn invalid_inspection_requests_fail_without_initializing_a_store() {
 #[test]
 fn failures_and_retries_keep_distinct_attempts_and_explainable_diagnostics() {
     let root = repository();
+    let manifest = root.path().join("metewand.yaml");
+    fs::write(
+        &manifest,
+        fs::read_to_string(&manifest)
+            .unwrap()
+            .replace("measurement-repetitions: 3", "measurement-repetitions: 32"),
+    )
+    .unwrap();
     let worker = root.path().join("worker.py");
     let source = fs::read_to_string(&worker).unwrap();
     let marker = root.path().join("fail");
@@ -239,7 +247,7 @@ fn failures_and_retries_keep_distinct_attempts_and_explainable_diagnostics() {
     assert_eq!(code, 0, "{status}");
     assert_eq!(status["data"]["summary"]["failed_attempts"], 1);
     assert_eq!(status["data"]["summary"]["retry_required_slots"], 1);
-    assert_eq!(status["data"]["summary"]["pending_slots"], 2);
+    assert_eq!(status["data"]["summary"]["pending_slots"], 31);
     let diagnostic = status["data"]["attempts"][0]["diagnostic_id"]
         .as_str()
         .unwrap();
@@ -277,6 +285,84 @@ fn failures_and_retries_keep_distinct_attempts_and_explainable_diagnostics() {
     assert_eq!(status["data"]["summary"]["retry_required_slots"], 0);
     assert_eq!(status["data"]["attempts"].as_array().unwrap().len(), 2);
     assert_eq!(status["data"]["attempts"][1]["retry_index"], 1);
+
+    let (code, run) = command(root.path(), &["run", "--output-dir", "run", "--resume"]);
+    assert_eq!(code, 0, "{run}");
+    let before = snapshot(&root.path().join("run"));
+    let (code, status) = command(root.path(), &["status", "--output-dir", "run"]);
+    assert_eq!(code, 0, "{status}");
+    let status = &status["data"];
+    assert_eq!(status["summary"]["satisfied_slots"], 32);
+    assert_eq!(status["summary"]["accepted_attempts"], 32);
+    assert_eq!(status["summary"]["failed_attempts"], 1);
+    assert_eq!(status["summary"]["selected_observations"], 32);
+    assert_eq!(status["comparison"], run["data"]["comparison"]);
+    assert_eq!(status["comparison"].as_array().unwrap().len(), 33);
+    let failed_slot = status["slots"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|slot| {
+            slot["attempt_ids"]
+                .as_array()
+                .unwrap()
+                .contains(&Value::from(failed_id))
+        })
+        .unwrap();
+    assert_eq!(failed_slot["attempt_ids"].as_array().unwrap().len(), 2);
+    assert_eq!(
+        failed_slot["selected_observation_ids"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    let id = failed_slot["selected_observation_ids"][0].as_str().unwrap();
+    let (code, explained) = command(root.path(), &["explain", id, "--output-dir", "run"]);
+    assert_eq!(code, 0, "{explained}");
+    assert_eq!(explained["data"]["subject"]["id"], id);
+    assert_eq!(snapshot(&root.path().join("run")), before);
+
+    let (code, archive) = command(
+        root.path(),
+        &[
+            "archive",
+            "create",
+            "--output-dir",
+            "run",
+            "--destination",
+            "results.tar.gz",
+        ],
+    );
+    assert_eq!(code, 0, "{archive}");
+    let (code, imported) = command(
+        root.path(),
+        &[
+            "archive",
+            "import",
+            "--archive",
+            "results.tar.gz",
+            "--destination",
+            "imported",
+        ],
+    );
+    assert_eq!(code, 0, "{imported}");
+    let before = snapshot(&root.path().join("imported"));
+    let (code, imported_status) = command(root.path(), &["status", "--output-dir", "imported"]);
+    assert_eq!(code, 0, "{imported_status}");
+    for key in ["slots", "attempts", "observations", "summary", "comparison"] {
+        assert_eq!(status[key], imported_status["data"][key], "{key}");
+    }
+    let (code, imported_explanation) =
+        command(root.path(), &["explain", id, "--output-dir", "imported"]);
+    assert_eq!(code, 0, "{imported_explanation}");
+    for key in ["id", "kind", "record", "related_ids"] {
+        assert_eq!(
+            explained["data"]["subject"][key], imported_explanation["data"]["subject"][key],
+            "{key}"
+        );
+    }
+    assert_eq!(snapshot(&root.path().join("imported")), before);
 }
 
 #[test]

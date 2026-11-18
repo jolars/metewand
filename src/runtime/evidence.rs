@@ -21,8 +21,18 @@ use crate::runtime::{
     inspection::InspectionError,
     local_tree::{LocalTreeHashError, hash_local_tree, hash_tree},
     platform_fs,
-    run_store::reader::StoreSnapshot,
+    run_store::reader::{SnapshotPurpose, StoreSnapshot},
 };
+
+pub(crate) fn index_rows<'a>(rows: &'a [Value], field: &str) -> BTreeMap<&'a str, Vec<&'a Value>> {
+    let mut index = BTreeMap::<_, Vec<_>>::new();
+    for row in rows {
+        if let Some(key) = row[field].as_str() {
+            index.entry(key).or_default().push(row);
+        }
+    }
+    index
+}
 
 pub(crate) struct EvidenceSnapshot {
     pub root: PathBuf,
@@ -33,6 +43,10 @@ pub(crate) struct EvidenceSnapshot {
 
 impl EvidenceSnapshot {
     pub fn read(root: &Path) -> Result<Self, InspectionError> {
+        Self::read_for(root, SnapshotPurpose::Archive)
+    }
+
+    pub fn read_for(root: &Path, purpose: SnapshotPurpose) -> Result<Self, InspectionError> {
         if crate::runtime::archive::is_collection(root) {
             crate::runtime::archive::collection_snapshot(
                 root,
@@ -43,7 +57,10 @@ impl EvidenceSnapshot {
             )
             .map_err(|error| InspectionError::Archive(error.to_string()))
         } else {
-            let snapshot = StoreSnapshot::read(root)?;
+            let snapshot = match purpose {
+                SnapshotPurpose::Archive => StoreSnapshot::read(root)?,
+                _ => StoreSnapshot::read_for(root, purpose)?,
+            };
             Ok(Self {
                 data_root: snapshot.root.clone(),
                 root: snapshot.root,

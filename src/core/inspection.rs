@@ -141,6 +141,19 @@ pub fn referenced_ids(value: &Value) -> Vec<String> {
     ids.into_iter().collect()
 }
 
+/// Checks for a literal reference to an exact inspection identity.
+pub fn references_id(value: &Value, id: &str) -> bool {
+    fn visit(value: &Value, id: &str) -> bool {
+        match value {
+            Value::String(reference) => reference == id,
+            Value::Array(values) => values.iter().any(|value| visit(value, id)),
+            Value::Object(values) => values.values().any(|value| visit(value, id)),
+            _ => false,
+        }
+    }
+    is_inspection_id(id) && visit(value, id)
+}
+
 /// Current scheduling decision for a measured execution slot.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]

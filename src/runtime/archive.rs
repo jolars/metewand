@@ -376,18 +376,21 @@ fn validate_payload_closure(snapshot: &EvidenceSnapshot) -> Result<(), ArchiveEr
             .ok_or_else(|| invalid("artifact lacks a path"))?;
         safe_name(path)?;
         let full = format!("data/{path}");
-        let matches = files
-            .keys()
-            .filter(|name| {
-                if artifact["storage_kind"] == "file" {
-                    **name == full
-                } else {
-                    name.starts_with(&format!("{full}/"))
-                }
-            })
-            .cloned()
-            .collect::<Vec<_>>();
-        if matches.is_empty() || matches.iter().any(|name| !required.insert(name.clone())) {
+        let prefix = format!("{full}/");
+        let matches = if artifact["storage_kind"] == "file" {
+            files
+                .get_key_value(&full)
+                .map(|(name, _)| name)
+                .into_iter()
+                .collect::<Vec<_>>()
+        } else {
+            files
+                .range(prefix.clone()..)
+                .take_while(|(name, _)| name.starts_with(&prefix))
+                .map(|(name, _)| name)
+                .collect()
+        };
+        if matches.is_empty() || matches.iter().any(|name| !required.insert((*name).clone())) {
             return Err(invalid(
                 "registered artifact payloads are missing or overlap",
             ));
@@ -405,6 +408,18 @@ fn validate_documents(
     snapshot: &EvidenceSnapshot,
     limits: ArchiveLimits,
 ) -> Result<(), ArchiveError> {
+    use crate::runtime::evidence::index_rows;
+
+    let attempts = index_rows(&snapshot.tables["attempt"], "artifact_id");
+    let observations = index_rows(&snapshot.tables["observation"], "artifact_id");
+    let observations_by_attempt = index_rows(&snapshot.tables["observation"], "attempt_id");
+    let budgets = index_rows(
+        snapshot
+            .tables
+            .get("fresh-budget")
+            .map_or(&[], Vec::as_slice),
+        "attempt_id",
+    );
     for artifact in &snapshot.tables["stored-artifact"] {
         let relative = artifact["path"]
             .as_str()
@@ -419,21 +434,19 @@ fn validate_documents(
             let path = directory.join(name);
             if path.exists() {
                 let document: serde_json::Value = read_document(&path, schema, limits)?;
-                let kind = if schema == PublicSchema::Attempt {
-                    "attempt"
-                } else {
-                    "observation"
-                };
-                if let Some(row) = snapshot.tables[kind]
-                    .iter()
-                    .find(|row| row["artifact_id"] == artifact["id"])
+                let is_attempt = schema == PublicSchema::Attempt;
+                let index = if is_attempt { &attempts } else { &observations };
+                if let Some(row) = artifact["id"]
+                    .as_str()
+                    .and_then(|id| index.get(id))
+                    .and_then(|rows| rows.first())
                 {
                     if document["id"] != row["id"] || document["slot_id"] != row["slot_id"] {
                         return Err(invalid(
                             "artifact document disagrees with its registered subject",
                         ));
                     }
-                    if kind == "observation" {
+                    if !is_attempt {
                         if document != row["definition"] {
                             return Err(invalid(
                                 "observation artifact disagrees with its committed document",
@@ -441,7 +454,7 @@ fn validate_documents(
                         }
                         validate_scientific_payloads(snapshot, relative, &document)?;
                     }
-                    if kind == "attempt"
+                    if is_attempt
                         && (document["retry_index"] != row["retry_index"]
                             || document["outcome"]["kind"] != row["state"])
                     {
@@ -449,16 +462,18 @@ fn validate_documents(
                             "attempt document disagrees with its terminal coordination",
                         ));
                     }
-                    if kind == "attempt" {
+                    if is_attempt {
                         let declared = document["observations"]
                             .as_array()
                             .expect("validated observation list")
                             .iter()
                             .map(|id| id.as_str().expect("validated observation identity"))
                             .collect::<BTreeSet<_>>();
-                        let committed = snapshot.tables["observation"]
-                            .iter()
-                            .filter(|observation| observation["attempt_id"] == row["id"])
+                        let committed = row["id"]
+                            .as_str()
+                            .and_then(|id| observations_by_attempt.get(id))
+                            .into_iter()
+                            .flatten()
                             .map(|observation| {
                                 observation["id"]
                                     .as_str()
@@ -476,9 +491,10 @@ fn validate_documents(
         }
         if artifact["kind"] == "attempt" && snapshot.tables.contains_key("fresh-budget") {
             let outcome = CanonicalValue::from_slice(&fs::read(directory.join("outcome.json"))?)?;
-            let budget = snapshot.tables["fresh-budget"]
-                .iter()
-                .find(|budget| budget["attempt_id"] == outcome.as_json()["attempt_id"])
+            let budget = outcome.as_json()["attempt_id"]
+                .as_str()
+                .and_then(|id| budgets.get(id))
+                .and_then(|rows| rows.first())
                 .map_or(serde_json::Value::Null, |budget| {
                     serde_json::json!({
                         "reserved_ns": budget["reserved_ns"],

@@ -18,8 +18,19 @@ pub(crate) struct StoreSnapshot {
     pub tables: BTreeMap<&'static str, Vec<Value>>,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SnapshotPurpose {
+    Archive,
+    Inspection,
+    Comparison,
+}
+
 impl StoreSnapshot {
     pub fn read(root: &Path) -> Result<Self, RunStoreError> {
+        Self::read_for(root, SnapshotPurpose::Archive)
+    }
+
+    pub fn read_for(root: &Path, purpose: SnapshotPurpose) -> Result<Self, RunStoreError> {
         if !crate::runtime::platform_fs::is_real_directory(&fs::symlink_metadata(root)?) {
             return Err(RunStoreError::UnsafePath(root.to_owned()));
         }
@@ -60,9 +71,29 @@ impl StoreSnapshot {
         verify_schema(&connection)?;
         let mut tables = BTreeMap::new();
         for (kind, sql) in QUERIES {
+            if purpose != SnapshotPurpose::Archive
+                && matches!(
+                    *kind,
+                    "slot-membership" | "attempt-transition" | "observation-selection"
+                )
+            {
+                continue;
+            }
+            if purpose == SnapshotPurpose::Comparison
+                && matches!(*kind, "attempt-artifact" | "observation-artifact")
+            {
+                continue;
+            }
             let mut query = connection.prepare(sql)?;
+            let event_kind =
+                (purpose == SnapshotPurpose::Comparison).then_some(super::adaptive::DECISION_EVENT);
+            let parameters: &[&dyn rusqlite::ToSql] = if *kind == "event" {
+                &[&event_kind]
+            } else {
+                &[]
+            };
             let records = query
-                .query_map([], |row| row.get::<_, String>(0))?
+                .query_map(parameters, |row| row.get::<_, String>(0))?
                 .map(|row| {
                     serde_json::from_str(&row?).map_err(|_| {
                         RunStoreError::InvalidAttempt("stored inspection record is not JSON")
@@ -310,7 +341,7 @@ const QUERIES: &[(&str, &str)] = &[
     ),
     (
         "event",
-        "SELECT json_object('sequence', sequence, 'attempt_id', attempt_id, 'occurred_at_ns', CAST(occurred_at_ns AS TEXT), 'kind', kind, 'payload', json(payload_json)) FROM events ORDER BY sequence",
+        "SELECT json_object('sequence', sequence, 'attempt_id', attempt_id, 'occurred_at_ns', CAST(occurred_at_ns AS TEXT), 'kind', kind, 'payload', json(payload_json)) FROM events WHERE ?1 IS NULL OR kind = ?1 ORDER BY sequence",
     ),
 ];
 
