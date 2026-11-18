@@ -1,11 +1,5 @@
 # Changelog
 
-## [0.8.1](https://github.com/jolars/metewand/compare/v0.8.0...v0.8.1) (2026-11-18)
-
-### Bug Fixes
-
-- **archive:** stream buffered trace validation ([`3c682c5`](https://github.com/jolars/metewand/commit/3c682c53836260f2b70269b6e49a354294dd5b2d))
-
 ## [0.8.0](https://github.com/jolars/metewand/compare/v0.7.0...v0.8.0) (2026-11-17)
 
 ### Features
