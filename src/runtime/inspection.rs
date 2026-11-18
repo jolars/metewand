@@ -24,6 +24,7 @@ use thiserror::Error;
 
 use crate::runtime::{
     evidence::{EvidenceSnapshot, index_rows},
+    local_tree::file_sha256,
     publication::{PublicationError, SavedData, verify_finalized_directory},
     repository::CheckedRepository,
     run_store::RunStoreError,
@@ -679,7 +680,7 @@ impl Inspection {
                 .record["manifest"] = optional_document(&path.join("manifest.json"))?
                 .ok_or(InspectionError::Invalid("missing artifact inventory"))?;
         } else if artifact["storage_kind"] == "file" {
-            if hex(&Sha256::digest(fs::read(&path)?)) != artifact["sha256"] {
+            if file_sha256(&path)? != artifact["sha256"] {
                 return Err(InspectionError::CorruptArtifact(id));
             }
             return Ok(());

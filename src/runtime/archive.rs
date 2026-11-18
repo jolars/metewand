@@ -6,7 +6,7 @@ mod tests;
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs::{self, File, OpenOptions},
-    io::{self, BufReader, Read, Write},
+    io::{self, BufReader, Read},
     path::{Path, PathBuf},
 };
 
@@ -26,9 +26,11 @@ use thiserror::Error;
 
 use crate::runtime::{
     evidence::{
-        EvidenceSnapshot, document_profile, validate_observation_document, visit_buffered_trace,
+        EvidenceSnapshot, buffered_trace_path, document_profile, validate_observation_document,
+        visit_buffered_trace,
     },
     inspection::Inspection,
+    local_tree::hash_reader,
     platform_fs,
     publication::rename_no_replace,
 };
@@ -66,87 +68,98 @@ pub fn create_archive(root: &Path, destination: &Path) -> Result<ArchiveReport, 
     }
     let evidence = snapshot.archive_evidence()?;
     validate_evidence(&evidence)?;
-    validate_snapshot(&snapshot)?;
     let parent = destination.parent().expect("destination parent exists");
-    let stage = private_stage(Some(parent))?;
-    write_new(
-        &stage.path().join("evidence.json"),
-        &canonical_bytes(&evidence)?,
-    )?;
-    let mut executable = BTreeMap::new();
+    let evidence_bytes = canonical_bytes(&evidence)?;
+    validate_document(&evidence_bytes, PublicSchema::ArchiveEvidence)?;
+    let evidence_file = metadata_member("evidence.json", &evidence_bytes);
+    let mut files = BTreeMap::from([(evidence_file.path.clone(), evidence_file)]);
     for artifact in &snapshot.tables["stored-artifact"] {
         let relative = artifact["path"]
             .as_str()
             .ok_or_else(|| invalid("artifact path is missing"))?;
         let source = contained(&snapshot.data_root, relative)?;
-        let paths = match artifact["storage_kind"].as_str() {
+        let payloads = match artifact["storage_kind"].as_str() {
             Some("directory") => walk_files(&source)?
-                .into_keys()
-                .map(|path| format!("{relative}/{path}"))
-                .collect::<Vec<_>>(),
-            Some("file") => vec![relative.to_owned()],
+                .into_values()
+                .map(|mut file| {
+                    file.path = format!("data/{relative}/{}", file.path);
+                    file
+                })
+                .collect(),
+            Some("file") => vec![inventory_file(
+                &source,
+                format!("data/{relative}"),
+                &mut 0,
+                &mut 0,
+                UNLIMITED,
+            )?],
             _ => return Err(invalid("unsupported artifact storage kind")),
         };
-        for path in paths {
-            let source = contained(&snapshot.data_root, &path)?;
-            let name = format!("data/{path}");
-            let target = stage.path().join(&name);
-            fs::create_dir_all(target.parent().expect("payload parent"))?;
-            let mode = snapshot
+        validate_registered_members(artifact, &source, relative, &payloads)?;
+        for mut file in payloads {
+            if let Some(original) = snapshot
                 .files
                 .as_ref()
-                .and_then(|files| files.get(&name))
-                .map_or_else(
-                    || fs::symlink_metadata(&source).map(|m| platform_fs::is_executable(&m)),
-                    |file| Ok(file.executable),
-                )?;
-            if executable.insert(name, mode).is_some() {
+                .and_then(|files| files.get(&file.path))
+            {
+                check_member(original, file.size_bytes, &file.sha256)?;
+                file.executable = original.executable;
+            }
+            if files.insert(file.path.clone(), file).is_some() {
                 return Err(invalid("registered artifact paths overlap"));
             }
-            let mut input = regular_file(&source)?;
-            let mut output = File::create_new(target)?;
-            io::copy(&mut input, &mut output)?;
         }
-    }
-    let mut files = walk_files(stage.path())?;
-    for (path, file) in &mut files {
-        file.executable = executable.get(path).copied().unwrap_or(false);
     }
     let manifest = ArchiveManifest {
         schema_version: RESULT_ARCHIVE_VERSION,
         tool_version: env!("CARGO_PKG_VERSION").to_owned(),
         files: files.into_values().collect(),
     };
-    write_new(
-        &stage.path().join("archive.json"),
-        &canonical_bytes(&manifest)?,
-    )?;
-    let limits = ArchiveLimits {
-        max_entries: u64::MAX,
-        max_expanded_bytes: u64::MAX,
-    };
-    let verified = collection_snapshot(stage.path(), limits)?;
+    let manifest_bytes = canonical_bytes(&manifest)?;
+    validate_document(&manifest_bytes, PublicSchema::ArchiveManifest)?;
+    let manifest_file = metadata_member("archive.json", &manifest_bytes);
+    let mut verified = EvidenceSnapshot::archived(snapshot.root, evidence, manifest.files.clone());
+    verified.data_root = snapshot.data_root;
+    validate_payload_closure(&verified)?;
+    validate_snapshot(&verified)?;
+    validate_documents(&verified, UNLIMITED)?;
+
     let mut output = tempfile::NamedTempFile::new_in(parent)?;
     {
         let encoder = GzBuilder::new()
             .mtime(0)
             .write(output.as_file_mut(), Compression::new(6));
         let mut tar = tar::Builder::new(encoder);
-        for name in std::iter::once("archive.json")
-            .chain(manifest.files.iter().map(|file| file.path.as_str()))
-        {
-            let mut file = regular_file(&stage.path().join(name))?;
+        for member in std::iter::once(&manifest_file).chain(&manifest.files) {
             let mut header = tar::Header::new_gnu();
-            header.set_size(file.metadata()?.len());
+            header.set_size(member.size_bytes);
             header.set_mode(0o600);
             header.set_uid(0);
             header.set_gid(0);
             header.set_mtime(0);
             header.set_cksum();
-            tar.append_data(&mut header, name, &mut file)?;
+            match member.path.as_str() {
+                "archive.json" => {
+                    tar.append_data(&mut header, &member.path, manifest_bytes.as_slice())?
+                }
+                "evidence.json" => {
+                    tar.append_data(&mut header, &member.path, evidence_bytes.as_slice())?
+                }
+                name => {
+                    let relative = name.strip_prefix("data/").expect("payload prefix");
+                    let source = contained(&verified.data_root, relative)?;
+                    let input = regular_file(&source)?;
+                    if input.metadata()?.len() != member.size_bytes {
+                        return Err(invalid("archive file changed while it was read"));
+                    }
+                    tar.append_data(&mut header, name, input.take(member.size_bytes))?;
+                }
+            }
         }
         tar.into_inner()?.finish()?;
     }
+    // Read back the completed stream before publication, without extracting it.
+    verify_created_archive(output.path(), &manifest_file, &manifest.files)?;
     platform_fs::sync_owned_file(output.path())?;
     #[cfg(test)]
     crate::runtime::fault_injection::hit("rename.before");
@@ -164,6 +177,65 @@ pub fn create_archive(root: &Path, destination: &Path) -> Result<ArchiveReport, 
         &manifest,
         &verified,
     )
+}
+
+// Bind the inventory to committed artifact digests before opening the stream.
+fn validate_registered_members(
+    artifact: &serde_json::Value,
+    source: &Path,
+    relative: &str,
+    members: &[ArchiveFile],
+) -> Result<(), ArchiveError> {
+    if artifact["storage_kind"] == "file" {
+        if artifact["sha256"] != members[0].sha256 {
+            return Err(invalid(
+                "archive member differs from its registered artifact",
+            ));
+        }
+        return Ok(());
+    }
+    let prefix = format!("data/{relative}/");
+    let mut members = members
+        .iter()
+        .map(|file| {
+            (
+                file.path.strip_prefix(&prefix).expect("artifact prefix"),
+                file,
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    let marker = members
+        .remove("manifest.json")
+        .ok_or_else(|| invalid("registered artifact is missing its manifest"))?;
+    let mut bytes = Vec::new();
+    regular_file(&source.join("manifest.json"))?
+        .take(marker.size_bytes.saturating_add(1))
+        .read_to_end(&mut bytes)?;
+    check_member(marker, bytes.len() as u64, &digest(&bytes))?;
+    if artifact["manifest_sha256"] != marker.sha256 {
+        return Err(invalid(
+            "archive member differs from its registered artifact",
+        ));
+    }
+    let document = validate_document(&bytes, PublicSchema::ArtifactManifest)?;
+    let declared = document.as_json()["files"]
+        .as_array()
+        .expect("validated inventory");
+    for item in declared {
+        let path = item["path"].as_str().expect("validated member path");
+        let file = members
+            .remove(path)
+            .ok_or_else(|| invalid("artifact manifest lists a missing archive member"))?;
+        if item["sha256"] != file.sha256 || item["size_bytes"] != file.size_bytes {
+            return Err(invalid("archive member differs from its artifact manifest"));
+        }
+    }
+    if !members.is_empty() {
+        return Err(invalid(
+            "archive member is missing from its artifact manifest",
+        ));
+    }
+    Ok(())
 }
 
 /// Verifies an archive or an imported collection without modifying its input.
@@ -327,11 +399,7 @@ pub(crate) fn collection_snapshot(
         let current = actual
             .get(&file.path)
             .ok_or_else(|| invalid("an inventoried file is missing"))?;
-        if current.sha256 != file.sha256 || current.size_bytes != file.size_bytes {
-            return Err(invalid(
-                "archive file does not match its recorded hash or size",
-            ));
-        }
+        check_member(file, current.size_bytes, &current.sha256)?;
         if file.path == "evidence.json" && file.executable {
             return Err(invalid("evidence metadata cannot have an executable bit"));
         }
@@ -383,6 +451,20 @@ fn validate_snapshot(snapshot: &EvidenceSnapshot) -> Result<(), ArchiveError> {
             }
             "attempt" => {
                 if let Some(profile) = document_profile(&record.record["document"]) {
+                    if let Some(files) = &snapshot.files
+                        && let Some(path) = buffered_trace_path(&snapshot.data_root, profile)
+                            .map_err(evidence_error)?
+                    {
+                        let relative = path
+                            .strip_prefix(&snapshot.data_root)
+                            .expect("buffered trace is relative to the data root");
+                        let name = format!("data/{}", platform_fs::relative_path(relative)?);
+                        if !files.contains_key(&name) {
+                            return Err(invalid(
+                                "buffered trace is missing from the archive inventory",
+                            ));
+                        }
+                    }
                     visit_buffered_trace(&snapshot.data_root, &record.id, profile, |_, _| {})
                         .map_err(evidence_error)?;
                 }
@@ -572,6 +654,42 @@ fn validate_scientific_payloads(
 }
 
 fn extract(path: &Path, destination: &Path, limits: ArchiveLimits) -> Result<(), ArchiveError> {
+    visit_archive(path, limits, |name, size, entry| {
+        let target = destination.join(name);
+        fs::create_dir_all(target.parent().expect("member parent"))?;
+        let mut file = File::create_new(target)?;
+        if io::copy(entry, &mut file)? != size {
+            return Err(invalid("truncated archive member"));
+        }
+        Ok(())
+    })
+}
+
+fn verify_created_archive(
+    path: &Path,
+    manifest: &ArchiveFile,
+    files: &[ArchiveFile],
+) -> Result<(), ArchiveError> {
+    let mut expected = std::iter::once(manifest).chain(files);
+    visit_archive(path, UNLIMITED, |name, size, entry| {
+        let file = expected
+            .next()
+            .filter(|file| file.path == name && file.size_bytes == size)
+            .ok_or_else(|| invalid("streamed archive member differs from its inventory"))?;
+        let (digest, size_bytes) = hash_reader(entry)?;
+        check_member(file, size_bytes, &hex(digest.bytes()))
+    })?;
+    if expected.next().is_some() {
+        return Err(invalid("streamed archive is missing an inventoried member"));
+    }
+    Ok(())
+}
+
+fn visit_archive(
+    path: &Path,
+    limits: ArchiveLimits,
+    mut visit: impl FnMut(&str, u64, &mut dyn Read) -> Result<(), ArchiveError>,
+) -> Result<(), ArchiveError> {
     let decoder = GzDecoder::new(BufReader::new(regular_file(path)?));
     let mut archive = tar::Archive::new(decoder);
     let mut names = BTreeSet::new();
@@ -617,12 +735,7 @@ fn extract(path: &Path, destination: &Path, limits: ArchiveLimits) -> Result<(),
             return Err(invalid("unsupported archive member"));
         }
         charge(&mut count, &mut total, entry.size(), limits)?;
-        let target = destination.join(&name);
-        fs::create_dir_all(target.parent().expect("member parent"))?;
-        let mut file = File::create_new(target)?;
-        if io::copy(&mut entry, &mut file)? != entry.size() {
-            return Err(invalid("truncated archive member"));
-        }
+        visit(&name, entry.size(), &mut entry)?;
     }
     if long_name.is_some() {
         return Err(invalid("GNU filename metadata has no following member"));
@@ -682,7 +795,12 @@ fn read_document<T: DeserializeOwned>(
     if bytes.len() as u64 > limits.max_expanded_bytes {
         return Err(ArchiveError::Limit);
     }
-    let value = CanonicalValue::from_slice(&bytes)?;
+    let value = validate_document(&bytes, schema)?;
+    Ok(serde_json::from_value(value.as_json().clone())?)
+}
+
+fn validate_document(bytes: &[u8], schema: PublicSchema) -> Result<CanonicalValue, ArchiveError> {
+    let value = CanonicalValue::from_slice(bytes)?;
     if value
         .as_json()
         .get("schema_version")
@@ -706,17 +824,16 @@ fn read_document<T: DeserializeOwned>(
         .map_err(evidence_error)?
         .validate(schema.repository_path(), value.as_json())
         .map_err(evidence_error)?;
-    Ok(serde_json::from_value(value.as_json().clone())?)
+    Ok(value)
 }
 
+const UNLIMITED: ArchiveLimits = ArchiveLimits {
+    max_entries: u64::MAX,
+    max_expanded_bytes: u64::MAX,
+};
+
 fn walk_files(root: &Path) -> Result<BTreeMap<String, ArchiveFile>, ArchiveError> {
-    walk_files_limited(
-        root,
-        ArchiveLimits {
-            max_entries: u64::MAX,
-            max_expanded_bytes: u64::MAX,
-        },
-    )
+    walk_files_limited(root, UNLIMITED)
 }
 
 fn walk_files_limited(
@@ -751,27 +868,9 @@ fn walk_files_limited(
             if platform_fs::is_real_directory(&metadata) {
                 walk(root, &path, output, total, limits)?;
             } else {
-                let file = regular_file(&entry.path())?;
-                let expected_size = file.metadata()?.len();
                 let mut count = output.len() as u64;
-                charge(&mut count, total, expected_size, limits)?;
-                let mut hasher = Sha256::new();
-                let size_bytes = io::copy(
-                    &mut file.take(expected_size.saturating_add(1)),
-                    &mut HashWriter(&mut hasher),
-                )?;
-                if size_bytes != expected_size {
-                    return Err(invalid("archive file changed while it was read"));
-                }
-                output.insert(
-                    path.clone(),
-                    ArchiveFile {
-                        path,
-                        sha256: hex(&hasher.finalize()),
-                        size_bytes,
-                        executable: platform_fs::is_executable(&metadata),
-                    },
-                );
+                let file = inventory_file(&entry.path(), path.clone(), &mut count, total, limits)?;
+                output.insert(path, file);
             }
         }
         if entries == 0 && !relative.is_empty() {
@@ -784,15 +883,45 @@ fn walk_files_limited(
     Ok(files)
 }
 
-struct HashWriter<'a>(&'a mut Sha256);
-impl Write for HashWriter<'_> {
-    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-        self.0.update(bytes);
-        Ok(bytes.len())
+fn inventory_file(
+    path: &Path,
+    name: String,
+    count: &mut u64,
+    total: &mut u64,
+    limits: ArchiveLimits,
+) -> Result<ArchiveFile, ArchiveError> {
+    let file = regular_file(path)?;
+    let metadata = file.metadata()?;
+    let expected_size = metadata.len();
+    charge(count, total, expected_size, limits)?;
+    let (digest, size_bytes) = hash_reader(file.take(expected_size.saturating_add(1)))?;
+    if size_bytes != expected_size {
+        return Err(invalid("archive file changed while it was read"));
     }
-    fn flush(&mut self) -> io::Result<()> {
-        Ok(())
+    Ok(ArchiveFile {
+        path: name,
+        sha256: hex(digest.bytes()),
+        size_bytes,
+        executable: platform_fs::is_executable(&metadata),
+    })
+}
+
+fn metadata_member(name: &str, bytes: &[u8]) -> ArchiveFile {
+    ArchiveFile {
+        path: name.to_owned(),
+        sha256: digest(bytes),
+        size_bytes: bytes.len() as u64,
+        executable: false,
     }
+}
+
+fn check_member(file: &ArchiveFile, size_bytes: u64, sha256: &str) -> Result<(), ArchiveError> {
+    if file.size_bytes != size_bytes || file.sha256 != sha256 {
+        return Err(invalid(
+            "archive file does not match its recorded hash or size",
+        ));
+    }
+    Ok(())
 }
 
 fn regular_file(path: &Path) -> Result<File, ArchiveError> {
@@ -888,10 +1017,6 @@ fn charge(
     Ok(())
 }
 
-fn write_new(path: &Path, bytes: &[u8]) -> Result<(), ArchiveError> {
-    File::create_new(path)?.write_all(bytes)?;
-    Ok(())
-}
 fn canonical_bytes(value: &impl Serialize) -> Result<Vec<u8>, ArchiveError> {
     Ok(CanonicalValue::try_from(serde_json::to_value(value)?)?.to_canonical_bytes()?)
 }

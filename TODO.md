@@ -109,7 +109,7 @@ benchmark](examples/overhead)
   and log costs, and reuse repeated evidence by ID. The
   [clustlasso-cd storage measurement](examples/adopters/README.md#buffered-result-storage)
   records the metadata and log costs and verifies the four evaluated snapshots.
-- [ ] Stream payloads directly into the archive to reduce scratch usage. Verify
+- [x] Stream payloads directly into the archive to reduce scratch usage. Verify
   the streamed bytes before atomic publication and preserve full
   verification on import and restore.
 - [ ] Publish fresh sequence membership as one durable record per repetition and

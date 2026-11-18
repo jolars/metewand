@@ -11,6 +11,30 @@ fn fixture() -> PathBuf {
 }
 
 #[test]
+fn streamed_archive_readback_checks_payload_digests() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("archive.tar.gz");
+    create_archive(&fixture(), &path).unwrap();
+    let manifest_bytes = fs::read(fixture().join("archive.json")).unwrap();
+    let mut manifest: super::ArchiveManifest = serde_json::from_slice(&manifest_bytes).unwrap();
+    // Creation records the running tool version in the emitted manifest.
+    manifest.tool_version = env!("CARGO_PKG_VERSION").to_owned();
+    let manifest_member =
+        super::metadata_member("archive.json", &super::canonical_bytes(&manifest).unwrap());
+    super::verify_created_archive(&path, &manifest_member, &manifest.files).unwrap();
+
+    let payload = manifest
+        .files
+        .iter_mut()
+        .find(|file| file.path.ends_with("/payload.bin"))
+        .unwrap();
+    payload.sha256 = super::digest(b"different bytes");
+    let error =
+        super::verify_created_archive(&path, &manifest_member, &manifest.files).unwrap_err();
+    assert!(error.to_string().contains("recorded hash or size"));
+}
+
+#[test]
 fn archive_publication_child() {
     let Some(root) = std::env::var_os("METEWAND_ARCHIVE_CRASH_ROOT") else {
         return;
@@ -148,6 +172,13 @@ fn check_publication_crashes(exhaustive: bool) {
                 "restore" => "restored",
                 _ => unreachable!(),
             });
+            if operation == "create" && target == before_publication {
+                // A crash leaves scratch paths behind. Creation needs only the
+                // compressed temporary file, even before publication.
+                for entry in fs::read_dir(root.path()).unwrap() {
+                    assert!(entry.unwrap().file_type().unwrap().is_file());
+                }
+            }
             let published = destination.exists();
             if target == before_publication || target == after_publication {
                 assert_eq!(

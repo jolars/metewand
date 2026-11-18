@@ -361,7 +361,9 @@ publication plotting belong downstream of the execution core.
 
 Portable result archives preserve a whole committed snapshot after every started
 attempt is terminal. They package versioned records and registered artifacts,
-including profile snapshots and traces. Offline verification checks identities,
+including profile snapshots and traces. Creation streams committed payloads
+into a temporary compressed archive and checks the emitted members against
+their inventory before atomic publication. Offline verification checks identities,
 coordination relationships, inventories, and hashes. It validates buffered traces
 one row at a time. On filesystems that support hard links, import and restore
 rejoin matching immutable payloads by verified digest, length, and executable
