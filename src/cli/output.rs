@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, fmt::Write as _, path::Path};
+use std::{collections::BTreeMap, fmt::Write as _, io, path::Path};
 
 use crate::core::{
     PUBLIC_SCHEMA_VERSION,
@@ -14,12 +14,16 @@ use crate::core::{
         ConfigurationSource, DatasetConfigurationDefinition, LogicalPlan, LogicalPlanningError,
     },
     public_schemas::{PUBLIC_SCHEMAS, PublicSchema},
-    run_output::{RunAttemptStatus, RunEvent, RunEventKind, RunReport},
 };
 use crate::runtime::{
     authoring::scaffold::{PathAction, ScaffoldError, ScaffoldErrorKind, ScaffoldReport},
     authoring::{CreatedPathKind, InitError, InitReport},
     repository::{CheckedRepository, RepositoryCheckError},
+};
+#[cfg(any(unix, windows))]
+use crate::{
+    core::run_output::RunAttemptStatus,
+    runtime::run::{RunEvent, RunReport},
 };
 use serde::{Serialize, Serializer};
 use serde_json::Value;
@@ -66,6 +70,7 @@ pub enum CommandResult {
     SchemaDocument(SchemaDocumentResult),
     Check(CheckResult),
     Plan(Box<PlanResult>),
+    #[cfg(any(unix, windows))]
     Run {
         report: Box<RunReport>,
         verbose: bool,
@@ -146,8 +151,8 @@ impl CommandResult {
         Self::Plan(Box::new(PlanResult::new(repository, plan, verbose)))
     }
 
-    pub fn render_human(&self) -> String {
-        match self {
+    fn write_human(&self, output: &mut impl io::Write) -> io::Result<()> {
+        let text = match self {
             Self::Bundle(report) => format!(
                 "{} Docker context: {}\nRunner: {}\nChange to the context directory, then:\n{}\n",
                 if report.dry_run {
@@ -206,11 +211,12 @@ impl CommandResult {
             Self::SchemaDocument(result) => result.source.to_owned(),
             Self::Check(result) => result.render_human(),
             Self::Plan(result) => result.render_human(),
+            #[cfg(any(unix, windows))]
             Self::Run {
                 report,
                 verbose,
                 elapsed,
-            } => render_run_report(report, *verbose, *elapsed),
+            } => return write_run_report(output, report, *verbose, *elapsed),
             Self::Status(result) => render_status(result),
             Self::Explain(result) => render_explanation(result),
             #[cfg(any(unix, windows))]
@@ -284,7 +290,8 @@ impl CommandResult {
                 }
                 output
             }
-        }
+        };
+        output.write_all(text.as_bytes())
     }
 
     pub fn exit_code(&self) -> u8 {
@@ -298,35 +305,36 @@ impl CommandResult {
         {
             return EXIT_RUN_FAILED;
         }
+        #[cfg(any(unix, windows))]
         if let Self::Run { report, .. } = self
             && (report.summary.failed_attempts > 0
                 || (report.summary.censored_attempts > 0 || report.summary.censored_profiles > 0))
         {
-            EXIT_RUN_FAILED
-        } else {
-            EXIT_SUCCESS
+            return EXIT_RUN_FAILED;
         }
+        EXIT_SUCCESS
     }
 
     pub fn diagnostics(&self) -> String {
-        let Self::Run { report, .. } = self else {
-            return String::new();
-        };
-        report
-            .attempts
-            .iter()
-            .filter_map(|attempt| {
-                attempt.diagnostic.as_ref().map(|diagnostic| {
-                    Diagnostic::new(diagnostic.code.clone(), diagnostic.message.clone())
-                        .with_affected_ids([
-                            attempt.logical_slot_id.to_string(),
-                            attempt.resolved_slot_id.to_string(),
-                            attempt.attempt_id.to_string(),
-                        ])
-                        .render_human()
+        #[cfg(any(unix, windows))]
+        if let Self::Run { report, .. } = self {
+            return report
+                .attempts
+                .iter()
+                .filter_map(|attempt| {
+                    attempt.diagnostic.as_ref().map(|diagnostic| {
+                        Diagnostic::new(diagnostic.code.clone(), diagnostic.message.clone())
+                            .with_affected_ids([
+                                attempt.logical_slot_id.to_string(),
+                                attempt.resolved_slot_id.to_string(),
+                                attempt.attempt_id.to_string(),
+                            ])
+                            .render_human()
+                    })
                 })
-            })
-            .collect()
+                .collect();
+        }
+        String::new()
     }
 }
 
@@ -344,6 +352,7 @@ impl Serialize for CommandResult {
             Self::SchemaDocument(result) => result.serialize(serializer),
             Self::Check(result) => result.serialize(serializer),
             Self::Plan(result) => result.serialize(serializer),
+            #[cfg(any(unix, windows))]
             Self::Run { report, .. } => report.serialize(serializer),
             Self::Status(result) => result.serialize(serializer),
             Self::Explain(result) => result.serialize(serializer),
@@ -1908,6 +1917,11 @@ impl CommandError {
             diagnostic: Box::new(Diagnostic::new("output_write_failed", message)),
         }
     }
+
+    pub(super) fn report_on_stdout(&self) -> bool {
+        // A failed live write can leave an incomplete JSON Lines record.
+        self.diagnostic.code != "output_write_failed"
+    }
 }
 
 #[derive(Serialize)]
@@ -1917,75 +1931,54 @@ struct MachineEnvelope<'a, T> {
     data: &'a T,
 }
 
-pub fn render_result(
+pub fn write_result(
+    output: &mut impl io::Write,
     result: &CommandResult,
     format: OutputFormat,
-) -> Result<String, serde_json::Error> {
+) -> io::Result<()> {
     if format == OutputFormat::Human {
-        return Ok(result.render_human());
+        return result.write_human(output);
     }
-    render_machine("result", result, format)
+    write_machine(output, "result", result, format)
 }
 
-pub fn render_diagnostic(
-    diagnostic: &Diagnostic,
-    format: OutputFormat,
-) -> Result<String, serde_json::Error> {
-    render_machine("diagnostic", diagnostic, format)
+pub fn render_diagnostic(diagnostic: &Diagnostic, format: OutputFormat) -> io::Result<String> {
+    let mut output = Vec::new();
+    write_machine(&mut output, "diagnostic", diagnostic, format)?;
+    Ok(String::from_utf8(output).expect("JSON is UTF-8"))
 }
 
-pub fn render_event(event: &RunEvent, format: OutputFormat) -> Result<String, serde_json::Error> {
-    match format {
-        OutputFormat::Json => Ok(String::new()),
-        OutputFormat::JsonLines => render_machine("event", event, format),
-        OutputFormat::Human => Ok(match &event.kind {
-            RunEventKind::RunStarted { attempt_slots } => {
-                format!("Running {}.\n", count(*attempt_slots, "attempt slot"))
-            }
-            RunEventKind::AttemptStarted {
-                resolved_slot_id, ..
-            } => format!("Starting {resolved_slot_id}.\n"),
-            RunEventKind::AttemptFinished { attempt } => format!(
-                "Finalized {} ({}).\n",
-                attempt.attempt_id,
-                match attempt.status {
-                    RunAttemptStatus::Accepted => "accepted",
-                    RunAttemptStatus::Censored => "censored",
-                    RunAttemptStatus::Failed => "failed",
-                    RunAttemptStatus::Superseded => "superseded",
-                }
-            ),
-            RunEventKind::RunFinished {
-                accepted_attempts,
-                failed_attempts,
-                superseded_attempts,
-                censored_attempts,
-            } => format!(
-                "Finished: {accepted_attempts} accepted, {censored_attempts} censored, {failed_attempts} failed, {superseded_attempts} superseded.\n"
-            ),
-        }),
-    }
+#[cfg(any(unix, windows))]
+pub fn write_event(output: &mut impl io::Write, event: &RunEvent) -> io::Result<()> {
+    write_machine(output, "event", event, OutputFormat::JsonLines)
 }
 
 fn render_comparison(rows: &[crate::core::comparison::ComparisonRow]) -> String {
     super::presentation::comparison(rows)
 }
 
-fn render_run_report(report: &RunReport, verbose: bool, elapsed: std::time::Duration) -> String {
-    let mut output = super::presentation::completion(report, elapsed);
+#[cfg(any(unix, windows))]
+fn write_run_report(
+    output: &mut impl io::Write,
+    report: &RunReport,
+    verbose: bool,
+    elapsed: std::time::Duration,
+) -> io::Result<()> {
+    let mut heading = super::presentation::completion(report, elapsed);
     if !report.calibration_attempts.is_empty() {
         writeln!(
-            output,
+            heading,
             "Calibration: {} pilot attempts.",
             report.calibration_attempts.len()
         )
         .expect("string write");
     }
-    render_adaptive_budgets(&mut output, &report.adaptive_budgets);
+    render_adaptive_budgets(&mut heading, &report.adaptive_budgets);
+    output.write_all(heading.as_bytes())?;
     if !verbose {
-        return output;
+        return Ok(());
     }
-    output.push_str(&render_comparison(&report.comparison));
+    super::presentation::write_run_comparison(output, &report.comparison)?;
     for profile in &report.fresh_sequences {
         writeln!(
             output,
@@ -1996,14 +1989,14 @@ fn render_run_report(report: &RunReport, verbose: bool, elapsed: std::time::Dura
             profile.accepted_points,
             profile.scheduled_points,
             profile.consumed_time_ns
-        )
-        .expect("string write");
+        )?;
     }
     for attempt in &report.attempts {
         if !report.comparison.is_empty() && attempt.observations.is_empty() {
             continue;
         }
         for observation in &attempt.observations {
+            let metrics = observation.metrics.read()?;
             match &observation.profile {
                 crate::core::records::ProfileObservationRecord::Streaming(profile) => writeln!(
                     output,
@@ -2011,7 +2004,7 @@ fn render_run_report(report: &RunReport, verbose: bool, elapsed: std::time::Dura
                     profile.checkpoint_sequence,
                     profile.active_time_ns,
                     profile.elapsed_wall_time_ns,
-                    observation.metrics
+                    metrics
                 ),
                 crate::core::records::ProfileObservationRecord::Buffered(profile) => writeln!(
                     output,
@@ -2019,15 +2012,14 @@ fn render_run_report(report: &RunReport, verbose: bool, elapsed: std::time::Dura
                     observation.observation_id,
                     profile.instrumented_time_ns,
                     profile.instrumented_scope,
-                    observation.metrics
+                    metrics
                 ),
                 crate::core::records::ProfileObservationRecord::Fresh(profile) => writeln!(
                     output,
                     "  observation {}: control {}; evaluator metrics {}",
-                    observation.observation_id, profile.observation_control, observation.metrics
+                    observation.observation_id, profile.observation_control, metrics
                 ),
-            }
-            .expect("string write");
+            }?;
         }
         writeln!(
             output,
@@ -2039,27 +2031,23 @@ fn render_run_report(report: &RunReport, verbose: bool, elapsed: std::time::Dura
                 RunAttemptStatus::Failed => "failed",
                 RunAttemptStatus::Superseded => "superseded",
             }
-        )
-        .expect("writing to a string cannot fail");
-        writeln!(output, "    logical slot: {}", attempt.logical_slot_id)
-            .expect("writing to a string cannot fail");
+        )?;
+        writeln!(output, "    logical slot: {}", attempt.logical_slot_id)?;
         if let Some(observation) = &attempt.observation_id {
-            writeln!(output, "    observation: {observation}")
-                .expect("writing to a string cannot fail");
+            writeln!(output, "    observation: {observation}")?;
         }
         if let Some(metrics) = &attempt.metrics {
-            writeln!(output, "    metrics: {metrics}").expect("writing to a string cannot fail");
+            writeln!(output, "    metrics: {}", metrics.read()?)?;
         }
         if let Some(diagnostic) = &attempt.diagnostic {
             writeln!(
                 output,
                 "    failure [{}]: {}",
                 diagnostic.code, diagnostic.message
-            )
-            .expect("writing to a string cannot fail");
+            )?;
         }
     }
-    output
+    Ok(())
 }
 
 fn render_adaptive_budgets(
@@ -2082,23 +2070,23 @@ fn render_adaptive_budgets(
     }
 }
 
-fn render_machine<T: Serialize>(
+fn write_machine<T: Serialize>(
+    output: &mut impl io::Write,
     kind: &'static str,
     data: &T,
     format: OutputFormat,
-) -> Result<String, serde_json::Error> {
+) -> io::Result<()> {
     let envelope = MachineEnvelope {
         schema_version: PUBLIC_SCHEMA_VERSION,
         kind,
         data,
     };
-    let mut output = match format {
+    match format {
         OutputFormat::Human => unreachable!("human output does not use machine envelopes"),
-        OutputFormat::Json => serde_json::to_string_pretty(&envelope)?,
-        OutputFormat::JsonLines => serde_json::to_string(&envelope)?,
-    };
-    output.push('\n');
-    Ok(output)
+        OutputFormat::Json => serde_json::to_writer_pretty(&mut *output, &envelope)?,
+        OutputFormat::JsonLines => serde_json::to_writer(&mut *output, &envelope)?,
+    }
+    output.write_all(b"\n")
 }
 
 fn repository_diagnostic(error: &RepositoryCheckError) -> Diagnostic {
@@ -2281,8 +2269,11 @@ fn count(value: usize, noun: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{Diagnostic, OutputFormat, render_diagnostic, render_event};
-    use crate::core::run_output::{RunEvent, RunEventKind, RunReport, RunSummary};
+    use super::{Diagnostic, OutputFormat, render_diagnostic, write_event, write_result};
+    use crate::{
+        core::run_output::{RunEventKind, RunSummary},
+        runtime::run::{RunEvent, RunReport},
+    };
     use serde_json::Value;
 
     fn run_result(summary: RunSummary) -> super::CommandResult {
@@ -2305,6 +2296,12 @@ mod tests {
         }
     }
 
+    fn human_output(result: &super::CommandResult) -> String {
+        let mut output = Vec::new();
+        write_result(&mut output, result, OutputFormat::Human).unwrap();
+        String::from_utf8(output).unwrap()
+    }
+
     #[test]
     fn successful_run_summary_has_one_completion_line_and_results_path() {
         let result = run_result(RunSummary {
@@ -2316,7 +2313,7 @@ mod tests {
             superseded_attempts: 0,
         });
         assert_eq!(
-            result.render_human(),
+            human_output(&result),
             "✓ Benchmarks complete · 36/36 accepted · 0:30\n  Results (example): results\n"
         );
     }
@@ -2336,7 +2333,7 @@ mod tests {
                 censored_profiles,
                 superseded_attempts,
             });
-            let text = result.render_human();
+            let text = human_output(&result);
             assert!(text.starts_with("! Benchmarks finished ·"), "{text}");
             assert!(text.contains(expected), "{text}");
             assert!(!text.contains("0 failed"), "{text}");
@@ -2353,7 +2350,7 @@ mod tests {
             censored_profiles: 1,
             superseded_attempts: 0,
         });
-        let text = result.render_human();
+        let text = human_output(&result);
         assert!(text.starts_with("✗ Benchmarks finished ·"), "{text}");
         assert!(text.contains("  Results (example): results"), "{text}");
         assert!(!text.contains("0 superseded"), "{text}");
@@ -2371,9 +2368,11 @@ mod tests {
             sequence: 0,
             kind: RunEventKind::RunStarted { attempt_slots: 1 },
         };
+        let mut output = Vec::new();
+        write_event(&mut output, &event).unwrap();
         assert_eq!(
-            render_event(&event, OutputFormat::JsonLines).unwrap(),
-            "{\"schema_version\":1,\"kind\":\"event\",\"data\":{\"command\":\"run\",\"sequence\":0,\"event\":\"run_started\",\"attempt_slots\":1}}\n"
+            output,
+            b"{\"schema_version\":1,\"kind\":\"event\",\"data\":{\"command\":\"run\",\"sequence\":0,\"event\":\"run_started\",\"attempt_slots\":1}}\n"
         );
     }
 

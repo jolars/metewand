@@ -49,11 +49,14 @@ benchmark](examples/overhead)
 
 ### Execution and inspection
 
-- [ ] Release completed result payloads from accumulated attempts and events
+- [x] Release completed result payloads from accumulated attempts and events
   after durable publication and after writing any live JSON Lines events.
   Send only display fields to human progress. Render the complete JSON
   report incrementally from saved results. Exercise all three output formats
-  with large results and concurrent attempts.
+  with large results and concurrent attempts. The 24-attempt test runs two
+  attempts at a time under a 192 MiB Linux address-space limit. For 60 MiB of
+  results and metrics, release-build peak RSS fell from 249–382 MiB to
+  55–57 MiB across the three formats.
 - [ ] Validate returned buffered traces one row at a time and retain the points
   referenced by snapshots. Account for manifest growth incrementally in the
   Rust and Python collectors and during prefix checks in the validator.

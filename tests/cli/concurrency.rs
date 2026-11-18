@@ -277,6 +277,138 @@ fn a_failed_concurrent_attempt_keeps_its_policy_and_does_not_skip_later_batches(
 }
 
 #[test]
+fn large_concurrent_results_are_reported_in_all_output_formats() {
+    const SLOTS: usize = 24;
+    const RESULT_BYTES: usize = 2 * 1024 * 1024;
+    const METRIC_BYTES: usize = 512 * 1024;
+
+    for format in ["human", "json", "jsonl"] {
+        let root = repository(Some(2), SLOTS, None);
+        let benchmark = root.path().join("benchmark");
+        let worker = benchmark.join("worker.py");
+        let source = fs::read_to_string(&worker)
+            .unwrap()
+            .replace(
+                r#""data": {"answer": prepared}"#,
+                &format!(r#""data": {{"answer": prepared, "payload": "r" * {RESULT_BYTES}}}"#),
+            )
+            .replace(
+                r#""data": {"absolute_error": error}"#,
+                &format!(
+                    r#""data": {{"absolute_error": error, "payload": "m" * {METRIC_BYTES} + str(answer)}}"#
+                ),
+            )
+            .replace(r#""result.json""#, r#""answer.json""#);
+        fs::write(worker, source).unwrap();
+        for name in ["result", "metrics"] {
+            let path = benchmark.join(format!("schemas/{name}.json"));
+            let mut schema = document(&path);
+            schema["properties"]["payload"] = json!({"type": "string"});
+            fs::write(path, schema.to_string()).unwrap();
+        }
+        let mut command = Command::new(env!("CARGO_BIN_EXE_metewand"));
+        command
+            .current_dir(&benchmark)
+            .args(["run", "--output-dir", "run", "--output", format]);
+        #[cfg(target_os = "linux")]
+        {
+            use std::os::unix::process::CommandExt;
+
+            // Allow concurrent validation and serialization of individual
+            // payloads, while bounding memory across the completed history.
+            command.env("MALLOC_ARENA_MAX", "2");
+            // SAFETY: The child changes only its own address space limit.
+            unsafe {
+                command.pre_exec(|| {
+                    let limit = libc::rlimit {
+                        rlim_cur: 192 * 1024 * 1024,
+                        rlim_max: 192 * 1024 * 1024,
+                    };
+                    if libc::setrlimit(libc::RLIMIT_AS, &limit) != 0 {
+                        return Err(std::io::Error::last_os_error());
+                    }
+                    Ok(())
+                });
+            }
+        }
+        let output = command.output().unwrap();
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(output.status.success(), "{format}: {stderr}");
+        let state = document(&root.path().join("state.json"));
+        assert_eq!(state["peak"], 2);
+        assert_eq!(state["completed"].as_array().unwrap().len(), SLOTS);
+        if format == "human" {
+            let stdout = std::str::from_utf8(&output.stdout).unwrap();
+            assert!(
+                stdout.contains(&format!("{SLOTS}/{SLOTS} accepted")),
+                "{stdout}"
+            );
+            assert!(
+                stderr.contains("Starting ") && stderr.contains("accepted:"),
+                "{stderr}"
+            );
+            continue;
+        }
+
+        let mut lines = output
+            .stdout
+            .strip_suffix(b"\n")
+            .unwrap()
+            .rsplit(|&b| b == b'\n');
+        let report: Value = serde_json::from_slice(if format == "jsonl" {
+            lines.next().unwrap()
+        } else {
+            &output.stdout
+        })
+        .unwrap();
+        assert_eq!(report["schema_version"], 1);
+        assert_eq!(report["kind"], "result");
+        let report = &report["data"];
+        assert_eq!(report["summary"]["accepted_attempts"], SLOTS);
+        let attempts = report["attempts"].as_array().unwrap();
+        let events = report["events"].as_array().unwrap();
+        let comparison = report["comparison"].as_array().unwrap();
+        assert_eq!(comparison.len(), SLOTS);
+        assert_eq!(events.len(), 2 * SLOTS + 2);
+        let finished = events
+            .iter()
+            .filter(|event| event["event"] == "attempt_finished")
+            .collect::<Vec<_>>();
+        assert_eq!(finished.len(), SLOTS);
+        assert_eq!(attempts.len(), SLOTS);
+        for (event, attempt) in finished.into_iter().zip(attempts) {
+            let id = &attempt["attempt_id"];
+            assert!(&event["attempt"] == attempt, "event for {id}");
+            let result = attempt["result"]["payload"].as_str().unwrap();
+            assert_eq!(result.len(), RESULT_BYTES);
+            assert!(result.bytes().all(|byte| byte == b'r'));
+            let answer = attempt["result"]["answer"].to_string();
+            let metrics = attempt["metrics"]["payload"].as_str().unwrap();
+            assert_eq!(metrics.len(), METRIC_BYTES + answer.len());
+            assert!(metrics.ends_with(&answer));
+            let row = comparison
+                .iter()
+                .find(|row| &row["attempt_id"] == id)
+                .unwrap();
+            assert!(row["metrics"] == attempt["metrics"], "comparison for {id}");
+        }
+        if format == "jsonl" {
+            for expected in events.iter().rev() {
+                let live: Value = serde_json::from_slice(lines.next().unwrap()).unwrap();
+                assert_eq!(live["schema_version"], 1);
+                assert_eq!(live["kind"], "event");
+                assert!(
+                    &live["data"] == expected,
+                    "live event {}",
+                    expected["sequence"]
+                );
+            }
+            assert!(lines.next().is_none());
+        }
+    }
+}
+
+#[test]
 fn event_sink_failure_joins_dispatched_attempts_and_stops_before_the_next_batch() {
     use crate::core::run_output::RunEventKind;
     use crate::runtime::{

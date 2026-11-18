@@ -21,6 +21,7 @@ pub use crate::core::run_output::RunOptions;
 use std::{
     fs, io,
     path::{Path, PathBuf},
+    sync::Arc,
     thread,
     time::SystemTime,
 };
@@ -33,10 +34,7 @@ use crate::core::{
     planning::LogicalPlan,
     public_schemas::PublicSchemaCatalogError,
     records::{AttemptDiagnostic, ProvenanceRecord, RunAttemptOutcome, RunAttemptRecord},
-    run_output::{
-        RunAttemptOutput, RunAttemptStatus, RunDiagnostic, RunEvent, RunEventKind, RunReport,
-        RunSummary,
-    },
+    run_output::{self, RunAttemptStatus, RunDiagnostic, RunEventKind, RunSummary},
 };
 use serde_json::{Value, json};
 use thiserror::Error;
@@ -47,7 +45,7 @@ use crate::runtime::{
         run_fixed_dataset_with_session,
     },
     local_tree::LocalTreeHashError,
-    publication::{PublicationError, PublicationRequest},
+    publication::{PublicationError, PublicationRequest, SavedData},
     repository::CheckedRepository,
     source_bundle::{SourceBundleError, SourceBundleIdentityError},
     source_resolution::SourceResolutionError,
@@ -56,6 +54,11 @@ use crate::runtime::{
 };
 
 use resolution::{ResolvedCandidate, ResolvedMeasurement, canonical};
+
+pub type RunReport = run_output::RunReport<SavedData>;
+pub type RunEvent = run_output::RunEvent<SavedData>;
+type RunAttemptOutput = run_output::RunAttemptOutput<SavedData>;
+type CalibrationAttemptOutput = run_output::CalibrationAttemptOutput<SavedData>;
 
 /// Host storage settings supplied explicitly for this invocation.
 #[derive(Default)]
@@ -525,11 +528,12 @@ pub(crate) fn run_repository_with_progress(
             &mut workers,
         )?;
         for attempt in completed {
+            let attempt = Arc::new(attempt);
             emit(
                 &mut events,
                 &mut event_sink,
                 RunEventKind::AttemptFinished {
-                    attempt: Box::new(attempt.clone()),
+                    attempt: Arc::clone(&attempt),
                 },
             )?;
             attempts.push(attempt);
@@ -567,9 +571,7 @@ pub(crate) fn run_repository_with_progress(
             superseded_attempts,
         },
     )?;
-    let mut inspection = crate::runtime::inspection::Inspection::default();
-    inspection
-        .add_store(&output_directory)
+    let inspection = crate::runtime::inspection::Inspection::read_for_run(&output_directory)
         .map_err(io::Error::other)?;
     let selected = plan
         .experiments
@@ -578,7 +580,7 @@ pub(crate) fn run_repository_with_progress(
         .map(|c| c.candidate.id.to_string())
         .collect::<std::collections::BTreeSet<_>>();
     let comparison = inspection
-        .comparison_rows()
+        .run_comparison_rows()
         .into_iter()
         .filter(|row| selected.contains(&row.candidate_id))
         .collect();
@@ -1002,7 +1004,7 @@ fn execute(
     ));
     let output_root = execution.output_root();
     let retry_index = execution.retry_index();
-    let (published, attempt_directory, observation_directory) = execution.publish_result(
+    let (attempt, attempt_directory, observation) = execution.publish_result(
         &result,
         PublicationRequest {
             primary_time: candidate.reuse_key.policy.primary_time,
@@ -1013,7 +1015,7 @@ fn execute(
             provenance_data: measurement.provenance.clone(),
         },
     )?;
-    let (status, diagnostic) = match &published.attempt.record.outcome {
+    let (status, diagnostic) = match &attempt.record.outcome {
         RunAttemptOutcome::Profile { .. } => unreachable!("single-result publisher"),
         RunAttemptOutcome::Censored { .. } => unreachable!("complete result publication"),
         RunAttemptOutcome::Accepted { .. } => (RunAttemptStatus::Accepted, None),
@@ -1030,13 +1032,13 @@ fn execute(
         observations: vec![],
         logical_slot_id: measurement.logical_slot,
         resolved_slot_id: measurement.attempt_slot.id,
-        attempt_id: published.attempt.id,
+        attempt_id: attempt.id,
         status,
-        observation_id: Some(published.observation.id),
+        observation_id: Some(observation.record.id),
         attempt_directory,
-        observation_directory: Some(observation_directory),
-        result: Some(result.result.as_json().clone()),
-        metrics: Some(result.metrics.as_json().clone()),
+        observation_directory: Some(observation.directory),
+        result: Some(observation.result),
+        metrics: Some(observation.metrics),
         diagnostic,
     })
 }
@@ -1116,7 +1118,7 @@ fn failed_attempt(
 fn emit(
     events: &mut Vec<RunEvent>,
     sink: &mut impl FnMut(&RunEvent) -> io::Result<()>,
-    kind: RunEventKind,
+    kind: RunEventKind<SavedData>,
 ) -> Result<(), RunError> {
     let event = RunEvent {
         command: "run",

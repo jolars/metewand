@@ -24,7 +24,7 @@ use crate::core::{
     schema::SchemaValidationError,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::json;
+use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use tempfile::{Builder, TempDir};
 use thiserror::Error;
@@ -33,6 +33,7 @@ use crate::runtime::{
     LOCAL_TREE_HASH_VERSION,
     fixed_dataset_run::{FixedDatasetResult, hex_digest},
     local_tree::{LocalTreeHashError, hash_local_tree},
+    run_store::ArtifactRegistration,
     worker_process::{CapturedWorkerLog, WorkerLogSnapshot},
 };
 
@@ -67,6 +68,84 @@ pub struct PublishedOneShot {
     pub observation_directory: PathBuf,
     /// Immutable directory containing the attempt document and scoped logs.
     pub attempt_directory: PathBuf,
+}
+
+/// The data field of a verified result or metrics document.
+///
+/// Keeping this reference in reports lets serialization load and release one
+/// payload at a time, even for an attempt with many observations.
+#[derive(Clone, Debug)]
+pub struct SavedData {
+    path: PathBuf,
+    sha256: String,
+}
+
+impl SavedData {
+    pub(crate) fn new(path: PathBuf, sha256: String) -> Self {
+        Self { path, sha256 }
+    }
+
+    pub(crate) fn read(&self) -> io::Result<Value> {
+        let read = || -> io::Result<Value> {
+            let mut file = crate::runtime::platform_fs::open_regular(
+                &self.path,
+                OpenOptions::new().read(true),
+            )?;
+            let mut bytes = Vec::new();
+            file.read_to_end(&mut bytes)?;
+            if hex_digest(sha256(&bytes)) != self.sha256 {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "content hash changed",
+                ));
+            }
+            let mut document = CanonicalValue::from_slice(&bytes)
+                .map_err(io::Error::other)?
+                .into_json();
+            document
+                .as_object_mut()
+                .and_then(|object| object.remove("data"))
+                .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "missing data field"))
+        };
+        read().map_err(|error| {
+            io::Error::new(
+                error.kind(),
+                format!(
+                    "read saved observation data at {}: {error}",
+                    self.path.display()
+                ),
+            )
+        })
+    }
+}
+
+impl Serialize for SavedData {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.read()
+            .map_err(serde::ser::Error::custom)?
+            .serialize(serializer)
+    }
+}
+
+pub(crate) fn published_observation_data(
+    root: &Path,
+    artifact: &ArtifactRegistration,
+    record: &RunObservationRecord,
+) -> Result<(SavedData, SavedData), PublicationError> {
+    let directory = root.join(&artifact.relative_path);
+    let marker = read_marker(&directory, Some(artifact.manifest_sha256))?;
+    let data = |path: &str| {
+        let entry = marker
+            .files
+            .iter()
+            .find(|entry| entry.path == path)
+            .ok_or_else(|| PublicationError::InventoryMismatch(directory.clone()))?;
+        Ok::<_, PublicationError>(SavedData::new(directory.join(path), entry.sha256.clone()))
+    };
+    let result = record.provenance.data.as_json()["result_manifest"]
+        .as_str()
+        .ok_or(PublicationError::InvalidProvenance)?;
+    Ok((data(result)?, data(record.metrics.path.as_str())?))
 }
 
 /// Publishes a technical failure that produced no valid observation.
@@ -351,7 +430,7 @@ pub(crate) fn copy_prepared(source: &Path, destination: &Path) -> io::Result<()>
 ///
 /// Returns an error for an incomplete, unsafe, corrupted, or unreadable object.
 pub fn verify_finalized_directory(directory: &Path) -> Result<(), PublicationError> {
-    let marker = read_marker(directory)?;
+    let marker = read_marker(directory, None)?;
     let mut actual = inventory(directory)?;
     actual.remove("manifest.json");
     if marker.files != actual.into_values().collect::<Vec<_>>() {
@@ -571,7 +650,10 @@ struct FileEntry {
     media_type: String,
 }
 
-fn read_marker(directory: &Path) -> Result<Marker, PublicationError> {
+fn read_marker(
+    directory: &Path,
+    expected: Option<ContentDigest>,
+) -> Result<Marker, PublicationError> {
     if !crate::runtime::platform_fs::is_real_directory(&fs::symlink_metadata(directory)?)
         || !crate::runtime::platform_fs::is_regular_file(&fs::symlink_metadata(
             directory.join("manifest.json"),
@@ -579,7 +661,15 @@ fn read_marker(directory: &Path) -> Result<Marker, PublicationError> {
     {
         return Err(PublicationError::UnsafeEntry(directory.to_path_buf()));
     }
-    let document = CanonicalValue::from_slice(&fs::read(directory.join("manifest.json"))?)?;
+    let bytes = fs::read(directory.join("manifest.json"))?;
+    if let Some(expected) = expected {
+        if sha256(&bytes) != expected {
+            return Err(PublicationError::InventoryMismatch(directory.to_path_buf()));
+        }
+        // The registered digest binds a previously validated inventory.
+        return Ok(serde_json::from_slice(&bytes)?);
+    }
+    let document = CanonicalValue::from_slice(&bytes)?;
     public_schema_catalog()?.validate(
         PublicSchema::ArtifactManifest.repository_path(),
         document.as_json(),
@@ -773,6 +863,25 @@ mod tests {
         assert_eq!(
             metrics_artifact_id(digest).unwrap().to_string(),
             "mw1-artifact-037b355951f6be41c4031a064a3ade9d39d5ca40d1a57bd3fe62eb479d6e56f9"
+        );
+    }
+
+    #[test]
+    fn saved_data_serializes_normalized_payload_and_rejects_changed_bytes() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("result.json");
+        let bytes = br#"{"schema_version":1,"data":{"z":-0.0,"a":2e0,"message":"line\nend"}}"#;
+        fs::write(&path, bytes).unwrap();
+        let saved = SavedData::new(path.clone(), hex_digest(sha256(bytes)));
+        assert_eq!(
+            serde_json::to_vec(&saved).unwrap(),
+            br#"{"a":2,"message":"line\nend","z":0}"#
+        );
+        fs::write(&path, br#"{"schema_version":1,"data":{}}"#).unwrap();
+        let error = serde_json::to_vec(&saved).unwrap_err();
+        assert!(
+            error.to_string().contains("content hash changed"),
+            "{error}"
         );
     }
 

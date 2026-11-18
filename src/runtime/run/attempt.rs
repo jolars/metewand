@@ -1,5 +1,6 @@
 use std::{
     io,
+    path::Path,
     sync::{Arc, Mutex, mpsc},
     thread,
     time::{Duration, SystemTime, UNIX_EPOCH},
@@ -7,16 +8,19 @@ use std::{
 
 use crate::core::{
     canonical::CanonicalValue,
-    records::{RunAttemptOutcome, RunAttemptRecord},
+    records::{IdentifiedRecord, RunAttemptOutcome, RunAttemptRecord, RunObservationRecord},
     run_documents::attempt_document,
 };
 
 use crate::runtime::{
     fixed_dataset_run::FixedDatasetResult,
-    publication::{PublicationRequest, copy_prepared, prepare_fixed_dataset},
+    publication::{
+        PublicationRequest, SavedData, copy_prepared, prepare_fixed_dataset,
+        published_observation_data,
+    },
     run_store::{
-        ArtifactKind, AttemptPhase, ClaimDisposition, LeaseRequest, OwnedAttempt,
-        RetryAuthorization, RunStore, RunStoreError, TerminalOutcome,
+        ArtifactKind, ArtifactRegistration, AttemptPhase, ClaimDisposition, LeaseRequest,
+        OwnedAttempt, RetryAuthorization, RunStore, RunStoreError, TerminalOutcome,
     },
 };
 
@@ -40,6 +44,29 @@ pub(super) struct AttemptExecution {
     owner: String,
     stop: mpsc::Sender<()>,
     heartbeat: Option<thread::JoinHandle<Result<(), RunStoreError>>>,
+}
+
+pub(super) struct PublishedObservation {
+    pub record: IdentifiedRecord<RunObservationRecord>,
+    pub directory: String,
+    pub result: SavedData,
+    pub metrics: SavedData,
+}
+
+impl PublishedObservation {
+    fn new(
+        root: &Path,
+        artifact: &ArtifactRegistration,
+        record: IdentifiedRecord<RunObservationRecord>,
+    ) -> Result<Self, RunError> {
+        let (result, metrics) = published_observation_data(root, artifact, &record.record)?;
+        Ok(Self {
+            record,
+            directory: artifact.relative_path.clone(),
+            result,
+            metrics,
+        })
+    }
 }
 
 impl AttemptExecution {
@@ -162,9 +189,9 @@ impl AttemptExecution {
         request: PublicationRequest<'_>,
     ) -> Result<
         (
-            crate::runtime::publication::PublishedOneShot,
+            IdentifiedRecord<RunAttemptRecord>,
             String,
-            String,
+            PublishedObservation,
         ),
         RunError,
     > {
@@ -203,14 +230,19 @@ impl AttemptExecution {
             |path| copy_prepared(prepared.observation_files.path(), path),
             now,
         )?;
+        let output = PublishedObservation::new(
+            self.store.root(),
+            &observation.artifact,
+            prepared.observation,
+        )?;
         self.store.register_observation(
             &owned,
-            &prepared.observation,
+            &output.record,
             &observation.artifact,
             success
                 && !superseded
                 && !matches!(
-                    prepared.observation.record.profile,
+                    output.record.record.profile,
                     Some(crate::core::records::ProfileObservationRecord::Fresh(_))
                 ),
             now(),
@@ -230,19 +262,7 @@ impl AttemptExecution {
             now,
         )?;
         self.finish_heartbeat()?;
-        let attempt_path = published.artifact.relative_path;
-        let observation_path = observation.artifact.relative_path;
-        let root = self.store.root();
-        Ok((
-            crate::runtime::publication::PublishedOneShot {
-                observation: prepared.observation,
-                attempt: prepared.attempt,
-                attempt_directory: root.join(&attempt_path),
-                observation_directory: root.join(&observation_path),
-            },
-            attempt_path,
-            observation_path,
-        ))
+        Ok((prepared.attempt, published.artifact.relative_path, output))
     }
 
     pub fn publish_buffer(
@@ -267,13 +287,7 @@ impl AttemptExecution {
         &mut self,
         result: &FixedDatasetResult,
         request: PublicationRequest<'_>,
-    ) -> Result<
-        (
-            crate::core::records::IdentifiedRecord<crate::core::records::RunObservationRecord>,
-            String,
-        ),
-        RunError,
-    > {
+    ) -> Result<PublishedObservation, RunError> {
         let prepared = prepare_fixed_dataset(result, request)?;
         let owned = self.owned.lock().expect("lease owner lock").clone();
         let published = self.store.publish_artifact(
@@ -282,16 +296,21 @@ impl AttemptExecution {
             |path| copy_prepared(prepared.observation_files.path(), path),
             now,
         )?;
+        let output = PublishedObservation::new(
+            self.store.root(),
+            &published.artifact,
+            prepared.observation,
+        )?;
         self.store.register_observation(
             &owned,
-            &prepared.observation,
+            &output.record,
             &published.artifact,
             false,
             now(),
         )?;
         self.profile_references
             .push(("observation".into(), published.artifact.id));
-        Ok((prepared.observation, published.artifact.relative_path))
+        Ok(output)
     }
 
     pub fn publish_profile(&mut self, record: &mut RunAttemptRecord) -> Result<String, RunError> {

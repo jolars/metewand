@@ -26,7 +26,7 @@ use crate::core::public_schemas::{PUBLIC_SCHEMAS, PublicSchema};
 use crate::runtime::repository::check_repository;
 
 use crate::cli::output::{
-    CommandError, CommandResult, EXIT_SUCCESS, OutputFormat, render_diagnostic, render_result,
+    CommandError, CommandResult, EXIT_SUCCESS, OutputFormat, render_diagnostic, write_result,
 };
 
 const DEFAULT_RUN_DIRECTORY: &str = ".metewand";
@@ -88,24 +88,28 @@ pub fn main() -> ExitCode {
         extract_output_format(raw_arguments).and_then(|arguments| run(&arguments, output_format));
 
     match result {
-        Ok(result) => match render_result(&result, output_format) {
-            Ok(output) => {
-                let _ = io::stderr().write_all(result.diagnostics().as_bytes());
-                write_success(&output, result.exit_code())
-            }
-            Err(error) => write_failure(
-                &CommandError::internal(format!("failed to serialize command output: {error}")),
-                output_format,
-            ),
-        },
+        Ok(result) => write_success(&result, output_format),
         Err(error) if error.exit_code == EXIT_SUCCESS => ExitCode::SUCCESS,
         Err(error) => write_failure(&error, output_format),
     }
 }
 
-fn write_success(output: &str, exit_code: u8) -> ExitCode {
-    match io::stdout().write_all(output.as_bytes()) {
-        Ok(()) => ExitCode::from(exit_code),
+fn write_stdout(
+    write: impl FnOnce(&mut io::BufWriter<io::StdoutLock<'_>>) -> io::Result<()>,
+) -> io::Result<()> {
+    let mut output = io::BufWriter::new(io::stdout().lock());
+    let result = write(&mut output).and_then(|()| output.flush());
+    if result.is_err() {
+        // A failed serialization or write may have left an incomplete record.
+        let _ = output.into_parts();
+    }
+    result
+}
+
+fn write_success(result: &CommandResult, format: OutputFormat) -> ExitCode {
+    let _ = io::stderr().write_all(result.diagnostics().as_bytes());
+    match write_stdout(|output| write_result(output, result, format)) {
+        Ok(()) => ExitCode::from(result.exit_code()),
         Err(error) if error.kind() == io::ErrorKind::BrokenPipe => ExitCode::from(EXIT_SUCCESS),
         Err(error) => {
             let diagnostic =
@@ -117,7 +121,7 @@ fn write_success(output: &str, exit_code: u8) -> ExitCode {
 }
 
 fn write_failure(error: &CommandError, output_format: OutputFormat) -> ExitCode {
-    if output_format.is_machine() {
+    if output_format.is_machine() && error.report_on_stdout() {
         match render_diagnostic(&error.diagnostic, output_format) {
             Ok(output) => {
                 if let Err(write_error) = io::stdout().write_all(output.as_bytes())

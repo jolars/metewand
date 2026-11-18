@@ -1,9 +1,13 @@
 //! Shared iocraft layout for human summaries and comparison output.
 
-use crate::core::{comparison::ComparisonRow, run_output::RunReport};
+use crate::core::comparison::ComparisonRow;
+#[cfg(any(unix, windows))]
+use crate::runtime::{publication::SavedData, run::RunReport};
 use iocraft::prelude::*;
+use serde_json::Value;
 use std::{
-    io::{self, IsTerminal},
+    borrow::Cow,
+    io::{self, IsTerminal, Write},
     time::Duration,
 };
 
@@ -35,6 +39,7 @@ fn render(mut element: AnyElement<'_>, width: usize) -> String {
     }
 }
 
+#[cfg(any(unix, windows))]
 pub(super) fn completion(report: &RunReport, elapsed: Duration) -> String {
     let summary = &report.summary;
     let (marker, state, color) = if summary.failed_attempts > 0 {
@@ -156,7 +161,7 @@ fn context(text: String) -> AnyElement<'static> {
     element!(Text(content:text)).into()
 }
 
-fn same_context(a: &ComparisonRow, b: &ComparisonRow) -> bool {
+fn same_context<M>(a: &ComparisonRow<M>, b: &ComparisonRow<M>) -> bool {
     a.experiment == b.experiment
         && a.dataset == b.dataset
         && a.problem == b.problem
@@ -183,8 +188,33 @@ pub(super) fn comparison(rows: &[ComparisonRow]) -> String {
 }
 
 fn comparison_at_width(rows: &[ComparisonRow], width: usize) -> String {
+    let mut output = Vec::new();
+    write_comparison_at_width(&mut output, rows, width, |metrics| {
+        Ok(Cow::Borrowed(metrics))
+    })
+    .expect("writing a comparison to memory");
+    String::from_utf8(output).expect("iocraft renders UTF-8")
+}
+
+#[cfg(any(unix, windows))]
+pub(super) fn write_run_comparison(
+    output: &mut impl Write,
+    rows: &[ComparisonRow<Option<SavedData>>],
+) -> io::Result<()> {
+    write_comparison_at_width(output, rows, width(), |metrics| {
+        let metrics = metrics.as_ref().map(SavedData::read).transpose()?;
+        Ok(Cow::Owned(metrics.unwrap_or(Value::Null)))
+    })
+}
+
+fn write_comparison_at_width<M>(
+    output: &mut impl Write,
+    rows: &[ComparisonRow<M>],
+    width: usize,
+    read_metrics: impl Fn(&M) -> io::Result<Cow<'_, Value>>,
+) -> io::Result<()> {
     if rows.is_empty() {
-        return String::new();
+        return Ok(());
     }
     // Stored candidate identities do not put matching comparison contexts together.
     let mut ordered = rows.iter().collect::<Vec<_>>();
@@ -210,7 +240,7 @@ fn comparison_at_width(rows: &[ComparisonRow], width: usize) -> String {
         )
     });
     let mut rows = ordered.as_slice();
-    let mut output = String::from("\nComparison (individual measurements)\n");
+    writeln!(output, "\nComparison (individual measurements)")?;
     while let Some(first) = rows.first() {
         let count = rows
             .iter()
@@ -223,7 +253,14 @@ fn comparison_at_width(rows: &[ComparisonRow], width: usize) -> String {
         let parameters_shared = group
             .iter()
             .all(|row| row.parameters["implementation"] == first.parameters["implementation"]);
-        let metrics_shared = group.iter().all(|row| row.metrics == first.metrics);
+        let first_metrics = read_metrics(&first.metrics)?;
+        let mut metrics_shared = true;
+        for row in &group[1..] {
+            if read_metrics(&row.metrics)? != first_metrics {
+                metrics_shared = false;
+                break;
+            }
+        }
         let mut context_lines = vec![
             "Rep = implementation repetition:measurement".into(),
             format!(
@@ -266,8 +303,9 @@ fn comparison_at_width(rows: &[ComparisonRow], width: usize) -> String {
             ));
         }
         if metrics_shared {
-            context_lines.push(format!("metrics (all rows): {}", first.metrics));
+            context_lines.push(format!("metrics (all rows): {first_metrics}"));
         }
+        drop(first_metrics);
         let header = vec![
             cell("Method", 3.0, false),
             cell("Rep", 1.0, true),
@@ -275,7 +313,7 @@ fn comparison_at_width(rows: &[ComparisonRow], width: usize) -> String {
             cell("Primary (ms)", 2.0, true),
             cell("Wall (ms)", 2.0, true),
         ];
-        let extras = |mut cells: Vec<Cell>, row: Option<&ComparisonRow>| {
+        let extras = |mut cells: Vec<Cell>, row: Option<&ComparisonRow<M>>| {
             if !retry_shared {
                 cells.push(cell(
                     row.map_or_else(|| "Retry".into(), |r| r.retry_index.to_string()),
@@ -295,10 +333,14 @@ fn comparison_at_width(rows: &[ComparisonRow], width: usize) -> String {
             }
             cells
         };
-        let mut elements = vec![
-            context(context_lines.join("\n")),
-            table_row(extras(header, None), true),
-        ];
+        write_comparison_lines(
+            output,
+            width,
+            vec![
+                context(context_lines.join("\n")),
+                table_row(extras(header, None), true),
+            ],
+        )?;
         for row in group {
             let mut status = cell(&row.status, 2.0, false);
             status.color = Some(match row.status.as_str() {
@@ -310,7 +352,7 @@ fn comparison_at_width(rows: &[ComparisonRow], width: usize) -> String {
                 (Some(i), Some(m)) => format!("{}:{}", i + 1, m + 1),
                 _ => "?".into(),
             };
-            elements.push(table_row(
+            let mut elements = vec![table_row(
                 extras(
                     vec![
                         cell(
@@ -334,12 +376,16 @@ fn comparison_at_width(rows: &[ComparisonRow], width: usize) -> String {
                     Some(row),
                 ),
                 false,
-            ));
+            )];
             if !parameters_shared {
                 elements.push(element!(View(padding_left:2) {Text(content:format!("parameters: {}",row.parameters["implementation"]))}).into());
             }
             if !metrics_shared {
-                elements.push(element!(View(padding_left:2) {Text(content:format!("metrics: {}",row.metrics))}).into());
+                let metrics = read_metrics(&row.metrics)?;
+                elements.push(
+                    element!(View(padding_left:2) {Text(content:format!("metrics: {metrics}"))})
+                        .into(),
+                );
             }
             if let Some(time) = row.instrumented_time_ns {
                 elements.push(context(format!(
@@ -353,14 +399,20 @@ fn comparison_at_width(rows: &[ComparisonRow], width: usize) -> String {
                     diagnostic.code, diagnostic.message
                 )));
             }
+            write_comparison_lines(output, width, elements)?;
         }
-        output.push_str(&render(
-            element!(View(width:100pct,flex_direction:FlexDirection::Column) {#(elements)}).into(),
-            width,
-        ));
-        output.push('\n');
+        writeln!(output)?;
     }
-    output
+    Ok(())
+}
+
+fn write_comparison_lines(
+    output: &mut impl Write,
+    width: usize,
+    elements: Vec<AnyElement<'static>>,
+) -> io::Result<()> {
+    let view = element!(View(width:100pct,flex_direction:FlexDirection::Column) {#(elements)});
+    output.write_all(render(view.into(), width).as_bytes())
 }
 
 #[cfg(test)]

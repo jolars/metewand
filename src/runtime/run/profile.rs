@@ -164,7 +164,7 @@ pub(super) fn execute(
                         crate::core::controls::local_control_report(&candidate.reuse_key.policy)
                     });
                 let ordinal = observations.len();
-                let (published, directory) = execution
+                let observation = execution
                     .publish_profile_observation(
                         result,
                         PublicationRequest {
@@ -186,11 +186,15 @@ pub(super) fn execute(
                 target_reached |= result.completion == CompletionStatus::Reached && within_budget;
                 late_target |= result.completion == CompletionStatus::Reached && !within_budget;
                 observations.push(ProfileObservationOutput {
-                    observation_id: published.id,
-                    observation_directory: directory,
-                    result: result.result.as_json().clone(),
-                    metrics: result.metrics.as_json().clone(),
-                    profile: published.record.profile.expect("profile observation"),
+                    observation_id: observation.record.id,
+                    observation_directory: observation.directory,
+                    result: observation.result,
+                    metrics: observation.metrics,
+                    profile: observation
+                        .record
+                        .record
+                        .profile
+                        .expect("profile observation"),
                 });
             }
         }

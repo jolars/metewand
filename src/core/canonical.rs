@@ -54,6 +54,10 @@ impl CanonicalValue {
         &self.value
     }
 
+    pub(crate) fn into_json(self) -> Value {
+        self.value
+    }
+
     /// Serializes this value to its exact RFC 8785 UTF-8 representation.
     ///
     /// The returned bytes contain no insignificant whitespace or trailing

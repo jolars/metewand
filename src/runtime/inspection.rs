@@ -24,7 +24,7 @@ use thiserror::Error;
 
 use crate::runtime::{
     evidence::EvidenceSnapshot,
-    publication::{PublicationError, verify_finalized_directory},
+    publication::{PublicationError, SavedData, verify_finalized_directory},
     repository::CheckedRepository,
     run_store::RunStoreError,
 };
@@ -71,6 +71,9 @@ pub struct Inspection {
     adaptive_budgets: Vec<crate::core::adaptive::AdaptiveBudgetDecision>,
     fresh_sequences: Vec<crate::core::profile::FreshSequenceProgress>,
     records: BTreeMap<String, InspectionRecord>,
+    // Run reports resolve metrics during output. Inspection and export keep
+    // complete documents available for their other projections.
+    saved_metrics: Option<BTreeMap<String, SavedData>>,
     slots: Vec<SlotStatus>,
     attempts: Vec<AttemptStatus>,
     observations: Vec<ObservationStatus>,
@@ -83,6 +86,18 @@ pub struct Inspection {
 impl Inspection {
     /// Projects comparisons only from committed records and verified artifacts.
     pub fn comparison_rows(&self) -> Vec<ComparisonRow> {
+        self.comparison_rows_with(|id| self.metrics(id))
+    }
+
+    pub(crate) fn run_comparison_rows(&self) -> Vec<ComparisonRow<Option<SavedData>>> {
+        let metrics = self.saved_metrics.as_ref().expect("run inspection");
+        self.comparison_rows_with(|id| id.and_then(|id| metrics.get(id)).cloned())
+    }
+
+    fn comparison_rows_with<M>(
+        &self,
+        metrics: impl Fn(Option<&str>) -> M,
+    ) -> Vec<ComparisonRow<M>> {
         let mut rows = Vec::new();
         for attempt in self.attempts.iter().filter(|a| !a.calibration) {
             let observations = self
@@ -99,7 +114,7 @@ impl Inspection {
             rows.extend(
                 observations
                     .into_iter()
-                    .map(|observation| self.comparison_row(attempt, observation)),
+                    .map(|observation| self.comparison_row(attempt, observation, &metrics)),
             );
         }
         rows.sort_by(|a, b| {
@@ -134,16 +149,22 @@ impl Inspection {
             let attempt = attempts.get(observation.attempt_id.as_str())?;
             Some((
                 observation.id.as_str(),
-                self.comparison_row(attempt, Some(observation)),
+                self.comparison_row(attempt, Some(observation), |id| self.metrics(id)),
             ))
         })
     }
 
-    fn comparison_row(
+    fn metrics(&self, id: Option<&str>) -> Value {
+        id.and_then(|id| self.records.get(id))
+            .map_or(Value::Null, |r| r.record["document"]["data"].clone())
+    }
+
+    fn comparison_row<M>(
         &self,
         attempt: &AttemptStatus,
         observation: Option<&ObservationStatus>,
-    ) -> ComparisonRow {
+        metrics: impl FnOnce(Option<&str>) -> M,
+    ) -> ComparisonRow<M> {
         let empty = Value::Null;
         let source_id = observation.map_or(attempt.id.as_str(), |o| o.id.as_str());
         let document = self
@@ -170,11 +191,6 @@ impl Inspection {
             .or_else(|| run["candidate_id"].as_str())
             .unwrap_or(&attempt.slot_id)
             .to_owned();
-        let metrics = document["metrics"]["id"]
-            .as_str()
-            .and_then(|id| self.records.get(id))
-            .map(|r| r.record["document"]["data"].clone())
-            .unwrap_or(Value::Null);
         let block = &context["scheduling"]["comparison_block"];
         let timing = |key: &str| {
             document["timing"][key]
@@ -238,7 +254,7 @@ impl Inspection {
             valid: observation.map(|o| o.valid),
             completion: observation.map(|o| o.completion.clone()),
             selected: observation.map(|o| o.selected),
-            metrics,
+            metrics: metrics(document["metrics"]["id"].as_str()),
             primary_time: primary_time.map(str::to_owned),
             primary_time_ns: primary_key.and_then(timing),
             primary_time_status: primary_key
@@ -328,6 +344,15 @@ impl Inspection {
     pub fn add_store(&mut self, root: &Path) -> Result<(), InspectionError> {
         let snapshot = EvidenceSnapshot::read(root)?;
         self.add_snapshot(&snapshot)
+    }
+
+    pub(crate) fn read_for_run(root: &Path) -> Result<Self, InspectionError> {
+        let mut inspection = Self {
+            saved_metrics: Some(BTreeMap::new()),
+            ..Self::default()
+        };
+        inspection.add_store(root)?;
+        Ok(inspection)
     }
 
     pub(crate) fn add_snapshot(
@@ -641,17 +666,26 @@ impl Inspection {
                     for role in ["result", "metrics"] {
                         let reference = &document[role];
                         let content_id = string(reference, "id")?;
-                        let mut content = InspectionRecord::new(
-                            content_id.clone(),
-                            "artifact",
-                            json!({"role": role, "reference": reference, "stored_artifact_id": id}),
-                        );
                         let manifest_path = if role == "metrics" {
                             string(reference, "path")?
                         } else {
                             string(&document["provenance"]["data"], "result_manifest")?
                         };
                         let manifest = confined(&path, &manifest_path)?;
+                        if let Some(metrics) = &mut self.saved_metrics {
+                            if role == "metrics" {
+                                let sha256 = string(reference, "sha256")?;
+                                metrics
+                                    .entry(content_id)
+                                    .or_insert_with(|| SavedData::new(manifest, sha256));
+                            }
+                            continue;
+                        }
+                        let mut content = InspectionRecord::new(
+                            content_id.clone(),
+                            "artifact",
+                            json!({"role": role, "reference": reference, "stored_artifact_id": id}),
+                        );
                         content.record["document"] = optional_document(&manifest)?.ok_or(
                             InspectionError::Invalid("missing result or metrics document"),
                         )?;
@@ -876,7 +910,7 @@ fn integer(value: &Value, key: &str) -> Result<u64, InspectionError> {
 
 fn optional_document(path: &Path) -> Result<Option<Value>, InspectionError> {
     match fs::read(path) {
-        Ok(bytes) => Ok(Some(CanonicalValue::from_slice(&bytes)?.as_json().clone())),
+        Ok(bytes) => Ok(Some(CanonicalValue::from_slice(&bytes)?.into_json())),
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
         Err(error) => Err(error.into()),
     }

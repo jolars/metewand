@@ -3,11 +3,11 @@
 use crate::{
     core::{
         planning::LogicalPlan,
-        run_output::{RunAttemptStatus, RunEvent, RunEventKind},
+        run_output::{RunAttemptStatus, RunDiagnostic, RunEventKind},
     },
     runtime::{
         repository::CheckedRepository,
-        run::{PreparationPhase, PreparationProgress},
+        run::{PreparationPhase, PreparationProgress, RunEvent},
     },
 };
 use futures::{
@@ -61,16 +61,23 @@ struct BenchmarkBar {
 }
 
 enum Message {
+    RunStarted {
+        attempt_slots: usize,
+    },
+    AttemptStarted {
+        logical_slot: String,
+        resolved_slot: String,
+    },
     Outcome {
         slot: String,
         status: RunAttemptStatus,
-        diagnostic: Option<crate::core::run_output::RunDiagnostic>,
+        diagnostic: Option<RunDiagnostic>,
     },
+    RunFinished,
     Stage(String),
     Phase(PreparationProgress),
     Scheduled(Vec<String>),
     Labels(BTreeMap<String, Label>),
-    Event(RunEvent),
     Tick,
     Stop,
 }
@@ -135,15 +142,24 @@ impl Progress {
         if self.sender.is_none() {
             return Ok(());
         }
-        // Profile outcomes can contain large scientific payloads; the display needs only metadata.
-        if let RunEventKind::AttemptFinished { attempt } = &event.kind {
-            return self.send(Message::Outcome {
+        self.send(match &event.kind {
+            RunEventKind::RunStarted { attempt_slots } => Message::RunStarted {
+                attempt_slots: *attempt_slots,
+            },
+            RunEventKind::AttemptStarted {
+                logical_slot_id,
+                resolved_slot_id,
+            } => Message::AttemptStarted {
+                logical_slot: logical_slot_id.to_string(),
+                resolved_slot: resolved_slot_id.to_string(),
+            },
+            RunEventKind::AttemptFinished { attempt } => Message::Outcome {
                 slot: attempt.resolved_slot_id.to_string(),
                 status: attempt.status,
                 diagnostic: attempt.diagnostic.clone(),
-            });
-        }
-        self.send(Message::Event(event.clone()))
+            },
+            RunEventKind::RunFinished { .. } => Message::RunFinished,
+        })
     }
 
     pub fn labels(&self, repository: &CheckedRepository, plan: &LogicalPlan) -> io::Result<()> {
@@ -435,53 +451,42 @@ impl ProgressModel {
                 self.phase = text.clone();
                 self.line(output, &text)
             }
-            Message::Event(event) => match event.kind {
-                RunEventKind::RunStarted { attempt_slots } => {
-                    self.executing = true;
-                    self.preparation_elapsed = Some(self.start.elapsed());
-                    self.total = self.limit.map_or(attempt_slots, |limit| {
-                        attempt_slots.min(usize::try_from(limit).unwrap_or(usize::MAX))
-                    });
-                    self.phase = "Executing benchmark".into();
-                    self.line(output, &format!("Running {} pending attempts", self.total))
+            Message::RunStarted { attempt_slots } => {
+                self.executing = true;
+                self.preparation_elapsed = Some(self.start.elapsed());
+                self.total = self.limit.map_or(attempt_slots, |limit| {
+                    attempt_slots.min(usize::try_from(limit).unwrap_or(usize::MAX))
+                });
+                self.phase = "Executing benchmark".into();
+                self.line(output, &format!("Running {} pending attempts", self.total))
+            }
+            Message::AttemptStarted {
+                logical_slot,
+                resolved_slot,
+            } => {
+                let label = self
+                    .labels
+                    .get(&logical_slot)
+                    .cloned()
+                    .unwrap_or_else(|| "selected benchmark attempt".into());
+                if !self.group_order.contains(&label.group) {
+                    self.group_order.push(label.group.clone());
                 }
-                RunEventKind::AttemptStarted {
-                    logical_slot_id,
-                    resolved_slot_id,
-                } => {
-                    let label = self
-                        .labels
-                        .get(&logical_slot_id.to_string())
-                        .cloned()
-                        .unwrap_or_else(|| "selected benchmark attempt".into());
-                    if !self.group_order.contains(&label.group) {
-                        self.group_order.push(label.group.clone());
-                    }
-                    self.active
-                        .insert(resolved_slot_id.to_string(), label.clone());
-                    let active = self
-                        .active
-                        .values()
-                        .filter(|other| other.group == label.group)
-                        .count();
-                    let b = self.benchmarks.entry(label.group.clone()).or_default();
-                    b.total = b.total.max(b.completed + active);
-                    self.phase = label.text.clone();
-                    self.line(output, &format!("Starting {}", label.text))
-                }
-                RunEventKind::AttemptFinished { attempt } => self.update(
-                    output,
-                    Message::Outcome {
-                        slot: attempt.resolved_slot_id.to_string(),
-                        status: attempt.status,
-                        diagnostic: attempt.diagnostic,
-                    },
-                ),
-                RunEventKind::RunFinished { .. } => {
-                    self.finished = true;
-                    Ok(())
-                }
-            },
+                self.active.insert(resolved_slot, label.clone());
+                let active = self
+                    .active
+                    .values()
+                    .filter(|other| other.group == label.group)
+                    .count();
+                let b = self.benchmarks.entry(label.group.clone()).or_default();
+                b.total = b.total.max(b.completed + active);
+                self.phase = label.text.clone();
+                self.line(output, &format!("Starting {}", label.text))
+            }
+            Message::RunFinished => {
+                self.finished = true;
+                Ok(())
+            }
             Message::Outcome {
                 slot,
                 status: outcome,
@@ -1156,14 +1161,7 @@ mod tests {
                 color.then_some(Color::DarkGrey)
             );
             model
-                .update(
-                    &mut io::sink(),
-                    Message::Event(RunEvent {
-                        command: "run",
-                        sequence: 0,
-                        kind: RunEventKind::RunStarted { attempt_slots: 1 },
-                    }),
-                )
+                .update(&mut io::sink(), Message::RunStarted { attempt_slots: 1 })
                 .unwrap();
             let folded = progress_view(&model).render(Some(100)).to_string();
             assert!(folded.contains("Preparation complete"), "{folded}");
@@ -1289,20 +1287,20 @@ mod tests {
             );
         }
         let start = |model: &mut ProgressModel, name: &str, index| {
-            let id = RecordId::from_digest([index; 32]);
-            let resolved = RecordId::from_digest([index; 32]);
+            let id = RecordId::<crate::core::records::LogicalAttemptSlotRecord>::from_digest(
+                [index; 32],
+            );
+            let resolved = RecordId::<crate::core::records::ResolvedAttemptSlotRecord>::from_digest(
+                [index; 32],
+            );
             model.labels.insert(id.to_string(), name.into());
             model
                 .update(
                     &mut io::sink(),
-                    Message::Event(RunEvent {
-                        command: "run",
-                        sequence: 0,
-                        kind: RunEventKind::AttemptStarted {
-                            logical_slot_id: id,
-                            resolved_slot_id: resolved,
-                        },
-                    }),
+                    Message::AttemptStarted {
+                        logical_slot: id.to_string(),
+                        resolved_slot: resolved.to_string(),
+                    },
                 )
                 .unwrap();
             resolved.to_string()
@@ -1494,70 +1492,41 @@ mod tests {
     }
     #[test]
     fn counters_and_labels_cover_concurrent_outcomes_and_invocation_bounds() {
-        use crate::core::{
-            records::RecordId,
-            run_output::{RunAttemptOutput, RunDiagnostic},
-        };
         let mut renderer = ProgressModel::new(false, false, Some(2));
         let mut output = Vec::new();
-        let event = |kind| {
-            Message::Event(RunEvent {
-                command: "run",
-                sequence: 0,
-                kind,
-            })
-        };
         renderer
-            .update(
-                &mut output,
-                event(RunEventKind::RunStarted { attempt_slots: 10 }),
-            )
+            .update(&mut output, Message::RunStarted { attempt_slots: 10 })
             .unwrap();
-        let logical = RecordId::from_digest([0; 32]);
-        let first = RecordId::from_digest([1; 32]);
-        let second = RecordId::from_digest([2; 32]);
         renderer
             .labels
-            .insert(format!("{logical}"), "main / numbers / reference".into());
-        for slot in [first, second] {
+            .insert("mw1-logical".into(), "main / numbers / reference".into());
+        for slot in ["mw1-first", "mw1-second"] {
             renderer
                 .update(
                     &mut output,
-                    event(RunEventKind::AttemptStarted {
-                        logical_slot_id: logical,
-                        resolved_slot_id: slot,
-                    }),
+                    Message::AttemptStarted {
+                        logical_slot: "mw1-logical".into(),
+                        resolved_slot: slot.into(),
+                    },
                 )
                 .unwrap();
         }
         assert_eq!(renderer.active.len(), 2);
         for (slot, status) in [
-            (first, RunAttemptStatus::Accepted),
-            (second, RunAttemptStatus::Failed),
+            ("mw1-first", RunAttemptStatus::Accepted),
+            ("mw1-second", RunAttemptStatus::Failed),
         ] {
             renderer
                 .update(
                     &mut output,
-                    event(RunEventKind::AttemptFinished {
-                        attempt: Box::new(RunAttemptOutput {
-                            observations: vec![],
-                            logical_slot_id: logical,
-                            resolved_slot_id: slot,
-                            attempt_id: RecordId::from_digest([0; 32]),
-                            status,
-                            observation_id: None,
-                            attempt_directory: String::new(),
-                            observation_directory: None,
-                            result: None,
-                            metrics: None,
-                            diagnostic: (status == RunAttemptStatus::Failed).then(|| {
-                                RunDiagnostic {
-                                    code: "worker_failed".into(),
-                                    message: "worker exited".into(),
-                                }
-                            }),
+                    Message::Outcome {
+                        slot: slot.into(),
+                        status,
+                        diagnostic: (status == RunAttemptStatus::Failed).then(|| RunDiagnostic {
+                            code: "worker_failed".into(),
+                            message: "worker exited".into(),
                         }),
-                    }),
+                    },
                 )
                 .unwrap();
         }

@@ -105,13 +105,7 @@ pub(super) fn calibrate(
     options: &RunOptions,
     selected: &BTreeSet<(usize, usize)>,
     progress: &mut impl FnMut(&RunProgress) -> io::Result<()>,
-) -> Result<
-    (
-        Vec<AdaptiveBudgetDecision>,
-        Vec<crate::core::run_output::CalibrationAttemptOutput>,
-    ),
-    RunError,
-> {
+) -> Result<(Vec<AdaptiveBudgetDecision>, Vec<CalibrationAttemptOutput>), RunError> {
     // Validate complete cohorts before allocating any pilot slots.
     let groups = groups(&resolved.candidates)?;
     let mut decisions = Vec::new();
@@ -127,9 +121,7 @@ pub(super) fn calibrate(
         let saved = store.adaptive_decision(&group.id)?;
         let decision = if let Some(decision) = saved {
             if !verified_saved {
-                let mut inspection = crate::runtime::inspection::Inspection::default();
-                inspection
-                    .add_store(store.root())
+                crate::runtime::inspection::Inspection::read_for_run(store.root())
                     .map_err(|e| io::Error::other(e.to_string()))?;
                 verified_saved = true;
             }
@@ -168,7 +160,7 @@ fn calibrate_group(
     store: &mut RunStore,
     group: &Group,
     options: &RunOptions,
-    attempts: &mut Vec<crate::core::run_output::CalibrationAttemptOutput>,
+    attempts: &mut Vec<CalibrationAttemptOutput>,
     progress: &mut impl FnMut(&RunProgress) -> io::Result<()>,
 ) -> Result<Option<AdaptiveBudgetDecision>, RunError> {
     let mut pilots = Vec::new();
@@ -256,7 +248,7 @@ fn calibrate_group(
                 candidate.timeouts,
                 candidate.reuse_key.policy,
             ) = saved;
-            attempts.push(crate::core::run_output::CalibrationAttemptOutput {
+            attempts.push(CalibrationAttemptOutput {
                 pilot: coordinate.clone(),
                 attempt: result?,
             });
@@ -281,9 +273,7 @@ fn calibrate_group(
             .min_by_key(|p| (p.convergence_time_ns, p.candidate_id.clone()))
             .cloned();
         if reference.is_none() && !round_pilots.iter().any(|pilot| pilot.was_time_limited()) {
-            let mut inspection = crate::runtime::inspection::Inspection::default();
-            inspection
-                .add_store(store.root())
+            crate::runtime::inspection::Inspection::read_for_run(store.root())
                 .map_err(|e| io::Error::other(e.to_string()))?;
             return Err(RunError::AdaptiveCalibrationStopped {
                 group_id: group.id.clone(),
@@ -302,9 +292,7 @@ fn calibrate_group(
             continue;
         }
         // Verify the retained artifacts before using their accepted timing.
-        let mut inspection = crate::runtime::inspection::Inspection::default();
-        inspection
-            .add_store(store.root())
+        crate::runtime::inspection::Inspection::read_for_run(store.root())
             .map_err(|e| io::Error::other(e.to_string()))?;
         let reference_time = reference.as_ref().and_then(|p| p.convergence_time_ns);
         let decision = AdaptiveBudgetDecision {

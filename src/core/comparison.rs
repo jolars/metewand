@@ -7,7 +7,7 @@ use crate::core::run_output::RunDiagnostic;
 
 /// One observation, or an attempt that produced no observation.
 #[derive(Clone, Debug, Serialize)]
-pub struct ComparisonRow {
+pub struct ComparisonRow<M = Value> {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub profile: Option<Value>,
     pub candidate_id: String,
@@ -26,7 +26,7 @@ pub struct ComparisonRow {
     pub valid: Option<bool>,
     pub completion: Option<String>,
     pub selected: Option<bool>,
-    pub metrics: Value,
+    pub metrics: M,
     pub primary_time: Option<String>,
     pub primary_time_ns: Option<u64>,
     pub primary_time_status: String,
