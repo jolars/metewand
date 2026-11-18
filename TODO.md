@@ -32,73 +32,80 @@ reject unreturned buffers.
 Prioritize memory that grows with completed results and validation inside the
 measured interval. Compare release-build peak RSS, wall time, scratch usage, and
 retained bytes and file counts as workloads grow. Start with the long buffered
-trace test and the orchestration overhead benchmark.
-[Long buffered trace test](tests/cli/archives.rs) ·
-[Orchestration overhead benchmark](examples/overhead)
+trace test and the orchestration overhead benchmark. [Long buffered trace
+test](tests/cli/archives.rs) · [Orchestration overhead
+benchmark](examples/overhead)
 
 ### Export
 
 - [x] Build JSON analysis directly from observation and coordination records.
-  Resolve exact `--id` selectors before expanding traces and preserve lineage.
-  The 25,001-point fixture passes under the same 256 MiB Linux address-space
-  limit as archive validation.
+  Resolve exact `--id` selectors before expanding traces and preserve
+  lineage. The 25,001-point fixture passes under the same 256 MiB Linux
+  address-space limit as archive validation.
 - [x] Stream CSV, JSONL, and index output in deterministic order while sharing
   attempt evidence across trace points and metrics. Release builds produced
-  identical v1 bytes on the smaller fixtures. For 1,001 points, JSONL retained
-  107 MiB, CSV retained 115 MiB, and the index retained 106 MiB.
+  identical v1 bytes on the smaller fixtures. For 1,001 points, JSONL
+  retained 107 MiB, CSV retained 115 MiB, and the index retained 106 MiB.
 
 ### Execution and inspection
 
-- [ ] Release inline result data from progress and summary state after durable
-  publication. Render complete machine output incrementally from saved
-  results. Exercise human, JSON, and JSON Lines output with large results
-  and concurrent attempts.
-- [ ] Stream live buffered trace validation and retain the points referenced by
-  snapshots. Track manifest byte counts incrementally in the Rust and Python
-  collectors and in the validator. Check terminal reserves, first threshold
-  crossings, and malformed rows with both long traces and many snapshots.
-- [ ] Stream source and executable hashing. Reuse dataset and worker source
-  snapshots across candidates, and register cache roots once per object and
-  run. Consolidate repeated dataset tree scans while preserving mutation
-  detection and timing scopes. Reuse committed inputs on resume when their
-  identities can be verified from saved evidence. Measure a large fixed
-  dataset, cached and uncached generated datasets, and resume with every
-  selected slot already accepted.
-- [ ] Reuse validated parameter expansion, apply name filters before building
-  excluded slots, and index observation slots within each specification.
-  Resolve and register large schedules in batches to bound memory while
-  keeping pending work visible. Exercise a small selection beside a large
-  grid and a run with many repetitions under `--max-attempts 1`.
+- [ ] Release completed result payloads from accumulated attempts and events
+  after durable publication and after writing any live JSON Lines events.
+  Send only display fields to human progress. Render the complete JSON
+  report incrementally from saved results. Exercise all three output formats
+  with large results and concurrent attempts.
+- [ ] Validate returned buffered traces one row at a time and retain the points
+  referenced by snapshots. Account for manifest growth incrementally in the
+  Rust and Python collectors and during prefix checks in the validator.
+  Check terminal reserves, first threshold crossings, and malformed rows
+  with long traces and many snapshots.
+- [ ] Hash source bundles and worker executables in chunks where the code reads
+  whole files. Reuse snapshots of fixed datasets and worker sources across
+  candidates. Register cache roots once per object and run. Consolidate
+  repeated dataset tree scans while preserving mutation detection and timing
+  scopes. Reuse committed inputs on resume when their identities can be
+  verified from saved evidence. Measure a large fixed dataset, cached and
+  uncached generated datasets, and resume with every selected slot already
+  accepted.
+- [ ] Reuse parameter expansion from repository validation. Apply name filters
+  before building logical slots. Index observation slots within each
+  specification. Resolve and register large schedules in batches to bound
+  memory while keeping pending work visible. Exercise a small selection
+  beside a large grid and a run with many repetitions under
+  `--max-attempts 1`.
 - [ ] Index attempts and observations by slot for inspection. Use targeted
   queries for status summaries, exact-ID explanations, and the final run
-  report. Index archive inventory paths and observation ownership to replace
-  per-artifact scans. Preserve read-only and integrity guarantees. Exercise
-  many small attempts, including retries and failed attempts.
+  comparison. Use exact and prefix lookups in the archive inventory and
+  index attempt and observation records by artifact ID. Preserve read-only
+  access and integrity checks. Exercise many small attempts, including
+  retries and failed attempts.
 
 ### Disk and shared storage
 
-- [ ] Let buffered SDK collectors capture file-backed snapshots using the
-  existing result artifact inventory and buffer byte limits. Exercise binary
-  coefficient arrays in the adopter benchmarks.
-- [ ] Share one immutable copy of result files between buffered snapshots and
-  their evaluated observations. Measure per-attempt metadata and log costs,
-  and reuse repeated evidence by ID.
-- [ ] Stream archive creation from verified payloads to reduce scratch usage.
-  Preserve atomic publication and full verification on import and restore.
-- [ ] Store fresh sequence membership once per repetition and reference it from
-  attempt outcomes. Verify recovery and archive restore for both existing
-  and new records.
-- [ ] Use indexed key lookups during shared journal replay and verify row images
-  after locating each row. Measure replay time and journal file counts
+- [ ] Let the Rust and Python buffered SDK collectors capture file-backed
+  snapshots using the result artifact inventory. Count declared files toward
+  buffer byte limits. Exercise binary coefficient arrays in the adopter
+  benchmarks.
+- [ ] Share one durable copy of immutable result files between buffered
+  snapshots and their evaluated observations. Measure per-attempt metadata
+  and log costs, and reuse repeated evidence by ID.
+- [ ] Stream payloads directly into the archive to reduce scratch usage. Verify
+  the streamed bytes before atomic publication and preserve full
+  verification on import and restore.
+- [ ] Publish fresh sequence membership as one durable record per repetition and
+  reference it from attempt outcomes. Verify recovery and archive restore
+  with inline membership in existing outcomes and with the new references.
+- [ ] Locate rows by indexed keys during shared journal replay and verify the
+  full before- and after-images. Measure replay time and journal file counts
   before batching durable writes. Preserve recovery after loss of local
   state.
 - [ ] Replace full shared cache snapshots with versioned deltas and checkpoints.
   Measure catalog growth as objects and roots accumulate. Keep existing
   records readable and cache collection safe across crashes.
-- [ ] If trace encoding and decoding remain costly after streaming and
-  deduplication, compare compressed JSON Lines with a chunked binary trace
-  format on Basin and clustlasso-cd traces. Measure recording and reading
-  time, peak RSS, and retained bytes.
+- [ ] If trace encoding and decoding remain costly after streaming live
+  validation and deduplicating durable result files, compare compressed JSON
+  Lines with a chunked binary trace format on Basin and clustlasso-cd
+  traces. Measure recording and reading time, peak RSS, and retained bytes.
 
 ## Benchmark authoring
 
