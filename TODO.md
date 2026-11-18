@@ -99,10 +99,11 @@ benchmark](examples/overhead)
 
 ### Disk and shared storage
 
-- [ ] Let the Rust and Python buffered SDK collectors capture file-backed
+- [x] Let the Rust and Python buffered SDK collectors capture file-backed
   snapshots using the result artifact inventory. Count declared files toward
-  buffer byte limits. Exercise binary coefficient arrays in the adopter
-  benchmarks.
+  buffer byte limits. The clustlasso-cd smoke benchmark with proximal
+  gradient captured four binary coefficient arrays and independently
+  evaluated all four.
 - [ ] Share one durable copy of immutable result files between buffered
   snapshots and their evaluated observations. Measure per-attempt metadata
   and log costs, and reuse repeated evidence by ID.

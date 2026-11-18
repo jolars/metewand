@@ -338,6 +338,16 @@ occur between scheduled checks; unscheduled intermediate checks do not serialize
 a snapshot. Existing periodic schedules retain their representation and
 identity.
 
+A buffered snapshot can include binary result files. In Python, return
+`trace.snapshot(data, files=[("beta.npy", "application/octet-stream", payload)])`
+from your snapshot callback, where `payload` is a `bytes` object. In Rust, use
+`observe_result`, `record_result`, and `finish_result` with callbacks that return
+a `BufferedResult` containing the JSON data and any `BufferedResultFile` values.
+The collector records each file's size and SHA-256 in the result manifest. The
+evaluator can read the files relative to its result directory. Both the payloads
+and their inventory entries count toward `max-buffer-bytes` and the regular
+collection budget before the terminal reserve.
+
 ### Calibrate a common solver time limit
 
 For buffered solver comparisons, add one setting to an existing target profile:

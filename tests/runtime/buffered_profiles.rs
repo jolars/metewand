@@ -5,7 +5,9 @@ use crate::core::{
     profile::{BufferFile, BufferedManifest, Direction, SelectedBufferedProfile, StopReason},
     records::ContentDigest,
 };
-use crate::runtime::buffered::{BufferedTrace, Decision, Progress, validate_buffer};
+use crate::runtime::buffered::{
+    BufferedResult, BufferedResultFile, BufferedTrace, Decision, Progress, validate_buffer,
+};
 use serde::Serialize;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -13,6 +15,56 @@ use std::{cell::Cell, fs, path::Path, rc::Rc};
 
 fn profile() -> SelectedBufferedProfile {
     serde_json::from_value(json!({"policy":{"metric":"gap","direction":"at_most","threshold":0.01,"record-thresholds":[1.0,0.1,0.01],"max-observations":3,"max-trace-points":20,"max-buffer-bytes":65536,"terminal-reserve-bytes":8192,"max-active-time":"1 s"},"instrumented_scope":"solver","scope":{"clock-origin":"before initialization","included-work":"solver and diagnostics","excluded-preparation":"dataset loading"},"instrumentation":{},"check_schedule":{"every":1,"start":0}})).unwrap()
+}
+
+#[test]
+fn buffered_result_files_use_the_terminal_reserve_and_are_verifiable() {
+    let root = tempfile::tempdir().unwrap();
+    let mut spec = profile();
+    spec.policy.max_buffer_bytes = 4096;
+    spec.policy.terminal_reserve_bytes = 2048;
+    let mut trace =
+        BufferedTrace::with_clock(spec.clone(), root.path().to_owned(), || 100).unwrap();
+    let snapshot = |size| BufferedResult {
+        data: json!({"coefficients": "arrays/beta.bin"}),
+        files: vec![BufferedResultFile {
+            path: "arrays/beta.bin".into(),
+            media_type: "application/octet-stream".into(),
+            bytes: vec![42; size],
+        }],
+    };
+    assert!(
+        trace
+            .record_result(progress(0), json!({"gap":0.5}), || Ok(snapshot(4096)))
+            .is_err()
+    );
+    assert_eq!(
+        trace
+            .record_result(progress(0), json!({"gap":0.5}), || Ok(snapshot(2048)))
+            .unwrap(),
+        Decision::Stop(StopReason::ByteLimit)
+    );
+    trace
+        .finish_result(progress(0), || panic!(), || panic!())
+        .unwrap();
+    let manifest = trace.write().unwrap();
+    validate_buffer(root.path(), Path::new(&manifest), &spec).unwrap();
+    let snapshot_dir = root.path().join("snapshots/0");
+    let payload = snapshot_dir.join("arrays/beta.bin");
+    assert_eq!(fs::read(&payload).unwrap(), vec![42; 2048]);
+    let result: Value =
+        serde_json::from_slice(&fs::read(snapshot_dir.join("result.json")).unwrap()).unwrap();
+    assert_eq!(
+        result["files"][0],
+        json!({
+            "path": "arrays/beta.bin",
+            "media_type": "application/octet-stream",
+            "size_bytes": 2048,
+            "sha256": hex(ContentDigest::new(Sha256::digest(vec![42; 2048]).into())),
+        })
+    );
+    fs::write(payload, vec![43; 2048]).unwrap();
+    assert!(validate_buffer(root.path(), Path::new(&manifest), &spec).is_err());
 }
 
 #[test]

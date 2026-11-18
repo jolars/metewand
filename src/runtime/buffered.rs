@@ -6,7 +6,10 @@ use crate::core::{
     profile::*,
     records::ContentDigest,
 };
-use crate::runtime::worker_sdk::{WorkerError, WorkerResult};
+use crate::runtime::{
+    worker_output::validate_relative_path,
+    worker_sdk::{WorkerError, WorkerResult},
+};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -37,12 +40,29 @@ pub enum Decision {
     Stop(StopReason),
 }
 
+/// A snapshot and the bytes of its declared result files.
+pub struct BufferedResult {
+    pub data: Value,
+    pub files: Vec<BufferedResultFile>,
+}
+
+pub struct BufferedResultFile {
+    pub path: String,
+    pub media_type: String,
+    pub bytes: Vec<u8>,
+}
+
+struct CapturedResult {
+    manifest: Vec<u8>,
+    files: Vec<(BufferFile, Vec<u8>)>,
+}
+
 /// The collector owns frozen scientific data, never a live solver reference.
 pub struct BufferedTrace {
     pub profile: SelectedBufferedProfile,
     pub directory: PathBuf,
     points: Vec<TracePoint>,
-    snapshots: Vec<(BufferedSnapshot, Vec<u8>)>,
+    snapshots: Vec<(BufferedSnapshot, CapturedResult)>,
     trace_bytes: u64,
     size: BufferSize,
     thresholds: Vec<f64>,
@@ -202,7 +222,7 @@ impl BufferedTrace {
         measure: impl FnOnce() -> WorkerResult<Value>,
         snapshot: impl FnOnce() -> WorkerResult<Value>,
     ) -> WorkerResult<Decision> {
-        self.check(progress, measure, snapshot, false)
+        self.observe_result(progress, measure, || inline_result(snapshot()))
     }
 
     pub fn record(
@@ -211,14 +231,32 @@ impl BufferedTrace {
         metrics: Value,
         snapshot: impl FnOnce() -> WorkerResult<Value>,
     ) -> WorkerResult<Decision> {
-        self.check(progress, || Ok(metrics), snapshot, false)
+        self.record_result(progress, metrics, || inline_result(snapshot()))
+    }
+
+    pub fn observe_result(
+        &mut self,
+        progress: Progress,
+        measure: impl FnOnce() -> WorkerResult<Value>,
+        snapshot: impl FnOnce() -> WorkerResult<BufferedResult>,
+    ) -> WorkerResult<Decision> {
+        self.check(progress, measure, snapshot, false)
+    }
+
+    pub fn record_result(
+        &mut self,
+        progress: Progress,
+        metrics: Value,
+        snapshot: impl FnOnce() -> WorkerResult<BufferedResult>,
+    ) -> WorkerResult<Decision> {
+        self.observe_result(progress, || Ok(metrics), snapshot)
     }
 
     fn check(
         &mut self,
         progress: Progress,
         measure: impl FnOnce() -> WorkerResult<Value>,
-        snapshot: impl FnOnce() -> WorkerResult<Value>,
+        snapshot: impl FnOnce() -> WorkerResult<BufferedResult>,
         terminal: bool,
     ) -> WorkerResult<Decision> {
         if self.finished || self.stopped.is_some() || self.adopted.is_some() {
@@ -330,10 +368,10 @@ impl BufferedTrace {
             trace_bytes -= 1; // `true` is one byte shorter than `false`.
         }
         let captured = (capture || reason.is_some())
-            .then(|| snapshot().and_then(snapshot_bytes))
+            .then(|| self.prepare_result(snapshot()?))
             .transpose()?;
         let estimate = match &captured {
-            Some(data) => self.estimate_capture(data.len() as u64)?,
+            Some(data) => self.estimate_capture(data)?,
             None => self.size,
         };
         if reason.is_none() && estimate.total(trace_bytes) > regular_limit {
@@ -365,36 +403,83 @@ impl BufferedTrace {
         }
     }
 
-    fn estimate_capture(&self, payload_bytes: u64) -> WorkerResult<BufferSize> {
+    fn prepare_result(&self, result: BufferedResult) -> WorkerResult<CapturedResult> {
+        if !result.data.is_object() {
+            return Err(invalid("snapshot data must be an object"));
+        }
+        let parent = PathBuf::from(format!("snapshots/{}", self.snapshots.len()));
+        let mut paths = BTreeMap::new();
+        for attachment in result.files {
+            let path = validate_relative_path(&attachment.path)
+                .map_err(|error| invalid(error.to_string()))?;
+            if attachment.path.contains('\0')
+                || attachment.media_type.is_empty()
+                || path.starts_with("result.json")
+                || paths.insert(path, attachment).is_some()
+            {
+                return Err(invalid("invalid or duplicate snapshot file declaration"));
+            }
+        }
+        let mut declarations = Vec::new();
+        let mut files = Vec::new();
+        for path in paths.keys() {
+            if path
+                .ancestors()
+                .skip(1)
+                .any(|ancestor| paths.contains_key(ancestor))
+            {
+                return Err(invalid("snapshot file cannot contain another file"));
+            }
+        }
+        let mut attachments: Vec<_> = paths.into_iter().collect();
+        attachments.sort_unstable_by(|(_, a), (_, b)| a.path.cmp(&b.path));
+        for (path, attachment) in attachments {
+            let entry = file(parent.join(path), &attachment.bytes);
+            declarations.push(json!({
+                "path": attachment.path, "media_type": attachment.media_type,
+                "sha256": entry.sha256, "size_bytes": entry.size_bytes,
+            }));
+            files.push((entry, attachment.bytes));
+        }
+        Ok(CapturedResult {
+            manifest: bytes(json!({"schema_version":1,"data":result.data,"files":declarations}))?,
+            files,
+        })
+    }
+
+    fn estimate_capture(&self, data: &CapturedResult) -> WorkerResult<BufferSize> {
         let mut size = self.size;
-        // Budget for every configured threshold on a prospective capture, as
-        // before. The committed size then charges only the recorded thresholds.
+        // Budget for every configured threshold on a prospective capture.
         let snapshot = self.next_snapshot(self.points.len() as u64, vec![]);
         size.snapshot(encoded_len(&snapshot)? + self.all_threshold_bytes);
-        size.other_files += BufferSize::file_charge(&file_entry(
-            snapshot.manifest,
-            payload_bytes,
+        size.other_files += Self::result_charge(&snapshot, data)?;
+        Ok(size)
+    }
+
+    fn result_charge(snapshot: &BufferedSnapshot, data: &CapturedResult) -> WorkerResult<u64> {
+        let mut charge = BufferSize::file_charge(&file_entry(
+            snapshot.manifest.clone(),
+            data.manifest.len() as u64,
             PLACEHOLDER_DIGEST,
         ))?;
-        Ok(size)
+        for (entry, _) in &data.files {
+            charge += BufferSize::file_charge(entry)?;
+        }
+        Ok(charge)
     }
 
     fn capture(
         &mut self,
         trace_index: u64,
         thresholds: Vec<f64>,
-        data: Vec<u8>,
+        data: CapturedResult,
     ) -> WorkerResult<()> {
         if self.snapshots.len() as u64 >= self.profile.policy.max_observations {
             return Err(limit("terminal snapshot exceeds max-observations"));
         }
         let snapshot = self.next_snapshot(trace_index, thresholds);
         let entry_bytes = encoded_len(&snapshot)?;
-        self.size.other_files += BufferSize::file_charge(&file_entry(
-            snapshot.manifest.clone(),
-            data.len() as u64,
-            PLACEHOLDER_DIGEST,
-        ))?;
+        self.size.other_files += Self::result_charge(&snapshot, &data)?;
         self.size.snapshot(entry_bytes);
         self.snapshots.push((snapshot, data));
         Ok(())
@@ -405,6 +490,15 @@ impl BufferedTrace {
         progress: Progress,
         measure: impl FnOnce() -> WorkerResult<Value>,
         snapshot: impl FnOnce() -> WorkerResult<Value>,
+    ) -> WorkerResult<()> {
+        self.finish_result(progress, measure, || inline_result(snapshot()))
+    }
+
+    pub fn finish_result(
+        &mut self,
+        progress: Progress,
+        measure: impl FnOnce() -> WorkerResult<Value>,
+        snapshot: impl FnOnce() -> WorkerResult<BufferedResult>,
     ) -> WorkerResult<()> {
         if self.finished || self.adopted.is_some() {
             return Err(invalid("buffer was already finished"));
@@ -422,10 +516,8 @@ impl BufferedTrace {
                 .last()
                 .is_none_or(|(s, _)| s.trace_index != self.points.len() as u64 - 1)
             {
-                let data = snapshot_bytes(snapshot()?)?;
-                if self
-                    .estimate_capture(data.len() as u64)?
-                    .total(self.trace_bytes)
+                let data = self.prepare_result(snapshot()?)?;
+                if self.estimate_capture(&data)?.total(self.trace_bytes)
                     > self.profile.policy.max_buffer_bytes
                 {
                     return Err(limit("terminal snapshot does not fit"));
@@ -486,8 +578,14 @@ impl BufferedTrace {
         for (snapshot, data) in &self.snapshots {
             let path = self.directory.join(&snapshot.manifest);
             fs::create_dir_all(path.parent().expect("snapshot parent"))?;
-            fs::write(path, data)?;
-            files.push(file(snapshot.manifest.clone(), data));
+            for (entry, payload) in &data.files {
+                let target = self.directory.join(&entry.path);
+                fs::create_dir_all(target.parent().expect("attachment parent"))?;
+                fs::write(target, payload)?;
+                files.push(entry.clone());
+            }
+            fs::write(path, &data.manifest)?;
+            files.push(file(snapshot.manifest.clone(), &data.manifest));
         }
         let payload_bytes: u64 = files.iter().map(|file| file.size_bytes).sum();
         let mut manifest = manifest_header(
@@ -515,9 +613,9 @@ fn file(path: PathBuf, data: &[u8]) -> BufferFile {
     }
 }
 
-fn snapshot_bytes(data: Value) -> WorkerResult<Vec<u8>> {
-    if !data.is_object() {
-        return Err(invalid("snapshot data must be an object"));
-    }
-    bytes(json!({"schema_version":1,"data":data,"files":[]}))
+fn inline_result(data: WorkerResult<Value>) -> WorkerResult<BufferedResult> {
+    Ok(BufferedResult {
+        data: data?,
+        files: vec![],
+    })
 }

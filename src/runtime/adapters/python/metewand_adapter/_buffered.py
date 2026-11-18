@@ -1,12 +1,14 @@
 """Bounded local observers; scientific formulas remain adapter-owned."""
 
 import hashlib
+import os
+import re
 import time
 from dataclasses import dataclass
 from pathlib import Path
 
 from ._schedules import CheckSchedule
-from ._artifacts import _relative_path
+from ._artifacts import _files, _relative_path, _windows_relative_path
 from ._canonical import MAX_SAFE_INTEGER, canonical_bytes, parse_json
 
 
@@ -24,6 +26,12 @@ class Decision:
 
     def __bool__(self):
         return not self.stop
+
+
+@dataclass(frozen=True)
+class _Snapshot:
+    data: dict
+    files: tuple
 
 
 def _fail(message, code="operation_failed"):
@@ -95,11 +103,43 @@ class BufferedTrace:
     def record(self, progress, metrics, snapshot):
         return self._check(progress, lambda: metrics, snapshot, False)
 
+    @staticmethod
+    def snapshot(data, *, files=()):
+        """Describe a result with (relative path, media type, bytes) attachments."""
+        return _Snapshot(data, tuple(files))
+
     def _snapshot(self, snapshot):
-        data = snapshot()
-        if type(data) is not dict:
+        result = snapshot()
+        if not isinstance(result, _Snapshot):
+            result = _Snapshot(result, ())
+        if type(result.data) is not dict:
             _fail("Snapshot data must be a JSON object.")
-        return canonical_bytes({"schema_version": 1, "data": data, "files": []})
+        parent = f"snapshots/{len(self.snapshots)}"
+        declarations = []
+        payloads = {}
+        for path, media_type, payload in result.files:
+            path = _relative_path(path)
+            if os.name == "nt":
+                _windows_relative_path(path)
+            if type(payload) is not bytes:
+                _fail("Snapshot file payloads must be bytes.")
+            if (
+                path in payloads
+                or path.split("/", 1)[0] == "result.json"
+                or re.match(r"^[A-Za-z]:/", path)
+            ):
+                _fail("Invalid or duplicate snapshot file path.")
+            payloads[path] = payload
+            declarations.append({**_file(path, payload), "media_type": media_type})
+        declarations = _files(declarations, manifest="result.json")
+        files = []
+        for entry in declarations:
+            path = entry["path"]
+            if any(parent_path.as_posix() in payloads for parent_path in Path(path).parents):
+                _fail("Snapshot file cannot contain another file.")
+            files.append((_file_entry(f"{parent}/{path}", entry["size_bytes"], entry["sha256"]), payloads[path]))
+        manifest = canonical_bytes({"schema_version": 1, "data": result.data, "files": declarations})
+        return manifest, files
 
     def _check(self, progress, measure, snapshot, terminal):
         if self.finished or self.reason or self.adopted:
@@ -151,7 +191,7 @@ class BufferedTrace:
             point["terminal"] = True
             trace_bytes -= 1  # true is one byte shorter than false.
         data = self._snapshot(snapshot) if capture or reason else None
-        estimate = self._estimate_capture(len(data)) if data is not None else 0
+        estimate = self._estimate_capture(data) if data is not None else 0
         if reason is None and self._size(trace_bytes, estimate) > regular:
             reason = "byte_limit"
             point["terminal"] = True
@@ -175,7 +215,7 @@ class BufferedTrace:
         if len(self.snapshots) >= self.policy["max-observations"]:
             _fail("Terminal snapshot exceeds max-observations.", "resource_limit")
         snapshot = self._next_snapshot(trace_index, thresholds)
-        self._snapshot_bytes += self._snapshot_charge(snapshot, len(data))
+        self._snapshot_bytes += self._snapshot_charge(snapshot, data)
         self.snapshots.append(snapshot)
         self.data.append(data)
 
@@ -184,16 +224,18 @@ class BufferedTrace:
                 "instrumented_scope": self.profile["instrumented_scope"], "instrumented_total_time_ns": total,
                 "stop_reason": reason, "trace": _TRACE_PATH, "snapshots": self.snapshots.copy(), "files": files}
 
-    def _snapshot_charge(self, snapshot, payload_bytes):
-        entry = _file_entry(snapshot["manifest"], payload_bytes, _PLACEHOLDER_DIGEST)
+    def _snapshot_charge(self, snapshot, data):
+        manifest, files = data
+        entries = [_file_entry(snapshot["manifest"], len(manifest), _PLACEHOLDER_DIGEST)]
+        entries.extend(entry for entry, _ in files)
         # Add a comma before each new file and between snapshot entries.
-        return (payload_bytes + len(canonical_bytes(entry)) + 1
+        return (sum(entry["size_bytes"] + len(canonical_bytes(entry)) + 1 for entry in entries)
                 + len(canonical_bytes(snapshot)) + bool(self.snapshots))
 
-    def _estimate_capture(self, payload_bytes):
+    def _estimate_capture(self, data):
         # A prospective snapshot budgets for every configured threshold.
         snapshot = self._next_snapshot(len(self.points), [])
-        return self._snapshot_charge(snapshot, payload_bytes) + self._all_threshold_bytes
+        return self._snapshot_charge(snapshot, data) + self._all_threshold_bytes
 
     def _size(self, trace_bytes, extra=0):
         return trace_bytes + len(str(trace_bytes)) + self._manifest_base + self._snapshot_bytes + extra
@@ -206,7 +248,7 @@ class BufferedTrace:
                 _fail("Terminal work changed without advancing progress.")
             if not self.snapshots or self.snapshots[-1]["trace_index"] != len(self.points) - 1:
                 data = self._snapshot(snapshot)
-                if self._size(self.trace_bytes, self._estimate_capture(len(data))) > self.policy["max-buffer-bytes"]:
+                if self._size(self.trace_bytes, self._estimate_capture(data)) > self.policy["max-buffer-bytes"]:
                     _fail("Terminal snapshot does not fit.", "resource_limit")
                 self._capture(len(self.points) - 1, data, [])
             self.points[-1]["terminal"] = True
@@ -234,9 +276,14 @@ class BufferedTrace:
         trace = b"".join(canonical_bytes(p) + b"\n" for p in self.points)
         (self.directory / _TRACE_PATH).write_bytes(trace)
         files = [_file(_TRACE_PATH, trace)]
-        for saved, data in zip(self.snapshots, self.data):
+        for saved, (data, attachments) in zip(self.snapshots, self.data):
             path = self.directory / saved["manifest"]
             path.parent.mkdir(parents=True, exist_ok=True)
+            for entry, payload in attachments:
+                target = self.directory / entry["path"]
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(payload)
+                files.append(entry)
             path.write_bytes(data)
             files.append(_file(saved["manifest"], data))
         manifest = canonical_bytes(self._manifest(self.total, self.reason, files))

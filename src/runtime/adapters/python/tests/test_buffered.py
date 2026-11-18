@@ -1,3 +1,4 @@
+import hashlib
 import tempfile
 import unittest
 from pathlib import Path
@@ -34,6 +35,34 @@ def profile():
 
 
 class BufferedTests(unittest.TestCase):
+    def test_snapshot_files_count_toward_both_byte_limits(self):
+        spec = profile()
+        spec["policy"].update({"max-buffer-bytes": 4096, "terminal-reserve-bytes": 2048})
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            trace = BufferedTrace(spec, root, clock=lambda: 100)
+            progress = {"check_index": 0}
+            metrics = {"gap": 0.5}
+
+            def snapshot(size):
+                return trace.snapshot(
+                    {"coefficients": "arrays/beta.bin"},
+                    files=[("arrays/beta.bin", "application/octet-stream", bytes([42]) * size)],
+                )
+
+            with self.assertRaisesRegex(WorkerError, "exceed max-buffer-bytes"):
+                trace.record(progress, metrics, lambda: snapshot(4096))
+            self.assertEqual(trace.record(progress, metrics, lambda: snapshot(2048)).reason, "byte_limit")
+            trace.finish(progress, lambda: metrics, lambda: self.fail("snapshot already captured"))
+            manifest = parse_json((root / trace.write()).read_bytes())
+            payload = bytes([42]) * 2048
+            saved = root / "snapshots/0"
+            self.assertEqual((saved / "arrays/beta.bin").read_bytes(), payload)
+            entry = {"path": "arrays/beta.bin", "size_bytes": 2048, "sha256": hashlib.sha256(payload).hexdigest()}
+            result = parse_json((saved / "result.json").read_bytes())
+            self.assertEqual(result["files"], [{**entry, "media_type": "application/octet-stream"}])
+            self.assertIn({**entry, "path": "snapshots/0/arrays/beta.bin"}, manifest["files"])
+
     def test_buffered_callback_receives_the_observer_and_assigned_directory(self):
         state = {"prepared": True}
 
