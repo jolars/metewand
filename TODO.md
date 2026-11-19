@@ -54,48 +54,48 @@ benchmark](examples/overhead)
   Send only display fields to human progress. Render the complete JSON
   report incrementally from saved results. Exercise all three output formats
   with large results and concurrent attempts. The 24-attempt test runs two
-  attempts at a time under a 192 MiB Linux address-space limit. For 60 MiB of
-  results and metrics, release-build peak RSS fell from 249–382 MiB to
+  attempts at a time under a 192 MiB Linux address-space limit. For 60 MiB
+  of results and metrics, release-build peak RSS fell from 249–382 MiB to
   55–57 MiB across the three formats.
 - [x] Validate returned buffered traces one row at a time and retain the points
   referenced by snapshots. Account for manifest growth incrementally in the
   Rust and Python collectors and during prefix checks in the validator.
   Check terminal reserves, first threshold crossings, and malformed rows
-  with long traces and many snapshots. For a release run with 25,001 checks and
-  65 snapshots, wall time fell from 41 to 3 seconds and peak CLI RSS fell from
-  162 to 69 MiB. The trace, snapshots, and buffer manifest matched byte for
-  byte.
+  with long traces and many snapshots. For a release run with 25,001 checks
+  and 65 snapshots, wall time fell from 41 to 3 seconds and peak CLI RSS
+  fell from 162 to 69 MiB. The trace, snapshots, and buffer manifest matched
+  byte for byte.
 - [x] Hash source files and worker executables in chunks. Share fixed dataset
-  and worker source snapshots across candidates, register cache roots once per
-  object and run, and consolidate redundant dataset scans while preserving
-  mutation checks and timing scopes. On resume without a persistent cache,
-  reuse committed dataset and preparation identities when saved evidence
-  verifies that all selected slots are accepted. With 64 MiB datasets in
-  release builds, the fixed case with eight candidates and one attempt fell
-  from 7.72 to 3.28 seconds and from 99 to 35 MiB peak CLI RSS. The two-attempt
-  generated case fell from 7.01 to 5.92 seconds without a cache and from 6.98
-  to 5.33 seconds with a primed cache. Resuming both accepted slots without a
-  cache fell from 0.85 to 0.07 seconds. Input and slot identities and scientific
-  outputs matched.
+  and worker source snapshots across candidates, register cache roots once
+  per object and run, and consolidate redundant dataset scans while
+  preserving mutation checks and timing scopes. On resume without a
+  persistent cache, reuse committed dataset and preparation identities when
+  saved evidence verifies that all selected slots are accepted. With 64 MiB
+  datasets in release builds, the fixed case with eight candidates and one
+  attempt fell from 7.72 to 3.28 seconds and from 99 to 35 MiB peak CLI RSS.
+  The two-attempt generated case fell from 7.01 to 5.92 seconds without a
+  cache and from 6.98 to 5.33 seconds with a primed cache. Resuming both
+  accepted slots without a cache fell from 0.85 to 0.07 seconds. Input and
+  slot identities and scientific outputs matched.
 - [x] Reuse parameter expansion from repository validation. Apply name filters
   before building logical slots. Index observation slots within each
   specification. Resolve and register large schedules in batches to bound
   memory while keeping pending work visible. With release builds and
-  `--max-attempts 1`, selecting one configuration beside a 4,096-configuration
-  grid fell from 1.12 to 0.19 seconds and from 100 to 40 MiB peak CLI RSS.
-  Scheduling 20,000 measurement repetitions fell from 21.27 to 3.88 seconds
-  and from 1,352 to 265 MiB peak CLI RSS. The coordination records and
-  scientific output bytes matched. Status reported 31 and 19,999 pending
-  slots, respectively.
+  `--max-attempts 1`, selecting one configuration beside a
+  4,096-configuration grid fell from 1.12 to 0.19 seconds and from 100 to 40
+  MiB peak CLI RSS. Scheduling 20,000 measurement repetitions fell from
+  21.27 to 3.88 seconds and from 1,352 to 265 MiB peak CLI RSS. The
+  coordination records and scientific output bytes matched. Status reported
+  31 and 19,999 pending slots, respectively.
 - [x] Index attempts and observations by slot for inspection. Use targeted
   queries for status summaries, exact-ID explanations, and the final run
   comparison. Use exact and prefix lookups in the archive inventory and
   index attempt and observation records by artifact ID. Preserve read-only
   access and integrity checks. Exercise many small attempts, including
-  retries and failed attempts. The 32-slot regression checks that run, status,
-  and the imported archive report the same comparison, including a retained
-  failure and its successful retry. It compares store bytes before and after
-  status and exact-ID explanation.
+  retries and failed attempts. The 32-slot regression checks that run,
+  status, and the imported archive report the same comparison, including a
+  retained failure and its successful retry. It compares store bytes before
+  and after status and exact-ID explanation.
 
 ### Disk and shared storage
 
@@ -106,9 +106,10 @@ benchmark](examples/overhead)
   evaluated all four.
 - [x] Share one durable copy of immutable result files between buffered
   snapshots and their evaluated observations. Measure per-attempt metadata
-  and log costs, and reuse repeated evidence by ID. The
-  [clustlasso-cd storage measurement](examples/adopters/README.md#buffered-result-storage)
-  records the metadata and log costs and verifies the four evaluated snapshots.
+  and log costs, and reuse repeated evidence by ID. The [clustlasso-cd
+  storage measurement](examples/adopters/README.md#buffered-result-storage)
+  records the metadata and log costs and verifies the four evaluated
+  snapshots.
 - [x] Stream payloads directly into the archive to reduce scratch usage. Verify
   the streamed bytes before atomic publication and preserve full
   verification on import and restore.
@@ -118,24 +119,24 @@ benchmark](examples/overhead)
 - [x] Locate rows by indexed keys during shared journal replay and verify the
   full before- and after-images. Recovery tests cover loss of local state.
   For synthetic version-1 journals with one event insertion per transaction,
-  median release-build `status` time fell from 138 to 105 ms for 1,001 journal
-  files and from 2.32 to 0.94 seconds for 10,001 files. Counts include
-  initialization. Both builds replayed the same files and emitted identical
-  JSON. Each median used seven runs on a Ryzen 9 7900 with the journal on ext4
-  and SQLite scratch on tmpfs.
+  median release-build `status` time fell from 138 to 105 ms for 1,001
+  journal files and from 2.32 to 0.94 seconds for 10,001 files. Counts
+  include initialization. Both builds replayed the same files and emitted
+  identical JSON. Each median used seven runs on a Ryzen 9 7900 with the
+  journal on ext4 and SQLite scratch on tmpfs.
 - [x] Replace full shared cache snapshots with versioned deltas and checkpoints.
   Replay accepts version-1 histories, and crash tests cover collection after
   publishing a version-2 claim checkpoint. In a synthetic comparison, both
-  formats encoded initialization and two records per object (registration and
-  one distinct 16-byte root name). Totals sum canonical JSON bytes, excluding
-  filenames and filesystem allocation.
+  formats encoded initialization and two records per object (registration
+  and one distinct 16-byte root name). Totals sum canonical JSON bytes,
+  excluding filenames and filesystem allocation.
 
   | Objects and roots each | Version-1 bytes | Version-2 bytes |
-  | ---: | ---: | ---: |
-  | 64 | 939,391 | 64,377 |
-  | 256 | 14,669,311 | 256,669 |
-  | 1,024 | 233,266,200 | 1,026,586 |
-  | 4,096 | 3,726,474,264 | 4,107,902 |
+  | ---------------------: | --------------: | --------------: |
+  |                     64 |         939,391 |          64,377 |
+  |                    256 |      14,669,311 |         256,669 |
+  |                  1,024 |     233,266,200 |       1,026,586 |
+  |                  4,096 |   3,726,474,264 |       4,107,902 |
 - [ ] If trace encoding and decoding remain costly after streaming live
   validation and deduplicating durable result files, compare compressed JSON
   Lines with a chunked binary trace format on Basin and clustlasso-cd
@@ -198,10 +199,10 @@ configuration.
   across resume and retries. Support cooperative stopping for buffered
   profiles, align execution watchdogs with the derived limit, and retain
   censored terminal states separately from execution failures.
-- [x] Extend adaptive calibration to fresh sequences and streaming profiles.
-  Set the common limit from cumulative timed wall time across fresh fits or
-  from active time at a streaming checkpoint. Keep pilot evidence separate
-  from measured profiles and resume with the recorded budget.
+- [x] Extend adaptive calibration to fresh sequences and streaming profiles. Set
+  the common limit from cumulative timed wall time across fresh fits or from
+  active time at a streaming checkpoint. Keep pilot evidence separate from
+  measured profiles and resume with the recorded budget.
 - [ ] Add checkpoint-state restoration.
 
 ## Language packages and environments
