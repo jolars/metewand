@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.9.0](https://github.com/jolars/metewand/compare/v0.8.0...v0.9.0) (2026-11-19)
+
+### Features
+
+- **runtime:** extend adaptive budgets to fresh and streaming profiles ([`eaa2520`](https://github.com/jolars/metewand/commit/eaa252092d69aa04a124b9b72e2ff6043bc80f8c))
+- **runtime:** support files in buffered snapshots ([`c3ecdae`](https://github.com/jolars/metewand/commit/c3ecdaedaffce977216a145e5d3677a160b3fa9c))
+
+### Bug Fixes
+
+- **runtime:** write portable buffered attachment paths ([`0c0bd8b`](https://github.com/jolars/metewand/commit/0c0bd8bd20b5f5e3717e48a0643cbff59143670b))
+- **run:** bound memory when reporting completed attempts ([`8f35064`](https://github.com/jolars/metewand/commit/8f35064ebf355e432ecb475922031f1a21c7f285))
+- **export:** bound buffered trace export memory ([`99d186d`](https://github.com/jolars/metewand/commit/99d186d885d0cfff718e059e79c77fc2cb3d517d))
+- **archive:** stream buffered trace validation ([`3c682c5`](https://github.com/jolars/metewand/commit/3c682c53836260f2b70269b6e49a354294dd5b2d))
+
+### Performance Improvements
+
+- **cache:** store shared catalog deltas and checkpoints ([`86c0bc3`](https://github.com/jolars/metewand/commit/86c0bc3fdbe7e0b735e8818de0c7afd8c9180c0e))
+- **runtime:** use primary-key indexes during shared journal replay ([`e316d78`](https://github.com/jolars/metewand/commit/e316d789246630463f974cd6a34764c965a87f36))
+- **runtime:** share fresh sequence membership across attempts ([`6d14224`](https://github.com/jolars/metewand/commit/6d14224d80f70a632a10a396d8d8657cdfe3cdab))
+- **runtime:** stream payloads into result archives ([`7e44d1e`](https://github.com/jolars/metewand/commit/7e44d1e2b6ee0357abeff24686279b055fccfd5a))
+- **runtime:** share buffered result files with observations ([`738096b`](https://github.com/jolars/metewand/commit/738096b0e05d91ad4cffb7e303fb0d29ee43e100))
+- **runtime:** index run inspection and archive lookups ([`01dda8c`](https://github.com/jolars/metewand/commit/01dda8cfe6d2c9e39960598a676e64d73a945780))
+- **runtime:** batch schedule registration and filter plans early ([`68f3ca2`](https://github.com/jolars/metewand/commit/68f3ca24ecc21806b14784767bdb67e2d71fd9e1))
+- **runtime:** reuse verified run inputs ([`bd313aa`](https://github.com/jolars/metewand/commit/bd313aa9c6daf870fa3cac077dc8d21fd9a04c21))
+- **runtime:** stream buffered trace validation ([`a04dc9f`](https://github.com/jolars/metewand/commit/a04dc9f8a5673dcc66818560c57dedc0b929556c))
+
 ## [0.8.0](https://github.com/jolars/metewand/compare/v0.7.0...v0.8.0) (2026-11-17)
 
 ### Features
