@@ -407,7 +407,7 @@ impl BufferedTrace {
         if !result.data.is_object() {
             return Err(invalid("snapshot data must be an object"));
         }
-        let parent = PathBuf::from(format!("snapshots/{}", self.snapshots.len()));
+        let parent = format!("snapshots/{}", self.snapshots.len());
         let mut paths = BTreeMap::new();
         for attachment in result.files {
             let path = validate_relative_path(&attachment.path)
@@ -431,10 +431,11 @@ impl BufferedTrace {
                 return Err(invalid("snapshot file cannot contain another file"));
             }
         }
-        let mut attachments: Vec<_> = paths.into_iter().collect();
-        attachments.sort_unstable_by(|(_, a), (_, b)| a.path.cmp(&b.path));
-        for (path, attachment) in attachments {
-            let entry = file(parent.join(path), &attachment.bytes);
+        let mut attachments: Vec<_> = paths.into_values().collect();
+        attachments.sort_unstable_by(|a, b| a.path.cmp(&b.path));
+        for attachment in attachments {
+            let path = format!("{parent}/{}", attachment.path);
+            let entry = file(path.into(), &attachment.bytes);
             declarations.push(json!({
                 "path": attachment.path, "media_type": attachment.media_type,
                 "sha256": entry.sha256, "size_bytes": entry.size_bytes,

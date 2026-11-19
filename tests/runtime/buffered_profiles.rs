@@ -48,6 +48,15 @@ fn buffered_result_files_use_the_terminal_reserve_and_are_verifiable() {
         .finish_result(progress(0), || panic!(), || panic!())
         .unwrap();
     let manifest = trace.write().unwrap();
+    let buffer: Value =
+        serde_json::from_slice(&fs::read(root.path().join(&manifest)).unwrap()).unwrap();
+    assert!(
+        buffer["files"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|entry| entry["path"] == "snapshots/0/arrays/beta.bin")
+    );
     validate_buffer(root.path(), Path::new(&manifest), &spec).unwrap();
     let snapshot_dir = root.path().join("snapshots/0");
     let payload = snapshot_dir.join("arrays/beta.bin");
