@@ -188,6 +188,7 @@ fn key(launch: &ResolvedLaunchRecord, reuse: bool, warmups: u64) -> WorkerReuseK
             environment: launch.environment,
             launch: record_id(launch).unwrap(),
         },
+        execute_watchdog: PhaseTimeouts::default().execute,
         policy: ExecutionPolicyRecord {
             max_concurrency: 1,
             name: serde_json::from_value(json!("default")).unwrap(),
@@ -371,6 +372,9 @@ fn every_reuse_key_component_separates_workers() {
     variants.push(changed);
     let mut changed = original.clone();
     changed.policy.warmup_runs = 1;
+    variants.push(changed);
+    let mut changed = original.clone();
+    changed.execute_watchdog += std::time::Duration::from_secs(1);
     variants.push(changed);
     for changed in variants {
         assert_ne!(original, changed);

@@ -68,6 +68,7 @@ pub(crate) fn run_streaming(
     measurements: &mut ExecutionMeasurements,
     mut session: Option<&mut WorkerSession>,
     event: &mut dyn FnMut(ProfileEvent<'_>) -> Result<(), FixedDatasetRunError>,
+    adaptive: bool,
 ) -> Result<(), FixedDatasetRunError> {
     let limit = Duration::from_nanos(
         profile
@@ -332,7 +333,10 @@ pub(crate) fn run_streaming(
             } else {
                 CompletionStatus::NotRequired
             };
-            let reason = if reached {
+            let active = clock.used();
+            let reason = if adaptive && (active > limit || active == limit && !reached) {
+                Some(StopReason::ActiveTimeLimit)
+            } else if reached {
                 Some(StopReason::TargetReached)
             } else if checkpoint.sequence + 1 == profile.policy.max_observations {
                 Some(if metric.is_none() {

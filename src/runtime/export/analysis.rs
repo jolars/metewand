@@ -12,7 +12,9 @@ use crate::{
     },
     runtime::{
         evidence::document_profile,
-        inspection::{Inspection, adaptive_decisions, calibration_slots},
+        inspection::{
+            Inspection, adaptive_decisions, calibration_slots, calibration_specifications,
+        },
     },
 };
 
@@ -222,8 +224,12 @@ pub(super) fn project(
         });
     }
     if let Some(progress) = tables.get("fresh-sequence") {
+        let calibration_runs = calibration_specifications(tables);
         for row in progress {
             let progress: FreshSequenceProgress = serde_json::from_value(row.clone())?;
+            if calibration_runs.contains(progress.resolved_specification_id.as_str()) {
+                continue;
+            }
             let run = graph
                 .get(&progress.resolved_specification_id)
                 .ok_or(ExportError::InvalidEvidence("profile has no resolved run"))?;

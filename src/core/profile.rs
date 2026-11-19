@@ -378,6 +378,15 @@ pub enum ProfileBinding {
 }
 
 impl ProfileBinding {
+    pub fn adaptive_timing_basis(&self) -> crate::core::adaptive::AdaptiveTimingBasis {
+        use crate::core::adaptive::AdaptiveTimingBasis;
+        match self {
+            Self::Buffered(_) => AdaptiveTimingBasis::Instrumented,
+            Self::Fresh(_) => AdaptiveTimingBasis::CumulativeTimedWallTime,
+            Self::Streaming(_) => AdaptiveTimingBasis::StreamingActiveTime,
+        }
+    }
+
     pub fn schema(&self) -> Option<&SchemaDeclaration> {
         match self {
             Self::Buffered(b) => Some(&b.instrumentation_schema),
@@ -405,12 +414,6 @@ impl ProfileBinding {
         }
     }
     pub fn validate(&self, policy: &ProfilePolicy) -> Result<(), String> {
-        if policy.adaptive_budget.is_some() && !matches!(self, Self::Buffered(_)) {
-            return Err(
-                "adaptive budgets currently require buffered_profile delivery for every method"
-                    .into(),
-            );
-        }
         match self {
             Self::Streaming(b) => {
                 if policy.max_checkpoint_bytes == 0

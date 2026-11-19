@@ -350,16 +350,23 @@ collection budget before the terminal reserve.
 
 ### Calibrate a common solver time limit
 
-For buffered solver comparisons, add one setting to an existing target profile:
+Add this setting to a target profile that uses one delivery mode for all methods.
 
 ```yaml
 adaptive-budget: {}
 ```
 
-Omit `max-active-time` for no absolute ceiling. Remove it if the profile already
-has a fixed limit. Select `timing-scope: execute_only` and
-`primary-time: timed_wall_time` in the execution policy. Every method must use
-the same named instrumented scope and clock semantics.
+Omit `max-active-time` for unbounded pilot growth. Each delivery mode uses its
+own clock to find and enforce the common limit.
+
+- Buffered profiles use the same named instrumented scope for every method.
+  Select `timing-scope: execute_only` and `primary-time: timed_wall_time`.
+- Fresh sequences sum executor wall time from the first fit through the fit
+  that reaches the target. Each measured fit receives the remaining time in its
+  repetition. The reported primary clock can still be `implementation_time`.
+- Streaming profiles use active time at the checkpoint that reaches the target.
+  Checkpoint validation, evaluation, publication, and stop acknowledgment lie
+  outside the active clock.
 
 All adaptive settings have defaults:
 
@@ -418,20 +425,18 @@ ceiling as their fallback. An optional `fallback-time` overrides that fallback
 and must lie between the minimum and ceiling. It is only meaningful with a
 ceiling.
 
-The worker receives the effective limit in its existing
-`profile.policy.max-active-time`. Its observer returns a stop decision at a
-check, allowing the solver to return its terminal snapshot. A target reached
-after the limit remains censored. Checks can overshoot, so choose a check
-frequency that provides useful stopping resolution. The outer scientific timeout
-becomes the limit plus `watchdog-grace`, and the execute watchdog is extended
-when needed. Preparation and evaluation keep their own deadlines. These adaptive
-deadlines replace the execution policy's fixed scientific timeout for these
-trajectories.
+Adaptive deadlines replace the execution policy's fixed scientific timeout.
+Buffered workers receive the effective limit in `profile.policy.max-active-time`
+and can stop cooperatively at a check. The buffered outer timeout adds
+`watchdog-grace` for returning the terminal snapshot. Fresh and streaming
+execution enforce their respective scientific limits directly. Metewand extends
+the operational execute watchdog as needed for all three modes. A target
+crossing after the effective limit is censored.
 
-Calibration precedes measured dispatch and runs serially. Pilots do not count as
-measurements. `--max-attempts` counts newly started pilots as well as measured
-attempts, so a bounded invocation can stop during a round. Resume completes that
-round and reuses any frozen decision. `--retry` does not recalibrate it. Repeat
+Calibration runs serially before measurement. `--max-attempts` counts individual
+pilot fits and trajectories as well as measured attempts. A bounded invocation
+can pause during a round or partway through a fresh sequence. Resume finishes
+the round and reuses any frozen decision, including on `--retry`. Repeat
 the same experiment and name filters: changing the solver cohort creates a
 different calibration group and new resolved measurements, so results collected
 under different common limits are not reused.
@@ -442,7 +447,6 @@ limit. Run output lists new pilots separately in `calibration_attempts`; status
 tags their slots, attempts, and observations with `calibration: true`. Measured
 comparison tables and exports exclude pilots. Whole-run archives retain their
 artifacts and the frozen decision, including when restored for execution.
-Fresh-sequence and streaming calibration are not supported yet.
 
 ## Run workers in a pinned image
 

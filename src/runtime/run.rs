@@ -345,10 +345,7 @@ pub(crate) fn run_repository_with_progress(
             store.register_applicability(&candidate.applicability)?;
         }
         if cache_directory.is_some()
-            && candidate
-                .profile
-                .as_ref()
-                .is_some_and(|p| p.policy.adaptive_budget.is_some())
+            && adaptive::pending(candidate)
             && !candidate.measurements.is_empty()
         {
             retain_inputs(candidate)?;
@@ -374,7 +371,10 @@ pub(crate) fn run_repository_with_progress(
     let fresh_repetitions = resolved
         .schedule
         .iter()
-        .filter(|&&position| is_selected(position))
+        .filter(|&&(candidate, measurement)| {
+            is_selected((candidate, measurement))
+                && !adaptive::pending(&resolved.candidates[candidate])
+        })
         .filter_map(|&(candidate, measurement)| {
             let slot = &resolved.candidates[candidate].measurements[measurement];
             slot.fresh.as_ref().map(|_| {
@@ -427,12 +427,7 @@ pub(crate) fn run_repository_with_progress(
         let mut positions = Vec::with_capacity(batch.len());
         for &(candidate_index, measurement_index) in batch {
             let candidate = &resolved.candidates[candidate_index];
-            if !is_selected((candidate_index, measurement_index))
-                || candidate
-                    .profile
-                    .as_ref()
-                    .is_some_and(|p| p.policy.adaptive_budget.is_some())
-            {
+            if !is_selected((candidate_index, measurement_index)) || adaptive::pending(candidate) {
                 continue;
             }
             if cache_directory.is_some() {
@@ -837,8 +832,17 @@ fn execute(
             },
             |session, index| {
                 let mut measurements = ExecutionMeasurements::default();
+                let mut warmup = request();
+                if measurement
+                    .specification
+                    .record
+                    .adaptive_budget_group
+                    .is_some()
+                {
+                    warmup.timing.timeout = Some(candidate.timeouts.execute);
+                }
                 let result = run_fixed_dataset_with_session(
-                    request(),
+                    warmup,
                     &dataset_view,
                     &mut measurements,
                     session,
@@ -910,6 +914,18 @@ fn execute(
     let mut context = measurement.provenance().as_json().clone();
     if let (Some(policy), Some(fresh)) = (&candidate.fresh_profile, &measurement.fresh) {
         context["fresh_sequence"] = json!({"policy":policy,"measurement_index":measurement.scheduling.comparison_block.measurement_index,"control":fresh});
+        if measurement
+            .specification
+            .record
+            .adaptive_budget_group
+            .is_some()
+        {
+            context["scientific_timeout_ns"] = json!(
+                effective_timeout
+                    .get()
+                    .map(|time| time.as_nanos().to_string())
+            );
+        }
     }
     context["worker_reuse"] = json!({
         "enabled": candidate.reuse_key.policy.worker_reuse,

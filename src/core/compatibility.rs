@@ -152,10 +152,8 @@ fn validate_compatibility(
             .profile
             .as_ref()
             .is_some_and(|p| p.policy.adaptive_budget.is_some());
-        if adaptive && timing_scope != TimingScope::ExecuteOnly {
-            return Err(ManifestCompatibilityError::InvalidProfile("adaptive buffered budgets require timing-scope: execute_only so preparation cannot consume the solver's limit".into()));
-        }
         let mut adaptive_scope = None;
+        let mut adaptive_basis = None;
         for implementation in &experiment.implementations {
             let definition = manifest
                 .implementations
@@ -178,6 +176,15 @@ fn validate_compatibility(
                         "missing binding for {implementation}"
                     ))
                 })?;
+                if adaptive
+                    && adaptive_basis
+                        .replace(binding.adaptive_timing_basis())
+                        .is_some_and(|previous| previous != binding.adaptive_timing_basis())
+                {
+                    return Err(ManifestCompatibilityError::InvalidProfile(
+                        "adaptive budgets require the same profile delivery for all methods in an experiment".into(),
+                    ));
+                }
                 if execution_policy.resolved_primary_time() == PrimaryTime::ImplementationTime
                     && !matches!(binding, crate::core::profile::ProfileBinding::Fresh(_))
                 {
@@ -211,6 +218,9 @@ fn validate_compatibility(
                         }
                     }
                     crate::core::profile::ProfileBinding::Buffered(binding) => {
+                        if adaptive && timing_scope != TimingScope::ExecuteOnly {
+                            return Err(ManifestCompatibilityError::InvalidProfile("adaptive buffered budgets require timing-scope: execute_only so preparation cannot consume the solver's limit".into()));
+                        }
                         if adaptive
                             && adaptive_scope
                                 .replace(&binding.instrumented_scope)

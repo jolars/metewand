@@ -3,10 +3,14 @@
 use super::*;
 use crate::core::{
     adaptive::{
-        AdaptiveBudget, AdaptiveBudgetDecision, AdaptiveBudgetGroupResource, CalibrationPilot,
+        AdaptiveBudget, AdaptiveBudgetDecision, AdaptiveBudgetGroupResource, AdaptiveTimingBasis,
+        CalibrationPilot, PilotEvidence,
     },
     duration::positive_nanoseconds,
     identity::{identify_canonical, identify_record},
+};
+use crate::runtime::run_store::{
+    RunStoreError, SlotDelivery, SlotRegistration, fresh::FreshPointRegistration,
 };
 use std::collections::BTreeMap;
 
@@ -15,16 +19,33 @@ struct Group {
     candidates: Vec<usize>,
     budget: AdaptiveBudget,
     ceiling: Option<u64>,
+    basis: AdaptiveTimingBasis,
+}
+
+pub(super) fn pending(candidate: &ResolvedCandidate) -> bool {
+    candidate
+        .profile_policy()
+        .is_some_and(|policy| policy.adaptive_budget.is_some())
+}
+
+fn timing_basis(candidate: &ResolvedCandidate) -> AdaptiveTimingBasis {
+    if candidate.profile.is_some() {
+        AdaptiveTimingBasis::Instrumented
+    } else if candidate.streaming_profile.is_some() {
+        AdaptiveTimingBasis::StreamingActiveTime
+    } else {
+        AdaptiveTimingBasis::CumulativeTimedWallTime
+    }
 }
 
 fn groups(candidates: &[ResolvedCandidate]) -> Result<Vec<Group>, RunError> {
     let mut groups: Vec<Group> = Vec::new();
     let mut keys = BTreeMap::new();
     for (index, candidate) in candidates.iter().enumerate() {
-        let Some(profile) = &candidate.profile else {
+        let Some(policy) = candidate.profile_policy() else {
             continue;
         };
-        let Some(budget) = &profile.policy.adaptive_budget else {
+        let Some(budget) = &policy.adaptive_budget else {
             continue;
         };
         let Some(measurement) = candidate.measurements.first() else {
@@ -33,7 +54,7 @@ fn groups(candidates: &[ResolvedCandidate]) -> Result<Vec<Group>, RunError> {
         let key = canonical(json!({
             "experiment":candidate.experiment,
             "problem_instance":measurement.specification.record.problem_instance,
-            "policy":profile.policy,
+            "policy":policy,
             "execution_policy":measurement.provenance_base["execution_policy"],
         }))?
         .to_canonical_bytes()?;
@@ -42,21 +63,19 @@ fn groups(candidates: &[ResolvedCandidate]) -> Result<Vec<Group>, RunError> {
                 id: String::new(),
                 candidates: Vec::new(),
                 budget: budget.clone(),
-                ceiling: profile
-                    .policy
-                    .active_time_bound_ns()
-                    .expect("validated policy"),
+                ceiling: policy.active_time_bound_ns().expect("validated policy"),
+                basis: timing_basis(candidate),
             });
             groups.len() - 1
         });
         let group = &mut groups[group_index];
-        if let Some(&first) = group.candidates.first() {
-            let reference = candidates[first].profile.as_ref().expect("buffered");
-            if reference.instrumented_scope != profile.instrumented_scope
-                || reference.scope != profile.scope
-            {
-                return Err(RunError::Unsupported("adaptive budgets require the same named instrumented scope and clock semantics for all methods".into()));
-            }
+        if let Some(&first) = group.candidates.first()
+            && let (Some(reference), Some(profile)) =
+                (&candidates[first].profile, &candidate.profile)
+            && (reference.instrumented_scope != profile.instrumented_scope
+                || reference.scope != profile.scope)
+        {
+            return Err(RunError::Unsupported("adaptive budgets require the same named instrumented scope and clock semantics for all methods".into()));
         }
         group.candidates.push(index);
     }
@@ -71,14 +90,14 @@ fn groups(candidates: &[ResolvedCandidate]) -> Result<Vec<Group>, RunError> {
             })
             .collect::<Result<Vec<_>, _>>()?;
         members.sort();
-        let profile = candidates[group.candidates[0]]
-            .profile
-            .as_ref()
-            .expect("buffered");
-        group.id = identify_canonical::<AdaptiveBudgetGroupResource>(&canonical(
-            json!({"members":members,"policy":profile.policy,"scope":profile.instrumented_scope}),
-        )?)?
-        .to_string();
+        let candidate = &candidates[group.candidates[0]];
+        let policy = candidate.profile_policy().expect("adaptive profile");
+        let key = if let Some(profile) = &candidate.profile {
+            json!({"members":members,"policy":policy,"scope":profile.instrumented_scope})
+        } else {
+            json!({"members":members,"policy":policy,"timing_basis":group.basis})
+        };
+        group.id = identify_canonical::<AdaptiveBudgetGroupResource>(&canonical(key)?)?.to_string();
     }
     Ok(groups)
 }
@@ -182,85 +201,75 @@ fn calibrate_group(
         let mut round_pilots = Vec::new();
         for &index in &group.candidates {
             let candidate = &mut resolved.candidates[index];
-            let pilot = pilot_measurement(candidate, &coordinate)?;
-            let implementation = pilot.provenance().as_json()["comparison"]["implementation"]
-                .as_str()
-                .expect("resolved implementation name")
-                .to_owned();
-            store.register_buffered(
-                pilot.candidate,
-                &pilot.specification,
-                pilot.resolve_attempt(),
-                pilot.resolve_observations()?,
-            )?;
-            let evidence = store.pilot_evidence(
-                pilot.attempt_slot,
-                pilot.candidate.to_string(),
-                &implementation,
-                &coordinate,
-            )?;
-            if let Some(evidence) = evidence {
-                round_pilots.push(evidence);
-                continue;
-            }
-            if store.slot_progress(pilot.attempt_slot)?.active
-                || options
-                    .max_attempts
-                    .is_some_and(|n| attempts.len() as u64 >= n)
-            {
-                complete = false;
-                continue;
-            }
-            progress(&RunProgress::Preparing(PreparationProgress {
-                phase: PreparationPhase::CalibratingBudget,
-                component: format!(
-                    "{}: pilot round {}, {} ms",
-                    pilot.provenance().as_json()["comparison"]["implementation"]
-                        .as_str()
-                        .unwrap_or("solver"),
-                    round + 1,
-                    limit / 1_000_000
-                ),
-            }))?;
-            let Some(mut execution) = AttemptExecution::reserve(store, &pilot, false)? else {
-                complete = false;
-                continue;
-            };
             let saved = (
                 candidate.profile.clone(),
+                candidate.streaming_profile.clone(),
+                candidate.fresh_profile.clone(),
                 candidate.timing,
                 candidate.timeouts,
-                candidate.reuse_key.policy.clone(),
+                candidate.reuse_key.policy.timeout.clone(),
+                candidate.reuse_key.execute_watchdog,
             );
             apply_limit(candidate, limit, &group.budget)?;
-            let mut pilot = pilot;
-            let mut value = pilot.provenance().as_json().clone();
-            record_limits(&mut value, candidate.timing, candidate.timeouts);
-            pilot.execution_provenance = Some(canonical(value)?);
-            let result = profile::execute(
-                repository,
+            let evidence = run_pilot(
+                store,
                 candidate,
-                &pilot,
-                resolved.private_root.path(),
-                &mut Default::default(),
-                &mut execution,
+                &coordinate,
+                group.basis,
+                |store, pilot, worker| {
+                    if options
+                        .max_attempts
+                        .is_some_and(|n| attempts.len() as u64 >= n)
+                    {
+                        return Ok(());
+                    }
+                    let mut execution = match AttemptExecution::reserve(store, pilot, false) {
+                        Ok(Some(execution)) => execution,
+                        Ok(None) | Err(RunError::Store(RunStoreError::SequenceBusy)) => {
+                            return Ok(());
+                        }
+                        Err(error) => return Err(error),
+                    };
+                    let mut pilot = pilot.clone();
+                    let mut value = pilot.build_provenance()?.as_json().clone();
+                    value["calibration"] = json!(coordinate);
+                    record_limits(&mut value, candidate.timing, candidate.timeouts);
+                    pilot.execution_provenance = Some(canonical(value)?);
+                    progress(&RunProgress::Preparing(PreparationProgress {
+                        phase: PreparationPhase::CalibratingBudget,
+                        component: format!(
+                            "{}: pilot round {}, {} ms",
+                            pilot.provenance().as_json()["comparison"]["implementation"]
+                                .as_str()
+                                .unwrap_or("solver"),
+                            round + 1,
+                            limit / 1_000_000
+                        ),
+                    }))?;
+                    attempts.push(CalibrationAttemptOutput {
+                        pilot: coordinate.clone(),
+                        attempt: execute(
+                            repository,
+                            candidate,
+                            &pilot,
+                            resolved.private_root.path(),
+                            worker,
+                            &mut execution,
+                        )?,
+                    });
+                    Ok(())
+                },
             );
             (
                 candidate.profile,
+                candidate.streaming_profile,
+                candidate.fresh_profile,
                 candidate.timing,
                 candidate.timeouts,
-                candidate.reuse_key.policy,
+                candidate.reuse_key.policy.timeout,
+                candidate.reuse_key.execute_watchdog,
             ) = saved;
-            attempts.push(CalibrationAttemptOutput {
-                pilot: coordinate.clone(),
-                attempt: result?,
-            });
-            let evidence = store.pilot_evidence(
-                pilot.attempt_slot,
-                pilot.candidate.to_string(),
-                &implementation,
-                &coordinate,
-            )?;
+            let evidence = evidence?;
             if let Some(evidence) = evidence {
                 round_pilots.push(evidence);
             } else {
@@ -275,7 +284,11 @@ fn calibrate_group(
             .filter(|p| p.convergence_time_ns.is_some())
             .min_by_key(|p| (p.convergence_time_ns, p.candidate_id.clone()))
             .cloned();
-        if reference.is_none() && !round_pilots.iter().any(|pilot| pilot.was_time_limited()) {
+        let time_limited = round_pilots.iter().any(|pilot| {
+            pilot.was_time_limited()
+                && (group.basis == AdaptiveTimingBasis::Instrumented || pilot.status == "censored")
+        });
+        if reference.is_none() && !time_limited {
             crate::runtime::inspection::Inspection::read_for_run(store.root())
                 .map_err(|e| io::Error::other(e.to_string()))?;
             return Err(RunError::AdaptiveCalibrationStopped {
@@ -299,15 +312,17 @@ fn calibrate_group(
             .map_err(|e| io::Error::other(e.to_string()))?;
         let reference_time = reference.as_ref().and_then(|p| p.convergence_time_ns);
         let decision = AdaptiveBudgetDecision {
-            schema_version: 1,
+            schema_version: if group.basis == AdaptiveTimingBasis::Instrumented {
+                1
+            } else {
+                2
+            },
             group_id: group.id.clone(),
-            timing_basis: "instrumented".into(),
+            timing_basis: group.basis,
             instrumented_scope: resolved.candidates[group.candidates[0]]
                 .profile
                 .as_ref()
-                .expect("buffered")
-                .instrumented_scope
-                .clone(),
+                .map(|profile| profile.instrumented_scope.clone()),
             multiplier: group.budget.multiplier,
             minimum_limit_ns: positive_nanoseconds(&group.budget.minimum_time)
                 .map_err(RunError::Unsupported)?,
@@ -333,15 +348,27 @@ fn apply_limit(
     limit: u64,
     budget: &AdaptiveBudget,
 ) -> Result<(), RunError> {
-    let profile = candidate.profile.as_mut().expect("buffered");
-    profile.policy.max_active_time = format!("{} ms", limit / 1_000_000);
-    profile.policy.adaptive_budget = None;
-    let watchdog = std::time::Duration::from_nanos(
-        limit + positive_nanoseconds(&budget.watchdog_grace).map_err(RunError::Unsupported)?,
-    );
-    candidate.timing.timeout = Some(watchdog);
+    let watchdog =
+        std::time::Duration::from_nanos(budget.watchdog(limit).map_err(RunError::Unsupported)?);
+    let buffered = candidate.profile.is_some();
+    let policy = candidate
+        .profile
+        .as_mut()
+        .map(|p| &mut p.policy)
+        .or_else(|| candidate.streaming_profile.as_mut().map(|p| &mut p.policy))
+        .or(candidate.fresh_profile.as_mut())
+        .expect("adaptive profile");
+    policy.max_active_time = format!("{} ms", limit / 1_000_000);
+    policy.adaptive_budget = None;
+    let timeout = if buffered {
+        watchdog
+    } else {
+        std::time::Duration::from_nanos(limit)
+    };
+    candidate.timing.timeout = Some(timeout);
     candidate.timeouts.execute = candidate.timeouts.execute.max(watchdog);
-    candidate.reuse_key.policy.timeout = Some(format!("{} ms", watchdog.as_millis()));
+    candidate.reuse_key.execute_watchdog = candidate.timeouts.execute;
+    candidate.reuse_key.policy.timeout = Some(format!("{} ms", timeout.as_millis()));
     Ok(())
 }
 
@@ -360,17 +387,120 @@ fn record_limits(
     value["operational_timeouts_ns"] = timeouts.provenance();
 }
 
-fn pilot_measurement(
+fn run_pilot(
+    store: &mut RunStore,
     candidate: &ResolvedCandidate,
     coordinate: &CalibrationPilot,
-) -> Result<ResolvedMeasurement, RunError> {
-    let mut pilot = candidate.measurements[0].clone();
-    Arc::make_mut(&mut pilot.specification).record.calibration = Some(coordinate.clone());
-    rebind_measurement(&mut pilot)?;
-    let mut value = pilot.build_provenance()?.as_json().clone();
-    value["calibration"] = json!(coordinate);
-    pilot.execution_provenance = Some(canonical(value)?);
-    Ok(pilot)
+    basis: AdaptiveTimingBasis,
+    mut dispatch: impl FnMut(
+        &RunStore,
+        &ResolvedMeasurement,
+        &mut crate::runtime::worker_reuse::ReusableWorker,
+    ) -> Result<(), RunError>,
+) -> Result<Option<PilotEvidence>, RunError> {
+    let first = &candidate.measurements[0];
+    let repetition = first.scheduling.comparison_block.measurement_index;
+    let mut pilots = candidate
+        .measurements
+        .iter()
+        .take_while(|point| {
+            point.specification.id == first.specification.id
+                && point.scheduling.comparison_block.measurement_index == repetition
+        })
+        .map(|measurement| {
+            let mut pilot = measurement.clone();
+            pilot.concurrency = None;
+            Arc::make_mut(&mut pilot.specification).record.calibration = Some(coordinate.clone());
+            rebind_measurement(&mut pilot)?;
+            Ok(pilot)
+        })
+        .collect::<Result<Vec<_>, RunError>>()?;
+    pilots.sort_by_key(|pilot| pilot.scheduling.observation_round);
+    for batch in pilots.chunks(256) {
+        let registrations = batch
+            .iter()
+            .map(|pilot| {
+                let delivery = match basis {
+                    AdaptiveTimingBasis::Instrumented => SlotDelivery::Buffered,
+                    AdaptiveTimingBasis::StreamingActiveTime => SlotDelivery::Streaming,
+                    AdaptiveTimingBasis::CumulativeTimedWallTime => {
+                        SlotDelivery::Fresh(FreshPointRegistration {
+                            measurement_index: repetition,
+                            control: pilot.fresh.as_ref().expect("fresh control"),
+                            policy: candidate.fresh_profile.as_ref().expect("fresh policy"),
+                        })
+                    }
+                };
+                Ok(SlotRegistration {
+                    candidate: pilot.candidate,
+                    specification: &pilot.specification,
+                    attempt: pilot.resolve_attempt(),
+                    observations: pilot.resolve_observations()?,
+                    delivery,
+                })
+            })
+            .collect::<Result<Vec<_>, RunError>>()?;
+        store.register_slots(registrations)?;
+    }
+    if candidate.fresh_profile.is_some() {
+        store.publish_fresh_repetitions(
+            [(pilots[0].specification.id, repetition)],
+            attempt::now(),
+        )?;
+    }
+    let implementation = first.provenance_base["comparison"]["implementation"]
+        .as_str()
+        .expect("resolved implementation name");
+    let mut worker = crate::runtime::worker_reuse::ReusableWorker::default();
+    let last = pilots.len() - 1;
+    for (index, pilot) in pilots.iter().enumerate() {
+        let evidence = |store: &RunStore| {
+            store.pilot_evidence(
+                pilot.attempt_slot,
+                pilot.candidate.to_string(),
+                implementation,
+                coordinate,
+                basis,
+            )
+        };
+        let outcome = match evidence(store)? {
+            Some(outcome) => outcome,
+            None => {
+                if store.slot_progress(pilot.attempt_slot)?.active {
+                    return Ok(None);
+                }
+                dispatch(store, pilot, &mut worker)?;
+                let Some(outcome) = evidence(store)? else {
+                    return Ok(None);
+                };
+                outcome
+            }
+        };
+        if candidate.fresh_profile.is_some()
+            && outcome.status == "failed"
+            && index < last
+            && store
+                .slot_progress(pilot.attempt_slot)?
+                .disposition
+                .is_none()
+        {
+            continue;
+        }
+        if candidate.fresh_profile.is_none()
+            || outcome.convergence_time_ns.is_some()
+            || outcome.status != "accepted"
+        {
+            return Ok(Some(outcome));
+        }
+        if index == last {
+            return Ok(Some(PilotEvidence {
+                status: "censored".into(),
+                reason: Some("schedule_exhausted".into()),
+                ..outcome
+            }));
+        }
+    }
+    unreachable!("a pilot contains at least one attempt slot")
 }
 
 fn rebind_measurement(measurement: &mut ResolvedMeasurement) -> Result<(), RunError> {

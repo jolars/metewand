@@ -92,6 +92,15 @@ impl AdaptiveBudget {
         Ok(ceiling.map_or(limit, |ceiling| limit.min(ceiling)))
     }
 
+    pub fn watchdog(&self, limit: u64) -> Result<u64, String> {
+        limit
+            .checked_add(positive_nanoseconds(&self.watchdog_grace)?)
+            .filter(|&time| time <= MAX_SAFE_INTEGER)
+            .ok_or_else(|| {
+                "adaptive limit and watchdog exceed the supported nanosecond range".into()
+            })
+    }
+
     pub fn next_limit(&self, previous: u64, ceiling: Option<u64>) -> Result<Option<u64>, String> {
         self.validate(ceiling)?;
         if ceiling.is_some_and(|limit| previous >= limit) {
@@ -127,11 +136,28 @@ impl AdaptiveBudget {
         }
         .max(u128::from(minimum));
         let limit = ceiling.map_or(limit, |ceiling| limit.min(u128::from(ceiling)));
-        let grace = positive_nanoseconds(&self.watchdog_grace)?;
-        if limit + u128::from(grace) > u128::from(MAX_SAFE_INTEGER) {
-            return Err("adaptive limit and watchdog exceed the supported nanosecond range".into());
+        let limit = u64::try_from(limit)
+            .map_err(|_| "adaptive limit exceeds the supported nanosecond range")?;
+        self.watchdog(limit)?;
+        Ok(limit)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AdaptiveTimingBasis {
+    Instrumented,
+    CumulativeTimedWallTime,
+    StreamingActiveTime,
+}
+
+impl AdaptiveTimingBasis {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Instrumented => "instrumented time",
+            Self::CumulativeTimedWallTime => "cumulative executor wall time",
+            Self::StreamingActiveTime => "streaming active time",
         }
-        Ok(limit as u64)
     }
 }
 
@@ -177,8 +203,9 @@ pub struct AdaptiveBudgetDecision {
     #[serde(deserialize_with = "decision_version")]
     pub schema_version: u32,
     pub group_id: String,
-    pub timing_basis: String,
-    pub instrumented_scope: String,
+    pub timing_basis: AdaptiveTimingBasis,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub instrumented_scope: Option<String>,
     pub multiplier: u64,
     pub minimum_limit_ns: u64,
     pub ceiling_limit_ns: Option<u64>,
@@ -190,9 +217,28 @@ pub struct AdaptiveBudgetDecision {
     pub pilots: Vec<PilotEvidence>,
 }
 
+impl AdaptiveBudgetDecision {
+    pub fn validate_format(&self) -> Result<(), &'static str> {
+        match (
+            self.schema_version,
+            self.timing_basis,
+            self.instrumented_scope.as_deref(),
+        ) {
+            (1, AdaptiveTimingBasis::Instrumented, Some(scope)) if !scope.is_empty() => Ok(()),
+            (
+                2,
+                AdaptiveTimingBasis::CumulativeTimedWallTime
+                | AdaptiveTimingBasis::StreamingActiveTime,
+                None,
+            ) => Ok(()),
+            _ => Err("invalid adaptive budget decision clock for its schema version"),
+        }
+    }
+}
+
 fn decision_version<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<u32, D::Error> {
     match u32::deserialize(deserializer)? {
-        1 => Ok(1),
+        version @ (1 | 2) => Ok(version),
         _ => Err(serde::de::Error::custom(
             "unsupported adaptive budget decision version",
         )),

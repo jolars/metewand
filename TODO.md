@@ -198,8 +198,10 @@ configuration.
   across resume and retries. Support cooperative stopping for buffered
   profiles, align execution watchdogs with the derived limit, and retain
   censored terminal states separately from execution failures.
-- [ ] Extend adaptive calibration to fresh-sequence or streaming delivery when
-  an adopter needs it.
+- [x] Extend adaptive calibration to fresh sequences and streaming profiles.
+  Set the common limit from cumulative timed wall time across fresh fits or
+  from active time at a streaming checkpoint. Keep pilot evidence separate
+  from measured profiles and resume with the recorded budget.
 - [ ] Add checkpoint-state restoration.
 
 ## Language packages and environments

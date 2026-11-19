@@ -194,8 +194,13 @@ pub(super) fn execute(
                         published_snapshot.as_deref(),
                     )
                     .map_err(&publication_error)?;
+                let clock = if candidate.streaming_profile.is_some() {
+                    "active_time_ns"
+                } else {
+                    "instrumented_time_ns"
+                };
                 let within_budget = !adaptive
-                    || result.execution_provenance["profile_observation"]["instrumented_time_ns"]
+                    || result.execution_provenance["profile_observation"][clock]
                         .as_u64()
                         .is_some_and(|time| {
                             time <= policy.active_time_ns().expect("validated policy")
@@ -250,14 +255,32 @@ pub(super) fn execute(
                 },
                 |session, index| {
                     let mut times = ExecutionMeasurements::default();
-                    let result = run_profile(
-                        request(),
-                        candidate,
-                        &view,
-                        &mut times,
-                        Some(session),
-                        &mut |_| Ok(()),
-                    );
+                    let result = if adaptive && let Some(stream) = &candidate.streaming_profile {
+                        let mut stream = stream.clone();
+                        let mut warmup = request();
+                        let watchdog = candidate.timeouts.execute;
+                        stream.policy.max_active_time = format!("{} ms", watchdog.as_millis());
+                        warmup.timing.timeout = Some(watchdog);
+                        run_streaming(
+                            warmup,
+                            &stream,
+                            &view,
+                            &mut times,
+                            Some(session),
+                            &mut |_| Ok(()),
+                            true,
+                        )
+                    } else {
+                        run_profile(
+                            request(),
+                            candidate,
+                            &view,
+                            &mut times,
+                            Some(session),
+                            &mut |_| Ok(()),
+                            adaptive,
+                        )
+                    };
                     warmups.push(json!({
                         "index": index,
                         "resolved_slot_id": measurement.warmups[index as usize].id,
@@ -278,6 +301,7 @@ pub(super) fn execute(
                         &mut measurements,
                         Some(session),
                         &mut event,
+                        adaptive,
                     )
                 },
             )
@@ -301,6 +325,7 @@ pub(super) fn execute(
             &mut measurements,
             None,
             &mut event,
+            adaptive,
         )
     };
     let result = match candidate.verify() {
@@ -310,6 +335,7 @@ pub(super) fn execute(
     let (status, reason, diagnostic) = match result {
         Err(error)
             if candidate.streaming_profile.is_some()
+                && (!adaptive || !warmups.last().is_some_and(|warmup| warmup["status"] == "failed"))
                 && error.failure_kind()
                     == crate::runtime::fixed_dataset_run::FixedDatasetFailureKind::ScientificTimeout =>
         {
@@ -423,9 +449,18 @@ fn run_profile(
     measurements: &mut ExecutionMeasurements,
     session: Option<&mut crate::runtime::worker_session::WorkerSession>,
     event: &mut dyn FnMut(ProfileEvent<'_>) -> Result<(), FixedDatasetRunError>,
+    adaptive: bool,
 ) -> Result<(), FixedDatasetRunError> {
     if let Some(profile) = &candidate.streaming_profile {
-        run_streaming(request, profile, view, measurements, session, event)
+        run_streaming(
+            request,
+            profile,
+            view,
+            measurements,
+            session,
+            event,
+            adaptive,
+        )
     } else {
         run_buffered(
             request,

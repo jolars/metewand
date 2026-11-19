@@ -31,6 +31,8 @@ pub struct WorkerReuseKey {
     pub resolved: ResolvedWorkerRecord,
     /// Complete effective execution policy.
     pub policy: ExecutionPolicyRecord,
+    /// Operational deadline retained by the implementation session.
+    pub execute_watchdog: std::time::Duration,
 }
 
 /// Serial owner of at most one reusable implementation process.

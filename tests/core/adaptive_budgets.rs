@@ -163,12 +163,6 @@ fn frozen_budget_fixture_preserves_its_canonical_schema_and_bytes() {
         adaptive::AdaptiveBudgetDecision, canonical::CanonicalValue,
         public_schemas::PUBLIC_SCHEMAS, schema::SchemaCatalog,
     };
-    let bytes = include_bytes!("../../schemas/v1/fixtures/adaptive-budget-v1.json");
-    let parsed: AdaptiveBudgetDecision = serde_json::from_slice(bytes).unwrap();
-    let value = serde_json::to_value(parsed).unwrap();
-    let mut future = value.clone();
-    future["schema_version"] = json!(2);
-    assert!(serde_json::from_value::<AdaptiveBudgetDecision>(future).is_err());
     let mut documents = PUBLIC_SCHEMAS
         .into_iter()
         .map(|schema| {
@@ -183,15 +177,36 @@ fn frozen_budget_fixture_preserves_its_canonical_schema_and_bytes() {
         serde_json::from_str(include_str!("../../schemas/v1/common.schema.json")).unwrap(),
     ));
     documents.push(("decision.schema.json".into(),json!({"$schema":"https://json-schema.org/draft/2020-12/schema","$ref":"metewand://schemas/v1/profile-observation-policy.schema.json#/$defs/adaptive_decision"})));
-    SchemaCatalog::try_new(documents)
-        .unwrap()
-        .validate(std::path::Path::new("decision.schema.json"), &value)
-        .unwrap();
-    assert_eq!(
-        CanonicalValue::try_from(value)
-            .unwrap()
-            .to_canonical_bytes()
-            .unwrap(),
-        bytes
-    );
+    let catalog = SchemaCatalog::try_new(documents).unwrap();
+    let schema = std::path::Path::new("decision.schema.json");
+    let fixtures: [&[u8]; 2] = [
+        include_bytes!("../../schemas/v1/fixtures/adaptive-budget-v1.json"),
+        include_bytes!("../../schemas/v1/fixtures/adaptive-budget-v2.json"),
+    ];
+    for bytes in fixtures {
+        let parsed: AdaptiveBudgetDecision = serde_json::from_slice(bytes).unwrap();
+        parsed.validate_format().unwrap();
+        let value = serde_json::to_value(parsed).unwrap();
+        catalog.validate(schema, &value).unwrap();
+        let mut mismatched_clock = value.clone();
+        mismatched_clock["schema_version"] =
+            json!(if value["schema_version"] == 1 { 2 } else { 1 });
+        assert!(catalog.validate(schema, &mismatched_clock).is_err());
+        assert!(
+            serde_json::from_value::<AdaptiveBudgetDecision>(mismatched_clock)
+                .unwrap()
+                .validate_format()
+                .is_err()
+        );
+        let mut future = value.clone();
+        future["schema_version"] = json!(3);
+        assert!(serde_json::from_value::<AdaptiveBudgetDecision>(future).is_err());
+        assert_eq!(
+            CanonicalValue::try_from(value)
+                .unwrap()
+                .to_canonical_bytes()
+                .unwrap(),
+            bytes
+        );
+    }
 }

@@ -39,20 +39,19 @@ pub(crate) fn adaptive_decisions(
         .flatten()
         .filter(|event| event["kind"] == crate::runtime::run_store::adaptive::DECISION_EVENT)
         .map(|event| {
-            serde_json::from_value(event["payload"].clone())
-                .map_err(|_| InspectionError::Invalid("invalid adaptive budget decision"))
+            let decision: crate::core::adaptive::AdaptiveBudgetDecision =
+                serde_json::from_value(event["payload"].clone())
+                    .map_err(|_| InspectionError::Invalid("invalid adaptive budget decision"))?;
+            decision
+                .validate_format()
+                .map_err(InspectionError::Invalid)?;
+            Ok(decision)
         })
         .collect()
 }
 
 pub(crate) fn calibration_slots(tables: &BTreeMap<&str, Vec<Value>>) -> BTreeSet<String> {
-    let runs = tables
-        .get("resolved-specification")
-        .into_iter()
-        .flatten()
-        .filter(|run| run["definition"]["calibration"].is_object())
-        .filter_map(|run| run["id"].as_str())
-        .collect::<BTreeSet<_>>();
+    let runs = calibration_specifications(tables);
     tables
         .get("resolved-attempt-slot")
         .into_iter()
@@ -63,6 +62,18 @@ pub(crate) fn calibration_slots(tables: &BTreeMap<&str, Vec<Value>>) -> BTreeSet
                 .is_some_and(|id| runs.contains(id))
         })
         .filter_map(|slot| slot["id"].as_str().map(str::to_owned))
+        .collect()
+}
+
+pub(crate) fn calibration_specifications<'a>(
+    tables: &'a BTreeMap<&str, Vec<Value>>,
+) -> BTreeSet<&'a str> {
+    tables
+        .get("resolved-specification")
+        .into_iter()
+        .flatten()
+        .filter(|run| run["definition"]["calibration"].is_object())
+        .filter_map(|run| run["id"].as_str())
         .collect()
 }
 
@@ -432,6 +443,7 @@ impl Inspection {
             "slot_id",
         );
         if let Some(progress) = snapshot.tables.get("fresh-sequence") {
+            let calibration_runs = calibration_specifications(&snapshot.tables);
             let progress_by_repetition = progress
                 .iter()
                 .filter_map(|row| {
@@ -442,6 +454,11 @@ impl Inspection {
                 .collect::<BTreeMap<_, _>>();
             self.fresh_sequences = progress
                 .iter()
+                .filter(|p| {
+                    !p["resolved_specification_id"]
+                        .as_str()
+                        .is_some_and(|id| calibration_runs.contains(id))
+                })
                 .map(|p| {
                     serde_json::from_value(p.clone())
                         .map_err(|_| InspectionError::Invalid("invalid fresh progress"))

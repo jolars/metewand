@@ -72,22 +72,6 @@ impl RunStore {
         Ok(())
     }
 
-    pub fn register_buffered(
-        &mut self,
-        candidate: RecordId<LogicalCandidateRecord>,
-        run: &IdentifiedRecord<ResolvedOneShotSpecificationRecord>,
-        attempt: IdentifiedRecord<ResolvedAttemptSlotRecord>,
-        observations: Vec<IdentifiedRecord<ResolvedObservationSlotRecord>>,
-    ) -> Result<(), RunStoreError> {
-        self.register_slots([SlotRegistration {
-            candidate,
-            specification: run,
-            attempt,
-            observations,
-            delivery: SlotDelivery::Buffered,
-        }])
-    }
-
     /// Publishes a bounded group of coordination records atomically.
     pub(crate) fn register_slots<'a>(
         &mut self,

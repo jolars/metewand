@@ -88,6 +88,14 @@ fn run(root: &Path, args: &[&str]) -> (Output, Value) {
     let report = data(&output);
     (output, report)
 }
+fn attempt_document(root: &Path, attempt: &Value) -> Value {
+    let directory = attempt["attempt_directory"].as_str().unwrap();
+    serde_json::from_slice(
+        &fs::read(root.join("run").join(directory).join("attempt.json")).unwrap(),
+    )
+    .unwrap()
+}
+
 fn fixed_only(root: &Path) {
     edit(root, "metewand.yaml", |mut s| {
         let start = s.find("  - name: target\n").unwrap();
@@ -95,6 +103,258 @@ fn fixed_only(root: &Path) {
         s.replace_range(start..end, "");
         s.replace("run-order: randomized", "run-order: sequential")
     });
+}
+
+#[test]
+fn adaptive_fresh_pilots_resume_and_use_cumulative_executor_time() {
+    let stage = stage(false);
+    let root = stage.path();
+    edit(root, "metewand.yaml", |s| {
+        s.replacen(
+            "    max-active-time: 10 s",
+            "    adaptive-budget: {initial-pilot-time: 2 s}",
+            1,
+        )
+        .replace(
+            "timing-scope: prepare_and_execute",
+            "timing-scope: execute_only",
+        )
+        .replace(
+            "primary-time: timed_wall_time",
+            "primary-time: implementation_time",
+        )
+    });
+    let plan = data(&invoke(
+        root,
+        &["plan", "--experiment", "target", "--output", "json"],
+    ));
+    let point = plan["experiments"][0]["candidates"][0]["specifications"][0]["observation_slots"]
+        [2]
+    .as_str()
+    .unwrap();
+    let (output, bounded) = run(
+        root,
+        &[
+            "--shared",
+            "--experiment",
+            "target",
+            "--select",
+            point,
+            "--max-attempts",
+            "1",
+        ],
+    );
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(bounded["calibration_attempts"].as_array().unwrap().len(), 1);
+    let record = attempt_document(root, &bounded["calibration_attempts"][0]["attempt"]);
+    let context = &record["provenance"]["data"]["context"];
+    assert!(context["calibration"].is_object());
+    assert!(context.get("concurrency").is_none());
+    assert!(bounded["adaptive_budgets"].is_null());
+    assert!(
+        bounded["fresh_sequences"]
+            .as_array()
+            .is_none_or(Vec::is_empty)
+    );
+    assert!(bounded["attempts"].as_array().unwrap().is_empty());
+    let (output, run_report) = run(root, &["--experiment", "target"]);
+    assert!(output.status.success(), "{run_report}");
+    let decision = &run_report["adaptive_budgets"][0];
+    assert_eq!(decision["schema_version"], 2);
+    assert_eq!(decision["timing_basis"], "cumulative_timed_wall_time");
+    assert!(decision["instrumented_scope"].is_null());
+    let new_pilots = run_report["calibration_attempts"].as_array().unwrap();
+    assert_eq!(new_pilots.len(), 3);
+    let timed_wall_sum: u64 = bounded["calibration_attempts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .chain(new_pilots)
+        .map(|pilot| {
+            let directory = pilot["attempt"]["observation_directory"].as_str().unwrap();
+            let observation: Value = serde_json::from_slice(
+                &fs::read(root.join("run").join(directory).join("observation.json")).unwrap(),
+            )
+            .unwrap();
+            assert_eq!(
+                observation["profile"]["measurement_basis"],
+                "worker_reported"
+            );
+            observation["timing"]["timed_wall_time_ns"]
+                .as_u64()
+                .unwrap()
+        })
+        .sum();
+    assert_eq!(decision["reference_time_ns"], timed_wall_sum);
+    assert_eq!(
+        decision["reference_observation_id"],
+        new_pilots[2]["attempt"]["observation_id"]
+    );
+    assert_eq!(run_report["fresh_sequences"].as_array().unwrap().len(), 2);
+    let output = invoke(root, &["status", "--output-dir", "run", "--output", "json"]);
+    assert!(output.status.success(), "{output:?}");
+    let status = data(&output);
+    assert_eq!(status["fresh_sequences"], run_report["fresh_sequences"]);
+    let export = invoke(
+        root,
+        &[
+            "export",
+            "--output-dir",
+            "run",
+            "--format",
+            "json",
+            "--destination",
+            "analysis",
+        ],
+    );
+    assert!(export.status.success(), "{export:?}");
+    let analysis: Value =
+        serde_json::from_slice(&fs::read(root.join("analysis/results.json")).unwrap()).unwrap();
+    assert_eq!(analysis["profiles"].as_array().unwrap().len(), 2);
+    assert_eq!(analysis["adaptive_budgets"][0], *decision);
+    for args in [
+        [
+            "archive",
+            "create",
+            "--output-dir",
+            "run",
+            "--destination",
+            "saved.tar.gz",
+        ],
+        [
+            "archive",
+            "restore",
+            "--archive",
+            "saved.tar.gz",
+            "--destination",
+            "restored",
+        ],
+    ] {
+        let output = invoke(root, &args);
+        assert!(output.status.success(), "{output:?}");
+    }
+    let replay = invoke(
+        root,
+        &[
+            "run",
+            "--output-dir",
+            "restored",
+            "--experiment",
+            "target",
+            "--retry",
+            "--output",
+            "json",
+        ],
+    );
+    assert!(replay.status.success(), "{replay:?}");
+    let restored = data(&replay);
+    assert_eq!(restored["adaptive_budgets"], run_report["adaptive_budgets"]);
+    assert!(restored["calibration_attempts"].is_null());
+}
+
+#[test]
+fn adaptive_fresh_continues_after_a_failed_fit() {
+    let stage = stage(false);
+    let root = stage.path();
+    edit(root, "metewand.yaml", |s| {
+        s.replacen(
+            "    max-active-time: 10 s",
+            "    adaptive-budget: {initial-pilot-time: 2 s}",
+            1,
+        )
+        .replace("warmup-runs: 1", "warmup-runs: 0")
+    });
+    edit(root, "worker.py", |s| {
+        s.replace(
+            "        return {\"x\": bisect",
+            "        if observation_control[\"iterations\"] == 1:\n            raise RuntimeError(\"first fit fails\")\n        return {\"x\": bisect",
+        )
+    });
+    let (_, report) = run(root, &["--experiment", "target"]);
+    let pilots = report["calibration_attempts"].as_array().unwrap();
+    assert_eq!(pilots.len(), 4, "{report}");
+    assert_eq!(pilots[0]["attempt"]["status"], "failed");
+    let timed_wall = |pilot: &Value| {
+        let attempt = attempt_document(root, &pilot["attempt"]);
+        attempt["provenance"]["data"]["measurements"]["timed_wall_time_ns"]["value"]
+            .as_u64()
+            .unwrap_or_else(|| panic!("{attempt}"))
+    };
+    assert!(timed_wall(&pilots[0]) > 0);
+    let reference = &report["adaptive_budgets"][0];
+    assert_eq!(
+        reference["reference_observation_id"],
+        pilots[3]["attempt"]["observation_id"]
+    );
+    let elapsed: u64 = pilots.iter().map(timed_wall).sum();
+    assert_eq!(reference["reference_time_ns"], elapsed);
+}
+
+#[test]
+fn adaptive_fresh_grows_only_for_time_limited_fits() {
+    for time_limited in [false, true] {
+        let stage = stage(false);
+        let root = stage.path();
+        edit(root, "metewand.yaml", |s| {
+            let parameters = if time_limited {
+                "    max-active-time: 16 ms\n    adaptive-budget: {initial-pilot-time: 8 ms, fallback-time: 12 ms}"
+            } else {
+                "    adaptive-budget: {initial-pilot-time: 2 s}"
+            };
+            s.replacen("    max-active-time: 10 s", parameters, 1)
+                .replace("threshold: 0.000001", "threshold: 0.0")
+                .replace("warmup-runs: 1", "warmup-runs: 0")
+        });
+        if time_limited {
+            edit(root, "worker.py", |s| {
+                s.replace(
+                    "        return {\"x\": bisect",
+                    "        import time\n        time.sleep(0.1)\n        return {\"x\": bisect",
+                )
+            });
+        }
+        let output = invoke(
+            root,
+            &[
+                "run",
+                "--output-dir",
+                "run",
+                "--experiment",
+                "target",
+                "--output",
+                "json",
+            ],
+        );
+        let report = data(&output);
+        assert!(!output.status.success(), "{report}");
+        if time_limited {
+            assert_eq!(report["adaptive_budgets"][0]["fallback"], true);
+            assert_eq!(
+                report["adaptive_budgets"][0]["effective_limit_ns"],
+                12_000_000
+            );
+            assert_eq!(
+                report["adaptive_budgets"][0]["pilots"]
+                    .as_array()
+                    .unwrap()
+                    .len(),
+                2
+            );
+            assert_eq!(
+                report["adaptive_budgets"][0]["pilots"][1]["reason"],
+                "active_time_limit"
+            );
+        } else {
+            assert!(
+                report.to_string().contains("adaptive_calibration_stopped"),
+                "{report}"
+            );
+            assert!(
+                report.to_string().contains("schedule_exhausted"),
+                "{report}"
+            );
+        }
+    }
 }
 
 #[test]

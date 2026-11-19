@@ -7,12 +7,19 @@ use super::{
     attempts::{invalid, timestamp},
 };
 use crate::core::{
-    adaptive::{AdaptiveBudgetDecision, CalibrationPilot, PilotEvidence},
+    adaptive::{AdaptiveBudgetDecision, AdaptiveTimingBasis, CalibrationPilot, PilotEvidence},
     canonical::CanonicalValue,
     records::{RecordId, ResolvedAttemptSlotRecord},
 };
 
 pub(crate) const DECISION_EVENT: &str = "adaptive_budget_frozen";
+
+fn decode_decision(text: &str) -> Result<AdaptiveBudgetDecision, RunStoreError> {
+    let decision: AdaptiveBudgetDecision =
+        serde_json::from_str(text).map_err(|_| invalid("invalid adaptive budget decision"))?;
+    decision.validate_format().map_err(invalid)?;
+    Ok(decision)
+}
 
 struct PilotOutcome {
     attempt_id: String,
@@ -30,10 +37,7 @@ impl RunStore {
         let text: Option<String> = self.connection.query_row(
             "SELECT payload_json FROM events WHERE kind=?1 AND json_extract(payload_json,'$.group_id')=?2 ORDER BY sequence LIMIT 1",
             params![DECISION_EVENT, group_id], |r| r.get(0)).optional()?;
-        text.map(|s| {
-            serde_json::from_str(&s).map_err(|_| invalid("invalid adaptive budget decision"))
-        })
-        .transpose()
+        text.as_deref().map(decode_decision).transpose()
     }
 
     /// The immediate transaction makes the first frozen decision authoritative.
@@ -42,6 +46,7 @@ impl RunStore {
         decision: &AdaptiveBudgetDecision,
         now_ns: u64,
     ) -> Result<AdaptiveBudgetDecision, RunStoreError> {
+        decision.validate_format().map_err(invalid)?;
         #[cfg(test)]
         crate::runtime::fault_injection::hit("adaptive.freeze.before");
         let value =
@@ -52,8 +57,7 @@ impl RunStore {
             "SELECT payload_json FROM events WHERE kind=?1 AND json_extract(payload_json,'$.group_id')=?2 ORDER BY sequence LIMIT 1",
             params![DECISION_EVENT, decision.group_id], |r| r.get(0)).optional()?;
         if let Some(existing) = existing {
-            return serde_json::from_str(&existing)
-                .map_err(|_| invalid("invalid adaptive budget decision"));
+            return decode_decision(&existing);
         }
         tx.execute("INSERT INTO events (attempt_id,occurred_at_ns,kind,payload_json) VALUES (NULL,?1,?2,?3)", params![timestamp(now_ns)?,DECISION_EVENT,payload])?;
         tx.commit()?;
@@ -68,6 +72,7 @@ impl RunStore {
         candidate_id: String,
         implementation: &str,
         pilot: &CalibrationPilot,
+        basis: AdaptiveTimingBasis,
     ) -> Result<Option<PilotEvidence>, RunStoreError> {
         // The committed transition supplies the same stop reason after resume or shared replay.
         let row = self
@@ -94,10 +99,10 @@ impl RunStore {
             .optional()?;
         let Some(PilotOutcome {
             attempt_id,
-            status,
+            mut status,
             failure,
             directory,
-            reason,
+            mut reason,
         }) = row
         else {
             return Ok(None);
@@ -107,12 +112,34 @@ impl RunStore {
         {
             return Ok(None);
         }
-        // An observed crossing only qualifies after the whole buffer passes
-        // integrity, evaluator, metric-agreement, and finalization checks.
+        // Qualify a crossing only after the producing attempt has finalized.
         let reference: Option<(String, u64)> = if status == "accepted" {
-            self.connection.query_row(
-                "SELECT id,json_extract(record_json,'$.profile.instrumented_time_ns') FROM observations WHERE producing_attempt_id=?1 AND valid=1 AND completion='reached' AND json_extract(record_json,'$.profile.instrumented_time_ns')<=?2 ORDER BY json_extract(record_json,'$.profile.instrumented_time_ns'),id LIMIT 1",
-                params![attempt_id,timestamp(pilot.limit_ns)?], |r| Ok((r.get(0)?,r.get::<_,i64>(1)? as u64))).optional()?
+            if basis == AdaptiveTimingBasis::CumulativeTimedWallTime {
+                let elapsed = super::fresh::prefix_time(&self.connection, &slot.to_string())?;
+                let observation: Option<String> = self.connection.query_row(
+                    "SELECT id FROM observations WHERE producing_attempt_id=?1 AND valid=1 AND completion='reached' ORDER BY id LIMIT 1",
+                    [&attempt_id], |r| r.get(0),
+                ).optional()?;
+                if elapsed <= pilot.limit_ns && observation.is_some() {
+                    reason = Some("target_reached".into());
+                    observation.map(|id| (id, elapsed))
+                } else {
+                    if elapsed >= pilot.limit_ns {
+                        status = "censored".into();
+                        reason = Some("active_time_limit".into());
+                    }
+                    None
+                }
+            } else {
+                let path = if basis == AdaptiveTimingBasis::Instrumented {
+                    "$.profile.instrumented_time_ns"
+                } else {
+                    "$.profile.active_time_ns"
+                };
+                self.connection.query_row(
+                    "SELECT id,json_extract(record_json,?3) AS time FROM observations WHERE producing_attempt_id=?1 AND valid=1 AND completion='reached' AND time<=?2 ORDER BY time,id LIMIT 1",
+                    params![attempt_id,timestamp(pilot.limit_ns)?,path], |r| Ok((r.get(0)?,r.get::<_,i64>(1)? as u64))).optional()?
+            }
         } else {
             None
         };

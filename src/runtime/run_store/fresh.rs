@@ -137,7 +137,7 @@ impl RunStore {
     }
 
     pub fn fresh_progress(&self) -> Result<Vec<FreshSequenceProgress>, RunStoreError> {
-        progress(&self.connection)
+        progress_rows(&self.connection, false)
     }
 }
 
@@ -162,18 +162,60 @@ fn membership(db: &Connection, slot: &str) -> Result<Option<(String, u64)>, RunS
 }
 
 fn allowance(db: &Connection, run: &str, index: u64) -> Result<(u64, u64), RunStoreError> {
-    let policy: String = db.query_row(
-        "SELECT policy_json FROM fresh_sequences WHERE resolved_run_id=?1 AND measurement_index=?2",
+    let (policy, pilot): (String, bool) = db.query_row(
+        "SELECT s.policy_json, json_type(r.record_json,'$.calibration') IS 'object'
+         FROM fresh_sequences s JOIN resolved_runs r ON r.id=s.resolved_run_id
+         WHERE s.resolved_run_id=?1 AND s.measurement_index=?2",
         params![run, timestamp(index)?],
-        |r| r.get(0),
+        |r| Ok((r.get(0)?, r.get(1)?)),
     )?;
     let policy: ProfilePolicy =
         serde_json::from_str(&policy).map_err(|_| invalid("invalid persisted profile policy"))?;
     let limit = policy
         .active_time_ns()
         .map_err(|_| invalid("invalid persisted active-time bound"))?;
-    let used = db.query_row("SELECT coalesce(sum(CASE WHEN a.finished_at_ns IS NULL THEN b.reserved_ns ELSE coalesce(b.charged_ns,b.reserved_ns) END),0) FROM fresh_budget b JOIN attempts a ON a.id=b.attempt_id JOIN fresh_members m ON m.slot_id=a.slot_id WHERE m.resolved_run_id=?1 AND m.measurement_index=?2",params![run,timestamp(index)?],|r|unsigned(r,0))?;
+    let used = db.query_row(
+        "SELECT coalesce(sum(CASE
+             WHEN a.finished_at_ns IS NULL THEN b.reserved_ns
+             WHEN ?3 AND a.failure_code='interrupted_attempt' THEN 0
+             ELSE coalesce(b.charged_ns,b.reserved_ns)
+         END),0)
+         FROM fresh_budget b JOIN attempts a ON a.id=b.attempt_id
+         JOIN fresh_members m ON m.slot_id=a.slot_id
+         WHERE m.resolved_run_id=?1 AND m.measurement_index=?2",
+        params![run, timestamp(index)?, pilot],
+        |row| unsigned(row, 0),
+    )?;
     Ok((limit, used))
+}
+
+pub(super) fn prefix_time(db: &Connection, slot: &str) -> Result<u64, RunStoreError> {
+    let (elapsed, missing): (u64, u64) = db.query_row(
+        "SELECT coalesce(sum(CASE WHEN a.failure_code='interrupted_attempt' THEN 0 ELSE b.charged_ns END),0),
+                count(CASE WHEN a.state='accepted' AND b.charged_ns IS NULL THEN 1 END)
+         FROM fresh_members crossing JOIN fresh_members m
+           ON m.resolved_run_id=crossing.resolved_run_id AND m.measurement_index=crossing.measurement_index
+         JOIN attempts a ON a.slot_id=m.slot_id LEFT JOIN fresh_budget b ON b.attempt_id=a.id
+         WHERE crossing.slot_id=?1 AND m.schedule_index<=crossing.schedule_index
+           AND a.finished_at_ns IS NOT NULL",
+        [slot], |row| Ok((unsigned(row, 0)?, unsigned(row, 1)?)),
+    )?;
+    if missing != 0 {
+        return Err(invalid(
+            "accepted calibration fit lacks a measured wall-time charge",
+        ));
+    }
+    Ok(elapsed)
+}
+
+// Recovery refunds an interrupted pilot when it becomes terminal. Keep the
+// original charge intact for the outcome record and shared replay.
+fn is_pilot(db: &Connection, run: &str) -> Result<bool, RunStoreError> {
+    Ok(db.query_row(
+        "SELECT json_type(record_json,'$.calibration') IS 'object' FROM resolved_runs WHERE id=?1",
+        [run],
+        |row| row.get(0),
+    )?)
 }
 
 pub(super) fn check_reservation(db: &Connection, slot: &str) -> Result<(), RunStoreError> {
@@ -219,6 +261,11 @@ fn effect(
     let Some((run, index)) = membership(db, &attempt.slot().to_string())? else {
         return Ok(None);
     };
+    if matches!(outcome, TerminalOutcome::Failed { code, .. } if code == "interrupted_attempt")
+        && is_pilot(db, &run)?
+    {
+        return Ok(None);
+    }
     let target: bool = db.query_row("SELECT EXISTS(SELECT 1 FROM observations WHERE producing_attempt_id=?1 AND completion='reached')",[attempt.id().to_string()],|r|r.get(0))?;
     if matches!(outcome, TerminalOutcome::Accepted) && target {
         return Ok(Some("skipped_target_reached"));
@@ -436,12 +483,19 @@ pub(super) fn snapshot(
 }
 
 pub(crate) fn progress(db: &Connection) -> Result<Vec<FreshSequenceProgress>, RunStoreError> {
+    progress_rows(db, true)
+}
+
+fn progress_rows(
+    db: &Connection,
+    include_pilots: bool,
+) -> Result<Vec<FreshSequenceProgress>, RunStoreError> {
     if !supported(db)? {
         return Ok(vec![]);
     }
-    let mut query=db.prepare("SELECT s.resolved_run_id,r.logical_specification_id,s.measurement_index,s.policy_json FROM fresh_sequences s JOIN resolved_runs r ON r.id=s.resolved_run_id ORDER BY s.resolved_run_id,s.measurement_index")?;
+    let mut query=db.prepare("SELECT s.resolved_run_id,r.logical_specification_id,s.measurement_index,s.policy_json FROM fresh_sequences s JOIN resolved_runs r ON r.id=s.resolved_run_id WHERE ?1 OR json_type(r.record_json,'$.calibration') IS NULL ORDER BY s.resolved_run_id,s.measurement_index")?;
     let sequences = query
-        .query_map([], |r| {
+        .query_map([include_pilots], |r| {
             Ok((
                 r.get::<_, String>(0)?,
                 r.get::<_, String>(1)?,
@@ -455,7 +509,7 @@ pub(crate) fn progress(db: &Connection) -> Result<Vec<FreshSequenceProgress>, Ru
         let count:u64=db.query_row("SELECT count(*) FROM fresh_members WHERE resolved_run_id=?1 AND measurement_index=?2",params![run,timestamp(index)?],|r|unsigned(r,0))?;
         let (accepted,attempted,active,target):(u64,u64,bool,bool)=db.query_row("SELECT count(DISTINCT CASE WHEN a.state='accepted' THEN m.slot_id END),count(DISTINCT CASE WHEN a.finished_at_ns IS NOT NULL THEN m.slot_id END),coalesce(max(a.finished_at_ns IS NULL AND a.id IS NOT NULL),0),coalesce(max(a.state='accepted' AND EXISTS(SELECT 1 FROM observations o WHERE o.producing_attempt_id=a.id AND o.completion='reached')),0) FROM fresh_members m LEFT JOIN attempts a ON a.slot_id=m.slot_id WHERE m.resolved_run_id=?1 AND m.measurement_index=?2",params![run,timestamp(index)?],|r|Ok((unsigned(r,0)?,unsigned(r,1)?,r.get(2)?,r.get(3)?)))?;
         let (limit,used)=allowance(db,&run,index)?;
-        let conservative:u64=db.query_row("SELECT coalesce(sum(CASE WHEN a.finished_at_ns IS NULL THEN b.reserved_ns-coalesce(b.charged_ns,0) WHEN b.charged_ns IS NULL THEN b.reserved_ns ELSE 0 END),0) FROM fresh_budget b JOIN attempts a ON a.id=b.attempt_id JOIN fresh_members m ON m.slot_id=a.slot_id WHERE m.resolved_run_id=?1 AND m.measurement_index=?2",params![run,timestamp(index)?],|r|unsigned(r,0))?;
+        let conservative:u64=db.query_row("SELECT coalesce(sum(CASE WHEN a.finished_at_ns IS NULL THEN b.reserved_ns-coalesce(b.charged_ns,0) WHEN ?3 AND a.failure_code='interrupted_attempt' THEN 0 WHEN b.charged_ns IS NULL THEN b.reserved_ns ELSE 0 END),0) FROM fresh_budget b JOIN attempts a ON a.id=b.attempt_id JOIN fresh_members m ON m.slot_id=a.slot_id WHERE m.resolved_run_id=?1 AND m.measurement_index=?2",params![run,timestamp(index)?,is_pilot(db,&run)?],|r|unsigned(r,0))?;
         let (status,reason)=if target { ("accepted",Some("target_reached")) } else if policy.metric.is_none() && accepted==count { ("accepted",Some("fixed_count")) } else if active { ("partial",None) } else if used>=limit { ("censored",Some("active_time_limit")) } else if attempted==count { ("censored",Some("schedule_exhausted")) } else { ("partial",None) };
         Ok(FreshSequenceProgress { resolved_specification_id:run,logical_specification_id:logical,measurement_index:index,scheduled_points:count,accepted_points:accepted,consumed_time_ns:used,conservative_time_ns:conservative,status:status.into(),reason:reason.map(str::to_owned) })
     }).collect()

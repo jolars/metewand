@@ -96,6 +96,16 @@ pub(super) struct ResolvedCandidate {
     pub reuse_key: crate::runtime::worker_reuse::WorkerReuseKey,
 }
 
+impl ResolvedCandidate {
+    pub(super) fn profile_policy(&self) -> Option<&crate::core::profile::ProfilePolicy> {
+        self.profile
+            .as_ref()
+            .map(|p| &p.policy)
+            .or_else(|| self.streaming_profile.as_ref().map(|p| &p.policy))
+            .or(self.fresh_profile.as_ref())
+    }
+}
+
 #[derive(Clone)]
 pub(super) struct ResolvedMeasurement {
     pub fresh: Option<crate::core::profile::FreshControl>,
@@ -1487,6 +1497,7 @@ fn resolve_candidate(
         definition: candidate.implementation_configuration.record.definition,
         resolved: implementation.record.clone(),
         policy,
+        execute_watchdog: PhaseTimeouts::from(repository.manifest.worker_timeouts).execute,
     };
     Ok(ResolvedCandidate {
         profile,

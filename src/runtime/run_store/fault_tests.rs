@@ -62,14 +62,24 @@ fn claim(store: &mut RunStore, attempt: &OwnedAttempt) -> OwnedAttempt {
 }
 
 fn seed(store: &mut RunStore, measurement: bool) {
-    seed_kind(store, measurement, false);
+    seed_kind(store, measurement, false, false);
 }
 
-fn seed_kind(store: &mut RunStore, measurement: bool, streaming: bool) {
+fn seed_kind(store: &mut RunStore, measurement: bool, streaming: bool, calibration: bool) {
     let tx = store.transaction().unwrap();
-    tx.execute_batch(
-        "INSERT INTO applicability_decisions VALUES ('decision', 'candidate', 1, '{}');
-         INSERT INTO resolved_runs VALUES ('run', 'logical', 'candidate', 'decision', 1, '{}');",
+    tx.execute(
+        "INSERT INTO applicability_decisions VALUES ('decision', 'candidate', 1, '{}')",
+        [],
+    )
+    .unwrap();
+    let specification = if calibration {
+        r#"{"calibration":{}}"#
+    } else {
+        "{}"
+    };
+    tx.execute(
+        "INSERT INTO resolved_runs VALUES ('run', 'logical', 'candidate', 'decision', 1, ?1)",
+        [specification],
     )
     .unwrap();
     let version = tx
@@ -214,6 +224,7 @@ fn prepare(root: &Path, scenario: &str) {
         &mut store,
         !scenario.starts_with("concurrent"),
         scenario.starts_with("stream-"),
+        scenario.starts_with("fresh-pilot-"),
     );
     if !scenario.starts_with("recover-") {
         return;
@@ -268,6 +279,7 @@ fn publish(store: &mut RunStore, scenario: &str) {
     let streaming = scenario.starts_with("stream-");
     let scenario = scenario
         .strip_prefix("buffered-")
+        .or_else(|| scenario.strip_prefix("fresh-pilot-"))
         .or_else(|| scenario.strip_prefix("fresh-"))
         .or_else(|| scenario.strip_prefix("stream-"))
         .unwrap_or(scenario);
@@ -1130,6 +1142,76 @@ fn fresh_sequence_budget_and_target_survive_publication_crashes() {
             let (output, _) = run(root.path(), scenario, target);
             assert!(!output.status.success());
             audit(root.path(), scenario);
+        }
+    }
+}
+
+#[test]
+fn interrupted_fresh_pilot_releases_its_reservation_on_recovery() {
+    for scenario in ["fresh-pilot-accepted", "shared-fresh-pilot-accepted"] {
+        let baseline = tempfile::tempdir().unwrap();
+        prepare(baseline.path(), scenario);
+        let (output, boundaries) = run(baseline.path(), scenario, 0);
+        assert!(output.status.success(), "{output:?}");
+        let charge_update = boundaries
+            .iter()
+            .position(|event| event.starts_with("database.before UPDATE fresh_budget"))
+            .unwrap();
+        let charge_commit = boundaries
+            .iter()
+            .enumerate()
+            .skip(charge_update)
+            .find(|(_, event)| *event == "database.after COMMIT")
+            .unwrap()
+            .0;
+        for (boundary, saved_charge) in [(charge_update, None), (charge_commit, Some(25))] {
+            let root = tempfile::tempdir().unwrap();
+            prepare(root.path(), scenario);
+            let (output, _) = run(root.path(), scenario, boundary + 1);
+            assert_eq!(output.status.code(), Some(86), "{output:?}");
+            let mut store = RunStore::open(root.path()).unwrap();
+            store.recover(|| 200).unwrap();
+            let charge: Option<i64> = store
+                .connection
+                .query_row("SELECT charged_ns FROM fresh_budget", [], |row| row.get(0))
+                .unwrap();
+            assert_eq!(charge, saved_charge);
+            let progress = super::fresh::progress(&store.connection).unwrap().remove(0);
+            assert_eq!(progress.consumed_time_ns, 0);
+            assert_eq!(progress.conservative_time_ns, 0);
+            assert_eq!(progress.status, "partial");
+            assert!(store.slot_progress(slot(1)).unwrap().interrupted);
+            let retry = store
+                .reserve(
+                    slot(1),
+                    RetryAuthorization::Next { retry: false },
+                    lease("retry", 400),
+                    300,
+                )
+                .unwrap();
+            assert_eq!(
+                store.reserve_fresh_time(&retry, None, 300).unwrap(),
+                Some(1_000_000)
+            );
+            store.record_fresh_time(&retry, 50, 301).unwrap();
+            let retry = store
+                .advance(&retry, AttemptPhase::Finalizing, 302)
+                .unwrap();
+            store
+                .publish_finalization(
+                    &retry,
+                    TerminalOutcome::Censored {
+                        reason: "test".into(),
+                    },
+                    &[],
+                    payload,
+                    || 303,
+                )
+                .unwrap();
+            assert_eq!(
+                super::fresh::prefix_time(&store.connection, &slot(1).to_string()).unwrap(),
+                50
+            );
         }
     }
 }

@@ -1188,6 +1188,14 @@ impl PlanRequirements {
                             .then(|| p.policy.max_active_time.clone())
                     }),
                     adaptive_budget: profile.and_then(|p| p.policy.adaptive_budget.clone()),
+                    adaptive_timing_basis: profile
+                        .filter(|p| p.policy.adaptive_budget.is_some())
+                        .and_then(|p| {
+                            experiment
+                                .implementations
+                                .first()
+                                .map(|name| p.implementations[name].adaptive_timing_basis())
+                        }),
                     timing_scope: policy.resolved_timing_scope().to_string(),
                     primary_time: primary_time(policy.resolved_primary_time()),
                     run_order: run_order(policy.resolved_run_order()),
@@ -1262,8 +1270,11 @@ impl PlanRequirements {
                 control.timeout.as_deref().unwrap_or("unspecified"),control.worker_execute_timeout_ns,
                 control.profile_max_active_time.as_deref().unwrap_or(if control.adaptive_budget.is_some() { "unbounded" } else { "not applicable" })).expect("string write");
             if let Some(budget) = &control.adaptive_budget {
-                writeln!(output,"    adaptive calibration: pilot {} growing by {}, limit = {} times fastest verified time (minimum {}, ceiling {}, fallback {}); scientific watchdog = limit + {}, execute watchdog extended as needed",
-                    budget.initial_pilot_time,budget.growth_factor,budget.multiplier,budget.minimum_time,
+                let basis = control
+                    .adaptive_timing_basis
+                    .expect("adaptive timing basis");
+                writeln!(output,"    adaptive calibration: pilot {} growing by {}, limit = {} times fastest verified {} (minimum {}, ceiling {}, fallback {}), watchdog grace {}",
+                    budget.initial_pilot_time,budget.growth_factor,budget.multiplier,basis.label(),budget.minimum_time,
                     control.profile_max_active_time.as_deref().unwrap_or("unbounded"),budget.fallback_time.as_deref().or(control.profile_max_active_time.as_deref()).unwrap_or("wait for convergence"),budget.watchdog_grace).expect("string write");
             } else if control
                 .timeout
@@ -1323,6 +1334,8 @@ struct ControlRequirement {
     profile_max_active_time: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     adaptive_budget: Option<crate::core::adaptive::AdaptiveBudget>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    adaptive_timing_basis: Option<crate::core::adaptive::AdaptiveTimingBasis>,
     timing_scope: String,
     primary_time: &'static str,
     run_order: &'static str,
@@ -2057,14 +2070,17 @@ fn render_adaptive_budgets(
     for decision in decisions {
         writeln!(
             output,
-            "Adaptive solver limit: {} ms ({}, {} pilot attempts; scope {}).",
+            "Adaptive solver limit: {} ms ({}, {} pilots, {}).",
             decision.effective_limit_ns / 1_000_000,
             decision.reference_time_ns.map_or_else(
                 || "fallback".into(),
                 |time| format!("{} times {} ns", decision.multiplier, time)
             ),
             decision.pilots.len(),
-            decision.instrumented_scope
+            decision
+                .instrumented_scope
+                .as_deref()
+                .unwrap_or(decision.timing_basis.label())
         )
         .expect("string write");
     }

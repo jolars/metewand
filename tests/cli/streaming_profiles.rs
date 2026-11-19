@@ -650,6 +650,72 @@ fn streaming_bounds_preserve_partial_curves_and_distinguish_failures() {
 }
 
 #[test]
+fn streaming_adaptive_pilot_uses_active_time_and_finishes_the_round() {
+    let stage = stage(false);
+    let root = stage.path();
+    let manifest = root.join("metewand.yaml");
+    let source = fs::read_to_string(&manifest).unwrap().replacen(
+        "    max-active-time: 2 s",
+        "    adaptive-budget: {initial-pilot-time: 1 s}",
+        1,
+    );
+    let mut config: Value = serde_saphyr::from_str(&source).unwrap();
+    config["implementations"]["limited"] = config["implementations"]["halving"].clone();
+    config["implementations"]["limited"]["parameters"]["maximum_updates"]["default"] = json!(0);
+    config["observation-policies"]["accuracy"]["implementations"]["limited"] =
+        config["observation-policies"]["accuracy"]["implementations"]["halving"].clone();
+    config["experiments"][0]["implementations"] = json!(["halving", "limited"]);
+    fs::write(manifest, serde_json::to_vec(&config).unwrap()).unwrap();
+    let evaluator = root.join("evaluator.py");
+    fs::write(
+        &evaluator,
+        fs::read_to_string(&evaluator)
+            .unwrap()
+            .replace("    x =", "    import time\n    time.sleep(0.25)\n    x ="),
+    )
+    .unwrap();
+    let run = |limit| {
+        invoke(
+            root,
+            &[
+                "run",
+                "--output-dir",
+                "run",
+                "--experiment",
+                "target",
+                "--max-attempts",
+                limit,
+                "--output",
+                "json",
+            ],
+        )
+    };
+    let first = run("1");
+    assert!(first.status.success(), "{first:?}");
+    let first = data(&first);
+    assert!(first["adaptive_budgets"].is_null());
+    let last = first["calibration_attempts"][0]["attempt"]["observations"]
+        .as_array()
+        .unwrap()
+        .last()
+        .unwrap();
+    assert!(last["profile"]["evaluation_time_ns"].as_u64().unwrap() >= 1_250_000_000);
+    let second = run("1");
+    assert!(second.status.success(), "{second:?}");
+    let second = data(&second);
+    let decision = &second["adaptive_budgets"][0];
+    assert_eq!(decision["timing_basis"], "streaming_active_time");
+    assert_eq!(
+        decision["reference_time_ns"],
+        last["profile"]["active_time_ns"]
+    );
+    assert_eq!(decision["reference_observation_id"], last["observation_id"]);
+    assert_eq!(decision["pilots"].as_array().unwrap().len(), 2);
+    assert_eq!(decision["pilots"][1]["reason"], "implementation_stopped");
+    assert!(second["attempts"].as_array().unwrap().is_empty());
+}
+
+#[test]
 fn all_streaming_envelopes_exclude_long_evaluation_pauses() {
     for scope in ["prepare_and_execute", "execute_only", "cold_end_to_end"] {
         let stage = stage(false);

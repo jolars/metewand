@@ -188,7 +188,7 @@ Retries never splice trajectories together. Partial evidence can remain
 inspectable without satisfying the observation policy. A streaming retry starts
 from clean state; it does not restore implementation state from a snapshot.
 
-Buffered profiles can calibrate a common scientific limit per input, problem
+Profiles can calibrate a common scientific limit per input, problem
 configuration, accuracy target, and selected solver cohort. Growing pilot rounds
 increase their common limit until at least one method converges independently.
 Complete the round before choosing the fastest verified convergence time, then
@@ -198,7 +198,12 @@ optional; calibration grows while time-limited pilots could benefit. If every
 method stops without reaching the target for another reason, report those
 stops instead of increasing the time budget. Calibration
 stays separate from measurement, and its evidence and decisions survive resume,
-retries, shared-storage replay, and archive restoration.
+retries, shared-storage replay, and archive restoration. Each adaptive comparison
+uses one delivery mode. Buffered pilots use their named instrumented clock.
+Streaming pilots use executor-observed active time at the verified checkpoint.
+Fresh-sequence pilots use cumulative executor wall time across clean fits through
+the verified crossing, even when individual points report a worker clock as
+primary. A paused fresh pilot resumes from its committed prefix.
 
 ## Planning and identity
 

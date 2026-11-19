@@ -877,13 +877,13 @@
       "type": "object",
       "properties": {
         "schema_version": {
-          "const": 1
+          "enum": [1, 2]
         },
         "group_id": {
           "$ref": "common.schema.json#/$defs/identity"
         },
         "timing_basis": {
-          "const": "instrumented"
+          "enum": ["instrumented", "cumulative_timed_wall_time", "streaming_active_time"]
         },
         "instrumented_scope": {
           "type": "string",
@@ -953,7 +953,6 @@
         "schema_version",
         "group_id",
         "timing_basis",
-        "instrumented_scope",
         "multiplier",
         "minimum_limit_ns",
         "ceiling_limit_ns",
@@ -964,7 +963,20 @@
         "fallback",
         "pilots"
       ],
-      "additionalProperties": false
+      "additionalProperties": false,
+      "if": {
+        "properties": {"schema_version": {"const": 1}}
+      },
+      "then": {
+        "properties": {"timing_basis": {"const": "instrumented"}},
+        "required": ["instrumented_scope"]
+      },
+      "else": {
+        "properties": {
+          "timing_basis": {"enum": ["cumulative_timed_wall_time", "streaming_active_time"]},
+          "instrumented_scope": false
+        }
+      }
     },
     "calibration_pilot": {
       "type": "object",
@@ -1105,17 +1117,7 @@
           "metric",
           "direction",
           "threshold"
-        ],
-        "properties": {
-          "default-binding": {
-            "$ref": "#/properties/implementations/additionalProperties/oneOf/0"
-          },
-          "implementations": {
-            "additionalProperties": {
-              "$ref": "#/properties/implementations/additionalProperties/oneOf/0"
-            }
-          }
-        }
+        ]
       }
     },
     {
