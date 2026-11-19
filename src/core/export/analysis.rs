@@ -15,6 +15,8 @@ pub const ANALYSIS_SCHEMA_VERSION: u32 = 1;
 #[derive(Clone, Debug, Serialize)]
 pub struct AnalysisSnapshot {
     #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub adaptive_measurements: Vec<crate::core::run_output::AdaptiveMeasurementProgress>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub adaptive_budgets: Vec<crate::core::adaptive::AdaptiveBudgetDecision>,
     pub schema_version: u32,
     pub candidates: Vec<AnalysisCandidate>,
@@ -192,6 +194,25 @@ impl AnalysisSnapshot {
             }
         }
         for candidate in &self.candidates {
+            let mut adaptive = self
+                .adaptive_measurements
+                .iter()
+                .filter(|series| series.candidate_id == candidate.id)
+                .peekable();
+            if adaptive.peek().is_some() {
+                let finished = adaptive
+                    .filter(|series| series.stop_reason.is_some())
+                    .count();
+                if candidate.implementation_repetitions != Some(finished as u64) {
+                    issues.push(issue(
+                        "missing_repetitions",
+                        Some(&candidate.id),
+                        None,
+                        "One or more adaptive measurement series have not reached a stopping condition.",
+                    ));
+                }
+                continue;
+            }
             let Some(expected) = candidate
                 .measurement_repetitions
                 .zip(candidate.implementation_repetitions)

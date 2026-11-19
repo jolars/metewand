@@ -161,6 +161,7 @@ fn separates_logical_records_from_resolved_runtime_dependencies() {
         kind: ObservationKind::OneShot,
     };
     let candidate = LogicalCandidateRecord {
+        adaptive_measurements: None,
         dataset_configuration: id::<DatasetConfigurationRecord>(20),
         problem_configuration: id::<ProblemConfigurationRecord>(21),
         implementation_configuration: id::<ImplementationConfigurationRecord>(22),
@@ -210,6 +211,7 @@ fn separates_logical_records_from_resolved_runtime_dependencies() {
         configuration: value(r#"{"serial":true}"#),
     };
     let resolved_specification = ResolvedOneShotSpecificationRecord {
+        adaptive_measurements: None,
         adaptive_budget_group: None,
         calibration: None,
         applicability: None,

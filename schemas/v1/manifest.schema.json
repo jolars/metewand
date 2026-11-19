@@ -484,7 +484,19 @@
           "$ref": "common.schema.json#/$defs/safe_positive_integer"
         },
         "measurement-repetitions": {
-          "$ref": "common.schema.json#/$defs/safe_positive_integer"
+          "oneOf": [
+            { "$ref": "common.schema.json#/$defs/safe_positive_integer" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["min", "max", "min-time-seconds"],
+              "properties": {
+                "min": { "$ref": "common.schema.json#/$defs/safe_positive_integer" },
+                "max": { "$ref": "common.schema.json#/$defs/safe_positive_integer" },
+                "min-time-seconds": { "type": "number", "exclusiveMinimum": 0 }
+              }
+            }
+          ]
         },
         "seed": { "$ref": "common.schema.json#/$defs/safe_nonnegative_integer" },
         "dataset-parameters": { "$ref": "#/$defs/named_parameter_axes" },

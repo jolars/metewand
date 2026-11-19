@@ -173,6 +173,9 @@
                             "items": {
                               "type": "object",
                               "properties": {
+                                "adaptive_measurements": {
+                                  "$ref": "common.schema.json#/$defs/adaptive_measurement_policy"
+                                },
                                 "fresh_observations": {
                                   "type": "array",
                                   "items": {

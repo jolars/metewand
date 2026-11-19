@@ -97,7 +97,7 @@ pub(super) fn preselect(
                     .observation_slots
                     .iter()
                     .any(|slot| slot.record.fresh.is_some());
-                if fresh {
+                if fresh || candidate.candidate.record.adaptive_measurements.is_some() {
                     let ids = std::iter::once(candidate.candidate.id.to_string())
                         .chain(std::iter::once(specification.specification.id.to_string()))
                         .chain(
@@ -234,10 +234,16 @@ pub(super) fn rebuild_batches(
                 .dataset_instance;
             let mut batch_end = batch_start;
             let mut repetitions = BTreeSet::new();
+            let mut adaptive_series = BTreeSet::new();
             while batch_end < end && batch_end - batch_start < lanes {
                 let (candidate, measurement) = schedule[batch_end];
                 let slot = &resolved.candidates[candidate].measurements[measurement];
                 if slot.scheduling.comparison_block.dataset_instance != dataset {
+                    break;
+                }
+                if slot.specification.record.adaptive_measurements.is_some()
+                    && !adaptive_series.insert(slot.specification.id)
+                {
                     break;
                 }
                 if slot.fresh.is_some()

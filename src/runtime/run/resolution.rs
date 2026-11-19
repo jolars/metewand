@@ -1165,8 +1165,10 @@ fn resolved_specification(
     evaluator: ResolvedWorkerRecord,
     executor: RecordId<ExecutorDefinitionRecord>,
     applicability: Option<RecordId<crate::core::applicability::ApplicabilityDecisionRecord>>,
+    adaptive_measurements: Option<crate::core::manifest::AdaptiveMeasurementRepetitions>,
 ) -> Result<IdentifiedRecord<ResolvedOneShotSpecificationRecord>, RunError> {
     Ok(identify_record(ResolvedOneShotSpecificationRecord {
+        adaptive_measurements,
         adaptive_budget_group: None,
         calibration: None,
         applicability,
@@ -1247,11 +1249,12 @@ fn resolve_candidate(
     let analysis_settings = json!({
         "benchmark": repository.manifest.name.as_str(),
         "implementation_repetitions": declaration.implementation_repetitions,
-        "measurement_repetitions": declaration.measurement_repetitions,
+        "measurement_repetitions": declaration.measurement_repetitions.maximum(),
         "observation_policy": record_document(candidate.profile_policy.as_ref()
             .map_or(&experiment.observation_policy.record, |p| &p.record))?,
     });
 
+    let adaptive_measurements = candidate.candidate.record.adaptive_measurements;
     let definition = repository.manifest.observation_policies
         [&experiment.observation_policy.record.name]
         .profile
@@ -1371,6 +1374,7 @@ fn resolve_candidate(
                 .checked_inputs
                 .as_ref()
                 .map(|_| applicability.id),
+            adaptive_measurements,
         )?;
         let warmups = specification
             .attempt_slots

@@ -588,6 +588,7 @@ fn plan_candidate(
     };
     let observation_policy = profile_policy.as_ref().map_or(observation_policy, |p| p.id);
     let candidate = identify_record(LogicalCandidateRecord {
+        adaptive_measurements: experiment.measurement_repetitions.adaptive(),
         dataset_configuration: dataset_configuration.id,
         problem_configuration: problem_configuration.id,
         implementation_configuration: implementation_configuration.id,
@@ -671,6 +672,7 @@ fn plan_specification(
     );
     let slot_count = experiment
         .measurement_repetitions
+        .maximum()
         .checked_mul(bound)
         .ok_or_else(|| LogicalPlanningError::MissingDefinitionIdentity {
             kind: "observation bound",

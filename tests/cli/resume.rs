@@ -592,3 +592,149 @@ fn repeated_run_leaves_a_live_attempt_with_its_owner() {
         1
     );
 }
+
+#[test]
+fn adaptive_measurements_resume_and_stop_independently_per_seed() {
+    let root = repository();
+    let path = root.path().join("metewand.yaml");
+    let manifest = fs::read_to_string(&path).unwrap();
+    fs::write(
+        path,
+        manifest
+            .replace(
+                "implementation-repetitions: 1",
+                "implementation-repetitions: 2",
+            )
+            .replace(
+                "measurement-repetitions: 3",
+                "measurement-repetitions: {min: 2, max: 5, min-time-seconds: 0.000000001}",
+            )
+            .replace("timing-scope:", "max-concurrency: 4\n    timing-scope:"),
+    )
+    .unwrap();
+    let (code, first) = run(root.path(), &["--max-attempts", "1"]);
+    assert_eq!(code, 0, "{first}");
+    assert_eq!(first["data"]["summary"]["accepted_attempts"], 1);
+    assert!(first["data"]["adaptive_measurements"][0]["stop_reason"].is_null());
+
+    let (code, resumed) = run(root.path(), &[]);
+    assert_eq!(code, 0, "{resumed}");
+    assert_eq!(resumed["data"]["summary"]["accepted_attempts"], 3);
+    let series = &resumed["data"]["adaptive_measurements"];
+    let progress = series.as_array().unwrap();
+    assert_eq!(progress.len(), 2);
+    for progress in progress {
+        assert_eq!(progress["accepted_measurements"], 2);
+        assert_eq!(progress["stop_reason"], "minimum_time");
+    }
+
+    let (code, complete) = run(root.path(), &[]);
+    assert_eq!(code, 0, "{complete}");
+    assert_eq!(complete["data"]["summary"]["attempt_slots"], 0);
+    assert_eq!(complete["data"]["adaptive_measurements"], *series);
+
+    let status = Command::new(env!("CARGO_BIN_EXE_metewand"))
+        .current_dir(root.path())
+        .args(["status", "--output-dir", "run", "--output", "json"])
+        .output()
+        .unwrap();
+    assert!(status.status.success(), "{status:?}");
+    let status: Value = serde_json::from_slice(&status.stdout).unwrap();
+    assert_eq!(status["data"]["adaptive_measurements"], *series);
+    assert_eq!(status["data"]["summary"]["satisfied_slots"], 4);
+    assert_eq!(status["data"]["summary"]["pending_slots"], 0);
+
+    let exported = Command::new(env!("CARGO_BIN_EXE_metewand"))
+        .current_dir(root.path())
+        .args([
+            "export",
+            "--output-dir",
+            "run",
+            "--format",
+            "json",
+            "--destination",
+            "export",
+            "--require-complete",
+        ])
+        .output()
+        .unwrap();
+    assert!(exported.status.success(), "{exported:?}");
+    let results: Value =
+        serde_json::from_slice(&fs::read(root.path().join("export/results.json")).unwrap())
+            .unwrap();
+    assert_eq!(results["adaptive_measurements"], *series);
+    assert_eq!(results["completeness"]["complete"], true);
+}
+
+#[test]
+fn adaptive_measurements_reach_the_cap_when_time_is_below_target() {
+    let root = repository();
+    let path = root.path().join("metewand.yaml");
+    let manifest = fs::read_to_string(&path).unwrap();
+    fs::write(
+        path,
+        manifest.replace(
+            "measurement-repetitions: 3",
+            "measurement-repetitions: {min: 1, max: 3, min-time-seconds: 3600}",
+        ),
+    )
+    .unwrap();
+    let (code, document) = run(root.path(), &["--shared"]);
+    assert_eq!(code, 0, "{document}");
+    assert_eq!(document["data"]["summary"]["accepted_attempts"], 3);
+    let series = &document["data"]["adaptive_measurements"][0];
+    assert_eq!(series["accepted_measurements"], 3);
+    assert_eq!(series["stop_reason"], "maximum_repetitions");
+}
+
+#[test]
+fn adaptive_measurements_wait_for_a_failed_slot_to_be_retried() {
+    let root = repository();
+    let manifest_path = root.path().join("metewand.yaml");
+    let manifest = fs::read_to_string(&manifest_path).unwrap();
+    fs::write(
+        manifest_path,
+        manifest.replace(
+            "measurement-repetitions: 3",
+            "measurement-repetitions: {min: 1, max: 3, min-time-seconds: 0.000000001}",
+        ),
+    )
+    .unwrap();
+    let worker_path = root.path().join("worker.py");
+    let worker = fs::read_to_string(&worker_path).unwrap();
+    let marker = serde_json::to_string(&root.path().join("executed")).unwrap();
+    fs::write(
+        worker_path,
+        worker.replace(
+            "            assert role == \"implementation\" and prepared is not None",
+            &format!(
+                "            assert role == \"implementation\" and prepared is not None\n\
+                 \x20           marker = Path({marker})\n\
+                 \x20           if not marker.exists():\n\
+                 \x20               marker.touch()\n\
+                 \x20               prepared += 1"
+            ),
+        ),
+    )
+    .unwrap();
+
+    let (_, first) = run(root.path(), &[]);
+    assert_eq!(first["data"]["summary"]["failed_attempts"], 1);
+    assert_eq!(first["data"]["summary"]["attempt_slots"], 1);
+    let series = &first["data"]["adaptive_measurements"][0];
+    assert_eq!(series["accepted_measurements"], 0);
+    assert_eq!(series["primary_time_ns"], "0");
+    assert!(series["stop_reason"].is_null());
+
+    let (_, paused) = run(root.path(), &[]);
+    assert_eq!(paused["data"]["summary"]["attempt_slots"], 0);
+
+    let (code, retried) = run(root.path(), &["--retry"]);
+    assert_eq!(code, 0, "{retried}");
+    assert_eq!(retried["data"]["summary"]["accepted_attempts"], 1);
+    assert_eq!(retried["data"]["summary"]["attempt_slots"], 1);
+    assert_eq!(
+        retried["data"]["adaptive_measurements"][0]["stop_reason"],
+        "minimum_time"
+    );
+}

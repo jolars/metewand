@@ -155,9 +155,23 @@ pub struct RunSummary {
     pub superseded_attempts: usize,
 }
 
+/// Sampling progress derived from the committed one-shot measurements.
+#[derive(Clone, Debug, Serialize)]
+pub struct AdaptiveMeasurementProgress {
+    pub candidate_id: String,
+    pub resolved_specification_id: String,
+    pub policy: crate::core::manifest::AdaptiveMeasurementRepetitions,
+    pub accepted_measurements: u64,
+    /// Decimal nanoseconds preserve totals beyond the canonical integer range.
+    pub primary_time_ns: String,
+    pub stop_reason: Option<crate::core::manifest::AdaptiveMeasurementStop>,
+}
+
 /// Final command output rendered by both human and machine interfaces.
 #[derive(Debug, Serialize)]
 pub struct RunReport<D> {
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub adaptive_measurements: Vec<AdaptiveMeasurementProgress>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub calibration_attempts: Vec<CalibrationAttemptOutput<D>>,
     #[serde(skip_serializing_if = "Vec::is_empty")]

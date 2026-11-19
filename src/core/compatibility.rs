@@ -138,6 +138,15 @@ fn validate_compatibility(
                 experiment: experiment.name.clone(),
                 observation_policy: experiment.observation_policy.clone(),
             })?;
+        if experiment.measurement_repetitions.adaptive().is_some()
+            && observation_policy.kind != ObservationKind::OneShot
+        {
+            return Err(
+                ManifestCompatibilityError::AdaptiveMeasurementsRequireOneShot(
+                    experiment.name.clone(),
+                ),
+            );
+        }
         let scientific_budget = required_scientific_budget(observation_policy.kind);
         if !contract.supported_budgets.contains(&scientific_budget) {
             return Err(ManifestCompatibilityError::UnsupportedScientificBudget {
@@ -370,6 +379,10 @@ fn required_scientific_budget(kind: ObservationKind) -> ScientificBudget {
 #[derive(Debug, Error, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum ManifestCompatibilityError {
+    #[error(
+        "adaptive measurement repetitions require a one-shot observation policy in experiment `{0}`"
+    )]
+    AdaptiveMeasurementsRequireOneShot(Name),
     /// The callback clock must not silently exclude contract-required preparation.
     #[error(
         "execution policy `{execution_policy}`: implementation_time requires timing-scope: execute_only"

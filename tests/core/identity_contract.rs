@@ -442,6 +442,7 @@ fn graph(mutation: Option<&str>, order: ObjectOrder, checked: bool) -> IdentityG
         &mut vectors,
         "logical-candidate",
         LogicalCandidateRecord {
+            adaptive_measurements: None,
             dataset_configuration,
             problem_configuration,
             implementation_configuration,
@@ -619,6 +620,7 @@ fn graph(mutation: Option<&str>, order: ObjectOrder, checked: bool) -> IdentityG
         &mut vectors,
         "resolved-specification",
         ResolvedOneShotSpecificationRecord {
+            adaptive_measurements: None,
             adaptive_budget_group: None,
             calibration: None,
             applicability,

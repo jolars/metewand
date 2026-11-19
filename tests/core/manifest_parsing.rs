@@ -9,6 +9,35 @@ use serde_json::json;
 const COMPLETE_MANIFEST: &str = include_str!("../../fixtures/manifest/v1/complete.yaml");
 
 #[test]
+fn adaptive_measurement_policy_validates_bounds_and_normalizes_time() {
+    let parse = |value: &str| {
+        parse_manifest(
+            Path::new("metewand.yaml"),
+            &COMPLETE_MANIFEST.replace(
+                "measurement-repetitions: 3",
+                &format!("measurement-repetitions: {value}"),
+            ),
+        )
+    };
+    let manifest = parse("{min: 2, max: 5, min-time-seconds: 0.25}").unwrap();
+    let policy = manifest.experiments[0]
+        .measurement_repetitions
+        .adaptive()
+        .unwrap();
+    assert_eq!(policy.min_time_ns, 250_000_000);
+    for value in [
+        "{min: 0, max: 5, min-time-seconds: 1}",
+        "{min: 5, max: 2, min-time-seconds: 1}",
+        "{min: 2, max: 5, min-time-seconds: 0}",
+        "{min: 2, max: 5, min-time-seconds: 0.0000000001}",
+        "{min: 2, max: 5, min-time-seconds: 90071993}",
+        "{min: 2, max: 5, min-time-seconds: 1, unknown: true}",
+    ] {
+        assert!(parse(value).is_err(), "{value}");
+    }
+}
+
+#[test]
 fn worker_phase_deadlines_are_positive_and_affect_the_manifest_hash() {
     use crate::core::manifest_hash::hash_manifest;
     let base = "version: 1\nname: deadlines\n";

@@ -512,6 +512,8 @@ pub struct ProblemInstanceRecord {
 /// A pre-applicability comparison candidate that requires no materialization.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LogicalCandidateRecord {
+    /// Timing-based sampling policy when the experiment opts in.
+    pub adaptive_measurements: Option<crate::core::manifest::AdaptiveMeasurementRepetitions>,
     /// Dataset configuration selected for this candidate.
     pub dataset_configuration: RecordId<DatasetConfigurationRecord>,
     /// Problem configuration selected for this candidate.
@@ -629,6 +631,8 @@ pub struct ResolvedWorkerRecord {
 /// A one-shot logical run bound to all immutable execution dependencies.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ResolvedOneShotSpecificationRecord {
+    /// Timing-based sampling policy when the experiment opts in.
+    pub adaptive_measurements: Option<crate::core::manifest::AdaptiveMeasurementRepetitions>,
     /// The calibrated cohort is part of the effective scientific comparison.
     pub adaptive_budget_group: Option<RecordId<crate::core::adaptive::AdaptiveBudgetGroupResource>>,
     /// Pilot coordinates separate calibration from measured executions.

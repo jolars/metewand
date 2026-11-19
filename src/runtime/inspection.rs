@@ -80,6 +80,7 @@ pub(crate) fn calibration_specifications<'a>(
 /// An in-memory inspection view. It never initializes, recovers, or writes a run.
 #[derive(Default)]
 pub struct Inspection {
+    adaptive_measurements: Vec<crate::core::run_output::AdaptiveMeasurementProgress>,
     adaptive_budgets: Vec<crate::core::adaptive::AdaptiveBudgetDecision>,
     fresh_sequences: Vec<crate::core::profile::FreshSequenceProgress>,
     records: BTreeMap<String, InspectionRecord>,
@@ -334,6 +335,9 @@ impl Inspection {
                         self.add_identified(slot)?;
                         if matches!(slot.record.role, AttemptSlotRole::Measured { .. }) {
                             current_slots.insert(slot.id.to_string());
+                            if candidate.candidate.record.adaptive_measurements.is_some() {
+                                continue;
+                            }
                             self.slots.push(SlotStatus {
                                 calibration: false,
                                 logical_slot_id: slot.id.to_string(),
@@ -558,6 +562,7 @@ impl Inspection {
                     .ok_or(InspectionError::Invalid("invalid observation selection"))?,
             });
         }
+        self.project_adaptive_measurements(&snapshot.tables)?;
         if self.saved_metrics.is_some() {
             for slot in &snapshot.tables["resolved-attempt-slot"] {
                 if slot["role"] == "measurement"
@@ -901,6 +906,75 @@ impl Inspection {
         })
     }
 
+    fn project_adaptive_measurements(
+        &mut self,
+        tables: &BTreeMap<&str, Vec<Value>>,
+    ) -> Result<(), InspectionError> {
+        use crate::core::{
+            manifest::AdaptiveMeasurementRepetitions, run_output::AdaptiveMeasurementProgress,
+        };
+        let mut series = BTreeMap::new();
+        for run in &tables["resolved-specification"] {
+            if let Some(policy) = run["definition"].get("adaptive_measurements") {
+                let policy: AdaptiveMeasurementRepetitions = serde_json::from_value(policy.clone())
+                    .map_err(|_| InspectionError::Invalid("invalid adaptive measurement policy"))?;
+                series.insert(
+                    string(run, "id")?,
+                    (string(run, "candidate_id")?, policy, 0u64, 0u128),
+                );
+            }
+        }
+        if series.is_empty() {
+            return Ok(());
+        }
+        let accepted = self
+            .attempts
+            .iter()
+            .filter(|a| a.state == "accepted")
+            .map(|a| (a.id.as_str(), a.slot_id.as_str()))
+            .collect::<BTreeMap<_, _>>();
+        for observation in self.observations.iter().filter(|o| o.selected) {
+            let Some(slot_id) = accepted.get(observation.attempt_id.as_str()) else {
+                continue;
+            };
+            let slot = &self.records[*slot_id].record;
+            let Some((_, _, count, time_ns)) = slot["resolved_run_id"]
+                .as_str()
+                .and_then(|id| series.get_mut(id))
+            else {
+                continue;
+            };
+            let timing = &self.records[&observation.id].record["document"]["timing"];
+            let time = crate::core::run_documents::primary_time_ns(timing).ok_or(
+                InspectionError::Invalid("adaptive measurement has no primary time"),
+            )?;
+            *count += 1;
+            *time_ns += u128::from(time);
+        }
+        self.adaptive_measurements.extend(series.into_iter().map(
+            |(
+                resolved_specification_id,
+                (candidate_id, policy, accepted_measurements, time_ns),
+            )| {
+                AdaptiveMeasurementProgress {
+                    candidate_id,
+                    resolved_specification_id,
+                    policy,
+                    accepted_measurements,
+                    primary_time_ns: time_ns.to_string(),
+                    stop_reason: policy.stop_reason(accepted_measurements, time_ns),
+                }
+            },
+        ));
+        Ok(())
+    }
+
+    pub(crate) fn adaptive_measurements(
+        &self,
+    ) -> &[crate::core::run_output::AdaptiveMeasurementProgress] {
+        &self.adaptive_measurements
+    }
+
     pub fn status(mut self) -> StatusReport {
         self.connect_diagnostics();
         self.slots.sort_by(|left, right| {
@@ -938,6 +1012,7 @@ impl Inspection {
             .filter(|observation| observation.selected && !observation.calibration)
             .count();
         StatusReport {
+            adaptive_measurements: self.adaptive_measurements.clone(),
             adaptive_budgets: self.adaptive_budgets.clone(),
             comparison: self.comparison_rows(),
             fresh_sequences: self.fresh_sequences,

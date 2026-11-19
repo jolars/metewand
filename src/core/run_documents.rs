@@ -16,6 +16,14 @@ use crate::core::{
     },
 };
 
+pub(crate) fn primary_time_ns(timing: &Value) -> Option<u64> {
+    match timing["primary_time"].as_str()? {
+        "timed_wall_time" => timing["timed_wall_time_ns"].as_u64(),
+        "implementation_time" => timing["implementation_time_ns"].as_u64(),
+        _ => None,
+    }
+}
+
 /// Renders the versioned public observation envelope.
 ///
 /// # Errors

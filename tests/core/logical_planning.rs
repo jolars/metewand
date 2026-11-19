@@ -540,7 +540,8 @@ fn parameterized_matrices_have_exact_slot_counts_and_seed_sharing() {
             let experiment = &mut manifest.experiments[0];
             experiment.seed = seed;
             experiment.implementation_repetitions = implementation_repetitions;
-            experiment.measurement_repetitions = measurements;
+            experiment.measurement_repetitions =
+                crate::core::manifest::MeasurementRepetitions::Fixed(measurements);
             manifest
                 .execution_policies
                 .get_mut(&name("reused"))

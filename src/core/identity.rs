@@ -712,7 +712,7 @@ impl IdentityRecord for ProblemInstanceRecord {
 
 impl IdentityRecord for LogicalCandidateRecord {
     fn identity_fields(&self) -> Map<String, Value> {
-        fields([
+        let mut value = fields([
             ("dataset_configuration", id(&self.dataset_configuration)),
             ("problem_configuration", id(&self.problem_configuration)),
             (
@@ -721,7 +721,11 @@ impl IdentityRecord for LogicalCandidateRecord {
             ),
             ("execution_policy", id(&self.execution_policy)),
             ("observation_policy", id(&self.observation_policy)),
-        ])
+        ]);
+        if let Some(policy) = self.adaptive_measurements {
+            value.insert("adaptive_measurements".into(), json!(policy));
+        }
+        value
     }
 }
 
@@ -857,6 +861,9 @@ impl IdentityRecord for ResolvedOneShotSpecificationRecord {
                 json!(self.execution_semantics_version),
             ),
         ]);
+        if let Some(policy) = self.adaptive_measurements {
+            result.insert("adaptive_measurements".into(), json!(policy));
+        }
         if let Some(decision) = self.applicability {
             result.insert("applicability".into(), id(&decision));
         }

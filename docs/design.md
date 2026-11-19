@@ -229,6 +229,13 @@ batches stay within one dataset configuration. Measurement repetitions,
 implementation repetitions, and retries represent different things and retain
 separate indices.
 
+One-shot experiments can use adaptive measurement repetitions. The plan
+assigns slots through the declared maximum, and each resolved specification
+admits one slot at a time. After the minimum count, the sum of committed
+primary timings determines whether the next slot is needed. The count and stop
+reason are reproducible from the accepted prefix after recovery or archive
+restoration. Implementation seed replication remains fixed.
+
 ## Architecture
 
 Metewand is one binary package with internal modules that separate domain logic

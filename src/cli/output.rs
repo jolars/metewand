@@ -378,6 +378,7 @@ fn render_status(report: &StatusReport) -> String {
     writeln!(output, "Slots: {} total, {} satisfied, {} pending, {} active, {} require retry, {} require recovery.", summary.attempt_slots, summary.satisfied_slots, summary.pending_slots, summary.active_slots, summary.retry_required_slots, summary.recovery_required_slots).expect("string write");
     writeln!(output, "Attempts: {} accepted, {} failed, {} superseded, {} censored, {} active.\nSelected observations: {}", summary.accepted_attempts, summary.failed_attempts, summary.superseded_attempts, summary.censored_attempts, summary.active_attempts, summary.selected_observations).expect("string write");
     render_adaptive_budgets(&mut output, &report.adaptive_budgets);
+    render_adaptive_measurements(&mut output, &report.adaptive_measurements);
     if summary.calibration_attempts > 0 {
         writeln!(
             output,
@@ -707,6 +708,7 @@ impl PlanResult {
                                 observation_slots += specification.observation_slots.len();
                                 attempt_slots += specification.attempt_slots.len();
                                 PlanSpecification {
+                                    adaptive_measurements: candidate.candidate.record.adaptive_measurements,
                                     fresh_observations: specification.observation_slots.iter().filter_map(|observation| observation.record.fresh.as_ref().map(|fresh| crate::core::profile::FreshPlannedObservation {
                                         observation_slot_id:observation.id.to_string(),
                                         attempt_slot_id:specification.attempt_slots.iter().find(|slot|matches!(slot.record.role, crate::core::records::AttemptSlotRole::Measured { observation_slot } if observation_slot==observation.id)).expect("fresh attempt slot").id.to_string(),
@@ -861,6 +863,14 @@ impl PlanResult {
                 count(specifications.len(), "logical specification"),
                 count(observations, "observation slot"), count(attempts, "attempt slot"),
                 experiment.max_concurrency).expect("string write");
+            if let Some(policy) = specifications.iter().find_map(|s| s.adaptive_measurements) {
+                writeln!(
+                    output,
+                    "  Adaptive measurements per specification: {}–{}, targeting {} ns of primary time.",
+                    policy.min, policy.max, policy.min_time_ns
+                )
+                .expect("string write");
+            }
             if let Some(control) = self
                 .requirements
                 .controls
@@ -1422,6 +1432,8 @@ struct CapabilityOutput {
 
 #[derive(Debug, Serialize)]
 struct PlanSpecification {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    adaptive_measurements: Option<crate::core::manifest::AdaptiveMeasurementRepetitions>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     fresh_observations: Vec<crate::core::profile::FreshPlannedObservation>,
     id: String,
@@ -1987,6 +1999,7 @@ fn write_run_report(
         .expect("string write");
     }
     render_adaptive_budgets(&mut heading, &report.adaptive_budgets);
+    render_adaptive_measurements(&mut heading, &report.adaptive_measurements);
     output.write_all(heading.as_bytes())?;
     if !verbose {
         return Ok(());
@@ -2061,6 +2074,31 @@ fn write_run_report(
         }
     }
     Ok(())
+}
+
+fn render_adaptive_measurements(
+    output: &mut String,
+    measurements: &[crate::core::run_output::AdaptiveMeasurementProgress],
+) {
+    use crate::core::manifest::AdaptiveMeasurementStop;
+
+    for series in measurements {
+        writeln!(
+            output,
+            "  Adaptive measurements {}: {} accepted ({}–{} requested, {} ns measured), {}.",
+            series.resolved_specification_id,
+            series.accepted_measurements,
+            series.policy.min,
+            series.policy.max,
+            series.primary_time_ns,
+            match series.stop_reason {
+                Some(AdaptiveMeasurementStop::MinimumTime) => "minimum time reached",
+                Some(AdaptiveMeasurementStop::MaximumRepetitions) => "maximum repetitions reached",
+                None => "unfinished",
+            },
+        )
+        .expect("string write");
+    }
 }
 
 fn render_adaptive_budgets(
@@ -2295,6 +2333,7 @@ mod tests {
     fn run_result(summary: RunSummary) -> super::CommandResult {
         super::CommandResult::Run {
             report: Box::new(RunReport {
+                adaptive_measurements: Vec::new(),
                 calibration_attempts: Vec::new(),
                 adaptive_budgets: Vec::new(),
                 command: "run",

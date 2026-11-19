@@ -235,6 +235,30 @@ impl RunStore {
         Ok(())
     }
 
+    pub(crate) fn accepted_primary_time(
+        &self,
+        slot: RecordId<ResolvedAttemptSlotRecord>,
+    ) -> Result<Option<u64>, RunStoreError> {
+        let document: Option<String> = self
+            .connection
+            .prepare_cached(
+                "SELECT o.record_json FROM attempts a
+             JOIN observations o ON o.producing_attempt_id = a.id
+             JOIN selected_observations s ON s.observation_id = o.id
+             WHERE a.slot_id = ?1 AND a.state = 'accepted'",
+            )?
+            .query_row([slot.to_string()], |row| row.get(0))
+            .optional()?;
+        document
+            .map(|document| {
+                let value: serde_json::Value = serde_json::from_str(&document)
+                    .map_err(|_| invalid("invalid accepted observation"))?;
+                crate::core::run_documents::primary_time_ns(&value["timing"])
+                    .ok_or_else(|| invalid("accepted measurement is missing primary time"))
+            })
+            .transpose()
+    }
+
     pub fn slot_progress(
         &self,
         slot: RecordId<ResolvedAttemptSlotRecord>,

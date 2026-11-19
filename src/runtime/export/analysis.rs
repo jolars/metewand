@@ -27,6 +27,7 @@ pub(super) fn project(
 ) -> Result<AnalysisSnapshot, ExportError> {
     let graph = inspection.records();
     let mut snapshot = AnalysisSnapshot {
+        adaptive_measurements: inspection.adaptive_measurements().to_vec(),
         adaptive_budgets: adaptive_decisions(tables)?,
         schema_version: ANALYSIS_SCHEMA_VERSION,
         candidates: Vec::new(),
@@ -358,6 +359,9 @@ pub(super) fn select(mut snapshot: AnalysisSnapshot, records: &[&Record<'_>]) ->
         .map(|r| r.candidate_id)
         .collect::<BTreeSet<_>>();
     let ids = records.iter().map(|r| r.id).collect::<BTreeSet<_>>();
+    snapshot
+        .adaptive_measurements
+        .retain(|series| candidates.contains(series.candidate_id.as_str()));
     snapshot.adaptive_budgets.retain(|budget| {
         budget
             .pilots

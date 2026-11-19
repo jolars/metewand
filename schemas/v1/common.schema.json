@@ -4,6 +4,29 @@
   "x-metewand-compatibility-version": 1,
   "title": "Metewand version 1 shared schema definitions",
   "$defs": {
+    "adaptive_measurement_policy": {
+      "type": "object",
+      "properties": {
+        "min": { "$ref": "#/$defs/safe_positive_integer" },
+        "max": { "$ref": "#/$defs/safe_positive_integer" },
+        "min_time_ns": { "$ref": "#/$defs/safe_positive_integer" }
+      },
+      "required": ["min", "max", "min_time_ns"],
+      "additionalProperties": false
+    },
+    "adaptive_measurement_progress": {
+      "type": "object",
+      "properties": {
+        "candidate_id": { "type": "string", "pattern": "^mw1-logical-candidate-[0-9a-f]{64}$" },
+        "resolved_specification_id": { "type": "string", "pattern": "^mw1-resolved-specification-[0-9a-f]{64}$" },
+        "policy": { "$ref": "#/$defs/adaptive_measurement_policy" },
+        "accepted_measurements": { "$ref": "#/$defs/safe_nonnegative_integer" },
+        "primary_time_ns": { "type": "string", "pattern": "^(0|[1-9][0-9]*)$" },
+        "stop_reason": { "enum": ["minimum_time", "maximum_repetitions", null] }
+      },
+      "required": ["candidate_id", "resolved_specification_id", "policy", "accepted_measurements", "primary_time_ns", "stop_reason"],
+      "additionalProperties": false
+    },
     "native_absolute_path": {
       "type": "string",
       "anyOf": [

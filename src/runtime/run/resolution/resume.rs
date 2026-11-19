@@ -93,8 +93,20 @@ impl CommittedInputs {
             if context["problem_instance"] != record_document(&problem_instance.record)? {
                 continue;
             }
+            let policy = candidate.candidate.record.adaptive_measurements;
             let mut all_accepted = true;
+            let mut current = None;
+            let mut count = 0;
+            let mut time_ns = 0u128;
             for (logical_specification, logical_slot) in measured.clone() {
+                if current != Some(logical_specification) {
+                    current = Some(logical_specification);
+                    count = 0;
+                    time_ns = 0;
+                }
+                if policy.is_some_and(|p| p.stop_reason(count, time_ns).is_some()) {
+                    continue;
+                }
                 let specification = resolved_specification(
                     logical_specification,
                     problem_instance.id,
@@ -102,12 +114,20 @@ impl CommittedInputs {
                     evaluator.record.clone(),
                     executor,
                     None,
+                    policy,
                 )?;
                 let slot = identify_record(ResolvedAttemptSlotRecord {
                     logical_slot,
                     specification: specification.id,
                 })?;
-                if !store.slot_is_accepted(slot.id)? {
+                if policy.is_some() {
+                    let Some(time) = store.accepted_primary_time(slot.id)? else {
+                        all_accepted = false;
+                        break;
+                    };
+                    count += 1;
+                    time_ns += u128::from(time);
+                } else if !store.slot_is_accepted(slot.id)? {
                     all_accepted = false;
                     break;
                 }

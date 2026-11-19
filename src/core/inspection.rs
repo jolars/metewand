@@ -244,6 +244,8 @@ pub struct StatusSummary {
 #[derive(Debug, Serialize)]
 pub struct StatusReport {
     #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub adaptive_measurements: Vec<crate::core::run_output::AdaptiveMeasurementProgress>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub adaptive_budgets: Vec<crate::core::adaptive::AdaptiveBudgetDecision>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub comparison: Vec<crate::core::comparison::ComparisonRow>,

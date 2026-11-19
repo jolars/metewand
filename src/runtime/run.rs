@@ -30,10 +30,14 @@ use crate::core::{
     EXECUTION_SEMANTICS_VERSION,
     canonical::CanonicalJsonError,
     identity::IdentityError,
+    manifest::AdaptiveMeasurementRepetitions,
     measurements::ExecutionMeasurements,
     planning::LogicalPlan,
     public_schemas::PublicSchemaCatalogError,
-    records::{AttemptDiagnostic, ProvenanceRecord, RunAttemptOutcome, RunAttemptRecord},
+    records::{
+        AttemptDiagnostic, ProvenanceRecord, RecordId, ResolvedAttemptSlotRecord,
+        RunAttemptOutcome, RunAttemptRecord,
+    },
     run_output::{self, RunAttemptStatus, RunDiagnostic, RunEventKind, RunSummary},
 };
 use serde_json::{Value, json};
@@ -75,7 +79,7 @@ pub(crate) struct LocalRunSettings<'a> {
 /// creating that directory. Inputs are copied to private temporary storage;
 /// resolved identities bind their contents and normalized launch templates,
 /// while actual host paths remain provenance. Every attempt is published before
-/// its terminal event. A failed attempt does not stop later selected slots.
+/// its terminal event. A failed adaptive measurement pauses its own series.
 ///
 /// Starts and terminal events follow deterministic dispatch batches. The sink
 /// runs on the calling thread before dispatch and after all attempts in a batch
@@ -277,6 +281,7 @@ pub(crate) fn run_repository_with_progress(
         None
     };
     let mut selected = std::collections::BTreeSet::new();
+    let mut selected_series = std::collections::BTreeSet::new();
     // An empty resolved run here means the preselected slots were all accepted.
     for id in options
         .selected_ids
@@ -298,6 +303,9 @@ pub(crate) fn run_repository_with_progress(
             let slot = &resolved.candidates[candidate].measurements[measurement];
             if slot.selection_ids.contains(id) || previous.contains(&slot.attempt_slot) {
                 selected.insert((candidate, measurement));
+                if slot.specification.record.adaptive_measurements.is_some() {
+                    selected_series.insert((candidate, slot.specification.id));
+                }
                 matched = true;
             }
         }
@@ -306,6 +314,22 @@ pub(crate) fn run_repository_with_progress(
                 "selected identity `{id}` matches no measured slot"
             )));
         }
+    }
+    if !selected_series.is_empty() {
+        selected.extend(
+            resolved
+                .schedule
+                .iter()
+                .copied()
+                .filter(|&(candidate, index)| {
+                    selected_series.contains(&(
+                        candidate,
+                        resolved.candidates[candidate].measurements[index]
+                            .specification
+                            .id,
+                    ))
+                }),
+        );
     }
     let is_selected = |position| options.selected_ids.is_empty() || selected.contains(&position);
     if !resume {
@@ -365,7 +389,7 @@ pub(crate) fn run_repository_with_progress(
         .map(|n| n.saturating_sub(calibration_attempts.len() as u64));
     let options = &measured_options;
     use crate::runtime::run_store::{SlotDelivery, SlotRegistration};
-    // Register the entire selection before dispatch, including slots beyond the
+    // Register fixed slots before dispatch, including those beyond the
     // invocation's attempt bound. Keep each durable transaction bounded.
     const REGISTRATION_BATCH_SIZE: usize = 256;
     let fresh_repetitions = resolved
@@ -434,7 +458,15 @@ pub(crate) fn run_repository_with_progress(
                 retain_inputs(candidate)?;
             }
             let slot = &candidate.measurements[measurement_index];
-            positions.push(((candidate_index, measurement_index), slot.attempt_slot));
+            // Admit adaptive slots only after the preceding measurements justify them.
+            if slot.specification.record.adaptive_measurements.is_some() {
+                positions.push(((candidate_index, measurement_index), None));
+                continue;
+            }
+            positions.push((
+                (candidate_index, measurement_index),
+                Some(slot.attempt_slot),
+            ));
             if candidate.fresh_profile.is_none() {
                 registrations.push(SlotRegistration {
                     candidate: slot.candidate,
@@ -455,6 +487,10 @@ pub(crate) fn run_repository_with_progress(
             store.register_slots(registrations.drain(..))?;
         }
         for (position, slot) in positions {
+            let Some(slot) = slot else {
+                schedule.push(position);
+                continue;
+            };
             let progress = store.slot_progress(slot)?;
             if !progress.accepted
                 && progress.disposition.is_none()
@@ -490,6 +526,7 @@ pub(crate) fn run_repository_with_progress(
     let mut attempts = Vec::new();
     let mut workers = Vec::new();
     let mut busy_repetitions = std::collections::BTreeSet::new();
+    let mut measurement_series = std::collections::BTreeMap::<_, MeasurementSeries>::new();
     for batch in &resolved.batches {
         workers.resize_with(
             batch.lane_count,
@@ -518,6 +555,21 @@ pub(crate) fn run_repository_with_progress(
             if slot.fresh.is_some() && busy_repetitions.contains(&repetition) {
                 continue;
             }
+            if let Some(policy) = slot.specification.record.adaptive_measurements {
+                let series = measurement_series
+                    .entry((candidate, slot.specification.id))
+                    .or_default();
+                if !series.admit(&store, slot, policy)? {
+                    continue;
+                }
+                store.register_slots([SlotRegistration {
+                    candidate: slot.candidate,
+                    specification: &slot.specification,
+                    attempt: slot.resolve_attempt(),
+                    observations: slot.resolve_observations()?,
+                    delivery: SlotDelivery::OneShot,
+                }])?;
+            }
             match AttemptExecution::reserve(&store, slot, options.retry) {
                 Ok(Some(execution)) => {
                     slots.push((candidate, measurement));
@@ -531,6 +583,9 @@ pub(crate) fn run_repository_with_progress(
                 }
                 Err(error) => return Err(error),
             }
+        }
+        if slots.is_empty() {
+            continue;
         }
         for (lane, &(candidate, measurement)) in slots.iter().enumerate() {
             let slot = &mut resolved.candidates[candidate].measurements[measurement];
@@ -609,6 +664,12 @@ pub(crate) fn run_repository_with_progress(
         .map_err(io::Error::other)?;
     let comparison = inspection.run_comparison_rows(&selected_candidates);
     Ok(RunReport {
+        adaptive_measurements: inspection
+            .adaptive_measurements()
+            .iter()
+            .filter(|series| selected_candidates.contains(&series.candidate_id))
+            .cloned()
+            .collect(),
         calibration_attempts,
         adaptive_budgets,
         comparison,
@@ -631,6 +692,49 @@ pub(crate) fn run_repository_with_progress(
             superseded_attempts,
         },
     })
+}
+
+#[derive(Default)]
+struct MeasurementSeries {
+    previous: Option<RecordId<ResolvedAttemptSlotRecord>>,
+    count: u64,
+    time_ns: u128,
+    blocked: bool,
+}
+
+impl MeasurementSeries {
+    fn admit(
+        &mut self,
+        store: &RunStore,
+        slot: &ResolvedMeasurement,
+        policy: AdaptiveMeasurementRepetitions,
+    ) -> Result<bool, RunError> {
+        // Advance only through the committed prefix, including after recovery
+        // or when another invocation wins a slot's finalization claim.
+        if self.blocked {
+            return Ok(false);
+        }
+        if let Some(previous) = self.previous.take() {
+            let Some(time) = store.accepted_primary_time(previous)? else {
+                self.blocked = true;
+                return Ok(false);
+            };
+            self.count += 1;
+            self.time_ns += u128::from(time);
+        }
+        if policy.stop_reason(self.count, self.time_ns).is_some()
+            || slot.scheduling.comparison_block.measurement_index != self.count
+        {
+            return Ok(false);
+        }
+        if let Some(time) = store.accepted_primary_time(slot.attempt_slot)? {
+            self.count += 1;
+            self.time_ns += u128::from(time);
+            return Ok(false);
+        }
+        self.previous = Some(slot.attempt_slot);
+        Ok(true)
+    }
 }
 
 fn execute_batch(

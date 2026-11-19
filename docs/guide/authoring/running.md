@@ -108,6 +108,33 @@ the individual timings when you analyze variation. A retry after a failure is a
 separate attempt to obtain a result, rather than an extra measurement
 repetition.
 
+### Adapt the number of measurements
+
+For a one-shot experiment, set a minimum and maximum number of measurements and
+a target for cumulative measured time.
+
+```yaml
+measurement-repetitions:
+  min: 5
+  max: 30
+  min-time-seconds: 2
+```
+
+Metewand samples each implementation configuration and seed independently. Once
+it has accepted at least five measurements for a series, it stops that series
+when their primary timings add up to two seconds or when it accepts the
+thirtieth measurement, whichever happens first. The time target uses the clock
+selected by `primary-time` and may be fractional. A failed measurement pauses
+its series until that slot is retried successfully. Warmups and failed attempts
+do not contribute to the count or the time.
+
+`metewand plan` shows all possible slots up to the maximum. The runner registers
+one slot at a time for each adaptive series. Resuming uses the accepted
+measurements already recorded, and `metewand status` shows the accepted count
+and any stopping reason. Changing the adaptive settings starts a new series.
+Selecting an individual adaptive slot by ID selects its entire series because
+earlier measurements determine whether that slot runs.
+
 ## Stop and continue {#resume-and-diagnose}
 
 If you need to stop, press Ctrl+C. When you return, repeat the command:

@@ -60,6 +60,33 @@ fn implementation_timing_repository() -> TempDir {
 }
 
 #[test]
+fn adaptive_measurements_use_the_selected_primary_clock() {
+    let root = implementation_timing_repository();
+    replace(
+        root.path(),
+        "metewand.yaml",
+        "measurement-repetitions: 1",
+        "measurement-repetitions: {min: 2, max: 5, min-time-seconds: 0.000000250}",
+    );
+    replace(
+        root.path(),
+        "worker.py",
+        "implementation_time_ns=None",
+        "implementation_time_ns=100",
+    );
+    let output = metewand(
+        root.path(),
+        &["run", "--output-dir", "run", "--output", "json"],
+    );
+    assert!(output.status.success(), "{output:?}");
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let series = &report["data"]["adaptive_measurements"][0];
+    assert_eq!(series["accepted_measurements"], 3);
+    assert_eq!(series["primary_time_ns"], "300");
+    assert_eq!(series["stop_reason"], "minimum_time");
+}
+
+#[test]
 fn implementation_primary_time_preserves_zero_and_outer_wall_time() {
     let root = implementation_timing_repository();
     replace(

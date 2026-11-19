@@ -120,6 +120,7 @@ fn analysis_fixture() -> crate::core::export::analysis::AnalysisSnapshot {
         provenance_id: "metadata".into(),
     };
     AnalysisSnapshot {
+        adaptive_measurements: Vec::new(),
         adaptive_budgets: Vec::new(),
         schema_version: 1,
         candidates: vec![AnalysisCandidate {

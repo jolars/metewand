@@ -84,6 +84,107 @@ pub fn parse_manifest(source_path: &Path, source: &str) -> Result<Manifest, Mani
     Ok(manifest)
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
+#[serde(untagged)]
+pub enum MeasurementRepetitions {
+    Fixed(u64),
+    Adaptive(AdaptiveMeasurementRepetitions),
+}
+
+impl Default for MeasurementRepetitions {
+    fn default() -> Self {
+        Self::Fixed(1)
+    }
+}
+
+impl MeasurementRepetitions {
+    pub fn maximum(self) -> u64 {
+        match self {
+            Self::Fixed(count) => count,
+            Self::Adaptive(policy) => policy.max,
+        }
+    }
+
+    pub fn adaptive(self) -> Option<AdaptiveMeasurementRepetitions> {
+        match self {
+            Self::Fixed(_) => None,
+            Self::Adaptive(policy) => Some(policy),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize, serde::Serialize)]
+pub struct AdaptiveMeasurementRepetitions {
+    pub min: u64,
+    pub max: u64,
+    pub min_time_ns: u64,
+}
+
+impl<'de> Deserialize<'de> for MeasurementRepetitions {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Declaration {
+            Fixed(#[serde(deserialize_with = "deserialize_safe_positive_integer")] u64),
+            Adaptive(Policy),
+        }
+
+        #[derive(Deserialize)]
+        #[serde(rename_all = "kebab-case", deny_unknown_fields)]
+        struct Policy {
+            #[serde(deserialize_with = "deserialize_safe_positive_integer")]
+            min: u64,
+            #[serde(deserialize_with = "deserialize_safe_positive_integer")]
+            max: u64,
+            min_time_seconds: f64,
+        }
+
+        let Policy {
+            min,
+            max,
+            min_time_seconds,
+        } = match Declaration::deserialize(deserializer)? {
+            Declaration::Fixed(count) => return Ok(Self::Fixed(count)),
+            Declaration::Adaptive(policy) => policy,
+        };
+        if min > max {
+            return Err(de::Error::custom(
+                "minimum measurement repetitions exceed maximum",
+            ));
+        }
+        let nanos = (min_time_seconds * 1e9).round();
+        if !(1.0..=crate::core::canonical::MAX_SAFE_INTEGER as f64).contains(&nanos) {
+            return Err(de::Error::custom(
+                "minimum measurement time must round to positive safe nanoseconds",
+            ));
+        }
+        Ok(Self::Adaptive(AdaptiveMeasurementRepetitions {
+            min,
+            max,
+            min_time_ns: nanos as u64,
+        }))
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AdaptiveMeasurementStop {
+    MinimumTime,
+    MaximumRepetitions,
+}
+
+impl AdaptiveMeasurementRepetitions {
+    pub fn stop_reason(self, count: u64, time_ns: u128) -> Option<AdaptiveMeasurementStop> {
+        if count >= self.max {
+            Some(AdaptiveMeasurementStop::MaximumRepetitions)
+        } else if count >= self.min && time_ns >= u128::from(self.min_time_ns) {
+            Some(AdaptiveMeasurementStop::MinimumTime)
+        } else {
+            None
+        }
+    }
+}
+
 /// Resolved operational deadlines in positive safe nanoseconds.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
 pub struct WorkerTimeouts {
@@ -534,11 +635,8 @@ pub struct ExperimentDefinition {
     )]
     pub implementation_repetitions: u64,
     /// Number of measurements for each logical run.
-    #[serde(
-        default = "one_repetition",
-        deserialize_with = "deserialize_safe_positive_integer"
-    )]
-    pub measurement_repetitions: u64,
+    #[serde(default)]
+    pub measurement_repetitions: MeasurementRepetitions,
     /// Root experiment seed.
     #[serde(deserialize_with = "deserialize_safe_nonnegative_integer")]
     pub seed: u64,

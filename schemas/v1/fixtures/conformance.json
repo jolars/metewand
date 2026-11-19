@@ -1054,7 +1054,7 @@
             "execution-policy": "controlled",
             "observation-policy": "final",
             "implementation-repetitions": 5,
-            "measurement-repetitions": 2,
+            "measurement-repetitions": { "min": 2, "max": 10, "min-time-seconds": 0.5 },
             "seed": 2025,
             "dataset-parameters": {
               "generated": {
