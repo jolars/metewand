@@ -360,6 +360,61 @@ fn shared_collection_recovers_from_representative_crashes() {
 }
 
 #[test]
+fn shared_collection_recovers_after_publishing_a_claim_checkpoint() {
+    // Advance the next sequence from 5 to 8, so the first collection
+    // claim is written with a checkpoint.
+    let setup = || {
+        let fixture = fixture_with_backend(true);
+        let rooted = fixture.store.get(fixture.rooted).unwrap().unwrap();
+        for name in ["manual:one", "manual:two", "manual:three"] {
+            rooted.add_root(name).unwrap();
+        }
+        fixture
+    };
+    let baseline = setup();
+    let (output, boundaries) = child(&baseline, usize::MAX);
+    assert!(output.status.success(), "{output:?}");
+    let index = boundaries
+        .iter()
+        .position(|label| label == "rename.after")
+        .unwrap();
+
+    let fixture = setup();
+    let (output, _) = child(&fixture, index + 1);
+    assert_eq!(output.status.code(), Some(86), "{output:?}");
+    let checkpoint_path = fs::read_dir(fixture.store.root().join("shared-catalog"))
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .find(|path| {
+            path.file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with("0000000000000008-")
+        })
+        .unwrap();
+    let checkpoint: serde_json::Value =
+        serde_json::from_slice(&fs::read(checkpoint_path).unwrap()).unwrap();
+    assert_eq!(
+        checkpoint["checkpoint"]["pending"][hex(fixture.target)],
+        false
+    );
+    let snapshot = Catalog::read(&fixture.store).unwrap();
+    assert_eq!(snapshot.pending.get(&hex(fixture.target)), Some(&false));
+    assert!(fixture.store.object_path(fixture.target).exists());
+    fixture.store.collect(&[], false).unwrap();
+    assert!(Catalog::read(&fixture.store).unwrap().pending.is_empty());
+    assert!(fixture.store.get(fixture.target).unwrap().is_none());
+    fixture.leased.verify().unwrap();
+    fixture
+        .store
+        .get(fixture.rooted)
+        .unwrap()
+        .unwrap()
+        .verify()
+        .unwrap();
+}
+
+#[test]
 #[ignore = "exhaustive shared import and retention crash campaign"]
 fn shared_import_and_roots_recover_after_each_publication_boundary() {
     for operation in ["import", "root-add", "root-remove", "run-root"] {

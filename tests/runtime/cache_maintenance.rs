@@ -330,7 +330,7 @@ fn shared_cache_roots_survive_relocation_without_a_sqlite_catalog() {
         .unwrap()
         .unwrap()
         .path();
-    assert_eq!(fs::read(initial).unwrap(), br#"{"previous_sha256":null,"schema_version":1,"sequence":0,"snapshot":{"objects":{},"pending":{},"roots":{}}}"#);
+    assert_eq!(fs::read(initial).unwrap(), br#"{"checkpoint":{"objects":{},"pending":{},"roots":{}},"previous_sha256":null,"schema_version":2,"sequence":0}"#);
     let object = store.import_tree(source.path(), digest).unwrap();
     object.add_root("run-v1:portable-owner").unwrap();
     drop(object);

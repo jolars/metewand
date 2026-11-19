@@ -25,6 +25,7 @@ static CATALOG: Mutex<Option<SchemaCatalog>> = Mutex::new(None);
 pub enum PublicSchema {
     DurableRecord,
     SharedCacheRecord,
+    SharedCacheRecordV2,
     SharedCacheOwner,
     BundleManifest,
     BundleOutput,
@@ -102,9 +103,10 @@ pub enum PublicSchema {
 }
 
 /// Every public schema entry point in stable presentation order.
-pub const PUBLIC_SCHEMAS: [PublicSchema; 45] = [
+pub const PUBLIC_SCHEMAS: [PublicSchema; 46] = [
     PublicSchema::DurableRecord,
     PublicSchema::SharedCacheRecord,
+    PublicSchema::SharedCacheRecordV2,
     PublicSchema::SharedCacheOwner,
     PublicSchema::BundleManifest,
     PublicSchema::BundleOutput,
@@ -157,6 +159,7 @@ impl PublicSchema {
         match self {
             Self::DurableRecord => "durable-record",
             Self::SharedCacheRecord => "shared-cache-record",
+            Self::SharedCacheRecordV2 => "shared-cache-record-v2",
             Self::SharedCacheOwner => "shared-cache-owner",
             Self::BundleManifest => "bundle-manifest",
             Self::BundleOutput => "bundle-output",
@@ -217,6 +220,7 @@ impl PublicSchema {
         Path::new(match self {
             Self::DurableRecord => "schemas/v1/durable-record.schema.json",
             Self::SharedCacheRecord => "schemas/v1/shared-cache-record.schema.json",
+            Self::SharedCacheRecordV2 => "schemas/v2/shared-cache-record.schema.json",
             Self::SharedCacheOwner => "schemas/v1/shared-cache-owner.schema.json",
             Self::BundleManifest => "schemas/v1/bundle-manifest.schema.json",
             Self::BundleOutput => "schemas/v1/bundle-output.schema.json",
@@ -273,6 +277,7 @@ impl PublicSchema {
         match self {
             Self::DurableRecord => "metewand://schemas/v1/durable-record.schema.json",
             Self::SharedCacheRecord => "metewand://schemas/v1/shared-cache-record.schema.json",
+            Self::SharedCacheRecordV2 => "metewand://schemas/v2/shared-cache-record.schema.json",
             Self::SharedCacheOwner => "metewand://schemas/v1/shared-cache-owner.schema.json",
             Self::BundleManifest => "metewand://schemas/v1/bundle-manifest.schema.json",
             Self::BundleOutput => "metewand://schemas/v1/bundle-output.schema.json",
@@ -340,6 +345,9 @@ impl PublicSchema {
             Self::DurableRecord => include_str!("../../schemas/v1/durable-record.schema.json"),
             Self::SharedCacheRecord => {
                 include_str!("../../schemas/v1/shared-cache-record.schema.json")
+            }
+            Self::SharedCacheRecordV2 => {
+                include_str!("../../schemas/v2/shared-cache-record.schema.json")
             }
             Self::SharedCacheOwner => {
                 include_str!("../../schemas/v1/shared-cache-owner.schema.json")

@@ -123,9 +123,19 @@ benchmark](examples/overhead)
   initialization. Both builds replayed the same files and emitted identical
   JSON. Each median used seven runs on a Ryzen 9 7900 with the journal on ext4
   and SQLite scratch on tmpfs.
-- [ ] Replace full shared cache snapshots with versioned deltas and checkpoints.
-  Measure catalog growth as objects and roots accumulate. Keep existing
-  records readable and cache collection safe across crashes.
+- [x] Replace full shared cache snapshots with versioned deltas and checkpoints.
+  Replay accepts version-1 histories, and crash tests cover collection after
+  publishing a version-2 claim checkpoint. In a synthetic comparison, both
+  formats encoded initialization and two records per object (registration and
+  one distinct 16-byte root name). Totals sum canonical JSON bytes, excluding
+  filenames and filesystem allocation.
+
+  | Objects and roots each | Version-1 bytes | Version-2 bytes |
+  | ---: | ---: | ---: |
+  | 64 | 939,391 | 64,377 |
+  | 256 | 14,669,311 | 256,669 |
+  | 1,024 | 233,266,200 | 1,026,586 |
+  | 4,096 | 3,726,474,264 | 4,107,902 |
 - [ ] If trace encoding and decoding remain costly after streaming live
   validation and deduplicating durable result files, compare compressed JSON
   Lines with a chunked binary trace format on Basin and clustlasso-cd

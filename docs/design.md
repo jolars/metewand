@@ -92,7 +92,10 @@ remain outside scientific parameters, seeds, launches, and derivations, while
 provenance records effective bindings. Providers verify pinned content before
 returning scientific data. Metewand's artifact cache separately stores verified
 materialized outputs. An explicitly initialized shared artifact cache publishes
-immutable, hash-linked retention snapshots instead of a shared SQLite catalog.
+immutable, hash-linked retention records. Version 2 stores individual changes
+and includes a full checkpoint at initialization and at power-of-two sequence
+numbers. Replay checks checkpoints against the reconstructed state and also
+reads earlier version-1 snapshots.
 Portable run owners and live kernel leases protect objects during collection;
 worker views stay in local scratch. Scientific overrides retain their normal
 identity rules.

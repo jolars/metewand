@@ -1,6 +1,8 @@
 {
   "version": 1,
   "valid": [
+    {"name": "shared-cache-v2-initial-checkpoint", "schema": "shared-cache-record-v2", "instance": {"schema_version": 2, "sequence": 0, "previous_sha256": null, "checkpoint": {"objects": {}, "roots": {}, "pending": {}}}},
+    {"name": "shared-cache-v2-root-delta", "schema": "shared-cache-record-v2", "instance": {"schema_version": 2, "sequence": 3, "previous_sha256": "1111111111111111111111111111111111111111111111111111111111111111", "delta": {"kind": "root", "digest": "2222222222222222222222222222222222222222222222222222222222222222", "name": "manual:keep", "add": true}}},
     {"name": "shared-cache-empty-initialization", "schema": "shared-cache-record", "instance": {"schema_version": 1, "sequence": 0, "previous_sha256": null, "snapshot": {"objects": {}, "roots": {}, "pending": {}}}},
     {"name": "portable-shared-cache-owner", "schema": "shared-cache-owner", "instance": {"schema_version": 1, "root": "run-v1:1111111111111111111111111111111111111111111111111111111111111111"}},
     {"name": "explicit-local-download-cache", "schema": "runtime-config", "instance": {"version": 1, "caches": {"datamonger": "/downloads", "other": "../other"}}},
@@ -2473,6 +2475,8 @@
     }
   ],
   "invalid": [
+    {"name": "shared-cache-v2-missing-delta", "schema": "shared-cache-record-v2", "instance": {"schema_version": 2, "sequence": 3, "previous_sha256": "1111111111111111111111111111111111111111111111111111111111111111", "checkpoint": {"objects": {}, "roots": {}, "pending": {}}}},
+    {"name": "shared-cache-v2-initialization-with-delta", "schema": "shared-cache-record-v2", "instance": {"schema_version": 2, "sequence": 0, "previous_sha256": null, "checkpoint": {"objects": {}, "roots": {}, "pending": {}}, "delta": {"kind": "forget", "digest": "2222222222222222222222222222222222222222222222222222222222222222"}}},
     {"name": "shared-cache-unsupported-version", "schema": "shared-cache-record", "instance": {"schema_version": 2, "sequence": 0, "previous_sha256": null, "snapshot": {"objects": {}, "roots": {}, "pending": {}}}},
     {"name": "shared-cache-path-owner", "schema": "shared-cache-owner", "instance": {"schema_version": 1, "root": "run:/host/path"}},
     {"name": "runtime-config-rejects-unknown-version", "schema": "runtime-config", "instance": {"version": 2, "caches": {}}},

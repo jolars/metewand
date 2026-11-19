@@ -1,4 +1,4 @@
-//! Portable retention catalog. The cache lock fences each immutable snapshot
+//! Portable retention catalog. The cache lock fences each immutable record
 //! publication through object detachment and cleanup, across all cooperating hosts.
 
 use std::{
@@ -25,11 +25,159 @@ const DIRECTORY: &str = "shared-catalog";
 
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-struct Record {
+struct RecordV1 {
     schema_version: u32,
     sequence: u64,
     previous_sha256: Option<String>,
     snapshot: Snapshot,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct RecordV2 {
+    schema_version: u32,
+    sequence: u64,
+    previous_sha256: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    delta: Option<Delta>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    checkpoint: Option<Snapshot>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub(super) enum Delta {
+    Register {
+        digest: String,
+        marker: String,
+    },
+    Root {
+        digest: String,
+        name: String,
+        add: bool,
+    },
+    Pending {
+        digest: String,
+        detached: bool,
+    },
+    Forget {
+        digest: String,
+    },
+}
+
+impl Delta {
+    fn apply(&self, snapshot: &mut Snapshot) -> Result<bool, ArtifactStoreError> {
+        match self {
+            Self::Register { digest, marker } => {
+                if let Some(expected) = snapshot.objects.get(digest) {
+                    if expected != marker {
+                        return Err(ArtifactStoreError::ChangedContent);
+                    }
+                    return Ok(false);
+                }
+                snapshot.objects.insert(digest.clone(), marker.clone());
+            }
+            Self::Root { digest, name, add } => {
+                if !snapshot.objects.contains_key(digest) {
+                    return Err(ArtifactStoreError::UnknownTarget(digest.clone()));
+                }
+                if name.is_empty() || name.chars().any(char::is_control) {
+                    return Err(ArtifactStoreError::Catalog(
+                        "invalid shared cache retention root",
+                    ));
+                }
+                if *add {
+                    let roots = snapshot.roots.entry(digest.clone()).or_default();
+                    match roots.binary_search(name) {
+                        Ok(_) => return Ok(false),
+                        Err(index) => roots.insert(index, name.clone()),
+                    }
+                } else {
+                    let Some(roots) = snapshot.roots.get_mut(digest) else {
+                        return Err(ArtifactStoreError::UnknownRoot(name.clone()));
+                    };
+                    let index = roots
+                        .binary_search(name)
+                        .map_err(|_| ArtifactStoreError::UnknownRoot(name.clone()))?;
+                    roots.remove(index);
+                    if roots.is_empty() {
+                        snapshot.roots.remove(digest);
+                    }
+                }
+            }
+            Self::Pending { digest, detached } => {
+                if !snapshot.objects.contains_key(digest) {
+                    return Err(ArtifactStoreError::Catalog(
+                        "unregistered shared cache collection claim",
+                    ));
+                }
+                return Ok(snapshot.pending.insert(digest.clone(), *detached) != Some(*detached));
+            }
+            Self::Forget { digest } => {
+                if snapshot.roots.contains_key(digest) {
+                    return Err(ArtifactStoreError::Catalog("cannot forget rooted content"));
+                }
+                snapshot.pending.remove(digest);
+                return Ok(snapshot.objects.remove(digest).is_some());
+            }
+        }
+        Ok(true)
+    }
+}
+
+impl State {
+    fn replay(
+        &mut self,
+        document: &CanonicalValue,
+        hash: &str,
+        path: &Path,
+    ) -> Result<(), ArtifactStoreError> {
+        let value = document.as_json();
+        if value["sequence"].as_u64() != Some(self.next)
+            || value["previous_sha256"].as_str() != self.previous.as_deref()
+            || path.file_name().and_then(|name| name.to_str())
+                != Some(filename(self.next, hash).as_str())
+        {
+            return Err(ArtifactStoreError::Catalog(
+                "invalid shared cache record chain",
+            ));
+        }
+        match value["schema_version"].as_u64() {
+            Some(1) if !self.version_two => {
+                validate(PublicSchema::SharedCacheRecord, document)?;
+                let record: RecordV1 = serde_json::from_value(value.clone())?;
+                validate_snapshot(&record.snapshot)?;
+                self.snapshot = record.snapshot;
+            }
+            Some(2) => {
+                validate(PublicSchema::SharedCacheRecordV2, document)?;
+                let record: RecordV2 = serde_json::from_value(value.clone())?;
+                if let Some(delta) = record.delta
+                    && !delta.apply(&mut self.snapshot)?
+                {
+                    return Err(ArtifactStoreError::Catalog(
+                        "shared cache delta has no effect",
+                    ));
+                }
+                if let Some(checkpoint) = record.checkpoint
+                    && checkpoint != self.snapshot
+                {
+                    return Err(ArtifactStoreError::Catalog(
+                        "shared cache checkpoint disagrees with replay",
+                    ));
+                }
+                self.version_two = true;
+            }
+            _ => {
+                return Err(ArtifactStoreError::Catalog(
+                    "unsupported shared cache record version",
+                ));
+            }
+        }
+        self.next += 1;
+        self.previous = Some(hash.to_owned());
+        Ok(())
+    }
 }
 
 struct State {
@@ -37,6 +185,7 @@ struct State {
     previous: Option<String>,
     snapshot: Snapshot,
     failed: bool,
+    version_two: bool,
 }
 
 pub(super) struct SharedCatalog {
@@ -77,9 +226,10 @@ impl ArtifactStore {
                     previous: None,
                     snapshot: Snapshot::default(),
                     failed: false,
+                    version_two: false,
                 }),
             };
-            catalog.publish(Snapshot::default())?;
+            catalog.publish(&mut catalog.state.borrow_mut(), None)?;
             crate::runtime::platform_fs::complete_namespace_change(&store.root)?;
         } else {
             SharedCatalog::open(&store, true)?;
@@ -141,29 +291,19 @@ impl SharedCatalog {
             previous: None,
             snapshot: Snapshot::default(),
             failed: false,
+            version_two: false,
         };
         for path in paths {
             let mut file = regular_file(&path)?;
             let mut bytes = Vec::new();
             std::io::Read::read_to_end(&mut file, &mut bytes)?;
             let document = CanonicalValue::from_slice(&bytes)?;
-            validate(PublicSchema::SharedCacheRecord, &document)?;
-            let record: Record = serde_json::from_value(document.as_json().clone())?;
-            let hash = digest(&bytes);
-            if document.to_canonical_bytes()? != bytes
-                || record.sequence != state.next
-                || record.previous_sha256 != state.previous
-                || path.file_name().and_then(|name| name.to_str())
-                    != Some(filename(state.next, &hash).as_str())
-            {
+            if document.to_canonical_bytes()? != bytes {
                 return Err(ArtifactStoreError::Catalog(
-                    "invalid shared cache record chain",
+                    "noncanonical shared cache record",
                 ));
             }
-            validate_snapshot(&record.snapshot)?;
-            state.next += 1;
-            state.previous = Some(hash);
-            state.snapshot = record.snapshot;
+            state.replay(&document, &digest(&bytes), &path)?;
         }
         if state.next == 0 {
             return Err(ArtifactStoreError::Catalog(
@@ -177,41 +317,36 @@ impl SharedCatalog {
     }
 
     pub fn snapshot(&self) -> Result<Snapshot, ArtifactStoreError> {
-        Ok(self.state.borrow().snapshot.clone())
+        let state = self.state.borrow();
+        require_healthy(&state)?;
+        Ok(state.snapshot.clone())
     }
 
-    pub fn update(
-        &self,
-        change: impl FnOnce(&mut Snapshot) -> Result<(), ArtifactStoreError>,
-    ) -> Result<(), ArtifactStoreError> {
-        let mut snapshot = self.state.borrow().snapshot.clone();
-        change(&mut snapshot)?;
-        if snapshot != self.state.borrow().snapshot {
-            self.publish(snapshot)?;
+    pub fn update(&self, delta: Delta) -> Result<(), ArtifactStoreError> {
+        let mut state = self.state.borrow_mut();
+        require_healthy(&state)?;
+        if delta.apply(&mut state.snapshot)? {
+            self.publish(&mut state, Some(delta))?;
         }
         Ok(())
     }
 
-    fn publish(&self, snapshot: Snapshot) -> Result<(), ArtifactStoreError> {
-        let mut state = self.state.borrow_mut();
-        if state.failed {
-            return Err(ArtifactStoreError::Catalog(
-                "reopen cache after failed publication",
-            ));
-        }
-        validate_snapshot(&snapshot)?;
-        let document = canonical(serde_json::to_value(Record {
-            schema_version: 1,
+    fn publish(&self, state: &mut State, delta: Option<Delta>) -> Result<(), ArtifactStoreError> {
+        // The in-memory change may already be applied. After any failure,
+        // reopen and replay the visible complete prefix before trusting it.
+        state.failed = true;
+        let checkpoint =
+            (state.next == 0 || state.next.is_power_of_two()).then(|| state.snapshot.clone());
+        let document = canonical(serde_json::to_value(RecordV2 {
+            schema_version: 2,
             sequence: state.next,
             previous_sha256: state.previous.clone(),
-            snapshot: snapshot.clone(),
+            delta,
+            checkpoint,
         })?)?;
-        validate(PublicSchema::SharedCacheRecord, &document)?;
+        validate(PublicSchema::SharedCacheRecordV2, &document)?;
         let bytes = document.to_canonical_bytes()?;
         let hash = digest(&bytes);
-        // Any publication error invalidates this writer, including ambiguous
-        // errors after rename. A new open replays the visible complete prefix.
-        state.failed = true;
         let mut stage = tempfile::Builder::new()
             .prefix(".pending-")
             .tempfile_in(&self.directory)?;
@@ -222,12 +357,20 @@ impl SharedCatalog {
             &self.directory.join(filename(state.next, &hash)),
         )?;
         crate::runtime::platform_fs::complete_namespace_change(&self.directory)?;
-        state.snapshot = snapshot;
         state.previous = Some(hash);
         state.next += 1;
         state.failed = false;
         Ok(())
     }
+}
+
+fn require_healthy(state: &State) -> Result<(), ArtifactStoreError> {
+    if state.failed {
+        return Err(ArtifactStoreError::Catalog(
+            "reopen cache after failed publication",
+        ));
+    }
+    Ok(())
 }
 
 fn validate_snapshot(snapshot: &Snapshot) -> Result<(), ArtifactStoreError> {
@@ -289,3 +432,6 @@ pub(super) fn run_owner(output: &Path) -> Result<String, ArtifactStoreError> {
         .expect("validated owner")
         .into())
 }
+
+#[cfg(test)]
+mod tests;

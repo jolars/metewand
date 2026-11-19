@@ -252,8 +252,10 @@ The cache parent must exist. Initialization is idempotent and refuses existing
 SQLite caches. Subsequent runs detect the shared cache automatically. Dataset
 objects and construction mappings use the same verified formats and scientific
 identities as local caches. Workers receive private copies in local scratch. The
-shared catalog contains immutable, hash-linked version-1 JSON records and
-requires no shared SQLite database. Keep the entire cache when relocating it.
+shared catalog contains immutable, hash-linked JSON records. Metewand
+reads version-1 snapshots and writes version-2 deltas with periodic checkpoints.
+Upgrade all hosts that use a shared cache before writing version-2 records.
+Keep the entire cache when relocating it.
 
 Each run stores a portable `run-v1:...` retention owner in `.cache-owner.json`.
 Keep this file when moving the run directory. Independent runs get different

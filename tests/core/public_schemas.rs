@@ -99,7 +99,7 @@ struct ConformanceCase {
 
 #[test]
 fn publishes_the_complete_versioned_schema_set() {
-    assert_eq!(PUBLIC_SCHEMAS.len(), 45);
+    assert_eq!(PUBLIC_SCHEMAS.len(), 46);
 
     let mut slugs = BTreeSet::new();
     let mut paths = BTreeSet::new();
@@ -122,7 +122,10 @@ fn publishes_the_complete_versioned_schema_set() {
                 4
             } else if schema == PublicSchema::LockfileV3 {
                 3
-            } else if schema == PublicSchema::LockfileV2 {
+            } else if matches!(
+                schema,
+                PublicSchema::LockfileV2 | PublicSchema::SharedCacheRecordV2
+            ) {
                 2
             } else {
                 PUBLIC_SCHEMA_VERSION

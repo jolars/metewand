@@ -2,6 +2,7 @@ use std::{collections::BTreeMap, time::Duration};
 
 use rusqlite::{Connection, OpenFlags, params};
 
+use super::shared::Delta;
 use super::{ArtifactStore, ArtifactStoreError, missing, regular_file};
 
 /// The cache catalog has a separate layout version from content manifests.
@@ -239,15 +240,9 @@ impl Catalog {
     pub fn register(&self, digest: &str, marker: &str) -> Result<(), ArtifactStoreError> {
         match self {
             Self::Local(catalog) => catalog.register(digest, marker),
-            Self::Shared(catalog) => catalog.update(|snapshot| {
-                if let Some(expected) = snapshot.objects.get(digest) {
-                    if expected != marker {
-                        return Err(ArtifactStoreError::ChangedContent);
-                    }
-                } else {
-                    snapshot.objects.insert(digest.into(), marker.into());
-                }
-                Ok(())
+            Self::Shared(catalog) => catalog.update(Delta::Register {
+                digest: digest.into(),
+                marker: marker.into(),
             }),
         }
     }
@@ -255,25 +250,10 @@ impl Catalog {
     pub fn root(&self, digest: &str, name: &str, add: bool) -> Result<(), ArtifactStoreError> {
         match self {
             Self::Local(catalog) => catalog.root(digest, name, add),
-            Self::Shared(catalog) => catalog.update(|snapshot| {
-                if !snapshot.objects.contains_key(digest) {
-                    return Err(ArtifactStoreError::UnknownTarget(digest.into()));
-                }
-                let roots = snapshot.roots.entry(digest.into()).or_default();
-                if add {
-                    if !roots.iter().any(|root| root == name) {
-                        roots.push(name.into());
-                        roots.sort();
-                    }
-                } else if let Some(index) = roots.iter().position(|root| root == name) {
-                    roots.remove(index);
-                } else {
-                    return Err(ArtifactStoreError::UnknownRoot(name.into()));
-                }
-                if roots.is_empty() {
-                    snapshot.roots.remove(digest);
-                }
-                Ok(())
+            Self::Shared(catalog) => catalog.update(Delta::Root {
+                digest: digest.into(),
+                name: name.into(),
+                add,
             }),
         }
     }
@@ -281,9 +261,9 @@ impl Catalog {
     pub fn pending(&self, digest: &str, detached: bool) -> Result<(), ArtifactStoreError> {
         match self {
             Self::Local(catalog) => catalog.pending(digest, detached),
-            Self::Shared(catalog) => catalog.update(|snapshot| {
-                snapshot.pending.insert(digest.into(), detached);
-                Ok(())
+            Self::Shared(catalog) => catalog.update(Delta::Pending {
+                digest: digest.into(),
+                detached,
             }),
         }
     }
@@ -291,13 +271,8 @@ impl Catalog {
     pub fn forget(&self, digest: &str) -> Result<(), ArtifactStoreError> {
         match self {
             Self::Local(catalog) => catalog.forget(digest),
-            Self::Shared(catalog) => catalog.update(|snapshot| {
-                if snapshot.roots.contains_key(digest) {
-                    return Err(ArtifactStoreError::Catalog("cannot forget rooted content"));
-                }
-                snapshot.pending.remove(digest);
-                snapshot.objects.remove(digest);
-                Ok(())
+            Self::Shared(catalog) => catalog.update(Delta::Forget {
+                digest: digest.into(),
             }),
         }
     }
