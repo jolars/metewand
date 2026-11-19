@@ -203,6 +203,10 @@ configuration.
   the common limit from cumulative timed wall time across fresh fits or from
   active time at a streaming checkpoint. Keep pilot evidence separate from
   measured profiles and resume with the recorded budget.
+- [ ] Extend time-based adaptive measurement repetitions to fresh sequences,
+  buffered profiles, and streaming profiles. Count whole profile repetitions
+  and define which elapsed time contributes toward the threshold for each mode.
+  Preserve the accumulated time and stopping decision across resume and retries.
 - [ ] Add checkpoint-state restoration.
 
 ## Language packages and environments
