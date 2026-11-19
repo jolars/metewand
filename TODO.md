@@ -97,6 +97,23 @@ benchmark](examples/overhead)
   retained failure and its successful retry. It compares store bytes before
   and after status and exact-ID explanation.
 
+- [ ] Measure cold and warm preparation time for Basin and clustlasso-cd,
+  then add bounded concurrency for independent dataset configurations if
+  preparation is a bottleneck. Deduplicate by dataset key and dataset–problem
+  pair, start problem preparation after its dataset is ready, and assemble
+  resolved candidates in the existing order. Finish preparation before
+  measured attempts begin.
+- [ ] Measure idle lane time at batch boundaries in runs that opt into
+  concurrent attempts. If the cost is substantial, add an execution policy
+  that refills lanes as attempts finish. Preserve fresh-sequence ordering
+  and adaptive measurement dependencies, and record dispatch provenance
+  that reflects which attempts could overlap.
+- [ ] Evaluate concurrent calibration pilots if serial calibration dominates
+  startup. Overlap only independent pilots within a round, preserve
+  fresh-point ordering, and finish the round before choosing the common
+  budget. Compare pilot timings and derived budgets with serial calibration
+  to check the effect of contention.
+
 ### Disk and shared storage
 
 - [x] Let the Rust and Python buffered SDK collectors capture file-backed
