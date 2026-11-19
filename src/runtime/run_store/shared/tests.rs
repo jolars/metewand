@@ -166,6 +166,66 @@ fn failed_publication_revokes_further_local_commits_until_replay() {
 }
 
 #[test]
+fn replay_uses_primary_keys_for_every_collection() {
+    let db = Connection::open_in_memory().unwrap();
+    db.execute_batch(super::super::FRESH_RUN_STORE_SCHEMA_SQL)
+        .unwrap();
+    for (table, columns) in collections(&db).unwrap() {
+        let collection = ReplayCollection::new(&db, &table, columns).unwrap();
+        for sql in [collection.delete, collection.verify] {
+            let plan: String = db
+                .query_row(
+                    &format!("EXPLAIN QUERY PLAN {sql}"),
+                    params_from_iter(collection.columns.iter().map(|_| Option::<String>::None)),
+                    |row| row.get(3),
+                )
+                .unwrap();
+            assert!(
+                plan.starts_with(&format!("SEARCH {table} USING ")),
+                "{plan}"
+            );
+        }
+    }
+}
+
+#[test]
+fn replay_rejects_mismatched_before_images_for_existing_keys() {
+    for (field, replacement) in [
+        ("kind", json!("wrong kind")),
+        ("occurred_at_ns", json!(null)),
+        ("sequence", json!("01")),
+    ] {
+        let root = tempfile::tempdir().unwrap();
+        let mut store = RunStore::open_shared(root.path()).unwrap();
+        event(&mut store, 1, "first").unwrap();
+        event(&mut store, 2, "second").unwrap();
+        drop(store);
+
+        let directory = root.path().join(JOURNAL);
+        let mut committed = files(&directory);
+        let (path, bytes) = committed.pop_last().unwrap();
+        let (_, previous) = committed.pop_last().unwrap();
+        let first: Value = serde_json::from_slice(&previous).unwrap();
+        let mut value: Value = serde_json::from_slice(&bytes).unwrap();
+        let mut before = first["changes"][0]["after"].clone();
+        before[field] = replacement;
+        value["changes"][0]["before"] = before;
+        let bytes = CanonicalValue::try_from(value)
+            .unwrap()
+            .to_canonical_bytes()
+            .unwrap();
+        fs::remove_file(path).unwrap();
+        fs::write(directory.join(filename(2, &digest(&bytes))), bytes).unwrap();
+
+        let error = RunStore::open_shared(root.path()).err().unwrap();
+        assert!(
+            error.to_string().contains("before-image differs"),
+            "{field}: {error}"
+        );
+    }
+}
+
+#[test]
 fn replay_rejects_corruption_gaps_unknown_versions_and_bad_row_shapes() {
     for failure in [
         "hash",
@@ -174,7 +234,8 @@ fn replay_rejects_corruption_gaps_unknown_versions_and_bad_row_shapes() {
         "row",
         "predecessor",
         "before_image",
-        "integer_normalization",
+        "integer_key_normalization",
+        "integer_field_normalization",
     ] {
         let root = tempfile::tempdir().unwrap();
         let mut store = RunStore::open_shared(root.path()).unwrap();
@@ -197,8 +258,11 @@ fn replay_rejects_corruption_gaps_unknown_versions_and_bad_row_shapes() {
                     "version" => value["schema_version"] = json!(2),
                     "row" => value["changes"][0]["after"]["unknown"] = json!("field"),
                     "predecessor" => value["previous_sha256"] = json!("0".repeat(64)),
-                    "integer_normalization" => {
+                    "integer_key_normalization" => {
                         value["changes"][0]["after"]["sequence"] = json!("01")
+                    }
+                    "integer_field_normalization" => {
+                        value["changes"][0]["after"]["occurred_at_ns"] = json!("01")
                     }
                     "before_image" => {
                         value["changes"][0]["before"] = value["changes"][0]["after"].clone()
@@ -215,7 +279,13 @@ fn replay_rejects_corruption_gaps_unknown_versions_and_bad_row_shapes() {
         }
         let before = files(&directory);
         assert!(StoreSnapshot::read(root.path()).is_err(), "{failure}");
-        assert!(RunStore::open_shared(root.path()).is_err(), "{failure}");
+        let error = RunStore::open_shared(root.path()).err().unwrap();
+        if failure.ends_with("_normalization") {
+            assert!(
+                error.to_string().contains("after-image changes"),
+                "{failure}: {error}"
+            );
+        }
         assert_eq!(before, files(&directory));
     }
 }

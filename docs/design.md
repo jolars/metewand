@@ -261,6 +261,8 @@ decisions as well as result artifacts. Independent jobs should own disjoint
 shards rather than update a shared SQLite WAL database. The opt-in shared run
 backend publishes an immutable transaction journal and artifacts there, rebuilding
 SQLite in host-local scratch on every invocation.
+Replay uses the local primary-key indexes to find rows and compares every
+field against the journal's before- and after-images.
 Each shared run has one coordinator. Disjoint distributed shards and qualification
 on specific HPC filesystems remain future work.
 

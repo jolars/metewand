@@ -115,10 +115,14 @@ benchmark](examples/overhead)
 - [x] Publish fresh sequence membership as one durable record per repetition and
   reference it from attempt outcomes. Verify recovery and archive restore
   with inline membership in existing outcomes and with the new references.
-- [ ] Locate rows by indexed keys during shared journal replay and verify the
-  full before- and after-images. Measure replay time and journal file counts
-  before batching durable writes. Preserve recovery after loss of local
-  state.
+- [x] Locate rows by indexed keys during shared journal replay and verify the
+  full before- and after-images. Recovery tests cover loss of local state.
+  For synthetic version-1 journals with one event insertion per transaction,
+  median release-build `status` time fell from 138 to 105 ms for 1,001 journal
+  files and from 2.32 to 0.94 seconds for 10,001 files. Counts include
+  initialization. Both builds replayed the same files and emitted identical
+  JSON. Each median used seven runs on a Ryzen 9 7900 with the journal on ext4
+  and SQLite scratch on tmpfs.
 - [ ] Replace full shared cache snapshots with versioned deltas and checkpoints.
   Measure catalog growth as objects and roots accumulate. Keep existing
   records readable and cache collection safe across crashes.

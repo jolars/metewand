@@ -289,7 +289,13 @@ fn replay(directory: &Path, db: &mut Connection) -> Result<(u64, Option<String>)
         paths.push(entry.path());
     }
     paths.sort();
-    let columns = collections(db)?;
+    let collections = collections(db)?
+        .into_iter()
+        .map(|(name, columns)| {
+            let statements = ReplayCollection::new(db, &name, columns)?;
+            Ok((name, statements))
+        })
+        .collect::<Result<BTreeMap<_, _>, RunStoreError>>()?;
     // Lifecycle triggers govern new execution. Replay checks before-images,
     // strict row constraints, and foreign keys at every original commit boundary.
     let triggers = db
@@ -340,7 +346,7 @@ fn replay(directory: &Path, db: &mut Connection) -> Result<(u64, Option<String>)
         let tx = db.transaction()?;
         tx.pragma_update(None, "defer_foreign_keys", true)?;
         for change in &record.changes {
-            apply(&tx, &columns, change)?;
+            apply(&tx, &collections, change)?;
         }
         tx.commit()?;
         previous = Some(digest(&bytes));
@@ -353,14 +359,62 @@ fn replay(directory: &Path, db: &mut Connection) -> Result<(u64, Option<String>)
     Ok((next, previous))
 }
 
+struct ReplayCollection {
+    columns: Vec<String>,
+    delete: String,
+    insert: String,
+    verify: String,
+}
+
+impl ReplayCollection {
+    fn new(db: &Connection, table: &str, columns: Vec<String>) -> Result<Self, RunStoreError> {
+        let keys = db
+            .prepare("SELECT cid FROM pragma_table_info(?) WHERE pk > 0 ORDER BY pk")?
+            .query_map([table], |row| row.get::<_, u32>(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+        if keys.is_empty() {
+            return Err(invalid("shared collection has no primary key"));
+        }
+
+        // Bare key columns let SQLite seek the primary key. Compare every
+        // persisted field as text to catch affinity conversions and mismatches,
+        // including changes to the key's original spelling.
+        let predicate = keys
+            .iter()
+            .map(|&i| format!("{} IS ?{}", columns[i as usize], i + 1))
+            .chain(
+                columns
+                    .iter()
+                    .enumerate()
+                    .map(|(i, c)| format!("CAST({c} AS TEXT) IS ?{}", i + 1)),
+            )
+            .collect::<Vec<_>>()
+            .join(" AND ");
+        let placeholders = (1..=columns.len())
+            .map(|i| format!("?{i}"))
+            .collect::<Vec<_>>()
+            .join(",");
+        Ok(Self {
+            delete: format!("DELETE FROM {table} WHERE {predicate}"),
+            insert: format!(
+                "INSERT INTO {table} ({}) VALUES ({placeholders})",
+                columns.join(",")
+            ),
+            verify: format!("SELECT 1 FROM {table} WHERE {predicate}"),
+            columns,
+        })
+    }
+}
+
 fn apply(
     tx: &Transaction<'_>,
-    collections: &BTreeMap<String, Vec<String>>,
+    collections: &BTreeMap<String, ReplayCollection>,
     change: &DurableChange,
 ) -> Result<(), RunStoreError> {
-    let columns = collections
+    let collection = collections
         .get(&change.collection)
         .ok_or_else(|| invalid("unknown shared record collection"))?;
+    let columns = &collection.columns;
     let validate = |row: &DurableRow| {
         row.len() == columns.len() && columns.iter().all(|c| row.contains_key(c))
     };
@@ -372,18 +426,10 @@ fn apply(
             "shared row fields differ from the versioned contract",
         ));
     }
-    let table = &change.collection;
     if let Some(before) = &change.before {
-        let predicate = columns
-            .iter()
-            .enumerate()
-            .map(|(i, c)| format!("CAST({c} AS TEXT) IS ?{}", i + 1))
-            .collect::<Vec<_>>()
-            .join(" AND ");
-        let count = tx.execute(
-            &format!("DELETE FROM {table} WHERE {predicate}"),
-            params_from_iter(columns.iter().map(|c| &before[c])),
-        )?;
+        let count = tx
+            .prepare_cached(&collection.delete)?
+            .execute(params_from_iter(columns.iter().map(|c| &before[c])))?;
         if count != 1 {
             return Err(invalid(
                 "shared record before-image differs from committed state",
@@ -391,29 +437,12 @@ fn apply(
         }
     }
     if let Some(after) = &change.after {
-        let placeholders = (1..=columns.len())
-            .map(|i| format!("?{i}"))
-            .collect::<Vec<_>>()
-            .join(",");
-        tx.execute(
-            &format!(
-                "INSERT INTO {table} ({}) VALUES ({placeholders})",
-                columns.join(",")
-            ),
-            params_from_iter(columns.iter().map(|c| &after[c])),
-        )?;
-        let predicate = columns
-            .iter()
-            .enumerate()
-            .map(|(i, c)| format!("CAST({c} AS TEXT) IS ?{}", i + 1))
-            .collect::<Vec<_>>()
-            .join(" AND ");
-        let exact: i64 = tx.query_row(
-            &format!("SELECT count(*) FROM {table} WHERE {predicate}"),
-            params_from_iter(columns.iter().map(|c| &after[c])),
-            |r| r.get(0),
-        )?;
-        if exact != 1 {
+        tx.prepare_cached(&collection.insert)?
+            .execute(params_from_iter(columns.iter().map(|c| &after[c])))?;
+        let exact = tx
+            .prepare_cached(&collection.verify)?
+            .exists(params_from_iter(columns.iter().map(|c| &after[c])))?;
+        if !exact {
             return Err(invalid(
                 "shared record after-image changes under storage normalization",
             ));
