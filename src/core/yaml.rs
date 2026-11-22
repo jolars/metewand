@@ -83,7 +83,7 @@ pub(crate) fn parse<T: DeserializeOwned>(
         non_finite_float_policy: serde_saphyr::NonFiniteFloatPolicy::Reject,
         with_snippet: false,
     };
-    let node: Node =
+    let mut node: Node =
         serde_saphyr::from_str_with_options(source, options).map_err(|error| ParseError {
             source_span: source_span(source_path, source, error.location()),
             message: error.to_string(),
@@ -94,7 +94,7 @@ pub(crate) fn parse<T: DeserializeOwned>(
             source_span: source_span(source_path, source, Some(node.0.referenced)),
         });
     }
-    if let Some(location) = node.numeric_string_fallback(source) {
+    if let Some(location) = node.normalize_integer_fallbacks(source) {
         return Err(ParseError {
             message: "YAML integer is outside the version-1 Metewand JSON domain".to_owned(),
             source_span: source_span(source_path, source, Some(location)),
@@ -171,21 +171,29 @@ impl Node {
         }
     }
 
-    fn numeric_string_fallback(&self, source: &str) -> Option<Location> {
-        match &self.0.value {
+    fn normalize_integer_fallbacks(&mut self, source: &str) -> Option<Location> {
+        match &mut self.0.value {
             NodeValue::Scalar(Value::String(value))
                 if !self.1 && plain_integer_source(source, self.0.defined, value) =>
             {
-                Some(self.0.referenced)
+                let Some(number) = uppercase_radix_number(value) else {
+                    return Some(self.0.referenced);
+                };
+                let number = Value::Number(number);
+                if CanonicalValue::try_from(number.clone()).is_err() {
+                    return Some(self.0.referenced);
+                }
+                self.0.value = NodeValue::Scalar(number);
+                None
             }
             NodeValue::Sequence(values) => values
-                .iter()
-                .find_map(|value| value.numeric_string_fallback(source)),
-            NodeValue::Mapping(values) => values.iter().find_map(|(name, (origin, value))| {
+                .iter_mut()
+                .find_map(|value| value.normalize_integer_fallbacks(source)),
+            NodeValue::Mapping(values) => values.iter_mut().find_map(|(name, (origin, value))| {
                 if !origin.explicit_string && plain_integer_source(source, origin.defined, name) {
                     Some(origin.referenced)
                 } else {
-                    value.numeric_string_fallback(source)
+                    value.normalize_integer_fallbacks(source)
                 }
             }),
             _ => None,
@@ -365,10 +373,25 @@ fn plain_integer_source(source: &str, location: Location, value: &str) -> bool {
         };
         byte_offset(span.offset())..byte_offset(span.offset().saturating_add(span.len()))
     };
-    // The YAML decoder falls back to strings when its integer accumulator
-    // overflows. Check the source token so quoted and block strings retain
-    // their explicitly chosen type, including through aliases and merges.
+    // Check the source token so quoted and block strings retain their
+    // explicitly chosen type, including through aliases and merges.
     source.get(range) == Some(value)
+}
+
+fn uppercase_radix_number(value: &str) -> Option<Number> {
+    let unsigned = value.strip_prefix(['+', '-']).unwrap_or(value);
+    let radix = match unsigned.get(..2)? {
+        "0X" => 16,
+        "0O" => 8,
+        "0B" => 2,
+        _ => return None,
+    };
+    let magnitude = u64::from_str_radix(&unsigned[2..].replace('_', ""), radix).ok()?;
+    if value.starts_with('-') {
+        Some(Number::from(i64::try_from(magnitude).ok()?.checked_neg()?))
+    } else {
+        Some(Number::from(magnitude))
+    }
 }
 
 fn integer_spelling(value: &str) -> bool {

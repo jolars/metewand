@@ -217,15 +217,16 @@ fn yaml_numeric_fallback_errors_use_alias_and_merge_reference_locations() {
 
 #[test]
 fn yaml_radix_and_separated_safe_integers_remain_numbers() {
-    let source = "version: 0b1\nname: yaml\nproblems: {example: {contract: problem.yaml, parameter-defaults: {values: [0x2, 0o2, 0b10, +0X2, -0O2, 9_007_199_254_740_991]}, evaluator: {runner: command, program: evaluator, environment: local}}}";
+    let source = "version: 0B1\nname: yaml\nproblems: {example: {contract: problem.yaml, parameter-defaults: {values: [0x2, 0o2, 0b10, &radix +0X2, -0O2, 9_007_199_254_740_991, '0B1', !!str 0X2, *radix]}, evaluator: {runner: command, program: evaluator, environment: local}}}";
     let manifest = parse_manifest(Path::new("metewand.yaml"), source).unwrap();
     assert_eq!(
         manifest.problems["example"]
             .parameter_defaults
             .as_ref()
             .unwrap()
-            .as_json(),
-        &json!({"values": [2, 2, 2, 2, -2, 9_007_199_254_740_991_u64]})
+            .to_canonical_bytes()
+            .unwrap(),
+        br#"{"values":[2,2,2,2,-2,9007199254740991,"0B1","0X2",2]}"#
     );
 }
 
@@ -243,6 +244,7 @@ fn yaml_rejects_invalid_documents_keys_tags_and_json_numbers() {
         "version: 1\nname: !include other.yaml\n",
         "version: 1\nname: yaml\ndatasets: null\n",
         "version: 1\nname: yaml\nexecution-policies: {local: {version: 1, max-concurrency: 9007199254740992}}",
+        "version: 1\nname: yaml\nexecution-policies: {local: {version: 1, max-concurrency: 0X20_0000_0000_0000}}",
         "version: 1\nname: yaml\nexecution-policies: {local: {version: 1, max-concurrency: .inf}}",
         "version: 1\nname: yaml\nexecution-policies: {local: {version: 1, max-concurrency: .nan}}",
         "version: 1\nname: yaml\nexecution-policies: {local: {version: 1, max-concurrency: 1e999}}",
