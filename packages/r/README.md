@@ -14,7 +14,7 @@ You need R 4.2 or later. Install the package and its dependencies from GitHub
 with [pak](https://pak.r-lib.org/):
 
 ```r
-install.packages("pak") # Run once if pak is not installed.
+# install.packages("pak") # Run once if pak is not installed.
 pak::pak("jolars/metewand/packages/r")
 ```
 
