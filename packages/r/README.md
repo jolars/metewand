@@ -15,7 +15,7 @@ with [pak](https://pak.r-lib.org/):
 
 ```r
 install.packages("pak") # Run once if pak is not installed.
-pak::pak("jolars/metewand/packages/r", lib = .Library)
+pak::pak("jolars/metewand/packages/r")
 ```
 
 Install into an R installation whose library (`.Library`) you can write to.
