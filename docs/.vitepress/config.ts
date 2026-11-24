@@ -52,7 +52,6 @@ export default defineConfig({
     logo: { src: '/brand/logo-small.png', alt: '' },
     nav: [
       { text: 'Guide', link: '/guide/overview', activeMatch: '/guide/' },
-      { text: 'Design', link: '/design' },
     ],
     sidebar: [
       {
