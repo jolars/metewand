@@ -14,7 +14,7 @@ error.
 From the repository root, build the current CLI:
 
 ```sh
-compute run -- cargo build --locked
+cargo build --locked
 ```
 
 Run in an interactive terminal with both stdout and stderr attached. The
@@ -22,7 +22,7 @@ following command uses uv to provide the in-tree Python package without a
 separate installation step. Choose a fresh output directory on each invocation:
 
 ```sh
-compute run -- uv run --no-project --python python3 --with ./packages/python -- \
+uv run --no-project --python python3 --with ./packages/python -- \
   target/debug/metewand run --manifest examples/ui-demo/metewand.yaml \
   --output-dir "$(mktemp -d)/run"
 ```
@@ -55,7 +55,7 @@ To inspect the plan or focus on one dataset and implementation:
 
 ```sh
 target/debug/metewand plan --manifest examples/ui-demo/metewand.yaml
-compute run -- uv run --no-project --python python3 --with ./packages/python -- \
+uv run --no-project --python python3 --with ./packages/python -- \
   target/debug/metewand run --manifest examples/ui-demo/metewand.yaml \
   --dataset medium --implementation manual_loop \
   --output-dir "$(mktemp -d)/run"

@@ -26,5 +26,5 @@ isolation guarantees.
 For the opt-in integration test, supply an existing Python SIF:
 
 ```sh
-METEWAND_TEST_SIF=/absolute/path/worker.sif compute run -- cargo test --test integration --locked cli_tests::locked_apptainer:: -- --ignored
+METEWAND_TEST_SIF=/absolute/path/worker.sif cargo test --test integration --locked cli_tests::locked_apptainer:: -- --ignored
 ```
