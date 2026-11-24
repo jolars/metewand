@@ -10,13 +10,12 @@ a benchmark. The CLI checks and runs it on Linux, macOS, and native Windows x64.
 
 ## Install
 
-You need Python 3.11 or later and Git. Install the package from GitHub in a
-virtual environment:
+Install the package from PyPI in a virtual environment:
 
 ```sh
 python3 -m venv .venv
 . .venv/bin/activate
-python3 -m pip install "metewand @ git+https://github.com/jolars/metewand.git@main#subdirectory=packages/python"
+python3 -m pip install metewand
 ```
 
 On Windows, use `python` in place of `python3` and activate the environment with
@@ -31,11 +30,11 @@ The base package has no third-party runtime dependencies. To include NumPy and
 SciPy helpers for dense and sparse arrays, install the `arrays` extra:
 
 ```sh
-python3 -m pip install "metewand[arrays] @ git+https://github.com/jolars/metewand.git@main#subdirectory=packages/python"
+python3 -m pip install "metewand[arrays]"
 ```
 
-These commands install the development version. For a reproducible benchmark,
-replace `main` with a commit hash and pin your scientific dependencies.
+For a reproducible benchmark, pin the Metewand Python package version and your
+scientific dependencies.
 
 ## Try a benchmark
 
