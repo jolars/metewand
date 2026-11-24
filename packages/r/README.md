@@ -1,4 +1,4 @@
-# Metewand for R <img src="https://raw.githubusercontent.com/jolars/metewand/refs/heads/main/assets/logo.png" align="right" width="160" alt="A green measuring rod with brass ends" />
+# Metewand <img src="https://raw.githubusercontent.com/jolars/metewand/refs/heads/main/assets/logo.png" align="right" width="160" alt="A green measuring rod with brass ends" />
 
 Write reproducible computational benchmarks with ordinary R functions. Define
 how to generate data, run your methods, and evaluate their answers, then declare
