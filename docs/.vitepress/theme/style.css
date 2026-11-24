@@ -17,3 +17,22 @@
   font-family: var(--vp-font-family-mono);
   letter-spacing: -0.04em;
 }
+
+.vp-code-group label[data-title='Linux and macOS'] {
+  --install-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M3 4h18v13H3zM1 19h22v2H1z'/%3E%3Cpath fill='white' d='M5 6h14v9H5z'/%3E%3C/svg%3E");
+}
+
+.vp-code-group label[data-title='Windows (PowerShell)'] {
+  --install-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M2 2h9v9H2zM13 2h9v9h-9zM2 13h9v9H2zM13 13h9v9h-9z'/%3E%3C/svg%3E");
+}
+
+.vp-code-group label:is([data-title='Linux and macOS'], [data-title='Windows (PowerShell)'])::before {
+  content: '';
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  margin-inline-end: 0.5em;
+  vertical-align: -0.15em;
+  background-color: currentColor;
+  mask: var(--install-icon) center / contain no-repeat;
+}

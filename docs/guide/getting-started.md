@@ -7,18 +7,20 @@ macOS, or native Windows x64 and Python 3.11 or later. Put Python on `PATH`.
 
 ### Prebuilt CLI
 
-Starting with the next release, install the latest prebuilt CLI on Linux or
-macOS with:
+Starting with the next release, use the command for your operating system to
+install the latest prebuilt CLI.
 
-```sh
+::: code-group
+
+```sh [Linux and macOS]
 curl --proto '=https' --tlsv1.2 -LsSf https://metewand.org/install | sh
 ```
 
-On Windows, run this in PowerShell:
-
-```powershell
+```powershell [Windows (PowerShell)]
 irm https://metewand.org/install.ps1 | iex
 ```
+
+:::
 
 The installers support x64 and ARM64 on Linux and macOS, and x64 on Windows.
 They place `metewand` in Cargo's binary directory, normally `~/.cargo/bin`.
@@ -252,10 +254,10 @@ The cache parent must exist. Initialization is idempotent and refuses existing
 SQLite caches. Subsequent runs detect the shared cache automatically. Dataset
 objects and construction mappings use the same verified formats and scientific
 identities as local caches. Workers receive private copies in local scratch. The
-shared catalog contains immutable, hash-linked JSON records. Metewand
-reads version-1 snapshots and writes version-2 deltas with periodic checkpoints.
-Upgrade all hosts that use a shared cache before writing version-2 records.
-Keep the entire cache when relocating it.
+shared catalog contains immutable, hash-linked JSON records. Metewand reads
+version-1 snapshots and writes version-2 deltas with periodic checkpoints.
+Upgrade all hosts that use a shared cache before writing version-2 records. Keep
+the entire cache when relocating it.
 
 Each run stores a portable `run-v1:...` retention owner in `.cache-owner.json`.
 Keep this file when moving the run directory. Independent runs get different

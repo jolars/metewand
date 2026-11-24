@@ -32,6 +32,16 @@ for await (const path of pages(root)) {
     )
     .remove();
   content.find(".VPHero .name").append(" ");
+  content.find(".vp-code-group").each((_index, element) => {
+    const group = $(element);
+    const blocks = group.children(".blocks").children();
+    const tabs = group.children(".tabs");
+    tabs.find("label").each((index, label) => {
+      const title = $("<p>").text($(label).text());
+      blocks.eq(index).before(title);
+    });
+    tabs.remove();
+  });
   content.find("pre").each((_index, element) => {
     const code = $(element).find("code");
     const language = $(element)
