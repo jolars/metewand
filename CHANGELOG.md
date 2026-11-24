@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.10.0](https://github.com/jolars/metewand/compare/v0.9.0...v0.10.0) (2026-11-22)
+
+### Features
+
+- **runtime:** add adaptive measurement repetitions ([`2a8ec25`](https://github.com/jolars/metewand/commit/2a8ec25432691a829be6ca23cd64f32112929bb4))
+
+### Bug Fixes
+
+- **core:** preserve uppercase YAML radix integers ([`2a973e7`](https://github.com/jolars/metewand/commit/2a973e7e8c721955b1bf40cfd0fa356fe9db88ea)), refs [#31](https://github.com/jolars/metewand/issues/31)
+
 ## [0.9.0](https://github.com/jolars/metewand/compare/v0.8.0...v0.9.0) (2026-11-19)
 
 ### Features
