@@ -295,13 +295,14 @@ runs and scientific identities as the storage model evolves.
   decisions. Provide a recovery-only operation for runs left with unfinished
   attempts after abrupt termination. Test that an interrupted run can be
   archived, restored, and resumed without repeating committed work.
-- [ ] Support shared runs on GenomeDK's BeeGFS, which returns `EINVAL` for
-  `RENAME_NOREPLACE`. Publish synced journal files with a same-filesystem
-  hard link when no-replace rename is unavailable. For artifact directories,
-  evaluate publishing fully staged directories with ordinary rename under a
-  lock that covers every writer to the destination. Preserve conflict
-  detection and crash durability. On BeeGFS, commit a profile, interrupt the
-  job, and resume on a second node without repeating the committed profile.
+- [x] Support shared runs on GenomeDK's BeeGFS. Publish synced journal and
+  membership files with hard links when no-replace rename is unavailable.
+  Move complete artifact directories under exclusive ownership. BeeGFS
+  uses a directory claim even when advisory locks are node-local. On
+  GenomeDK job 10128218, a second node was refused while the first owned
+  the run. After an abrupt stop and explicit claim removal, the second
+  node recovered the open attempt, reused the committed clustlasso-cd
+  profile, and verified the completed run archive.
 - [ ] Qualify publication, cross-host visibility, and recovery on supported HPC
   filesystems. Distinguish compute-node failure from storage-server power
   loss, and batch metadata operations for large runs. Exercise clustlasso-cd

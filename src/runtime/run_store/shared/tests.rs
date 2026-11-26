@@ -21,6 +21,142 @@ fn files(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
         .collect()
 }
 
+#[cfg(target_os = "linux")]
+#[test]
+fn linked_journal_record_replays_once_after_process_death() {
+    const CHILD_ROOT: &str = "METEWAND_TEST_LINKED_JOURNAL_ROOT";
+    if let Some(root) = std::env::var_os(CHILD_ROOT) {
+        let root = PathBuf::from(root);
+        let directory = root.join(JOURNAL);
+        let previous = digest(files(&directory).values().next().unwrap());
+        let mut journal = SharedJournal {
+            directory,
+            next: 1,
+            previous: Some(previous),
+            failed: false,
+            _scratch: tempfile::tempdir_in(&root).unwrap(),
+            writer_claim: Some(WriterClaim::acquire(&root).unwrap()),
+            _writer: File::open(root.join(".shared-writer.lock")).unwrap(),
+        };
+        journal
+            .publish(vec![DurableChange {
+                collection: "events".into(),
+                before: None,
+                after: Some(BTreeMap::from([
+                    ("sequence".into(), Some("1".into())),
+                    ("attempt_id".into(), None),
+                    ("occurred_at_ns".into(), Some("7".into())),
+                    ("kind".into(), Some("linked".into())),
+                    ("payload_json".into(), Some("{}".into())),
+                ])),
+            }])
+            .unwrap();
+        return;
+    }
+
+    use std::os::unix::process::ExitStatusExt;
+
+    let root = tempfile::tempdir().unwrap();
+    drop(RunStore::open_shared(root.path()).unwrap());
+    // The first fsync flushes the staging file. The second would sync the
+    // journal directory after the link and before staging cleanup.
+    let output = std::process::Command::new("strace")
+        .args([
+            "-f",
+            "-qq",
+            "-e",
+            "inject=renameat2:error=EINVAL",
+            "-e",
+            "inject=fsync:signal=SIGKILL:when=2",
+        ])
+        .arg(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "runtime::run_store::shared::tests::linked_journal_record_replays_once_after_process_death",
+        ])
+        .env(CHILD_ROOT, root.path())
+        .output()
+        .expect("Linux journal publication tests require strace");
+    assert_eq!(output.status.signal(), Some(libc::SIGKILL), "{output:?}");
+    let journal = files(&root.path().join(JOURNAL));
+    let (pending, bytes) = journal
+        .iter()
+        .find(|(path, _)| {
+            path.file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with(".pending-")
+        })
+        .unwrap();
+    assert_eq!(
+        &journal[&pending.with_file_name(filename(1, &digest(bytes)))],
+        bytes
+    );
+    fs::remove_dir(root.path().join(WRITER_CLAIM)).unwrap();
+    for _ in 0..2 {
+        let store = RunStore::open_shared(root.path()).unwrap();
+        let events: Vec<(i64, String)> = store
+            .connection
+            .prepare("SELECT occurred_at_ns, kind FROM events")
+            .unwrap()
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(events, [(7, "linked".into())]);
+        assert_eq!(journal, files(&root.path().join(JOURNAL)));
+    }
+}
+
+#[test]
+fn writer_claim_excludes_other_coordinators_until_released() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join(WRITER_CLAIM);
+    let first = WriterClaim::acquire(root.path()).unwrap();
+    assert!(matches!(
+        WriterClaim::acquire(root.path()),
+        Err(RunStoreError::SharedWriterClaimed(existing)) if existing == path
+    ));
+    drop(first);
+    assert!(!path.exists());
+
+    // An abrupt exit leaves ownership behind. A later opener must never
+    // assume the original coordinator stopped just because flock succeeded.
+    fs::create_dir(&path).unwrap();
+    assert!(matches!(
+        WriterClaim::acquire(root.path()),
+        Err(RunStoreError::SharedWriterClaimed(_))
+    ));
+    fs::remove_dir(&path).unwrap();
+    drop(WriterClaim::acquire(root.path()).unwrap());
+}
+
+#[cfg(unix)]
+#[test]
+fn guarded_directory_move_preserves_empty_destinations_and_dangling_links() {
+    let root = tempfile::tempdir().unwrap();
+    let source = root.path().join("source");
+    let destination = root.path().join("destination");
+    fs::create_dir(&source).unwrap();
+    fs::write(source.join("payload"), b"complete").unwrap();
+    fs::create_dir(&destination).unwrap();
+    let error = rename_directory_under_lock(&source, &destination).unwrap_err();
+    assert_eq!(error.kind(), io::ErrorKind::AlreadyExists);
+    assert!(fs::read_dir(&destination).unwrap().next().is_none());
+    fs::remove_dir(&destination).unwrap();
+
+    let missing = root.path().join("missing");
+    std::os::unix::fs::symlink(&missing, &destination).unwrap();
+    let error = rename_directory_under_lock(&source, &destination).unwrap_err();
+    assert_eq!(error.kind(), io::ErrorKind::AlreadyExists);
+    assert_eq!(fs::read_link(&destination).unwrap(), missing);
+    fs::remove_file(&destination).unwrap();
+
+    rename_directory_under_lock(&source, &destination).unwrap();
+    assert!(!source.exists());
+    assert_eq!(fs::read(destination.join("payload")).unwrap(), b"complete");
+}
+
 #[test]
 fn canonical_initialization_and_schema_columns_are_frozen_for_version_one() {
     let root = tempfile::tempdir().unwrap();

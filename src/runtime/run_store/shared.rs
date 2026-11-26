@@ -5,7 +5,7 @@ use sha2::{Digest, Sha256};
 use std::{
     collections::BTreeMap,
     fs::{self, File, OpenOptions},
-    io::{self, Write},
+    io,
     ops::Deref,
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
@@ -16,8 +16,52 @@ use crate::core::{
     canonical::{CanonicalValue, MAX_SAFE_INTEGER},
     durable::{DURABLE_RECORD_VERSION, DurableChange, DurableRecord, DurableRow},
 };
+use crate::runtime::publication::{self, PublicationError};
 
 const JOURNAL: &str = "journal";
+const WRITER_CLAIM: &str = ".shared-writer.active";
+
+// BeeGFS advisory locks can be client-local. Its metadata server arbitrates
+// mkdir across clients. A crash leaves the claim for an operator to clear once
+// the previous coordinator has stopped.
+#[derive(Debug)]
+struct WriterClaim(PathBuf);
+
+impl WriterClaim {
+    fn acquire(root: &Path) -> Result<Self, RunStoreError> {
+        let path = root.join(WRITER_CLAIM);
+        match fs::create_dir(&path) {
+            Ok(()) => Ok(Self(path)),
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+                Err(RunStoreError::SharedWriterClaimed(path))
+            }
+            Err(error) => Err(error.into()),
+        }
+    }
+}
+
+impl Drop for WriterClaim {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir(&self.0);
+    }
+}
+
+fn needs_writer_claim(root: &Path) -> io::Result<bool> {
+    #[cfg(target_os = "linux")]
+    {
+        const BEEGFS_SUPER_MAGIC: u32 = 0x19830326;
+        let directory = crate::runtime::platform_fs::open_directory(root)?;
+        let kind = rustix::fs::fstatfs(&directory)
+            .map_err(io::Error::from)?
+            .f_type;
+        Ok(kind as u32 == BEEGFS_SUPER_MAGIC)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = root;
+        Ok(false)
+    }
+}
 
 #[derive(Debug)]
 pub(super) struct SharedJournal {
@@ -25,9 +69,10 @@ pub(super) struct SharedJournal {
     next: u64,
     previous: Option<String>,
     failed: bool,
-    // Reconnected attempt and heartbeat stores must retain both resources.
-    _writer: File,
+    // Reconnected attempt and heartbeat stores retain scratch and ownership.
     _scratch: tempfile::TempDir,
+    writer_claim: Option<WriterClaim>,
+    _writer: File,
 }
 
 pub(crate) fn is_shared(root: &Path) -> bool {
@@ -37,8 +82,8 @@ pub(crate) fn is_shared(root: &Path) -> bool {
 impl RunStore {
     /// Opens a shared run with exactly one coordinator and a fresh local view.
     /// Shared storage must support locking, file synchronization, directory
-    /// synchronization on Unix, and atomic no-replace rename. Filesystem-specific
-    /// multi-host and server power-loss qualification is a separate requirement.
+    /// synchronization on Unix, and atomic rename. BeeGFS also uses a durable
+    /// writer claim to exclude other clients when advisory locks are local.
     pub fn open_shared(root: &Path) -> Result<Self, RunStoreError> {
         if !root.is_absolute()
             || !crate::runtime::platform_fs::is_real_directory(&fs::symlink_metadata(root)?)
@@ -72,8 +117,11 @@ impl RunStore {
             Err(error) => return Err(error.into()),
         }
         real_directory(&directory)?;
+        let writer_claim = needs_writer_claim(&root)?
+            .then(|| WriterClaim::acquire(&root))
+            .transpose()?;
         crate::runtime::platform_fs::complete_namespace_change(&root)?;
-        // A crashed publisher may have renamed a complete record without
+        // A crashed publisher may have installed a complete record without
         // synchronizing its parent. Settle that namespace before reusing it.
         crate::runtime::platform_fs::complete_namespace_change(&directory)?;
         let scratch = tempfile::Builder::new()
@@ -91,14 +139,18 @@ impl RunStore {
             next,
             previous,
             failed: false,
-            _writer: writer,
             _scratch: scratch,
+            writer_claim,
+            _writer: writer,
         };
         if journal.next == 0 {
             // Only initialization infrastructure may precede the first commit.
             // Existing run data must never be detached from its lost history.
             for entry in fs::read_dir(&root)? {
                 let name = entry?.file_name();
+                if name == WRITER_CLAIM && journal.writer_claim.is_some() {
+                    continue;
+                }
                 if name != JOURNAL && name != ".shared-writer.lock" {
                     return Err(invalid(
                         "populated shared run has no committed initialization record",
@@ -111,6 +163,16 @@ impl RunStore {
         store.root = root;
         store.shared = Some(Arc::new(Mutex::new(journal)));
         Ok(store)
+    }
+
+    pub(super) fn publish_prepared_directory(
+        &self,
+        stage: &Path,
+        destination: &Path,
+    ) -> Result<(), PublicationError> {
+        publication::publish_prepared_directory_with(stage, destination, |source, target| {
+            rename_directory(self.shared.as_deref(), source, target)
+        })
     }
 
     pub(super) fn transaction(&mut self) -> Result<StoreTransaction<'_>, RunStoreError> {
@@ -137,6 +199,10 @@ impl<'a> Deref for StoreTransaction<'a> {
 }
 
 impl StoreTransaction<'_> {
+    pub(super) fn rename_directory(&self, source: &Path, destination: &Path) -> io::Result<()> {
+        rename_directory(self.shared.map(Arc::as_ref), source, destination)
+    }
+
     pub fn commit(self) -> Result<(), RunStoreError> {
         let Some(shared) = self.shared else {
             return Ok(self.tx.commit()?);
@@ -193,6 +259,30 @@ impl StoreTransaction<'_> {
     }
 }
 
+fn rename_directory(
+    shared: Option<&Mutex<SharedJournal>>,
+    source: &Path,
+    destination: &Path,
+) -> io::Result<()> {
+    let Some(shared) = shared else {
+        return publication::rename_no_replace(source, destination);
+    };
+    // The journal owns the cross-process writer lock. Its mutex serializes
+    // every shared directory move across this coordinator's connections.
+    let _writer = shared
+        .lock()
+        .map_err(|_| io::Error::other("shared journal lock was poisoned"))?;
+    match publication::rename_no_replace(source, destination) {
+        #[cfg(unix)]
+        Err(error)
+            if _writer.writer_claim.is_some() && publication::no_replace_unsupported(&error) =>
+        {
+            rename_directory_under_lock(source, destination)
+        }
+        result => result,
+    }
+}
+
 impl SharedJournal {
     fn publish(&mut self, changes: Vec<DurableChange>) -> Result<(), RunStoreError> {
         if self.next > MAX_SAFE_INTEGER {
@@ -207,17 +297,15 @@ impl SharedJournal {
         let bytes =
             CanonicalValue::try_from(serde_json::to_value(record).expect("durable record"))?
                 .to_canonical_bytes()?;
-        let mut stage = tempfile::Builder::new()
-            .prefix(".pending-")
-            .tempfile_in(&self.directory)?;
-        stage.write_all(&bytes)?;
-        crate::runtime::durability::sync_all(stage.as_file())?;
+        let stage = publication::stage_synced_file(&self.directory, ".pending-", &bytes)?;
+        let destination = self.directory.join(filename(self.next, &digest(&bytes)));
         #[cfg(test)]
         crate::runtime::fault_injection::hit("shared.publish.before");
-        crate::runtime::publication::rename_no_replace(
-            stage.path(),
-            &self.directory.join(filename(self.next, &digest(&bytes))),
-        )?;
+        if self.writer_claim.is_some() {
+            publication::publish_file_no_replace(&stage, &destination)?;
+        } else {
+            publication::rename_no_replace(&stage, &destination)?;
+        }
         crate::runtime::platform_fs::complete_namespace_change(&self.directory)?;
         #[cfg(test)]
         crate::runtime::fault_injection::hit("shared.publish.after");
@@ -225,6 +313,23 @@ impl SharedJournal {
         self.next += 1;
         Ok(())
     }
+}
+
+#[cfg(unix)]
+fn rename_directory_under_lock(source: &Path, destination: &Path) -> io::Result<()> {
+    // symlink_metadata detects dangling symlinks as well as empty directories,
+    // both of which ordinary rename may otherwise replace.
+    match fs::symlink_metadata(destination) {
+        Ok(_) => return Err(io::ErrorKind::AlreadyExists.into()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => (),
+        Err(error) => return Err(error),
+    }
+    #[cfg(test)]
+    crate::runtime::fault_injection::hit("rename.before");
+    fs::rename(source, destination)?;
+    #[cfg(test)]
+    crate::runtime::fault_injection::hit("rename.after");
+    Ok(())
 }
 
 pub(super) fn install_capture(db: &Connection) -> Result<(), RunStoreError> {

@@ -381,10 +381,8 @@ fn publish_membership(
         return Err(RunStoreError::UnsafePath(parent.to_owned()));
     }
     crate::runtime::platform_fs::complete_namespace_change(root)?;
-    let stage = tempfile::tempdir_in(parent)?;
-    let source = stage.path().join("membership.json");
-    crate::runtime::publication::write_file(&source, &bytes)?;
-    match crate::runtime::publication::rename_no_replace(&source, &destination) {
+    let stage = crate::runtime::publication::stage_synced_file(parent, ".pending-", &bytes)?;
+    match crate::runtime::publication::publish_file_no_replace(&stage, &destination) {
         Ok(()) => (),
         Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
             if !crate::runtime::platform_fs::is_regular_file(&fs::symlink_metadata(&destination)?)

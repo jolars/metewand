@@ -21,10 +21,7 @@ use super::{
 };
 use crate::runtime::{
     local_tree::hash_local_tree,
-    publication::{
-        prepare_directory, publish_prepared_directory, rename_no_replace,
-        verify_finalized_directory, write_file,
-    },
+    publication::{prepare_directory, verify_finalized_directory, write_file},
 };
 
 /// Results of an explicit recovery pass, ordered by store path or attempt ID.
@@ -209,7 +206,7 @@ impl RunStore {
                 ensure_directory(&quarantine)?;
                 crate::runtime::platform_fs::complete_namespace_change(&objects)?;
                 let target = quarantine.join(source.file_name().expect("stage has a name"));
-                rename_no_replace(&source, &target)?;
+                tx.rename_directory(&source, &target)?;
                 crate::runtime::platform_fs::complete_namespace_change(&objects)?;
                 crate::runtime::platform_fs::complete_namespace_change(&quarantine)?;
                 report
@@ -478,7 +475,7 @@ impl RunStore {
             .map_err(crate::runtime::publication::PublicationError::from)?;
         let relative_path = format!("artifacts/attempt-{}", hex(digest));
         let path = root.join(&relative_path);
-        publish_prepared_directory(&object, &path)?;
+        self.publish_prepared_directory(&object, &path)?;
         let (_, mut artifact) = completed_metadata(root, &relative_path, finished)?;
         let tx = self.transaction()?;
         let checked = clock().max(finished);

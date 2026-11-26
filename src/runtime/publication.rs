@@ -614,8 +614,16 @@ pub(crate) fn publish_prepared_directory(
     stage: &Path,
     destination: &Path,
 ) -> Result<(), PublicationError> {
+    publish_prepared_directory_with(stage, destination, rename_no_replace)
+}
+
+pub(crate) fn publish_prepared_directory_with(
+    stage: &Path,
+    destination: &Path,
+    rename: impl FnOnce(&Path, &Path) -> io::Result<()>,
+) -> Result<(), PublicationError> {
     verify_finalized_directory(stage)?;
-    match rename_no_replace(stage, destination) {
+    match rename(stage, destination) {
         Ok(()) => (),
         Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
             verify_finalized_directory(destination)?;
@@ -643,6 +651,43 @@ pub(crate) fn publish_prepared_directory(
         )?;
     }
     Ok(())
+}
+
+/// Stages synced bytes directly beside their destination and closes the file.
+pub(crate) fn stage_synced_file(
+    directory: &Path,
+    prefix: &str,
+    bytes: &[u8],
+) -> io::Result<tempfile::TempPath> {
+    let mut stage = Builder::new().prefix(prefix).tempfile_in(directory)?;
+    stage.write_all(bytes)?;
+    crate::runtime::durability::sync_all(stage.as_file())?;
+    Ok(stage.into_temp_path())
+}
+
+/// Publishes a synced private file without replacing an existing name.
+/// The caller owns cleanup of the staging name and syncs the destination parent.
+pub(crate) fn publish_file_no_replace(source: &Path, destination: &Path) -> io::Result<()> {
+    match rename_no_replace(source, destination) {
+        #[cfg(unix)]
+        Err(error) if no_replace_unsupported(&error) => {
+            #[cfg(test)]
+            crate::runtime::fault_injection::hit("link.before");
+            fs::hard_link(source, destination)?;
+            #[cfg(test)]
+            crate::runtime::fault_injection::hit("link.after");
+            Ok(())
+        }
+        result => result,
+    }
+}
+
+#[cfg(unix)]
+pub(crate) fn no_replace_unsupported(error: &io::Error) -> bool {
+    matches!(
+        error.kind(),
+        io::ErrorKind::InvalidInput | io::ErrorKind::Unsupported
+    ) || error.raw_os_error() == Some(libc::ENOSYS)
 }
 
 #[cfg(any(
@@ -1107,5 +1152,43 @@ mod tests {
         std::os::unix::net::UnixListener::bind(stage.path().join("socket")).unwrap();
         assert!(publish(stage, &root.path().join("object")).is_err());
         assert_eq!(fs::read_dir(root.path()).unwrap().count(), 0);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn synced_file_publication_falls_back_without_replacing_an_existing_file() {
+        const CHILD_ROOT: &str = "METEWAND_TEST_FILE_PUBLICATION_ROOT";
+        if let Some(root) = std::env::var_os(CHILD_ROOT) {
+            let root = PathBuf::from(root);
+            let source = root.join("staged");
+            let destination = root.join("published");
+            write_file(&source, b"complete").unwrap();
+            publish_file_no_replace(&source, &destination).unwrap();
+            assert!(source.exists(), "hard link leaves the staging name intact");
+            let conflict = root.join("conflict");
+            write_file(&conflict, b"different").unwrap();
+            let error = publish_file_no_replace(&conflict, &destination).unwrap_err();
+            assert_eq!(error.kind(), io::ErrorKind::AlreadyExists);
+            assert_eq!(fs::read(destination).unwrap(), b"complete");
+            assert_eq!(fs::read(conflict).unwrap(), b"different");
+            return;
+        }
+
+        let root = tempfile::tempdir().unwrap();
+        let output = std::process::Command::new("strace")
+            .args(["-f", "-qq", "-e", "inject=renameat2:error=EINVAL"])
+            .arg(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "runtime::publication::tests::synced_file_publication_falls_back_without_replacing_an_existing_file",
+            ])
+            .env(CHILD_ROOT, root.path())
+            .output()
+            .expect("Linux publication tests require strace");
+        assert!(output.status.success(), "{output:?}");
+        assert_eq!(
+            fs::read(root.path().join("published")).unwrap(),
+            b"complete"
+        );
     }
 }

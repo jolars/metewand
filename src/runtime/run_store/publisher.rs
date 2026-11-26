@@ -15,9 +15,7 @@ use super::{
 };
 use crate::runtime::{
     local_tree::hash_local_tree,
-    publication::{
-        prepare_directory, publish_prepared_directory, verify_finalized_directory, write_file,
-    },
+    publication::{prepare_directory, verify_finalized_directory, write_file},
 };
 
 /// Directory artifact kinds that can be published independently of completion.
@@ -124,7 +122,8 @@ impl RunStore {
     /// The runtime writes a canonical, versioned coordination outcome binding
     /// this reservation, revision, outcome, and dependency metadata. It validates
     /// the complete inventory, synchronizes every file and directory, publishes
-    /// with atomic no-replace rename, and synchronizes both rename parents.
+    /// with an atomic directory move that preserves existing objects, and
+    /// synchronizes both rename parents.
     /// Only then does a transaction recheck ownership, staging lease, claim,
     /// observation acceptance, and references and commit the terminal state.
     /// `clock` is sampled before staging, before writing the outcome, and after
@@ -262,7 +261,7 @@ impl RunStore {
             .parent()
             .expect("stage has an artifact parent");
         let destination = parent.join(&name);
-        publish_prepared_directory(&stage.object, &destination)?;
+        self.publish_prepared_directory(&stage.object, &destination)?;
         verify_finalized_directory(&destination)?;
         if hash_local_tree(&destination)
             .map_err(crate::runtime::publication::PublicationError::from)?

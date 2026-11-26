@@ -409,12 +409,12 @@ pub(super) fn run_owner(output: &Path) -> Result<String, ArtifactStoreError> {
         let document = canonical(serde_json::json!({
             "schema_version": 1, "root": format!("run-v1:{}", hex(ContentDigest::new(nonce)))
         }))?;
-        let mut stage = tempfile::Builder::new()
-            .prefix(".pending-cache-owner-")
-            .tempfile_in(output)?;
-        stage.write_all(&document.to_canonical_bytes()?)?;
-        crate::runtime::durability::sync_all(stage.as_file())?;
-        match crate::runtime::publication::rename_no_replace(stage.path(), &path) {
+        let stage = crate::runtime::publication::stage_synced_file(
+            output,
+            ".pending-cache-owner-",
+            &document.to_canonical_bytes()?,
+        )?;
+        match crate::runtime::publication::publish_file_no_replace(&stage, &path) {
             Ok(()) => (),
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => (),
             Err(error) => return Err(error.into()),

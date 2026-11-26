@@ -181,6 +181,10 @@ pub enum RunStoreError {
     Capability(&'static str),
     #[error("run-store coordination lock is busy")]
     Busy,
+    #[error(
+        "shared writer claim exists at {0}; after confirming the previous coordinator has stopped, remove the empty claim directory to resume"
+    )]
+    SharedWriterClaimed(PathBuf),
     #[error("run-store I/O failed: {0}")]
     Io(#[from] io::Error),
     #[error("run-store SQLite operation failed: {0}")]

@@ -235,9 +235,18 @@ leases expire. Recorded failures still require `--retry`. Status, explanation,
 export, and archive commands read shared runs directly.
 
 Existing SQLite runs keep their current storage format. Choose a new directory
-to use shared publication. Required locking, synchronization, and atomic rename
-must work on the shared filesystem. Qualification for specific HPC filesystems
-and storage-server power loss remains pending.
+to use shared publication. Shared run storage requires synchronization,
+atomic no-replace rename, and writer exclusion across hosts.
+
+On Linux BeeGFS, Metewand also uses a directory claim to coordinate writers
+across nodes. When BeeGFS lacks atomic no-replace rename, Metewand publishes
+complete journal files with hard links and moves complete artifact directories
+under that claim. If a job is killed before it can release the claim, confirm that
+the previous coordinator and its workers have stopped. Then remove the empty
+`.shared-writer.active` directory inside the shared run with `rmdir` and resume
+with the same output directory. For Slurm, check the previous job's terminal
+state before removing the claim. Storage-server power loss requires separate
+qualification.
 
 To reuse verified datasets across nodes, initialize a separate Metewand-owned
 shared cache, then pass it to each run:

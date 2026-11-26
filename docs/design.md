@@ -278,8 +278,12 @@ backend publishes an immutable transaction journal and artifacts there, rebuildi
 SQLite in host-local scratch on every invocation.
 Replay uses the local primary-key indexes to find rows and compares every
 field against the journal's before- and after-images.
-Each shared run has one coordinator. Disjoint distributed shards and qualification
-on specific HPC filesystems remain future work.
+Each shared run has one coordinator. Linux BeeGFS runs claim a directory on
+shared storage so the coordinator can exclude writers on other nodes even
+when advisory locks are node-local. When BeeGFS lacks atomic no-replace rename,
+the claim also protects hard-link publication of journal records and ordinary
+rename of fully staged directories. Storage-server power loss
+and disjoint distributed shards remain separate concerns.
 
 Portable result archives provide the first recovery boundary. An archive retains
 terminal attempts and pending work independently of SQLite. Restoring it rebuilds
