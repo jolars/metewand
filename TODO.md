@@ -289,7 +289,7 @@ runs and scientific identities as the storage model evolves.
   boundaries and recover after losing all node-local state.
 - [x] Support shared immutable dataset caches with portable retention roots and
   safe reclamation, without a shared SQLite WAL catalog.
-- [ ] Make interrupted runs archivable without starting more benchmark work. On
+- [x] Make interrupted runs archivable without starting more benchmark work. On
   a scheduler's pre-timeout signal, stop dispatching, settle in-flight
   attempts as interrupted, and preserve completed profiles and calibration
   decisions. Provide a recovery-only operation for runs left with unfinished

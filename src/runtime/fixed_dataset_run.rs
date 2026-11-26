@@ -258,6 +258,7 @@ pub enum FixedDatasetFailureKind {
     ScientificTimeout,
     /// A worker exceeded its phase deadline.
     PhaseTimeout,
+    Interrupted,
     /// The canonical result failed manifest or schema validation.
     InvalidResult,
     /// The evaluator failed or produced invalid metrics.
@@ -282,6 +283,7 @@ impl FixedDatasetFailureKind {
             Self::ImplementationCrash => "implementation_crash",
             Self::ScientificTimeout => "scientific_timeout",
             Self::PhaseTimeout => "phase_timeout",
+            Self::Interrupted => "interrupted_attempt",
             Self::InvalidResult => "invalid_result",
             Self::EvaluatorFailure => "evaluator_failure",
             Self::ProtocolError => "protocol_error",
@@ -409,7 +411,19 @@ fn run_checked(
     if let Some(started) = timing.started
         && !timing.finished
     {
-        measurements.timed_wall_time_ns = Measurement::elapsed(started.elapsed(), false);
+        let finished = match &result {
+            Err(
+                FixedDatasetRunError::Implementation {
+                    source: WorkerSessionError::Interrupted { stopped_at, .. },
+                }
+                | FixedDatasetRunError::ImplementationLaunch {
+                    source: LocalWorkerLaunchError::Interrupted { stopped_at },
+                },
+            ) => *stopped_at,
+            _ => Instant::now(),
+        };
+        measurements.timed_wall_time_ns =
+            Measurement::elapsed(finished.saturating_duration_since(started), false);
     }
     // Owned sessions have stopped here; failures on a borrowed session cause
     // its lifecycle owner to discard it after this final integrity check.
@@ -937,6 +951,12 @@ impl FixedDatasetRunError {
             Self::MetricDisagreement(_) => FixedDatasetFailureKind::MetricDisagreement,
             Self::DatasetMutation { .. } => FixedDatasetFailureKind::DatasetMutation,
             Self::ScientificTimeout => FixedDatasetFailureKind::ScientificTimeout,
+            Self::ImplementationLaunch {
+                source: LocalWorkerLaunchError::Interrupted { .. },
+            }
+            | Self::EvaluatorLaunch {
+                source: LocalWorkerLaunchError::Interrupted { .. },
+            } => FixedDatasetFailureKind::Interrupted,
             Self::Coordination(_)
             | Self::InvalidScientificTimeout
             | Self::NonAbsolutePath
@@ -971,6 +991,7 @@ fn classify_session(source: &WorkerSessionError, implementation: bool) -> FixedD
             source: crate::runtime::worker_process::WorkerProcessError::LogDrainDeadline { .. },
             ..
         } => FixedDatasetFailureKind::ControlEnforcementLost,
+        WorkerSessionError::Interrupted { .. } => FixedDatasetFailureKind::Interrupted,
         WorkerSessionError::Timeout { .. } => FixedDatasetFailureKind::PhaseTimeout,
         WorkerSessionError::ScientificTimeout { .. } => FixedDatasetFailureKind::ScientificTimeout,
         WorkerSessionError::StreamProtocol { .. }

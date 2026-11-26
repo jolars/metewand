@@ -266,3 +266,12 @@ impl<D> RunReport<D> {
                 })
     }
 }
+
+/// Receipt for an explicit recovery pass in the v1 machine envelope.
+#[derive(Debug, serde::Serialize)]
+pub struct RecoveryReceipt {
+    pub command: &'static str,
+    pub output_directory: std::path::PathBuf,
+    pub recovered_attempts: usize,
+    pub remaining_attempts: u64,
+}

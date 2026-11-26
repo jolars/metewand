@@ -1,6 +1,20 @@
 {
   "version": 1,
   "valid": [
+    {
+      "name": "run recovery receipt",
+      "schema": "machine-output",
+      "instance": {
+        "schema_version": 1,
+        "kind": "result",
+        "data": {
+          "command": "recover",
+          "output_directory": "/project/run",
+          "recovered_attempts": 2,
+          "remaining_attempts": 0
+        }
+      }
+    },
     {"name": "shared-cache-v2-initial-checkpoint", "schema": "shared-cache-record-v2", "instance": {"schema_version": 2, "sequence": 0, "previous_sha256": null, "checkpoint": {"objects": {}, "roots": {}, "pending": {}}}},
     {"name": "shared-cache-v2-root-delta", "schema": "shared-cache-record-v2", "instance": {"schema_version": 2, "sequence": 3, "previous_sha256": "1111111111111111111111111111111111111111111111111111111111111111", "delta": {"kind": "root", "digest": "2222222222222222222222222222222222222222222222222222222222222222", "name": "manual:keep", "add": true}}},
     {"name": "shared-cache-empty-initialization", "schema": "shared-cache-record", "instance": {"schema_version": 1, "sequence": 0, "previous_sha256": null, "snapshot": {"objects": {}, "roots": {}, "pending": {}}}},
@@ -2531,6 +2545,19 @@
     }
   ],
   "invalid": [
+    {
+      "name": "run recovery receipt requires the remaining attempt count",
+      "schema": "machine-output",
+      "instance": {
+        "schema_version": 1,
+        "kind": "result",
+        "data": {
+          "command": "recover",
+          "output_directory": "/project/run",
+          "recovered_attempts": 2
+        }
+      }
+    },
     {"name": "shared-cache-v2-missing-delta", "schema": "shared-cache-record-v2", "instance": {"schema_version": 2, "sequence": 3, "previous_sha256": "1111111111111111111111111111111111111111111111111111111111111111", "checkpoint": {"objects": {}, "roots": {}, "pending": {}}}},
     {"name": "shared-cache-v2-initialization-with-delta", "schema": "shared-cache-record-v2", "instance": {"schema_version": 2, "sequence": 0, "previous_sha256": null, "checkpoint": {"objects": {}, "roots": {}, "pending": {}}, "delta": {"kind": "forget", "digest": "2222222222222222222222222222222222222222222222222222222222222222"}}},
     {"name": "shared-cache-unsupported-version", "schema": "shared-cache-record", "instance": {"schema_version": 2, "sequence": 0, "previous_sha256": null, "snapshot": {"objects": {}, "roots": {}, "pending": {}}}},

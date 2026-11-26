@@ -458,13 +458,15 @@ fn validate_fresh(
                 "fresh progress counts disagree with committed attempts",
             ));
         }
+        let calibration = run["definition"]["calibration"].is_object();
         let mut consumed = 0_u64;
         let mut conservative = 0_u64;
         for budget in rows("fresh-budget") {
             let attempt = reference(attempts, budget, "attempt_id")?;
-            if sequence_members
-                .iter()
-                .any(|member| member["slot_id"] == attempt["slot_id"])
+            if !(calibration && attempt["failure_code"] == "interrupted_attempt")
+                && sequence_members
+                    .iter()
+                    .any(|member| member["slot_id"] == attempt["slot_id"])
             {
                 let reserved = integer(budget, "reserved_ns")?;
                 let charged = budget["charged_ns"].as_u64().unwrap_or(reserved);

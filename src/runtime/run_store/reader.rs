@@ -35,40 +35,7 @@ impl StoreSnapshot {
             return Err(RunStoreError::UnsafePath(root.to_owned()));
         }
         let root = fs::canonicalize(root)?;
-        let private = tempfile::Builder::new()
-            .prefix("metewand-inspect-")
-            .tempdir()?;
-        crate::runtime::platform_fs::set_private_directory(private.path())?;
-        // Temporary roots can have symlinked ancestors that SQLite's NOFOLLOW rejects.
-        let private_root = fs::canonicalize(private.path())?;
-        let shared = super::shared::is_shared(&root);
-        if !shared {
-            copy_database_snapshot(&root, &private_root, "run.sqlite3")?;
-        }
-        let mut connection = Connection::open_with_flags(
-            private_root.join("run.sqlite3"),
-            (if shared {
-                OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE
-            } else {
-                OpenFlags::SQLITE_OPEN_READ_ONLY
-            }) | OpenFlags::SQLITE_OPEN_NO_MUTEX
-                | OpenFlags::SQLITE_OPEN_NOFOLLOW,
-        )?;
-        if shared {
-            super::shared::read_shared(&root, &mut connection)?;
-        }
-        connection.pragma_update(None, "query_only", true)?;
-        let version = connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
-        if version != RUN_STORE_SCHEMA_VERSION
-            && version != super::BUFFERED_RUN_STORE_SCHEMA_VERSION
-            && version != super::FRESH_RUN_STORE_SCHEMA_VERSION
-        {
-            return Err(RunStoreError::UnsupportedSchema {
-                version,
-                reason: "inspection requires an initialized supported store",
-            });
-        }
-        verify_schema(&connection)?;
+        let (connection, _private, version) = open_snapshot(&root)?;
         let mut tables = BTreeMap::new();
         for (kind, sql) in QUERIES {
             if purpose != SnapshotPurpose::Archive
@@ -147,6 +114,46 @@ impl StoreSnapshot {
 // its WAL index without touching the source, including after a writer's crash.
 // Both files must remain unchanged throughout the copy so a checkpoint cannot
 // mix main-file pages from different commits. A busy store fails boundedly.
+pub(super) fn open_snapshot(
+    root: &Path,
+) -> Result<(Connection, tempfile::TempDir, u32), RunStoreError> {
+    let private = tempfile::Builder::new()
+        .prefix("metewand-inspect-")
+        .tempdir()?;
+    crate::runtime::platform_fs::set_private_directory(private.path())?;
+    // Temporary roots can have symlinked ancestors that SQLite's NOFOLLOW rejects.
+    let private_root = fs::canonicalize(private.path())?;
+    let shared = super::shared::is_shared(root);
+    if !shared {
+        copy_database_snapshot(root, &private_root, "run.sqlite3")?;
+    }
+    let mut connection = Connection::open_with_flags(
+        private_root.join("run.sqlite3"),
+        (if shared {
+            OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE
+        } else {
+            OpenFlags::SQLITE_OPEN_READ_ONLY
+        }) | OpenFlags::SQLITE_OPEN_NO_MUTEX
+            | OpenFlags::SQLITE_OPEN_NOFOLLOW,
+    )?;
+    if shared {
+        super::shared::read_shared(root, &mut connection)?;
+    }
+    connection.pragma_update(None, "query_only", true)?;
+    let version = connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
+    if version != RUN_STORE_SCHEMA_VERSION
+        && version != super::BUFFERED_RUN_STORE_SCHEMA_VERSION
+        && version != super::FRESH_RUN_STORE_SCHEMA_VERSION
+    {
+        return Err(RunStoreError::UnsupportedSchema {
+            version,
+            reason: "inspection requires an initialized supported store",
+        });
+    }
+    verify_schema(&connection)?;
+    Ok((connection, private, version))
+}
+
 pub(crate) fn copy_database_snapshot(
     root: &Path,
     target: &Path,

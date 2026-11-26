@@ -1186,7 +1186,9 @@ fn evidence_error(error: impl std::fmt::Display) -> ArchiveError {
 pub enum ArchiveError {
     #[error("unsupported result archive compatibility version")]
     UnsupportedVersion,
-    #[error("archive contains an unfinished attempt; explicitly recover the run before archiving")]
+    #[error(
+        "archive contains an unfinished attempt; run `metewand recover --output-dir PATH` before archiving"
+    )]
     Unsettled,
     #[error("archive exceeds --max-entries or --max-bytes")]
     Limit,

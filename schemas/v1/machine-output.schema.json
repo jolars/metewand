@@ -20,6 +20,33 @@
     {
       "if": {
         "properties": {
+          "kind": { "const": "result" },
+          "data": {
+            "type": "object",
+            "properties": { "command": { "const": "recover" } },
+            "required": ["command"]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "command": { "const": "recover" },
+              "output_directory": { "type": "string", "minLength": 1 },
+              "recovered_attempts": { "type": "integer", "minimum": 0 },
+              "remaining_attempts": { "type": "integer", "minimum": 0 }
+            },
+            "required": ["command", "output_directory", "recovered_attempts", "remaining_attempts"],
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
           "kind": {
             "const": "result"
           },

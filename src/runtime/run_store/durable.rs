@@ -69,20 +69,34 @@ impl RunStore {
     }
 
     pub fn open_fresh(root: &Path) -> Result<Self, RunStoreError> {
-        Self::open_version(root, &|_| Ok(()), 3)
+        Self::open_version(root, &|_| Ok(()), 3, true)
     }
 
     pub fn open_buffered(root: &Path) -> Result<Self, RunStoreError> {
-        Self::open_version(root, &|_| Ok(()), 2)
+        Self::open_version(root, &|_| Ok(()), 2, true)
     }
 
     fn open_checked(root: &Path, check: &Check<'_>) -> Result<Self, RunStoreError> {
-        Self::open_version(root, check, 1)
+        Self::open_version(root, check, 1, true)
     }
 
-    fn open_version(root: &Path, check: &Check<'_>, layout: u32) -> Result<Self, RunStoreError> {
+    pub fn open_existing(root: &Path) -> Result<Self, RunStoreError> {
+        if !crate::runtime::platform_fs::is_real_directory(&fs::symlink_metadata(root)?) {
+            return Err(RunStoreError::UnsafePath(root.to_owned()));
+        }
+        // Validate a private snapshot before creating locks or changing permissions.
+        super::reader::open_snapshot(&fs::canonicalize(root)?)?;
+        Self::open_version(root, &|_| Ok(()), 1, false)
+    }
+
+    fn open_version(
+        root: &Path,
+        check: &Check<'_>,
+        layout: u32,
+        create: bool,
+    ) -> Result<Self, RunStoreError> {
         if super::shared::is_shared(root) {
-            return Self::open_shared(root);
+            return Self::open_shared_mode(root, create);
         }
         if crate::runtime::archive::is_collection(root) {
             return Err(RunStoreError::InvalidAttempt(
@@ -127,9 +141,16 @@ impl RunStore {
                 Err(error) => return Err(error.into()),
             }
         }
-        let mut connection = open_database(&database_path)?;
+        let mut connection = open_database_mode(&database_path, create)?;
         // Check compatibility before changing persistent journal settings.
         verify_schema(&connection)?;
+        if !create
+            && connection.pragma_query_value(None, "user_version", |r| r.get::<_, u32>(0))? == 0
+        {
+            return Err(RunStoreError::InvalidAttempt(
+                "recovery requires an initialized run store",
+            ));
+        }
         configure(&connection)?;
         let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let version: u32 = tx.pragma_query_value(None, "user_version", |r| r.get(0))?;
@@ -434,13 +455,21 @@ fn reject_network_filesystem(file: &File) -> Result<(), RunStoreError> {
 }
 
 fn open_database(path: &Path) -> Result<Connection, RunStoreError> {
+    open_database_mode(path, true)
+}
+
+fn open_database_mode(path: &Path, create: bool) -> Result<Connection, RunStoreError> {
     #[cfg(test)]
     crate::runtime::fault_injection::hit("database.open.before");
     // Exclude URI interpretation and VFS overrides that can disable locking.
     let connection = Connection::open_with_flags(
         path,
         OpenFlags::SQLITE_OPEN_READ_WRITE
-            | OpenFlags::SQLITE_OPEN_CREATE
+            | if create {
+                OpenFlags::SQLITE_OPEN_CREATE
+            } else {
+                OpenFlags::empty()
+            }
             | OpenFlags::SQLITE_OPEN_NO_MUTEX
             | OpenFlags::SQLITE_OPEN_NOFOLLOW,
     )?;

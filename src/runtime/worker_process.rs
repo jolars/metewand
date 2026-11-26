@@ -459,6 +459,11 @@ impl WorkerProcess {
             });
         }
 
+        if crate::runtime::run_stop::requested() {
+            return Err(WorkerProcessError::Interrupted {
+                stopped_at: Instant::now(),
+            });
+        }
         let mut child = command.spawn().map_err(WorkerProcessError::Spawn)?;
         drop(worker_request_reader);
         drop(worker_response_writer);
@@ -837,6 +842,9 @@ impl std::fmt::Display for WorkerLogStream {
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum WorkerProcessError {
+    #[cfg(unix)]
+    #[error("run interrupted before starting the worker process")]
+    Interrupted { stopped_at: Instant },
     /// Windows has no equivalent of an isolated POSIX group interrupt.
     #[error("cooperative worker interruption is unavailable on this platform")]
     InterruptUnsupported,

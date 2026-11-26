@@ -141,6 +141,9 @@ pub(super) fn calibrate(
     let mut verified_saved = false;
     let mut blocked = false;
     for group in groups {
+        if crate::runtime::run_stop::requested() {
+            break;
+        }
         if !group.candidates.iter().any(|&index| {
             (0..resolved.candidates[index].measurements.len())
                 .any(|measurement| is_selected((index, measurement)))
@@ -228,6 +231,9 @@ fn calibrate_group(
                 &coordinate,
                 group.basis,
                 |store, pilot, worker| {
+                    if crate::runtime::run_stop::requested() {
+                        return Ok(false);
+                    }
                     if options
                         .max_attempts
                         .is_some_and(|n| attempts.len() as u64 >= n)
@@ -315,6 +321,9 @@ fn calibrate_group(
                 .next_limit(limit, group.ceiling)
                 .map_err(RunError::Unsupported)?
         {
+            if crate::runtime::run_stop::requested() {
+                return Ok(None);
+            }
             limit = next;
             round += 1;
             continue;

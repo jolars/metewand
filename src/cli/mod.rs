@@ -42,6 +42,7 @@ Usage:
   metewand [--output FORMAT] plan [EXPERIMENT]... [--manifest PATH] [--experiment NAME] [--implementation NAME] [--dataset NAME] [--problem NAME] [--verbose]
   metewand [--output FORMAT] lock [--manifest PATH] [--check]
   metewand [--output FORMAT] run [EXPERIMENT]... [--manifest PATH] [--output-dir PATH] [--implementation NAME] [--dataset NAME] [--problem NAME] [--runtime-config PATH] [--locked] [--shared] [--verbose]
+  metewand [--output FORMAT] recover --output-dir PATH
   metewand [--output FORMAT] status [--manifest PATH] [--output-dir PATH]
   metewand [--output FORMAT] explain <id> [--manifest PATH] [--output-dir PATH]
   metewand [--output FORMAT] export --output-dir PATH --destination PATH [--format json|jsonl|csv] [--require-complete]
@@ -57,6 +58,7 @@ Commands:
   plan    Summarize the logical plan without side effects.
   lock    Prepare or verify exact Nix environments and worker launches.
   run     Execute trusted local workers and publish validated outcomes.
+  recover Settle expired attempts in an existing run without starting workers.
   status  Inspect planned slots, durable attempts, and resumable state.
   explain Explain a stable identity and its recorded relationships.
   export  Export verified history or rebuild the disposable JSONL index.
@@ -106,6 +108,33 @@ fn write_stdout(
     result
 }
 
+// Keep JSON Lines backpressure interruptible even if SIGUSR1 lands on
+// a worker thread. Restore the caller's descriptor flags before returning.
+#[cfg(unix)]
+fn write_run_stream(fd: impl std::os::fd::AsFd, mut bytes: &[u8]) -> io::Result<()> {
+    use crate::runtime::run_stop;
+    use rustix::{fs, io::Errno};
+
+    let flags = fs::fcntl_getfl(&fd)?;
+    fs::fcntl_setfl(&fd, flags | fs::OFlags::NONBLOCK)?;
+    let result = loop {
+        if bytes.is_empty() {
+            break Ok(());
+        }
+        match rustix::io::write(&fd, bytes) {
+            Ok(0) => break Err(io::ErrorKind::WriteZero.into()),
+            Ok(written) => bytes = &bytes[written..],
+            Err(Errno::INTR) => continue,
+            Err(Errno::AGAIN) if !run_stop::requested() => {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            Err(error) => break Err(error.into()),
+        }
+    };
+    let restore = fs::fcntl_setfl(&fd, flags).map_err(io::Error::from);
+    result.and(restore)
+}
+
 fn write_success(result: &CommandResult, format: OutputFormat) -> ExitCode {
     let _ = io::stderr().write_all(result.diagnostics().as_bytes());
     match write_stdout(|output| write_result(output, result, format)) {
@@ -121,6 +150,17 @@ fn write_success(result: &CommandResult, format: OutputFormat) -> ExitCode {
 }
 
 fn write_failure(error: &CommandError, output_format: OutputFormat) -> ExitCode {
+    #[cfg(unix)]
+    if crate::runtime::run_stop::requested() {
+        if output_format.is_machine()
+            && error.report_on_stdout()
+            && let Ok(output) = render_diagnostic(&error.diagnostic, output_format)
+        {
+            let _ = write_run_stream(io::stdout(), output.as_bytes());
+        }
+        let _ = write_run_stream(io::stderr(), error.diagnostic.render_human().as_bytes());
+        return ExitCode::from(error.exit_code);
+    }
     if output_format.is_machine() && error.report_on_stdout() {
         match render_diagnostic(&error.diagnostic, output_format) {
             Ok(output) => {
@@ -229,6 +269,7 @@ fn run(arguments: &[OsString], output_format: OutputFormat) -> Result<CommandRes
         "plan" => plan_command(&arguments[1..]),
         "lock" => locking::command(&arguments[1..]),
         "run" => execution::command(&arguments[1..], output_format),
+        "recover" => execution::recover_command(&arguments[1..]),
         "status" => inspection::command("status", &arguments[1..]),
         "explain" => inspection::command("explain", &arguments[1..]),
         "export" => export::command(&arguments[1..]),

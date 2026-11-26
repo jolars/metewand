@@ -98,6 +98,7 @@ impl WorkerSession {
         self.ensure_usable()?;
         self.verify_controls()?;
         let phase = WorkerPhase::Execute;
+        self.check_run_stop(phase)?;
         let timeout = if stopping {
             self.timeouts.shutdown
         } else {
@@ -127,6 +128,7 @@ impl WorkerSession {
             self.discard_after_timeout();
             return Err(timeout_error());
         }
+        self.check_run_stop(phase)?;
         if self
             .protocol_sender
             .as_ref()
@@ -140,7 +142,7 @@ impl WorkerSession {
             self.discard();
             return Err(WorkerSessionError::ProtocolThreadStopped { phase });
         }
-        let mut value = match receiver.recv_timeout(limit) {
+        let mut value = match self.wait_for_reply(phase, &receiver, started, limit)? {
             Ok(Ok(Some(v))) => v,
             Ok(Ok(None)) => {
                 self.discard();

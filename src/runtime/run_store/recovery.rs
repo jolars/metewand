@@ -68,6 +68,14 @@ struct Evidence {
 }
 
 impl RunStore {
+    pub fn unfinished_attempts(&self) -> Result<u64, RunStoreError> {
+        Ok(self.connection.query_row(
+            "SELECT count(*) FROM attempts WHERE finished_at_ns IS NULL",
+            [],
+            |row| row.get::<_, i64>(0),
+        )? as u64)
+    }
+
     /// Recovers expired attempts and abandoned publications in this store.
     ///
     /// This explicit mutation never runs during `open`. `clock` must supply

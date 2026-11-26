@@ -60,6 +60,11 @@ pub fn launch_trusted_local_worker_with_secrets(
     log_limits: WorkerLogLimits,
     secrets: &WorkerSecrets,
 ) -> Result<WorkerProcess, LocalWorkerLaunchError> {
+    if super::run_stop::requested() {
+        return Err(LocalWorkerLaunchError::Interrupted {
+            stopped_at: std::time::Instant::now(),
+        });
+    }
     let mut variables = resolve_worker_environment(&launch.environment_variables)?;
     secrets.validate(&variables)?;
     let private_root = fs::canonicalize(private_root)
@@ -136,9 +141,20 @@ pub fn launch_trusted_local_worker_with_secrets(
         });
     }
 
+    if super::run_stop::requested() {
+        return Err(LocalWorkerLaunchError::Interrupted {
+            stopped_at: std::time::Instant::now(),
+        });
+    }
+
     #[cfg(unix)]
     let mut process = WorkerProcess::spawn_redacted(command, log_limits, Redactor::new(secrets))
-        .map_err(LocalWorkerLaunchError::Spawn)?;
+        .map_err(|error| match error {
+            WorkerProcessError::Interrupted { stopped_at } => {
+                LocalWorkerLaunchError::Interrupted { stopped_at }
+            }
+            error => LocalWorkerLaunchError::Spawn(error),
+        })?;
     #[cfg(windows)]
     let mut process =
         WorkerProcess::spawn_windows(command, log_limits, Redactor::new(secrets), true)
@@ -203,6 +219,8 @@ fn interpreter_directory(path: std::path::PathBuf) -> std::path::PathBuf {
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum LocalWorkerLaunchError {
+    #[error("run interrupted before worker launch")]
+    Interrupted { stopped_at: std::time::Instant },
     /// The allowlist or its secret bindings violate worker environment rules.
     #[error(transparent)]
     Environment(#[from] WorkerEnvironmentError),

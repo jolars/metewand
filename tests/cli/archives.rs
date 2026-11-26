@@ -1495,3 +1495,465 @@ fn archive_cli_validates_limits_options_and_all_output_formats() {
         assert_eq!(invoke(root.path(), &args).status.code(), Some(2));
     }
 }
+
+#[cfg(unix)]
+#[test]
+fn scheduler_interruption_archives_and_resumes_committed_work() {
+    let root = tempfile::tempdir().unwrap();
+    let repo = root.path().join("repo");
+    copy(
+        &Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/fixed-dataset"),
+        &repo,
+    );
+    let gate = root.path().join("gate");
+    let marker = root.path().join("worker-pid");
+    let manifest = repo.join("metewand.yaml");
+    fs::write(
+        &manifest,
+        fs::read_to_string(&manifest)
+            .unwrap()
+            .replace("measurement-repetitions: 1", "measurement-repetitions: 5")
+            .replace(
+                "    timing-scope:",
+                "    max-concurrency: 2\n    timing-scope:",
+            ),
+    )
+    .unwrap();
+    let worker = repo.join("worker.py");
+    fs::write(
+        &worker,
+        fs::read_to_string(&worker).unwrap().replace(
+            "elif method == \"execute\":",
+            &format!(
+                "elif method == \"execute\":\n            import os, time\n            if Path({gate:?}).exists():\n                with Path({marker:?}).open('a') as handle:\n                    print(os.getpid(), file=handle)\n                time.sleep(30)"
+            ),
+        ),
+    )
+    .unwrap();
+    let first = success(
+        &repo,
+        &[
+            "run",
+            "--shared",
+            "--output-dir",
+            "run",
+            "--max-attempts",
+            "2",
+        ],
+    );
+    fs::write(&gate, "").unwrap();
+    let events = interrupt_runner(&repo, &marker, &[], 2);
+    assert_eq!(
+        events.matches("\"event\":\"attempt_started\"").count(),
+        2,
+        "{events}"
+    );
+    assert!(
+        events.contains("\"code\":\"interrupted_attempt\""),
+        "{events}"
+    );
+    assert!(events.contains("\"code\":\"run_interrupted\""), "{events}");
+    fs::remove_file(gate).unwrap();
+
+    let receipt = success(&repo, &["recover", "--output-dir", "run"]);
+    assert_eq!(receipt["recovered_attempts"], 0);
+    assert_eq!(receipt["remaining_attempts"], 0);
+    success(
+        &repo,
+        &[
+            "archive",
+            "create",
+            "--output-dir",
+            "run",
+            "--destination",
+            "saved.tar.gz",
+        ],
+    );
+    success(&repo, &["archive", "verify", "--archive", "saved.tar.gz"]);
+    success(
+        &repo,
+        &[
+            "archive",
+            "restore",
+            "--archive",
+            "saved.tar.gz",
+            "--destination",
+            "restored",
+        ],
+    );
+    let resumed = success(&repo, &["run", "--output-dir", "restored"]);
+    assert_eq!(resumed["attempts"].as_array().unwrap().len(), 3);
+    let final_status = success(&repo, &["status", "--output-dir", "restored"]);
+    let attempts = final_status["attempts"].as_array().unwrap();
+    assert_eq!(attempts.len(), 7);
+    assert!(
+        attempts
+            .iter()
+            .any(|attempt| attempt["id"] == first["attempts"][0]["attempt_id"])
+    );
+}
+
+#[test]
+fn recovery_respects_leases_without_loading_benchmark_code() {
+    use crate::runtime::run_store::{LeaseRequest, RetryAuthorization, RunStore};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let root = tempfile::tempdir().unwrap();
+    let repo = root.path();
+    copy(
+        &Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/fixed-dataset"),
+        repo,
+    );
+    let manifest = repo.join("metewand.yaml");
+    fs::write(
+        &manifest,
+        fs::read_to_string(&manifest)
+            .unwrap()
+            .replace("measurement-repetitions: 1", "measurement-repetitions: 3"),
+    )
+    .unwrap();
+    for (home, shared) in [("local", false), ("shared", true)] {
+        let mut args = vec!["run", "--output-dir", home, "--max-attempts", "1"];
+        if shared {
+            args.push("--shared");
+        }
+        success(repo, &args);
+        let status = success(repo, &["status", "--output-dir", home]);
+        let slots: Vec<_> = status["slots"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|slot| slot["attempt_ids"].as_array().is_some_and(Vec::is_empty))
+            .filter_map(|slot| slot["resolved_slot_id"].as_str())
+            .collect();
+        assert_eq!(slots.len(), 2);
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos() as u64;
+        let mut store = RunStore::open(&repo.join(home)).unwrap();
+        for (slot, started, expires) in [
+            (slots[0], now - 60_000_000_000, now - 30_000_000_000),
+            (slots[1], now, now + 600_000_000_000),
+        ] {
+            store
+                .reserve(
+                    slot.parse().unwrap(),
+                    RetryAuthorization::FirstAttempt,
+                    LeaseRequest {
+                        id: format!("test:{slot}"),
+                        owner_token: format!("test:{slot}"),
+                        expires_at_ns: expires,
+                    },
+                    started,
+                )
+                .unwrap();
+        }
+        drop(store);
+        let moved_manifest = repo.join("manifest-away.yaml");
+        fs::rename(&manifest, &moved_manifest).unwrap();
+        for recovered in [1, 0] {
+            let result = invoke(repo, &["recover", "--output-dir", home]);
+            assert_eq!(result.status.code(), Some(4), "{result:?}");
+            let receipt: Value = serde_json::from_slice(&result.stdout).unwrap();
+            assert_eq!(receipt["data"]["recovered_attempts"], recovered);
+            assert_eq!(receipt["data"]["remaining_attempts"], 1);
+        }
+        let mut store = RunStore::open(&repo.join(home)).unwrap();
+        store.recover(|| now + 601_000_000_000).unwrap();
+        drop(store);
+        let settled = success(repo, &["recover", "--output-dir", home]);
+        assert_eq!(settled["remaining_attempts"], 0);
+        success(
+            repo,
+            &[
+                "archive",
+                "create",
+                "--output-dir",
+                home,
+                "--destination",
+                &format!("{home}.tar.gz"),
+            ],
+        );
+        fs::rename(moved_manifest, &manifest).unwrap();
+    }
+    assert!(
+        !invoke(repo, &["recover", "--output-dir", "missing"])
+            .status
+            .success()
+    );
+    assert!(!repo.join("missing").exists());
+    success(
+        repo,
+        &[
+            "archive",
+            "import",
+            "--archive",
+            "local.tar.gz",
+            "--destination",
+            "collection",
+        ],
+    );
+    assert!(
+        !invoke(repo, &["recover", "--output-dir", "collection"])
+            .status
+            .success()
+    );
+}
+
+#[cfg(unix)]
+pub(super) fn interrupt_runner(repo: &Path, marker: &Path, args: &[&str], lanes: usize) -> String {
+    use std::process::Stdio;
+    use std::time::{Duration, Instant};
+
+    let mut runner = Command::new(env!("CARGO_BIN_EXE_metewand"))
+        .current_dir(repo)
+        .args(["run", "--output-dir", "run", "--output", "jsonl"])
+        .args(args)
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(60);
+    let worker_pids = loop {
+        let pids: Vec<i32> = fs::read_to_string(marker)
+            .unwrap_or_default()
+            .lines()
+            .filter_map(|pid| pid.parse().ok())
+            .collect();
+        if pids.len() == lanes {
+            break pids;
+        }
+        if Instant::now() >= deadline || runner.try_wait().unwrap().is_some() {
+            let _ = runner.kill();
+            panic!(
+                "workers did not enter execution: {:?}",
+                runner.wait_with_output()
+            );
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    };
+    // SAFETY: These are the PIDs of the coordinator and worker started by the fixture.
+    assert_eq!(unsafe { libc::kill(runner.id() as i32, libc::SIGUSR1) }, 0);
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while runner.try_wait().unwrap().is_none() {
+        if Instant::now() >= deadline {
+            let _ = runner.kill();
+            panic!(
+                "runner did not settle promptly: {:?}",
+                runner.wait_with_output()
+            );
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let stopped = runner.wait_with_output().unwrap();
+    assert_eq!(stopped.status.code(), Some(5), "{stopped:?}");
+    for pid in worker_pids {
+        assert_eq!(unsafe { libc::kill(pid, 0) }, -1);
+    }
+    let events = String::from_utf8(stopped.stdout).unwrap();
+    assert!(events.contains("\"code\":\"run_interrupted\""), "{events}");
+    events
+}
+
+#[cfg(unix)]
+#[test]
+fn interrupted_calibration_and_streaming_checkpoints_survive_archives() {
+    let root = tempfile::tempdir().unwrap();
+    let repo = root.path().join("repo");
+    let project = Path::new(env!("CARGO_MANIFEST_DIR"));
+    copy(&project.join("examples/streaming-profile"), &repo);
+    copy(
+        &project.join("packages/python/src/metewand"),
+        &repo.join("metewand"),
+    );
+    let gate = root.path().join("gate");
+    let marker = root.path().join("worker-pid");
+    let manifest = repo.join("metewand.yaml");
+    fs::write(
+        &manifest,
+        fs::read_to_string(&manifest)
+            .unwrap()
+            .replace("warmup-runs: 1", "warmup-runs: 0")
+            .replace("timeout: 5 s", "timeout: 30 s")
+            .replacen(
+                "max-active-time: 2 s",
+                "adaptive-budget: {initial-pilot-time: 20 s, minimum-time: 20 s}",
+                1,
+            ),
+    )
+    .unwrap();
+    let worker = repo.join("worker.py");
+    fs::write(
+        &worker,
+        fs::read_to_string(&worker).unwrap().replace(
+            "    stream = context.stream",
+            "    from pathlib import Path\n    import os, time\n    stream = context.stream",
+        ).replace(
+            "        x *= 0.5",
+            &format!("        if index == 2 and Path({gate:?}).exists():\n            Path({marker:?}).write_text(str(os.getpid()))\n            time.sleep(30)\n        x *= 0.5"),
+        ),
+    ).unwrap();
+    for calibration in [true, false] {
+        fs::write(&gate, "").unwrap();
+        interrupt_runner(&repo, &marker, &["target"], 1);
+        fs::remove_file(&gate).unwrap();
+        fs::remove_file(&marker).unwrap();
+        let before = success(&repo, &["status", "--output-dir", "run"]);
+        assert!(
+            !before["observations"].as_array().unwrap().is_empty(),
+            "{before}"
+        );
+        let archive = if calibration {
+            "pilot.tar.gz"
+        } else {
+            "measured.tar.gz"
+        };
+        success(
+            &repo,
+            &[
+                "archive",
+                "create",
+                "--output-dir",
+                "run",
+                "--destination",
+                archive,
+            ],
+        );
+        success(
+            &repo,
+            &[
+                "archive",
+                "restore",
+                "--archive",
+                archive,
+                "--destination",
+                "restored",
+            ],
+        );
+        let after = success(&repo, &["status", "--output-dir", "restored"]);
+        for key in ["attempts", "observations", "adaptive_budgets"] {
+            assert_eq!(after[key], before[key], "{key}");
+        }
+        if calibration {
+            assert!(before["adaptive_budgets"].is_null());
+            let report = success(
+                &repo,
+                &[
+                    "run",
+                    "target",
+                    "--output-dir",
+                    "restored",
+                    "--max-attempts",
+                    "1",
+                ],
+            );
+            assert_eq!(report["calibration_attempts"].as_array().unwrap().len(), 1);
+            assert_eq!(report["adaptive_budgets"].as_array().unwrap().len(), 1);
+            fs::remove_dir_all(repo.join("run")).unwrap();
+            fs::rename(repo.join("restored"), repo.join("run")).unwrap();
+        } else {
+            let report = success(&repo, &["run", "target", "--output-dir", "restored"]);
+            assert!(report["calibration_attempts"].is_null());
+            assert_eq!(report["adaptive_budgets"], before["adaptive_budgets"]);
+            assert_eq!(report["attempts"].as_array().unwrap().len(), 2);
+        }
+    }
+}
+
+#[test]
+fn invalid_recovery_targets_are_untouched_and_identified() {
+    let root = tempfile::tempdir().unwrap();
+    for (name, marker) in [("sqlite", "run.sqlite3"), ("shared", "journal")] {
+        let home = root.path().join(name);
+        fs::create_dir(&home).unwrap();
+        if marker == "journal" {
+            fs::create_dir(home.join(marker)).unwrap();
+        } else {
+            fs::write(home.join(marker), []).unwrap();
+        }
+        let output = invoke(root.path(), &["recover", "--output-dir", name]);
+        assert!(!output.status.success());
+        let diagnostic: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(diagnostic["data"]["code"], "run_recovery_failed");
+        assert_eq!(diagnostic["data"]["details"]["command"], "recover");
+        let entries: Vec<_> = fs::read_dir(home)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect();
+        assert_eq!(entries, [marker]);
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn scheduler_interruption_settles_a_batch_behind_a_full_event_pipe() {
+    use std::{
+        io::Write,
+        process::Stdio,
+        time::{Duration, Instant},
+    };
+
+    let root = tempfile::tempdir().unwrap();
+    copy(
+        &Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/fixed-dataset"),
+        root.path(),
+    );
+    let (reader, writer) = rustix::pipe::pipe().unwrap();
+    let capacity = rustix::pipe::fcntl_getpipe_size(&writer).unwrap();
+    let mut writer = fs::File::from(writer);
+    // Leave space for run_started, then force the first attempt_started write
+    // to wait with its slot already reserved.
+    let first = b"{\"schema_version\":1,\"kind\":\"event\",\"data\":{\"command\":\"run\",\"sequence\":0,\"event\":\"run_started\",\"attempt_slots\":1}}\n";
+    writer
+        .write_all(&vec![b' '; capacity - first.len()])
+        .unwrap();
+    let mut runner = Command::new(env!("CARGO_BIN_EXE_metewand"))
+        .current_dir(root.path())
+        .args(["run", "--output-dir", "run", "--output", "jsonl"])
+        .stdout(Stdio::from(writer))
+        .spawn()
+        .unwrap();
+
+    let deadline = Instant::now() + Duration::from_secs(30);
+    loop {
+        let status = invoke(root.path(), &["status", "--output-dir", "run"]);
+        if let Ok(value) = serde_json::from_slice::<Value>(&status.stdout)
+            && value["data"]["summary"]["active_attempts"] == 1
+        {
+            break;
+        }
+        if Instant::now() >= deadline || runner.try_wait().unwrap().is_some() {
+            let _ = runner.kill();
+            let _ = runner.wait();
+            panic!("runner did not reserve a slot behind the full pipe: {status:?}");
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    // SAFETY: The runner is the child process whose open attempt was observed.
+    assert_eq!(unsafe { libc::kill(runner.id() as i32, libc::SIGUSR1) }, 0);
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let status = loop {
+        if let Some(status) = runner.try_wait().unwrap() {
+            break status;
+        }
+        if Instant::now() >= deadline {
+            let _ = runner.kill();
+            let _ = runner.wait();
+            panic!("runner did not finish with a full event pipe");
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    };
+    drop(reader);
+    assert_eq!(status.code(), Some(5));
+    success(
+        root.path(),
+        &[
+            "archive",
+            "create",
+            "--output-dir",
+            "run",
+            "--destination",
+            "stopped.tar.gz",
+        ],
+    );
+}

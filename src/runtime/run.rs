@@ -244,6 +244,9 @@ pub(crate) fn run_repository_with_progress(
     {
         return Err(RunError::Unsupported("non-Git locked repositories require output and cache directories outside captured sources".into()));
     }
+    if super::run_stop::requested() {
+        return Err(RunError::Interrupted);
+    }
     let mut resolved = resolution::resolve(
         repository,
         &plan,
@@ -259,7 +262,11 @@ pub(crate) fn run_repository_with_progress(
             selected_ids: &options.selected_ids,
         },
         &mut progress,
-    )?;
+    )
+    .map_err(RunError::from_preparation)?;
+    if super::run_stop::requested() {
+        return Err(RunError::Interrupted);
+    }
     let selected_candidates = plan
         .experiments
         .iter()
@@ -334,6 +341,9 @@ pub(crate) fn run_repository_with_progress(
         );
     }
     let is_selected = |position| options.selected_ids.is_empty() || selected.contains(&position);
+    if super::run_stop::requested() {
+        return Err(RunError::Interrupted);
+    }
     if !resume {
         crate::runtime::platform_fs::create_private_directory(&output_directory)?;
         crate::runtime::platform_fs::complete_namespace_change(
@@ -385,6 +395,9 @@ pub(crate) fn run_repository_with_progress(
         is_selected,
         &mut progress,
     )?;
+    if super::run_stop::requested() {
+        return Err(RunError::Interrupted);
+    }
     let mut measured_options = options.clone();
     measured_options.max_attempts = options
         .max_attempts
@@ -552,6 +565,9 @@ pub(crate) fn run_repository_with_progress(
     let mut busy_repetitions = std::collections::BTreeSet::new();
     let mut measurement_series = std::collections::BTreeMap::<_, MeasurementSeries>::new();
     for batch in &resolved.batches {
+        if super::run_stop::requested() {
+            break;
+        }
         workers.resize_with(
             batch.lane_count,
             crate::runtime::worker_reuse::ReusableWorker::default,
@@ -565,6 +581,9 @@ pub(crate) fn run_repository_with_progress(
         let mut slots = Vec::new();
         let mut executions = Vec::new();
         for &(candidate, measurement) in &resolved.schedule[batch.slots.clone()] {
+            if super::run_stop::requested() {
+                break;
+            }
             if options
                 .max_attempts
                 .is_some_and(|bound| (attempts.len() + executions.len()) as u64 >= bound)
@@ -620,14 +639,19 @@ pub(crate) fn run_repository_with_progress(
         }
         for &(candidate_index, measurement_index) in &slots {
             let measurement = &resolved.candidates[candidate_index].measurements[measurement_index];
-            emit(
+            if let Err(error) = emit(
                 &mut events,
                 &mut event_sink,
                 RunEventKind::AttemptStarted {
                     logical_slot_id: measurement.logical_slot,
                     resolved_slot_id: measurement.attempt_slot,
                 },
-            )?;
+            ) {
+                if super::run_stop::requested() {
+                    break;
+                }
+                return Err(error);
+            }
         }
         let completed = execute_batch(
             repository,
@@ -656,6 +680,9 @@ pub(crate) fn run_repository_with_progress(
             )?;
             attempts.push(attempt);
         }
+    }
+    if super::run_stop::requested() {
+        return Err(RunError::Interrupted);
     }
     let inspection = crate::runtime::inspection::Inspection::read_for_run(&output_directory)
         .map_err(io::Error::other)?;
@@ -845,6 +872,17 @@ fn execute(
     worker: &mut crate::runtime::worker_reuse::ReusableWorker,
     execution: &mut AttemptExecution,
 ) -> Result<RunAttemptOutput, RunError> {
+    if super::run_stop::requested() {
+        worker.discard();
+        return failed_attempt(
+            measurement,
+            execution,
+            SystemTime::now(),
+            "interrupted_attempt",
+            "Run stopped before worker dispatch.".into(),
+            &ExecutionMeasurements::default(),
+        );
+    }
     if candidate.profile.is_some() || candidate.streaming_profile.is_some() {
         return profile::execute(
             repository,
@@ -1314,9 +1352,30 @@ fn emit(
         sequence: events.len(),
         kind,
     };
-    sink(&event).map_err(RunError::Event)?;
+    sink(&event).map_err(|error| {
+        if super::run_stop::requested() {
+            RunError::Interrupted
+        } else {
+            RunError::Event(error)
+        }
+    })?;
     events.push(event);
     Ok(())
+}
+
+pub fn recover_run(path: &Path) -> Result<crate::core::run_output::RecoveryReceipt, RunError> {
+    let (output_directory, existing) = destination(&std::path::absolute(path)?)?;
+    if !existing {
+        return Err(io::Error::new(io::ErrorKind::NotFound, "run directory does not exist").into());
+    }
+    let mut store = RunStore::open_existing(&output_directory)?;
+    let recovered_attempts = store.recover(attempt::now)?.terminals.len();
+    Ok(crate::core::run_output::RecoveryReceipt {
+        command: "recover",
+        output_directory,
+        recovered_attempts,
+        remaining_attempts: store.unfinished_attempts()?,
+    })
 }
 
 fn destination(path: &Path) -> Result<(PathBuf, bool), RunError> {
@@ -1367,6 +1426,8 @@ fn destination(path: &Path) -> Result<(PathBuf, bool), RunError> {
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum RunError {
+    #[error("Run stopped after receiving SIGUSR1.")]
+    Interrupted,
     /// A completed pilot round provides no evidence that more time would help.
     #[error(
         "No solver reached the accuracy target in the completed pilot round, and none exhausted its solver time budget."
@@ -1438,4 +1499,22 @@ pub enum RunError {
     /// An observation or attempt could not be durably finalized.
     #[error(transparent)]
     Publication(#[from] PublicationError),
+}
+
+impl RunError {
+    fn from_preparation(error: Self) -> Self {
+        use crate::runtime::{
+            dataset_materialization::MaterializationError, local_worker::LocalWorkerLaunchError,
+            worker_session::WorkerSessionError,
+        };
+        match error {
+            Self::ApplicabilityLaunch(LocalWorkerLaunchError::Interrupted { .. })
+            | Self::ApplicabilityCheck(WorkerSessionError::Interrupted { .. })
+            | Self::Materialization(
+                MaterializationError::Launch(LocalWorkerLaunchError::Interrupted { .. })
+                | MaterializationError::Session(WorkerSessionError::Interrupted { .. }),
+            ) => Self::Interrupted,
+            other => other,
+        }
+    }
 }

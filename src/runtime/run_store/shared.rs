@@ -85,6 +85,10 @@ impl RunStore {
     /// synchronization on Unix, and atomic rename. BeeGFS also uses a durable
     /// writer claim to exclude other clients when advisory locks are local.
     pub fn open_shared(root: &Path) -> Result<Self, RunStoreError> {
+        Self::open_shared_mode(root, true)
+    }
+
+    pub(super) fn open_shared_mode(root: &Path, create: bool) -> Result<Self, RunStoreError> {
         if !root.is_absolute()
             || !crate::runtime::platform_fs::is_real_directory(&fs::symlink_metadata(root)?)
         {
@@ -111,10 +115,12 @@ impl RunStore {
         }
         crate::runtime::durability::sync_all(&writer)?;
         let directory = root.join(JOURNAL);
-        match fs::create_dir(&directory) {
-            Ok(()) => (),
-            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => (),
-            Err(error) => return Err(error.into()),
+        if create {
+            match fs::create_dir(&directory) {
+                Ok(()) => (),
+                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => (),
+                Err(error) => return Err(error.into()),
+            }
         }
         real_directory(&directory)?;
         let writer_claim = needs_writer_claim(&root)?
@@ -144,6 +150,9 @@ impl RunStore {
             _writer: writer,
         };
         if journal.next == 0 {
+            if !create {
+                return Err(invalid("recovery requires an initialized shared run"));
+            }
             // Only initialization infrastructure may precede the first commit.
             // Existing run data must never be detached from its lost history.
             for entry in fs::read_dir(&root)? {

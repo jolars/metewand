@@ -632,6 +632,7 @@ impl WorkerSession {
         self.stop_protocol_io();
 
         loop {
+            self.check_run_stop(WorkerPhase::Shutdown)?;
             let status = self
                 .process
                 .as_mut()
@@ -673,6 +674,36 @@ impl WorkerSession {
         Ok(output)
     }
 
+    fn check_run_stop(&mut self, phase: WorkerPhase) -> Result<(), WorkerSessionError> {
+        if crate::runtime::run_stop::requested() {
+            let stopped_at = Instant::now();
+            self.discard_after_timeout();
+            return Err(WorkerSessionError::Interrupted { phase, stopped_at });
+        }
+        Ok(())
+    }
+
+    fn wait_for_reply<T>(
+        &mut self,
+        phase: WorkerPhase,
+        receiver: &mpsc::Receiver<T>,
+        started: Instant,
+        limit: Duration,
+    ) -> Result<Result<T, RecvTimeoutError>, WorkerSessionError> {
+        if !crate::runtime::run_stop::enabled() {
+            return Ok(receiver.recv_timeout(limit.saturating_sub(started.elapsed())));
+        }
+        loop {
+            self.check_run_stop(phase)?;
+            let remaining = limit.saturating_sub(started.elapsed());
+            let result = receiver.recv_timeout(remaining.min(Duration::from_millis(50)));
+            if !matches!(result, Err(RecvTimeoutError::Timeout)) || started.elapsed() >= limit {
+                self.check_run_stop(phase)?;
+                return Ok(result);
+            }
+        }
+    }
+
     fn begin_request(&mut self, phase: WorkerPhase) -> Result<RequestId, WorkerSessionError> {
         self.ensure_usable()?;
         self.requests
@@ -690,6 +721,7 @@ impl WorkerSession {
         Q: WireMessage,
         R: WireResponse,
     {
+        self.check_run_stop(phase)?;
         self.verify_controls()?;
         let started = Instant::now();
         let scientific_remaining = self
@@ -727,6 +759,7 @@ impl WorkerSession {
             encoded,
             reply: reply_sender,
         };
+        self.check_run_stop(phase)?;
         if self
             .protocol_sender
             .as_ref()
@@ -738,7 +771,7 @@ impl WorkerSession {
             return Err(WorkerSessionError::ProtocolThreadStopped { phase });
         }
 
-        let mut value = match reply_receiver.recv_timeout(limit.saturating_sub(started.elapsed())) {
+        let mut value = match self.wait_for_reply(phase, &reply_receiver, started, limit)? {
             Ok(Ok(Some(value))) => value,
             Ok(Ok(None)) => {
                 self.discard();
@@ -962,6 +995,11 @@ fn run_protocol_io(
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum WorkerSessionError {
+    #[error("run interrupted during worker {phase}")]
+    Interrupted {
+        phase: WorkerPhase,
+        stopped_at: Instant,
+    },
     #[error("invalid streaming exchange: {message}")]
     StreamProtocol { message: String },
     /// A negotiated managed output draft could not be finalized.

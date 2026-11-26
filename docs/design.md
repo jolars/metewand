@@ -385,6 +385,11 @@ Exports retain individual repetitions, failed attempts, scientific verdicts,
 timing scopes, compatibility evidence, and lineage. Statistical analysis and
 publication plotting belong downstream of the execution core.
 
+On Unix, a scheduler warning can request a graceful stop with `SIGUSR1`.
+The coordinator stops dispatching, settles interrupted attempts, and commits
+evidence before exiting. After an abrupt stop, an explicit recovery pass
+settles expired attempts without launching workers.
+
 Portable result archives preserve a whole committed snapshot after every started
 attempt is terminal. They package versioned records and registered artifacts,
 including profile snapshots and traces. Creation streams committed payloads

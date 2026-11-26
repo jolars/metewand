@@ -85,6 +85,9 @@ impl AttemptExecution {
             .prefix("metewand-owner-")
             .tempdir()?;
         let owner = token.path().to_string_lossy().into_owned();
+        if crate::runtime::run_stop::requested() {
+            return Ok(None);
+        }
         let started = now();
         let owned = match store.reserve(
             measurement.attempt_slot,

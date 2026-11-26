@@ -76,6 +76,7 @@ pub enum CommandResult {
         verbose: bool,
         elapsed: std::time::Duration,
     },
+    Recover(crate::core::run_output::RecoveryReceipt),
     Status(Box<StatusReport>),
     Explain(Box<Explanation>),
     Export(Box<ExportReport>),
@@ -217,6 +218,19 @@ impl CommandResult {
                 verbose,
                 elapsed,
             } => return write_run_report(output, report, *verbose, *elapsed),
+            Self::Recover(result) => {
+                let next = if result.remaining_attempts == 0 {
+                    ""
+                } else {
+                    "Retry recovery after the other owners have stopped and their leases have expired.\n"
+                };
+                format!(
+                    "Recovered {} attempts in {}. {} unfinished attempts remain.\n{next}",
+                    result.recovered_attempts,
+                    result.output_directory.display(),
+                    result.remaining_attempts
+                )
+            }
             Self::Status(result) => render_status(result),
             Self::Explain(result) => render_explanation(result),
             #[cfg(any(unix, windows))]
@@ -311,6 +325,11 @@ impl CommandResult {
         {
             return EXIT_RUN_FAILED;
         }
+        if let Self::Recover(report) = self
+            && report.remaining_attempts != 0
+        {
+            return EXIT_INPUT_UNAVAILABLE;
+        }
         EXIT_SUCCESS
     }
 
@@ -354,6 +373,7 @@ impl Serialize for CommandResult {
             Self::Plan(result) => result.serialize(serializer),
             #[cfg(any(unix, windows))]
             Self::Run { report, .. } => report.serialize(serializer),
+            Self::Recover(result) => result.serialize(serializer),
             Self::Status(result) => result.serialize(serializer),
             Self::Explain(result) => result.serialize(serializer),
             Self::Export(result) => result.serialize(serializer),
@@ -1769,8 +1789,26 @@ impl CommandError {
     }
 
     #[cfg(any(unix, windows))]
+    pub fn recovery(error: &crate::runtime::run::RunError) -> Self {
+        Self {
+            exit_code: EXIT_IO,
+            diagnostic: Box::new(
+                Diagnostic::new("run_recovery_failed", error.to_string())
+                    .with_detail("command", "recover"),
+            ),
+        }
+    }
+
+    #[cfg(any(unix, windows))]
     pub fn execution(error: &crate::runtime::run::RunError) -> Self {
         use crate::runtime::run::RunError;
+        if matches!(error, RunError::Interrupted) {
+            return Self {
+                exit_code: EXIT_RUN_FAILED,
+                diagnostic: Box::new(Diagnostic::new("run_interrupted", error.to_string())
+                    .with_remediation("Resume with the same run command, or archive the settled run with `metewand archive create`.")),
+            };
+        }
         if let RunError::AdaptiveCalibrationStopped { group_id, pilots } = error {
             let diagnostic = Diagnostic::new("adaptive_calibration_stopped", error.to_string())
                 .with_detail("command", "run")

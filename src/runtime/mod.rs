@@ -56,6 +56,8 @@ pub mod repository;
 mod resource_accounting;
 #[cfg(any(unix, windows))]
 pub mod run;
+#[cfg(any(unix, windows))]
+pub mod run_stop;
 pub mod run_store;
 pub mod runtime_config;
 pub mod source_acquisition;

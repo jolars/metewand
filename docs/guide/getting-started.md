@@ -248,6 +248,37 @@ with the same output directory. For Slurm, check the previous job's terminal
 state before removing the claim. Storage-server power loss requires separate
 qualification.
 
+### Archive an interrupted run
+
+On Unix, send `SIGUSR1` to the Metewand coordinator to stop scheduling work.
+Metewand stops active workers, commits interrupted attempts, and exits with code
+5 and the `run_interrupted` diagnostic. Completed measurements and calibration
+decisions are available for archiving and resume.
+
+With Slurm, direct the warning signal to the batch process and use `exec` to run
+the coordinator in that process. Allow enough warning time for worker cleanup
+and durable publication.
+
+```sh
+#SBATCH --signal=B:USR1@120
+exec metewand run --shared --output-dir /project/benchmark-run
+```
+
+After an abrupt stop, run recovery before creating the archive. Recovery starts
+no benchmark workers and preserves live attempts until their leases expire. If
+recovery exits with code 4 and reports unfinished attempts, repeat it after the
+owners have stopped and their leases have expired. On BeeGFS, follow the writer
+claim procedure above first.
+
+```sh
+metewand recover --output-dir /project/benchmark-run &&
+  metewand archive create --output-dir /project/benchmark-run --destination results.tar.gz
+```
+
+After a graceful stop, run the archive command directly. Restore with
+`metewand archive restore`, then run again with the restored output directory to
+continue pending work.
+
 To reuse verified datasets across nodes, initialize a separate Metewand-owned
 shared cache, then pass it to each run:
 

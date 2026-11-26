@@ -998,3 +998,86 @@ fn concurrent_invocations_leave_owned_repetitions_for_their_owner() {
     assert_eq!(report["attempts"].as_array().unwrap().len(), 3);
     assert_eq!(report["fresh_sequences"][0]["status"], "accepted");
 }
+
+#[test]
+fn interrupted_fresh_work_preserves_archives_and_scientific_budget() {
+    let stage = stage(false);
+    let repo = stage.path();
+    let signals = TempDir::new().unwrap();
+    let gate = signals.path().join("gate");
+    let marker = signals.path().join("pid");
+    edit(repo, "metewand.yaml", |source| {
+        source
+            .replacen(
+                "    max-active-time: 10 s",
+                "    adaptive-budget: {initial-pilot-time: 20 s}",
+                1,
+            )
+            .replace("warmup-runs: 1", "warmup-runs: 0")
+            .replace(
+                "timing-scope: prepare_and_execute",
+                "timing-scope: execute_only",
+            )
+            .replace("timeout: 5 s", "timeout: 30 s")
+    });
+    edit(repo, "worker.py", |source| {
+        source.replace("        observation_control =", &format!(
+            "        import time\n        from pathlib import Path\n        if Path({gate:?}).exists():\n            Path({marker:?}).write_text(str(os.getpid()))\n            time.sleep(30)\n        observation_control ="
+        ))
+    });
+    fs::write(&gate, "").unwrap();
+    super::archives::interrupt_runner(repo, &marker, &["--shared", "target"], 1);
+    fs::remove_file(&gate).unwrap();
+    for args in [
+        &[
+            "archive",
+            "create",
+            "--output-dir",
+            "run",
+            "--destination",
+            "pilot.tar.gz",
+        ][..],
+        &[
+            "archive",
+            "restore",
+            "--archive",
+            "pilot.tar.gz",
+            "--destination",
+            "restored",
+        ],
+        &["run", "target", "--output-dir", "restored"],
+    ] {
+        let output = invoke(repo, args);
+        assert!(output.status.success(), "{args:?}: {output:?}");
+    }
+
+    fs::rename(repo.join("run"), repo.join("pilot-run")).unwrap();
+    fs::write(&gate, "").unwrap();
+    fs::remove_file(&marker).unwrap();
+    super::archives::interrupt_runner(repo, &marker, &["fixed"], 1);
+    fs::remove_file(&gate).unwrap();
+    let status = invoke(repo, &["status", "--output-dir", "run", "--output", "json"]);
+    assert!(status.status.success(), "{status:?}");
+    let status = data(&status);
+    let document = fs::read_dir(repo.join("run/artifacts"))
+        .unwrap()
+        .map(|entry| entry.unwrap().path().join("attempt.json"))
+        .find(|path| path.is_file())
+        .expect("interrupted attempt document");
+    let record: Value = serde_json::from_slice(&fs::read(document).unwrap()).unwrap();
+    let measurements = &record["provenance"]["data"]["measurements"];
+    let timed = measurements["timed_wall_time_ns"]["value"]
+        .as_u64()
+        .unwrap();
+    let request = measurements["execute_request_time_ns"]["value"]
+        .as_u64()
+        .unwrap();
+    assert_eq!(measurements["timed_wall_time_ns"]["status"], "partial");
+    // The request includes the executor's 100 ms termination grace period.
+    // The scientific interval ends when the stop is observed.
+    assert!(
+        request.saturating_sub(timed) >= 80_000_000,
+        "{measurements}"
+    );
+    assert_eq!(status["fresh_sequences"][0]["consumed_time_ns"], timed);
+}

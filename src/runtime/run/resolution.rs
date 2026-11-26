@@ -459,6 +459,9 @@ pub(super) fn resolve(
     let mut dataset_plans = BTreeMap::new();
     for experiment in &plan.experiments {
         for candidate in &experiment.candidates {
+            if crate::runtime::run_stop::requested() {
+                return Err(RunError::Interrupted);
+            }
             let implementation_name = repository
                 .planning_catalog
                 .implementation_definitions
@@ -680,6 +683,9 @@ pub(super) fn resolve(
     for (candidate, experiment, implementation, evaluator, dataset_plan, preparation, executor) in
         prepared
     {
+        if crate::runtime::run_stop::requested() {
+            return Err(RunError::Interrupted);
+        }
         let key = candidate.dataset_configuration.id;
         if let std::collections::btree_map::Entry::Vacant(entry) = datasets.entry(key) {
             let name = repository
