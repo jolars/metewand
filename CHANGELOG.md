@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.11.0](https://github.com/jolars/metewand/compare/v0.10.0...v0.11.0) (2026-11-26)
+
+### Features
+
+- **runtime:** make interrupted runs archivable ([`5b70a5f`](https://github.com/jolars/metewand/commit/5b70a5fda9a849aa0a89abd2d63e27403dc8bbd6))
+
+### Bug Fixes
+
+- **runtime:** handle output backpressure during run interruption ([`c1e269e`](https://github.com/jolars/metewand/commit/c1e269ed851506c5d6d7239a627883de0e2c741e))
+- **runtime:** support shared runs on BeeGFS ([`1c597e2`](https://github.com/jolars/metewand/commit/1c597e2aa0dc01162a6f8354945746536aecfaa9))
+- **cli:** treat valid censored profiles as complete ([`a80efa0`](https://github.com/jolars/metewand/commit/a80efa0515c4c748557a0065b6695f8cfa03d1e3))
+
 ## [0.10.0](https://github.com/jolars/metewand/compare/v0.9.0...v0.10.0) (2026-11-22)
 
 ### Features

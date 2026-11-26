@@ -1,11 +1,11 @@
 {
   "manifest-version": 1,
-  "baseline-sha": "2a973e7e8c721955b1bf40cfd0fa356fe9db88ea",
+  "baseline-sha": "c1e269ed851506c5d6d7239a627883de0e2c741e",
   "release-targets": [
     {
       "path": ".",
-      "version": "0.10.0",
-      "tag": "v0.10.0"
+      "version": "0.11.0",
+      "tag": "v0.11.0"
     },
     {
       "path": "packages/python",
@@ -21,8 +21,8 @@
   "pending-release-targets": [
     {
       "path": ".",
-      "version": "0.10.0",
-      "tag": "v0.10.0"
+      "version": "0.11.0",
+      "tag": "v0.11.0"
     }
   ]
 }
