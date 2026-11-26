@@ -90,7 +90,7 @@ pub fn main() -> ExitCode {
         extract_output_format(raw_arguments).and_then(|arguments| run(&arguments, output_format));
 
     match result {
-        Ok(result) => write_success(&result, output_format),
+        Ok(result) => write_success(result, output_format),
         Err(error) if error.exit_code == EXIT_SUCCESS => ExitCode::SUCCESS,
         Err(error) => write_failure(&error, output_format),
     }
@@ -108,36 +108,95 @@ fn write_stdout(
     result
 }
 
-// Keep JSON Lines backpressure interruptible even if SIGUSR1 lands on
-// a worker thread. Restore the caller's descriptor flags before returning.
+// Output can be blocked in the kernel while the coordinator settles attempts.
+// A detached writer owns its data and never locks Rust's global stdout buffer.
 #[cfg(unix)]
-fn write_run_stream(fd: impl std::os::fd::AsFd, mut bytes: &[u8]) -> io::Result<()> {
-    use crate::runtime::run_stop;
-    use rustix::{fs, io::Errno};
+static RUN_STDOUT_INCOMPLETE: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
 
-    let flags = fs::fcntl_getfl(&fd)?;
-    fs::fcntl_setfl(&fd, flags | fs::OFlags::NONBLOCK)?;
-    let result = loop {
-        if bytes.is_empty() {
-            break Ok(());
-        }
-        match rustix::io::write(&fd, bytes) {
-            Ok(0) => break Err(io::ErrorKind::WriteZero.into()),
-            Ok(written) => bytes = &bytes[written..],
-            Err(Errno::INTR) => continue,
-            Err(Errno::AGAIN) if !run_stop::requested() => {
-                std::thread::sleep(std::time::Duration::from_millis(10));
+#[cfg(unix)]
+fn run_output(task: impl FnOnce() -> io::Result<()> + Send + 'static) -> io::Result<()> {
+    use std::{sync::mpsc, time::Duration};
+
+    let (done, result) = mpsc::channel();
+    std::thread::Builder::new()
+        .name("metewand-output".into())
+        .spawn(move || {
+            let _ = done.send(task());
+        })?;
+    loop {
+        match result.recv_timeout(Duration::from_millis(25)) {
+            Ok(result) => return result,
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                return Err(io::Error::other("output writer stopped"));
             }
-            Err(error) => break Err(error.into()),
+            Err(mpsc::RecvTimeoutError::Timeout) if crate::runtime::run_stop::requested() => {
+                return Err(io::ErrorKind::Interrupted.into());
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) => (),
         }
-    };
-    let restore = fs::fcntl_setfl(&fd, flags).map_err(io::Error::from);
-    result.and(restore)
+    }
 }
 
-fn write_success(result: &CommandResult, format: OutputFormat) -> ExitCode {
+#[cfg(unix)]
+fn run_stdout(
+    write: impl FnOnce(&mut io::BufWriter<std::fs::File>) -> io::Result<()> + Send + 'static,
+) -> io::Result<()> {
+    use std::sync::atomic::Ordering::Relaxed;
+    if RUN_STDOUT_INCOMPLETE.load(Relaxed) {
+        return Err(io::ErrorKind::Interrupted.into());
+    }
+    let file = std::fs::File::from(rustix::io::dup(io::stdout())?);
+    let result = run_output(move || {
+        let mut output = io::BufWriter::new(file);
+        let result = write(&mut output).and_then(|()| output.flush());
+        if result.is_err() {
+            let _ = output.into_parts();
+        }
+        result
+    });
+    if result.is_err() {
+        RUN_STDOUT_INCOMPLETE.store(true, Relaxed);
+    }
+    result
+}
+
+fn write_success(result: CommandResult, format: OutputFormat) -> ExitCode {
+    #[cfg(unix)]
+    if crate::runtime::run_stop::enabled() {
+        use crate::runtime::{run::RunError, run_stop};
+        if !run_stop::requested() {
+            let code = result.exit_code();
+            let diagnostics = result.diagnostics();
+            let written = (|| {
+                if !diagnostics.is_empty() {
+                    let mut stderr = std::fs::File::from(rustix::io::dup(io::stderr())?);
+                    run_output(move || stderr.write_all(diagnostics.as_bytes()))?;
+                }
+                if run_stop::requested() {
+                    return Err(io::ErrorKind::Interrupted.into());
+                }
+                run_stdout(move |output| write_result(output, &result, format))
+            })();
+            if !run_stop::requested() {
+                return match written {
+                    Ok(()) => ExitCode::from(code),
+                    Err(error) if error.kind() == io::ErrorKind::BrokenPipe => ExitCode::SUCCESS,
+                    Err(error) => write_failure(
+                        &CommandError::output_write(format!(
+                            "failed to write command output: {error}"
+                        )),
+                        format,
+                    ),
+                };
+            }
+            // A final result cannot share a stream with a terminal diagnostic.
+            RUN_STDOUT_INCOMPLETE.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
+        return write_failure(&CommandError::execution(&RunError::Interrupted), format);
+    }
     let _ = io::stderr().write_all(result.diagnostics().as_bytes());
-    match write_stdout(|output| write_result(output, result, format)) {
+    match write_stdout(|output| write_result(output, &result, format)) {
         Ok(()) => ExitCode::from(result.exit_code()),
         Err(error) if error.kind() == io::ErrorKind::BrokenPipe => ExitCode::from(EXIT_SUCCESS),
         Err(error) => {
@@ -152,13 +211,31 @@ fn write_success(result: &CommandResult, format: OutputFormat) -> ExitCode {
 fn write_failure(error: &CommandError, output_format: OutputFormat) -> ExitCode {
     #[cfg(unix)]
     if crate::runtime::run_stop::requested() {
+        let mut stderr_output = error.diagnostic.render_human();
         if output_format.is_machine()
             && error.report_on_stdout()
             && let Ok(output) = render_diagnostic(&error.diagnostic, output_format)
+            && run_stdout({
+                let output = output.clone();
+                move |writer| writer.write_all(output.as_bytes())
+            })
+            .is_err()
         {
-            let _ = write_run_stream(io::stdout(), output.as_bytes());
+            stderr_output = output;
         }
-        let _ = write_run_stream(io::stderr(), error.diagnostic.render_human().as_bytes());
+        // If both streams are redirected to the same destination, writing to
+        // stderr would still append to an abandoned stdout record.
+        let same_destination = rustix::fs::fstat(io::stdout())
+            .and_then(|out| {
+                rustix::fs::fstat(io::stderr())
+                    .map(|err| out.st_dev == err.st_dev && out.st_ino == err.st_ino)
+            })
+            .unwrap_or(false);
+        if !(same_destination && RUN_STDOUT_INCOMPLETE.load(std::sync::atomic::Ordering::Relaxed))
+            && let Ok(fd) = rustix::io::dup(io::stderr())
+        {
+            let _ = run_output(move || std::fs::File::from(fd).write_all(stderr_output.as_bytes()));
+        }
         return ExitCode::from(error.exit_code);
     }
     if output_format.is_machine() && error.report_on_stdout() {

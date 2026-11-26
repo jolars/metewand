@@ -1154,3 +1154,12 @@ pub enum WorkerSessionError {
     #[error("worker session is unusable after an earlier fatal failure")]
     SessionUnusable,
 }
+
+impl WorkerSessionError {
+    pub(crate) fn interrupted_at(&self) -> Option<Instant> {
+        match self {
+            Self::Interrupted { stopped_at, .. } => Some(*stopped_at),
+            _ => None,
+        }
+    }
+}

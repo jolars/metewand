@@ -1957,3 +1957,74 @@ fn scheduler_interruption_settles_a_batch_behind_a_full_event_pipe() {
         ],
     );
 }
+
+#[cfg(target_os = "linux")]
+#[test]
+fn scheduler_interruption_exits_with_blocked_progress_or_final_report() {
+    use std::{
+        io::Write,
+        process::Stdio,
+        time::{Duration, Instant},
+    };
+
+    let root = tempfile::tempdir().unwrap();
+    copy(
+        &Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/fixed-dataset"),
+        root.path(),
+    );
+    for (home, format) in [("progress", "human"), ("report", "json")] {
+        let (reader, writer) = rustix::pipe::pipe().unwrap();
+        let capacity = rustix::pipe::fcntl_getpipe_size(&writer).unwrap();
+        let mut writer = fs::File::from(writer);
+        writer.write_all(&vec![b' '; capacity]).unwrap();
+        let flags = rustix::fs::fcntl_getfl(&writer).unwrap();
+        let blocked = Stdio::from(writer.try_clone().unwrap());
+        let mut command = Command::new(env!("CARGO_BIN_EXE_metewand"));
+        command
+            .current_dir(root.path())
+            .args(["run", "--output-dir", home, "--output", format]);
+        if format == "human" {
+            command.stderr(blocked).stdout(Stdio::null());
+        } else {
+            command.stdout(blocked).stderr(Stdio::piped());
+        }
+        let mut child = command.spawn().unwrap();
+        let deadline = Instant::now() + Duration::from_secs(30);
+        loop {
+            let status = invoke(root.path(), &["status", "--output-dir", home]);
+            if let Ok(value) = serde_json::from_slice::<Value>(&status.stdout)
+                && value["data"]["summary"]["accepted_attempts"] == 1
+            {
+                break;
+            }
+            if Instant::now() >= deadline || child.try_wait().unwrap().is_some() {
+                let _ = child.kill();
+                let _ = child.wait();
+                panic!("{format} runner did not commit its attempt: {status:?}");
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        // SAFETY: This is the child process whose committed attempt was observed.
+        assert_eq!(unsafe { libc::kill(child.id() as i32, libc::SIGUSR1) }, 0);
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let status = loop {
+            if let Some(status) = child.try_wait().unwrap() {
+                break status;
+            }
+            if Instant::now() >= deadline {
+                let _ = child.kill();
+                let _ = child.wait();
+                panic!("{format} runner did not exit with blocked output");
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        };
+        assert_eq!(status.code(), Some(5), "{format}: {status}");
+        if format == "json" {
+            let output = child.wait_with_output().unwrap();
+            let diagnostic: Value = serde_json::from_slice(&output.stderr).unwrap();
+            assert_eq!(diagnostic["data"]["code"], "run_interrupted");
+        }
+        assert_eq!(rustix::fs::fcntl_getfl(&writer).unwrap(), flags);
+        drop(reader);
+    }
+}

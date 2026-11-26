@@ -244,6 +244,19 @@ impl Progress {
             let _ = sender.unbounded_send(Message::Stop);
         }
         self.thread.take().map_or(Ok(()), |thread| {
+            #[cfg(unix)]
+            {
+                let mut interrupted = None;
+                while !thread.is_finished() {
+                    if crate::runtime::run_stop::requested()
+                        && interrupted.get_or_insert_with(Instant::now).elapsed()
+                            >= Duration::from_millis(100)
+                    {
+                        return Ok(());
+                    }
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+            }
             thread
                 .join()
                 .map_err(|_| io::Error::other("progress renderer panicked"))?

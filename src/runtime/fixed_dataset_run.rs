@@ -411,17 +411,11 @@ fn run_checked(
     if let Some(started) = timing.started
         && !timing.finished
     {
-        let finished = match &result {
-            Err(
-                FixedDatasetRunError::Implementation {
-                    source: WorkerSessionError::Interrupted { stopped_at, .. },
-                }
-                | FixedDatasetRunError::ImplementationLaunch {
-                    source: LocalWorkerLaunchError::Interrupted { stopped_at },
-                },
-            ) => *stopped_at,
-            _ => Instant::now(),
-        };
+        let finished = result
+            .as_ref()
+            .err()
+            .and_then(FixedDatasetRunError::interrupted_at)
+            .unwrap_or_else(Instant::now);
         measurements.timed_wall_time_ns =
             Measurement::elapsed(finished.saturating_duration_since(started), false);
     }
@@ -942,6 +936,19 @@ pub enum FixedDatasetRunError {
 }
 
 impl FixedDatasetRunError {
+    fn interrupted_at(&self) -> Option<Instant> {
+        match self {
+            Self::Implementation { source } | Self::Evaluator { source } => source.interrupted_at(),
+            Self::ImplementationLaunch {
+                source: LocalWorkerLaunchError::Interrupted { stopped_at },
+            }
+            | Self::EvaluatorLaunch {
+                source: LocalWorkerLaunchError::Interrupted { stopped_at },
+            } => Some(*stopped_at),
+            _ => None,
+        }
+    }
+
     /// Classifies a failed private run for a later attempt diagnostic.
     #[must_use]
     pub fn failure_kind(&self) -> FixedDatasetFailureKind {

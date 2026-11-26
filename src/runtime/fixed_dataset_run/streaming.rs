@@ -26,9 +26,6 @@ impl ActiveClock {
         self.origin.get_or_insert(now);
         self.segment = Some(now);
     }
-    fn pause(&mut self) {
-        self.pause_at(Instant::now());
-    }
     fn pause_at(&mut self, now: Instant) {
         if let Some(start) = self.segment.take() {
             self.active += now.duration_since(start);
@@ -42,7 +39,7 @@ impl ActiveClock {
             .checked_add(limit.saturating_sub(self.used()))
             .ok_or(FixedDatasetRunError::InvalidScientificTimeout)
     }
-    fn update(&self, measurements: &mut ExecutionMeasurements, completed: bool) {
+    fn update(&self, measurements: &mut ExecutionMeasurements, completed: bool, finished: Instant) {
         if self.origin.is_none() {
             let missing =
                 Measurement::unavailable(crate::core::measurements::MissingReason::NotStarted);
@@ -51,7 +48,9 @@ impl ActiveClock {
             measurements.paused_time_ns = Some(missing);
             return;
         }
-        let elapsed = self.origin.map_or(Duration::ZERO, |start| start.elapsed());
+        let elapsed = self.origin.map_or(Duration::ZERO, |start| {
+            finished.saturating_duration_since(start)
+        });
         measurements.timed_wall_time_ns = Measurement::elapsed(self.used(), completed);
         measurements.elapsed_wall_time_ns = Some(Measurement::elapsed(elapsed, completed));
         measurements.paused_time_ns = Some(Measurement::elapsed(
@@ -180,8 +179,13 @@ pub(crate) fn run_streaming(
             path_string(result_root.path())?,
             serde_json::to_value(profile).expect("selected stream"),
         );
-        let mut execute_time = execute_start.elapsed();
-        clock.pause();
+        let finished = first
+            .as_ref()
+            .err()
+            .and_then(WorkerSessionError::interrupted_at)
+            .unwrap_or_else(Instant::now);
+        let mut execute_time = finished.saturating_duration_since(execute_start);
+        clock.pause_at(finished);
         measurements.cpu_time_ns = accounting.pause();
         measurements.execute_request_time_ns = Measurement::elapsed(execute_time, first.is_ok());
         let mut message =
@@ -198,7 +202,7 @@ pub(crate) fn run_streaming(
                 StreamMessage::Finished(_) => break,
                 StreamMessage::Checkpoint(checkpoint) => checkpoint,
             };
-            clock.update(measurements, true);
+            clock.update(measurements, true, Instant::now());
             measurements.peak_rss_bytes = implementation.process_usage().since_optional(None).1;
             if previous_index.is_some_and(|n| checkpoint.check_index <= n)
                 || (!checkpoint.terminal
@@ -387,7 +391,7 @@ pub(crate) fn run_streaming(
                 decision: if reason.is_some() { "stop" } else { "continue" }.into(),
                 stop_reason: reason.clone(),
             };
-            clock.update(measurements, true);
+            clock.update(measurements, true, Instant::now());
             let mut provenance = json!({"environment_class":"development","executor":"trusted_local","architecture":std::env::consts::ARCH,"os":std::env::consts::OS,
                 "implementation":worker_provenance(request.implementation_launch,implementation),"evaluator":worker_provenance(request.evaluator_launch,evaluator),
                 "problem_contract_id":request.problem_contract_id,"problem_parameters":request.problem_parameters,"implementation_parameters":request.implementation_parameters,
@@ -452,8 +456,13 @@ pub(crate) fn run_streaming(
                 reason_text,
             );
             if !stopping {
-                execute_time += start.elapsed();
-                clock.pause();
+                let finished = response
+                    .as_ref()
+                    .err()
+                    .and_then(WorkerSessionError::interrupted_at)
+                    .unwrap_or_else(Instant::now);
+                execute_time += finished.saturating_duration_since(start);
+                clock.pause_at(finished);
                 measurements.cpu_time_ns = accounting.pause();
             }
             measurements.execute_request_time_ns =
@@ -465,11 +474,16 @@ pub(crate) fn run_streaming(
         event(ProfileEvent::Stopped(stop_reason))?;
         Ok(())
     })();
-    clock.pause();
+    let finished = result
+        .as_ref()
+        .err()
+        .and_then(FixedDatasetRunError::interrupted_at)
+        .unwrap_or_else(Instant::now);
+    clock.pause_at(finished);
     if let Some(tree) = &tree {
         measurements.cpu_time_ns = tree.pause();
     }
-    clock.update(measurements, result.is_ok());
+    clock.update(measurements, result.is_ok(), finished);
     if let Some(session) = session {
         session.set_scientific_deadline(None);
     }

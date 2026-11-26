@@ -214,9 +214,8 @@ fn execute(
             OutputFormat::JsonLines => {
                 #[cfg(unix)]
                 {
-                    let mut bytes = Vec::new();
-                    crate::cli::output::write_event(&mut bytes, event)?;
-                    super::write_run_stream(std::io::stdout(), &bytes)
+                    let event = event.clone();
+                    super::run_stdout(move |output| crate::cli::output::write_event(output, &event))
                 }
                 #[cfg(windows)]
                 super::write_stdout(|output| crate::cli::output::write_event(output, event))

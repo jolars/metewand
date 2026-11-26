@@ -34,7 +34,13 @@ pub(crate) fn run_buffered(
     if let Some(started) = timing.started
         && !timing.finished
     {
-        measurements.timed_wall_time_ns = Measurement::elapsed(started.elapsed(), false);
+        let finished = result
+            .as_ref()
+            .err()
+            .and_then(FixedDatasetRunError::interrupted_at)
+            .unwrap_or_else(Instant::now);
+        measurements.timed_wall_time_ns =
+            Measurement::elapsed(finished.saturating_duration_since(started), false);
     }
     integrity.verify("buffered attempt finalization")?;
     result
