@@ -289,6 +289,19 @@ runs and scientific identities as the storage model evolves.
   boundaries and recover after losing all node-local state.
 - [x] Support shared immutable dataset caches with portable retention roots and
   safe reclamation, without a shared SQLite WAL catalog.
+- [ ] Make interrupted runs archivable without starting more benchmark work. On
+  a scheduler's pre-timeout signal, stop dispatching, settle in-flight
+  attempts as interrupted, and preserve completed profiles and calibration
+  decisions. Provide a recovery-only operation for runs left with unfinished
+  attempts after abrupt termination. Test that an interrupted run can be
+  archived, restored, and resumed without repeating committed work.
+- [ ] Support shared runs on GenomeDK's BeeGFS, which returns `EINVAL` for
+  `RENAME_NOREPLACE`. Publish synced journal files with a same-filesystem
+  hard link when no-replace rename is unavailable. For artifact directories,
+  evaluate publishing fully staged directories with ordinary rename under a
+  lock that covers every writer to the destination. Preserve conflict
+  detection and crash durability. On BeeGFS, commit a profile, interrupt the
+  job, and resume on a second node without repeating the committed profile.
 - [ ] Qualify publication, cross-host visibility, and recovery on supported HPC
   filesystems. Distinguish compute-node failure from storage-server power
   loss, and batch metadata operations for large runs. Exercise clustlasso-cd
