@@ -57,6 +57,7 @@ benchmark](examples/overhead)
   attempts at a time under a 192 MiB Linux address-space limit. For 60 MiB
   of results and metrics, release-build peak RSS fell from 249–382 MiB to
   55–57 MiB across the three formats.
+
 - [x] Validate returned buffered traces one row at a time and retain the points
   referenced by snapshots. Account for manifest growth incrementally in the
   Rust and Python collectors and during prefix checks in the validator.
@@ -65,6 +66,7 @@ benchmark](examples/overhead)
   and 65 snapshots, wall time fell from 41 to 3 seconds and peak CLI RSS
   fell from 162 to 69 MiB. The trace, snapshots, and buffer manifest matched
   byte for byte.
+
 - [x] Hash source files and worker executables in chunks. Share fixed dataset
   and worker source snapshots across candidates, register cache roots once
   per object and run, and consolidate redundant dataset scans while
@@ -77,6 +79,7 @@ benchmark](examples/overhead)
   cache and from 6.98 to 5.33 seconds with a primed cache. Resuming both
   accepted slots without a cache fell from 0.85 to 0.07 seconds. Input and
   slot identities and scientific outputs matched.
+
 - [x] Reuse parameter expansion from repository validation. Apply name filters
   before building logical slots. Index observation slots within each
   specification. Resolve and register large schedules in batches to bound
@@ -87,6 +90,7 @@ benchmark](examples/overhead)
   21.27 to 3.88 seconds and from 1,352 to 265 MiB peak CLI RSS. The
   coordination records and scientific output bytes matched. Status reported
   31 and 19,999 pending slots, respectively.
+
 - [x] Index attempts and observations by slot for inspection. Use targeted
   queries for status summaries, exact-ID explanations, and the final run
   comparison. Use exact and prefix lookups in the archive inventory and
@@ -97,17 +101,19 @@ benchmark](examples/overhead)
   retained failure and its successful retry. It compares store bytes before
   and after status and exact-ID explanation.
 
-- [ ] Measure cold and warm preparation time for Basin and clustlasso-cd,
-  then add bounded concurrency for independent dataset configurations if
-  preparation is a bottleneck. Deduplicate by dataset key and dataset–problem
-  pair, start problem preparation after its dataset is ready, and assemble
-  resolved candidates in the existing order. Finish preparation before
-  measured attempts begin.
+- [ ] Measure cold and warm preparation time for Basin and clustlasso-cd, then
+  add bounded concurrency for independent dataset configurations if
+  preparation is a bottleneck. Deduplicate by dataset key and
+  dataset–problem pair, start problem preparation after its dataset is
+  ready, and assemble resolved candidates in the existing order. Finish
+  preparation before measured attempts begin.
+
 - [ ] Measure idle lane time at batch boundaries in runs that opt into
   concurrent attempts. If the cost is substantial, add an execution policy
   that refills lanes as attempts finish. Preserve fresh-sequence ordering
-  and adaptive measurement dependencies, and record dispatch provenance
-  that reflects which attempts could overlap.
+  and adaptive measurement dependencies, and record dispatch provenance that
+  reflects which attempts could overlap.
+
 - [ ] Evaluate concurrent calibration pilots if serial calibration dominates
   startup. Overlap only independent pilots within a round, preserve
   fresh-point ordering, and finish the round before choosing the common
@@ -220,10 +226,17 @@ configuration.
   the common limit from cumulative timed wall time across fresh fits or from
   active time at a streaming checkpoint. Keep pilot evidence separate from
   measured profiles and resume with the recorded budget.
+- [ ] Treat valid, policy-censored profiles as completed outcomes when deciding
+  the CLI exit status. By default, return zero when all scheduled profiles
+  have valid terminal outcomes, including comparisons where no solver
+  reaches the target. Return a nonzero status when execution fails or leaves
+  unfinished work. In the run summary, report target attainment by input and
+  parameter setting and preserve censoring counts and reasons.
 - [ ] Extend time-based adaptive measurement repetitions to fresh sequences,
   buffered profiles, and streaming profiles. Count whole profile repetitions
-  and define which elapsed time contributes toward the threshold for each mode.
-  Preserve the accumulated time and stopping decision across resume and retries.
+  and define which elapsed time contributes toward the threshold for each
+  mode. Preserve the accumulated time and stopping decision across resume
+  and retries.
 - [ ] Add checkpoint-state restoration.
 
 ## Language packages and environments
