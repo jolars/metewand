@@ -297,6 +297,18 @@ impl Inspection {
         }
     }
 
+    pub(crate) fn run_attempts(&self) -> &[AttemptStatus] {
+        &self.attempts
+    }
+
+    pub(crate) fn run_observations(&self) -> &[ObservationStatus] {
+        &self.observations
+    }
+
+    pub(crate) fn run_fresh_sequences(&self) -> &[crate::core::profile::FreshSequenceProgress] {
+        &self.fresh_sequences
+    }
+
     pub(crate) fn records(&self) -> &BTreeMap<String, InspectionRecord> {
         &self.records
     }

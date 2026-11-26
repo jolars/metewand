@@ -136,6 +136,7 @@ impl RunStore {
         Ok(used.saturating_sub(refund) >= limit)
     }
 
+    #[cfg(test)]
     pub fn fresh_progress(&self) -> Result<Vec<FreshSequenceProgress>, RunStoreError> {
         progress_rows(&self.connection, false)
     }

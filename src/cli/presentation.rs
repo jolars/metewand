@@ -42,52 +42,65 @@ fn render(mut element: AnyElement<'_>, width: usize) -> String {
 #[cfg(any(unix, windows))]
 pub(super) fn completion(report: &RunReport, elapsed: Duration) -> String {
     let summary = &report.summary;
-    let (marker, state, color) = if summary.failed_attempts > 0 {
-        ("✗", "finished", Color::Red)
-    } else if summary.censored_attempts > 0
-        || summary.censored_profiles > 0
-        || summary.superseded_attempts > 0
-    {
-        ("!", "finished", Color::Yellow)
-    } else {
-        ("✓", "complete", Color::Green)
-    };
-    let mut outcomes = vec![if state == "complete" {
-        if summary.attempt_slots == 0 {
-            "no pending attempts".into()
+    use crate::core::run_output::ProfileRunStatus;
+    let profile_status = summary
+        .profile_outcomes
+        .as_ref()
+        .map(|profiles| profiles.status);
+    let (marker, state, color) =
+        if profile_status == Some(ProfileRunStatus::Incomplete) && report.one_shot_failures == 0 {
+            ("✗", "incomplete", Color::Red)
+        } else if report.failed() {
+            ("✗", "finished", Color::Red)
+        } else if profile_status == Some(ProfileRunStatus::Paused) {
+            ("!", "paused", Color::Yellow)
+        } else if profile_status == Some(ProfileRunStatus::Complete) {
+            ("✓", "complete", Color::Green)
+        } else if summary.censored_attempts > 0 || summary.superseded_attempts > 0 {
+            ("!", "finished", Color::Yellow)
         } else {
-            format!(
-                "{}/{} accepted",
-                summary.accepted_attempts, summary.attempt_slots
-            )
+            ("✓", "complete", Color::Green)
+        };
+    let mut outcomes;
+    if profile_status.is_some() {
+        outcomes = Vec::new();
+        if report.one_shot_failures > 0 {
+            outcomes.push(format!(
+                "{} failed one-shot attempts",
+                report.one_shot_failures
+            ));
         }
     } else {
-        format!("{} accepted", summary.accepted_attempts)
-    }];
-    for (count, label) in [
-        (summary.failed_attempts, "failed"),
-        (summary.censored_attempts, "censored"),
-        (summary.superseded_attempts, "superseded"),
-    ] {
-        if count > 0 {
-            outcomes.push(format!("{count} {label}"));
+        outcomes = vec![if state == "complete" {
+            if summary.attempt_slots == 0 {
+                "no pending attempts".into()
+            } else {
+                format!(
+                    "{}/{} accepted",
+                    summary.accepted_attempts, summary.attempt_slots
+                )
+            }
+        } else {
+            format!("{} accepted", summary.accepted_attempts)
+        }];
+        for (count, label) in [
+            (summary.failed_attempts, "failed"),
+            (summary.censored_attempts, "censored"),
+            (summary.superseded_attempts, "superseded"),
+        ] {
+            if count > 0 {
+                outcomes.push(format!("{count} {label}"));
+            }
         }
     }
-    if summary.censored_profiles > 0 {
-        outcomes.push(format!(
-            "{} censored profile{}",
-            summary.censored_profiles,
-            if summary.censored_profiles == 1 {
-                ""
-            } else {
-                "s"
-            }
-        ));
-    }
+    let details = if outcomes.is_empty() {
+        String::new()
+    } else {
+        format!(" · {}", outcomes.join(" · "))
+    };
     let seconds = elapsed.as_secs();
     let heading = format!(
-        "{marker} Benchmarks {state} · {} · {}:{:02}",
-        outcomes.join(" · "),
+        "{marker} Benchmarks {state}{details} · {}:{:02}",
         seconds / 60,
         seconds % 60
     );

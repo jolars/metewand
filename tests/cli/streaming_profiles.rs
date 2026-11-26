@@ -616,6 +616,7 @@ fn streaming_bounds_preserve_partial_curves_and_distinguish_failures() {
             "time" => ("censored", "active_time_limit", 1),
             _ => unreachable!(),
         };
+        assert_eq!(output.status.success(), status == "censored", "{report}");
         assert_eq!(attempt["status"], status, "{case}: {report}");
         assert_eq!(attempt["diagnostic"]["code"], reason, "{case}: {report}");
         assert_eq!(

@@ -860,6 +860,62 @@
       }
     },
     {
+      "name": "completed censored profiles can have zero target attainment",
+      "schema": "run-output",
+      "instance": {
+        "schema_version": 1,
+        "kind": "result",
+        "data": {
+          "command": "run",
+          "benchmark": "profile-resume",
+          "manifest_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "output_directory": "/tmp/run",
+          "attempts": [],
+          "events": [
+            {
+              "command": "run",
+              "sequence": 0,
+              "event": "run_started",
+              "attempt_slots": 0
+            },
+            {
+              "command": "run",
+              "sequence": 1,
+              "event": "run_finished",
+              "accepted_attempts": 0,
+              "failed_attempts": 0,
+              "superseded_attempts": 0
+            }
+          ],
+          "summary": {
+            "profile_outcomes": {
+              "status": "complete",
+              "groups": [
+                {
+                  "experiment": "accuracy",
+                  "problem_instance_id": "mw1-problem-instance-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                  "dataset": "sample",
+                  "problem": "fit",
+                  "parameters": { "dataset": { "size": 100 }, "problem": {} },
+                  "accepted": 0,
+                  "censored": 2,
+                  "failed": 0,
+                  "unfinished": 0,
+                  "partial": 0,
+                  "censoring_reasons": { "active_time_limit": 2 },
+                  "target": { "metric": "gap", "direction": "at_most", "threshold": 0.01, "reached": 0 }
+                }
+              ]
+            },
+            "attempt_slots": 0,
+            "accepted_attempts": 0,
+            "failed_attempts": 0,
+            "superseded_attempts": 0
+          }
+        }
+      }
+    },
+    {
       "name": "private worker environment with a redacted channel",
       "schema": "worker-environment",
       "instance": {

@@ -146,6 +146,7 @@ fn adaptive_fresh_pilots_resume_and_use_cumulative_executor_time() {
     );
     assert!(output.status.success(), "{output:?}");
     assert_eq!(bounded["calibration_attempts"].as_array().unwrap().len(), 1);
+    assert_eq!(bounded["summary"]["profile_outcomes"]["status"], "paused");
     let record = attempt_document(root, &bounded["calibration_attempts"][0]["attempt"]);
     let context = &record["provenance"]["data"]["context"];
     assert!(context["calibration"].is_object());
@@ -326,7 +327,7 @@ fn adaptive_fresh_grows_only_for_time_limited_fits() {
             ],
         );
         let report = data(&output);
-        assert!(!output.status.success(), "{report}");
+        assert_eq!(output.status.success(), time_limited, "{report}");
         if time_limited {
             assert_eq!(report["adaptive_budgets"][0]["fallback"], true);
             assert_eq!(
@@ -567,6 +568,10 @@ fn selecting_one_point_does_not_execute_its_prefix() {
     assert_eq!(report["attempts"].as_array().unwrap().len(), 1);
     assert_eq!(report["fresh_sequences"][0]["status"], "partial");
     assert_eq!(
+        report["summary"]["profile_outcomes"]["groups"][0]["partial"],
+        1
+    );
+    assert_eq!(
         report["attempts"][0]["result"],
         json!({"x":1.4142074584960938})
     );
@@ -592,7 +597,8 @@ fn failed_point_does_not_stop_later_controls_and_retry_preserves_budget() {
     let consumed = report["fresh_sequences"][0]["consumed_time_ns"]
         .as_u64()
         .unwrap();
-    let (_, report) = run(stage.path(), &["--resume"]);
+    let (output, report) = run(stage.path(), &["--resume"]);
+    assert_eq!(output.status.code(), Some(5), "{report}");
     assert!(report["attempts"].as_array().unwrap().is_empty());
     let (output, report) = run(stage.path(), &["--resume", "--retry"]);
     assert!(output.status.success(), "{output:?}\n{report}");
@@ -620,7 +626,7 @@ fn active_time_bound_censors_and_resume_does_not_reset_it() {
         )
     });
     let (output, report) = run(stage.path(), &[]);
-    assert!(!output.status.success(), "{report}");
+    assert!(output.status.success(), "{report}");
     assert_eq!(report["attempts"].as_array().unwrap().len(), 1);
     assert_eq!(report["attempts"][0]["status"], "censored");
     assert_eq!(report["fresh_sequences"][0]["consumed_time_ns"], 20_000_000);
@@ -649,7 +655,12 @@ fn active_time_bound_censors_and_resume_does_not_reset_it() {
         ],
     );
     assert!(restored.status.success(), "{restored:?}");
-    let (_, resume) = run(stage.path(), &["--resume", "--retry"]);
+    let (output, resume) = run(stage.path(), &["--resume", "--retry"]);
+    assert!(output.status.success(), "{resume}");
+    assert_eq!(
+        resume["summary"]["profile_outcomes"],
+        report["summary"]["profile_outcomes"]
+    );
     assert!(resume["attempts"].as_array().unwrap().is_empty());
     assert_eq!(resume["fresh_sequences"][0]["consumed_time_ns"], 20_000_000);
     let export = invoke(
@@ -731,6 +742,7 @@ fn max_attempts_counts_dispatches_after_target_skips() {
     let (output, report) = run(stage.path(), &["--max-attempts", "5"]);
     assert!(output.status.success(), "{output:?}");
     assert_eq!(report["summary"]["attempt_slots"], 5);
+    assert_eq!(report["summary"]["profile_outcomes"]["status"], "paused");
     let (output, report) = run(stage.path(), &["--resume"]);
     assert!(output.status.success(), "{output:?}");
     assert_eq!(report["summary"]["attempt_slots"], 3);
@@ -890,8 +902,12 @@ fn execution_timeout_allows_later_controls_but_target_blocks_old_retries() {
             .iter()
             .all(|p| p["status"] == "accepted")
     );
+    let outcomes = &report["summary"]["profile_outcomes"];
+    assert_eq!(outcomes["groups"][0]["target"]["reached"], 2);
+    assert_eq!(outcomes["groups"][0]["failed"], 2);
     let (output, report) = run(stage.path(), &["--resume", "--retry"]);
-    assert!(output.status.success(), "{output:?}\n{report}");
+    assert_eq!(output.status.code(), Some(5), "{output:?}\n{report}");
+    assert_eq!(report["summary"]["profile_outcomes"], *outcomes);
     assert!(report["attempts"].as_array().unwrap().is_empty());
     assert_eq!(report["events"][0]["attempt_slots"], 0);
     let status = data(&invoke(
@@ -900,6 +916,34 @@ fn execution_timeout_allows_later_controls_but_target_blocks_old_retries() {
     ));
     assert_eq!(status["summary"]["failed_attempts"], 2);
     assert_eq!(status["summary"]["skipped_target_reached_slots"], 6);
+}
+
+#[test]
+fn human_profile_summary_uses_current_experiment_and_saved_outcomes() {
+    let stage = stage(false);
+    let root = stage.path();
+    edit(root, "metewand.yaml", |source| {
+        source.replace("threshold: 0.000001", "threshold: 0.00000000000000000001")
+    });
+    let (output, report) = run(root, &["--experiment", "target"]);
+    assert!(output.status.success(), "{report}");
+    assert_eq!(
+        report["summary"]["profile_outcomes"]["groups"][0]["censored"],
+        2
+    );
+
+    for _ in 0..2 {
+        let output = invoke(
+            root,
+            &["run", "--output-dir", "run", "--experiment", "fixed"],
+        );
+        assert!(output.status.success(), "{output:?}");
+        let text = String::from_utf8(output.stdout).unwrap();
+        assert!(text.contains("Benchmarks complete"), "{text}");
+        assert!(text.contains("Profiles: 1 accepted, 0 censored"), "{text}");
+        assert!(!text.contains("2 censored"), "{text}");
+        assert!(!text.contains("Target attainment"), "{text}");
+    }
 }
 
 #[test]
@@ -942,7 +986,11 @@ fn concurrent_invocations_leave_owned_repetitions_for_their_owner() {
     fs::write(release, "continue").unwrap();
     let first = first.wait_with_output().unwrap();
     assert!(first.status.success(), "{first:?}");
-    assert!(output.status.success(), "{output:?}\n{report}");
+    assert_eq!(output.status.code(), Some(5), "{output:?}\n{report}");
+    assert_eq!(
+        report["summary"]["profile_outcomes"]["status"],
+        "incomplete"
+    );
     assert!(report["attempts"].as_array().unwrap().is_empty());
     assert_eq!(report["fresh_sequences"][0]["status"], "partial");
     let (output, report) = run(stage.path(), &["--resume"]);

@@ -590,6 +590,10 @@ fn adaptive_target_crossings_after_the_limit_remain_censored() {
         &["run", "--output-dir", "run", "--output", "json"],
     );
     let report = run_data(&run);
+    assert!(run.status.success(), "{report}");
+    let group = &report["summary"]["profile_outcomes"]["groups"][0];
+    assert_eq!(group["target"]["reached"], 2);
+    assert_eq!(group["censoring_reasons"]["active_time_limit"], 2);
     assert_eq!(
         report["adaptive_budgets"][0]["reference_time_ns"], 7_000_000,
         "{report}"
@@ -757,7 +761,7 @@ fn adaptive_selected_attempts_remain_selectable_on_resume_and_retry() {
             "json",
         ],
     );
-    assert_eq!(first.status.code(), Some(5), "{first:?}");
+    assert_eq!(first.status.code(), Some(0), "{first:?}");
     let first = run_data(&first);
     assert_eq!(first["summary"]["censored_attempts"], 1, "{first}");
     let attempt = &first["attempts"][0];
@@ -783,6 +787,10 @@ fn adaptive_selected_attempts_remain_selectable_on_resume_and_retry() {
         assert!(resumed.status.success(), "{report}");
         assert_eq!(report["adaptive_budgets"], first["adaptive_budgets"]);
         assert_eq!(report["summary"]["attempt_slots"], 0);
+        assert_eq!(
+            report["summary"]["profile_outcomes"],
+            first["summary"]["profile_outcomes"]
+        );
         let retried = invoke(
             stage.path(),
             &[
@@ -797,7 +805,7 @@ fn adaptive_selected_attempts_remain_selectable_on_resume_and_retry() {
             ],
         );
         let report = run_data(&retried);
-        assert_eq!(retried.status.code(), Some(5), "{report}");
+        assert_eq!(retried.status.code(), Some(0), "{report}");
         assert_eq!(report["adaptive_budgets"], first["adaptive_budgets"]);
         assert!(report.get("calibration_attempts").is_none(), "{report}");
         assert_eq!(report["summary"]["censored_attempts"], 1, "{report}");
@@ -908,12 +916,45 @@ fn adaptive_pilot_rounds_resume_before_measurement_and_grow_until_verified() {
 
 #[test]
 fn adaptive_no_convergence_uses_a_frozen_fallback_and_keeps_censoring() {
+    use crate::core::public_schemas::PublicSchema;
     let stage = adaptive_stage("2 ms", "4 ms");
     let run = invoke(
         stage.path(),
         &["run", "--output-dir", "run", "--shared", "--output", "json"],
     );
     let report = run_data(&run);
+    assert!(run.status.success(), "{report}");
+    let outcomes = &report["summary"]["profile_outcomes"];
+    assert_eq!(outcomes["status"], "complete");
+    assert_eq!(outcomes["groups"][0]["target"]["reached"], 0);
+    assert_eq!(outcomes["groups"][0]["censored"], 4);
+    let no_op = invoke(
+        stage.path(),
+        &["run", "--output-dir", "run", "--output", "json"],
+    );
+    assert!(no_op.status.success(), "{no_op:?}");
+    assert_eq!(run_data(&no_op)["summary"]["profile_outcomes"], *outcomes);
+    let jsonl = invoke(
+        stage.path(),
+        &["run", "--output-dir", "run", "--output", "jsonl"],
+    );
+    assert!(jsonl.status.success(), "{jsonl:?}");
+    let lines = String::from_utf8(jsonl.stdout).unwrap();
+    let catalog = crate::core::public_schemas::public_schema_catalog().unwrap();
+    let mut last = Value::Null;
+    for line in lines.lines() {
+        last = serde_json::from_str(line).unwrap();
+        catalog
+            .validate(PublicSchema::RunOutput.repository_path(), &last)
+            .unwrap();
+    }
+    assert_eq!(last["data"]["summary"]["profile_outcomes"], *outcomes);
+    let human = invoke(stage.path(), &["run", "--output-dir", "run"]);
+    assert!(human.status.success(), "{human:?}");
+    let summary = String::from_utf8(human.stdout).unwrap();
+    assert!(summary.contains("Benchmarks complete"), "{summary}");
+    assert!(summary.contains("active_time_limit: 4"), "{summary}");
+    assert!(summary.contains("0/4 reached"), "{summary}");
     let decision = &report["adaptive_budgets"][0];
     assert_eq!(decision["fallback"], true, "{report}");
     assert_eq!(decision["reference_time_ns"], Value::Null);
@@ -927,6 +968,54 @@ fn adaptive_no_convergence_uses_a_frozen_fallback_and_keeps_censoring() {
     let resumed = run_data(&resume);
     assert_eq!(resumed["adaptive_budgets"], report["adaptive_budgets"]);
     assert_eq!(resumed["summary"]["censored_attempts"], 4);
+}
+
+#[test]
+fn profile_summary_uses_current_resolved_slots() {
+    let stage = stage();
+    let root = stage.path();
+    let args = [
+        "run",
+        "--output-dir",
+        "run",
+        "--max-attempts",
+        "1",
+        "--output",
+        "json",
+    ];
+    let first = invoke(root, &args);
+    assert!(first.status.success(), "{first:?}");
+    let first = run_data(&first);
+
+    let path = root.join("worker.py");
+    let source = fs::read_to_string(&path).unwrap();
+    fs::write(
+        path,
+        format!("{source}\n# Change the resolved worker identity.\n"),
+    )
+    .unwrap();
+    let second = invoke(root, &args);
+    assert!(second.status.success(), "{second:?}");
+    let second = run_data(&second);
+    assert_ne!(
+        first["attempts"][0]["resolved_slot_id"],
+        second["attempts"][0]["resolved_slot_id"]
+    );
+    assert_eq!(
+        second["summary"]["profile_outcomes"],
+        first["summary"]["profile_outcomes"]
+    );
+    let status = data(&invoke(
+        root,
+        &["status", "--output-dir", "run", "--output", "json"],
+    ));
+    assert!(
+        status["attempts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|attempt| attempt["id"] == first["attempts"][0]["attempt_id"])
+    );
 }
 
 #[test]
@@ -1054,6 +1143,10 @@ fn buffered_modes_publish_independent_snapshots_and_diagnostic_traces() {
     );
     assert!(resume.status.success(), "{resume:?}");
     assert_eq!(run_data(&resume)["summary"]["attempt_slots"], 0);
+    assert_eq!(
+        run_data(&resume)["summary"]["profile_outcomes"],
+        report["summary"]["profile_outcomes"]
+    );
     for format in ["jsonl", "csv"] {
         let export = invoke(
             stage.path(),
@@ -1158,7 +1251,7 @@ fn local_target_disagreement_censors_and_contract_agreement_fails() {
             ],
         );
         let report = run_data(&run);
-        assert!(!run.status.success(), "{report}");
+        assert_eq!(run.status.success(), !agreement, "{report}");
         let attempt = &report["attempts"][0];
         assert_eq!(
             attempt["status"],

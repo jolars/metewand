@@ -66,6 +66,7 @@ pub(super) struct ResolvedRun {
     pub batches: Vec<ResolvedBatch>,
     pub private_root: TempDir,
     pub resume_store: Option<RunStore>,
+    pub(super) completed_profiles: super::outcomes::Selection,
 }
 
 pub(super) struct ResolvedBatch {
@@ -374,9 +375,10 @@ fn validate_snapshot_destination(snapshot: &Snapshot, output: &Path) -> Result<(
     Ok(())
 }
 
-pub(super) struct SlotSelection {
+pub(super) struct SlotSelection<'a> {
     pub reuse_committed_inputs: bool,
     pub explicit_ids: bool,
+    pub selected_ids: &'a [String],
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -387,7 +389,7 @@ pub(super) fn resolve(
     cache_directory: Option<&Path>,
     runtime: &crate::protocol::RuntimeSettings,
     locked: Option<&crate::runtime::lockfile::VerifiedLock>,
-    selection: SlotSelection,
+    selection: SlotSelection<'_>,
     progress: &mut impl FnMut(&super::RunProgress) -> io::Result<()>,
 ) -> Result<ResolvedRun, RunError> {
     for experiment in &plan.experiments {
@@ -652,6 +654,8 @@ pub(super) fn resolve(
                     dataset,
                     preparation.as_ref().map(|(_, worker)| worker),
                     executor.id,
+                    experiment,
+                    selection.selected_ids,
                 )?
             {
                 all_accepted = false;
@@ -663,6 +667,7 @@ pub(super) fn resolve(
                 candidates: Vec::new(),
                 schedule: Vec::new(),
                 batches: Vec::new(),
+                completed_profiles: committed.profiles,
                 private_root,
                 resume_store,
             });
@@ -948,6 +953,7 @@ pub(super) fn resolve(
         candidates,
         schedule,
         batches: Vec::new(),
+        completed_profiles: Default::default(),
         private_root,
         resume_store,
     })

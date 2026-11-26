@@ -28,7 +28,7 @@ pub struct RunOptions {
     pub retry: bool,
 }
 
-/// A stable technical or scientific reason for a failed attempt.
+/// A stable technical or scientific reason for an attempt outcome.
 #[derive(Clone, Debug, Serialize)]
 pub struct RunDiagnostic {
     /// Machine-readable failure code.
@@ -125,7 +125,7 @@ pub enum RunEventKind<D> {
         /// The same typed outcome used in the final report.
         attempt: Arc<RunAttemptOutput<D>>,
     },
-    /// Every selected attempt has a durable terminal outcome.
+    /// Dispatch has ended and the invocation totals are available.
     RunFinished {
         /// Number of accepted attempts.
         accepted_attempts: usize,
@@ -141,6 +141,8 @@ pub enum RunEventKind<D> {
 /// Counts for the complete selected execution, including failed attempts.
 #[derive(Debug, Serialize)]
 pub struct RunSummary {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub profile_outcomes: Option<ProfileOutcomes>,
     #[serde(skip_serializing_if = "is_zero")]
     pub censored_profiles: usize,
     #[serde(skip_serializing_if = "is_zero")]
@@ -153,6 +155,52 @@ pub struct RunSummary {
     pub failed_attempts: usize,
     /// Number of durably superseded concurrent candidates.
     pub superseded_attempts: usize,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProfileRunStatus {
+    Complete,
+    Paused,
+    Incomplete,
+    Failed,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ProfileOutcomes {
+    pub status: ProfileRunStatus,
+    pub groups: Vec<ProfileGroup>,
+}
+
+#[derive(Debug, Default, Serialize)]
+pub struct ProfileGroup {
+    pub experiment: String,
+    pub problem_instance_id: String,
+    pub dataset: String,
+    pub problem: String,
+    pub parameters: serde_json::Value,
+    pub accepted: usize,
+    pub censored: usize,
+    pub failed: usize,
+    pub unfinished: usize,
+    pub partial: usize,
+    pub censoring_reasons: std::collections::BTreeMap<String, usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target: Option<ProfileTarget>,
+}
+
+impl ProfileGroup {
+    pub fn selected(&self) -> usize {
+        self.accepted + self.censored + self.failed + self.unfinished + self.partial
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub struct ProfileTarget {
+    pub metric: String,
+    pub direction: crate::core::profile::Direction,
+    pub threshold: f64,
+    pub reached: usize,
 }
 
 /// Sampling progress derived from the committed one-shot measurements.
@@ -170,6 +218,8 @@ pub struct AdaptiveMeasurementProgress {
 /// Final command output rendered by both human and machine interfaces.
 #[derive(Debug, Serialize)]
 pub struct RunReport<D> {
+    #[serde(skip)]
+    pub one_shot_failures: usize,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub adaptive_measurements: Vec<AdaptiveMeasurementProgress>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -199,4 +249,20 @@ pub struct RunReport<D> {
 
 fn is_zero(value: &usize) -> bool {
     *value == 0
+}
+
+impl<D> RunReport<D> {
+    pub fn failed(&self) -> bool {
+        self.one_shot_failures > 0
+            || self
+                .summary
+                .profile_outcomes
+                .as_ref()
+                .is_some_and(|profiles| {
+                    matches!(
+                        profiles.status,
+                        ProfileRunStatus::Incomplete | ProfileRunStatus::Failed
+                    )
+                })
+    }
 }

@@ -155,9 +155,56 @@
       ],
       "unevaluatedProperties": false
     },
+    "profile_outcomes": {
+      "type": "object",
+      "properties": {
+        "status": { "enum": ["complete", "paused", "incomplete", "failed"] },
+        "groups": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/profile_group" } }
+      },
+      "required": ["status", "groups"],
+      "additionalProperties": false
+    },
+    "profile_group": {
+      "type": "object",
+      "properties": {
+        "experiment": { "$ref": "common.schema.json#/$defs/name" },
+        "problem_instance_id": { "type": "string", "pattern": "^mw1-problem-instance-[0-9a-f]{64}$" },
+        "dataset": { "type": "string" },
+        "problem": { "type": "string" },
+        "parameters": {
+          "type": "object",
+          "properties": { "dataset": { "type": "object" }, "problem": { "type": "object" } },
+          "required": ["dataset", "problem"],
+          "additionalProperties": false
+        },
+        "accepted": { "$ref": "common.schema.json#/$defs/safe_nonnegative_integer" },
+        "censored": { "$ref": "common.schema.json#/$defs/safe_nonnegative_integer" },
+        "failed": { "$ref": "common.schema.json#/$defs/safe_nonnegative_integer" },
+        "unfinished": { "$ref": "common.schema.json#/$defs/safe_nonnegative_integer" },
+        "partial": { "$ref": "common.schema.json#/$defs/safe_nonnegative_integer" },
+        "censoring_reasons": {
+          "type": "object",
+          "additionalProperties": { "type": "integer", "minimum": 1 }
+        },
+        "target": {
+          "type": "object",
+          "properties": {
+            "metric": { "type": "string" },
+            "direction": { "enum": ["at_most", "at_least"] },
+            "threshold": { "type": "number" },
+            "reached": { "$ref": "common.schema.json#/$defs/safe_nonnegative_integer" }
+          },
+          "required": ["metric", "direction", "threshold", "reached"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["experiment", "problem_instance_id", "dataset", "problem", "parameters", "accepted", "censored", "failed", "unfinished", "partial", "censoring_reasons"],
+      "additionalProperties": false
+    },
     "summary": {
       "type": "object",
       "properties": {
+        "profile_outcomes": { "$ref": "#/$defs/profile_outcomes" },
         "attempt_slots": { "$ref": "common.schema.json#/$defs/safe_nonnegative_integer" },
         "accepted_attempts": { "$ref": "common.schema.json#/$defs/safe_nonnegative_integer" },
         "failed_attempts": { "$ref": "common.schema.json#/$defs/safe_nonnegative_integer" },

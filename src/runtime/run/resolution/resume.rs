@@ -9,6 +9,7 @@ use crate::core::{
 
 #[derive(Default)]
 pub(super) struct CommittedInputs {
+    pub(super) profiles: super::super::outcomes::Selection,
     datasets: BTreeMap<RecordId<DatasetConfigurationRecord>, RecordId<DatasetArtifact>>,
     preparations: BTreeMap<
         (
@@ -31,15 +32,18 @@ impl CommittedInputs {
         dataset: &DatasetPlan<'_>,
         preparation: Option<&ResolvedWorker>,
         executor: RecordId<ExecutorDefinitionRecord>,
+        experiment: &crate::core::planning::LogicalExperimentPlan,
+        selected_ids: &[String],
     ) -> Result<bool, RunError> {
         let measured = candidate.specifications.iter().flat_map(|specification| {
-            specification
-                .attempt_slots
-                .iter()
-                .filter(|slot| matches!(slot.record.role, AttemptSlotRole::Measured { .. }))
-                .map(move |slot| (specification.specification.id, slot.id))
+            specification.attempt_slots.iter().filter_map(move |slot| {
+                let AttemptSlotRole::Measured { observation_slot } = slot.record.role else {
+                    return None;
+                };
+                Some((specification, slot.id, observation_slot))
+            })
         });
-        let Some((_, first_slot)) = measured.clone().next() else {
+        let Some((_, first_slot, _)) = measured.clone().next() else {
             return Ok(false);
         };
 
@@ -98,7 +102,24 @@ impl CommittedInputs {
             let mut current = None;
             let mut count = 0;
             let mut time_ns = 0u128;
-            for (logical_specification, logical_slot) in measured.clone() {
+            let mut profile_slots = Vec::new();
+            let profile = repository.manifest.observation_policies
+                [&experiment.observation_policy.record.name]
+                .profile
+                .as_ref();
+            let fresh_observations = if profile.is_some() {
+                candidate
+                    .specifications
+                    .iter()
+                    .flat_map(|specification| &specification.observation_slots)
+                    .filter(|slot| slot.record.fresh.is_some())
+                    .map(|slot| (slot.id, slot.record.measurement_index))
+                    .collect::<BTreeMap<_, _>>()
+            } else {
+                BTreeMap::new()
+            };
+            for (logical, logical_slot, observation_slot) in measured.clone() {
+                let logical_specification = logical.specification.id;
                 if current != Some(logical_specification) {
                     current = Some(logical_specification);
                     count = 0;
@@ -131,6 +152,20 @@ impl CommittedInputs {
                     all_accepted = false;
                     break;
                 }
+                if profile.is_some() {
+                    let fresh = fresh_observations.get(&observation_slot).copied();
+                    if fresh.is_none()
+                        || selected_ids.is_empty()
+                        || selected_ids.iter().any(|id| {
+                            *id == candidate.candidate.id.to_string()
+                                || *id == logical_specification.to_string()
+                                || *id == logical_slot.to_string()
+                                || *id == observation_slot.to_string()
+                        })
+                    {
+                        profile_slots.push((slot.id, specification.id, fresh));
+                    }
+                }
             }
             if all_accepted {
                 match dataset {
@@ -145,6 +180,19 @@ impl CommittedInputs {
                 self.datasets.insert(configuration, artifact);
                 if let Some(artifact) = prepared {
                     self.preparations.insert(preparation_key, artifact);
+                }
+                if let Some(profile) = profile {
+                    for (slot, specification, fresh) in profile_slots {
+                        self.profiles.add(
+                            experiment.name.as_str(),
+                            problem_instance.id,
+                            &context["comparison"],
+                            &profile.policy,
+                            slot,
+                            specification,
+                            fresh,
+                        );
+                    }
                 }
                 return Ok(true);
             }

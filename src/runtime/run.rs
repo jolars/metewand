@@ -3,6 +3,7 @@
 mod adaptive;
 mod attempt;
 mod check;
+mod outcomes;
 mod profile;
 
 pub use check::{
@@ -255,6 +256,7 @@ pub(crate) fn run_repository_with_progress(
                 && cache_directory.is_none()
                 && selection::preselected_ids(&options.selected_ids),
             explicit_ids: !options.selected_ids.is_empty(),
+            selected_ids: &options.selected_ids,
         },
         &mut progress,
     )?;
@@ -375,7 +377,7 @@ pub(crate) fn run_repository_with_progress(
             retain_inputs(candidate)?;
         }
     }
-    let (adaptive_budgets, calibration_attempts) = adaptive::calibrate(
+    let (adaptive_budgets, calibration_attempts, blocked_calibration) = adaptive::calibrate(
         repository,
         &mut resolved,
         &mut store,
@@ -388,6 +390,27 @@ pub(crate) fn run_repository_with_progress(
         .max_attempts
         .map(|n| n.saturating_sub(calibration_attempts.len() as u64));
     let options = &measured_options;
+    let mut profile_selection = std::mem::take(&mut resolved.completed_profiles);
+    for &(candidate, measurement) in &resolved.schedule {
+        if !is_selected((candidate, measurement)) {
+            continue;
+        }
+        let candidate = &resolved.candidates[candidate];
+        let slot = &candidate.measurements[measurement];
+        if let Some(policy) = candidate.profile_policy() {
+            profile_selection.add(
+                &candidate.experiment,
+                slot.specification.record.problem_instance,
+                &slot.provenance_base["comparison"],
+                policy,
+                slot.attempt_slot,
+                slot.specification.id,
+                slot.fresh
+                    .as_ref()
+                    .map(|_| slot.scheduling.comparison_block.measurement_index),
+            );
+        }
+    }
     use crate::runtime::run_store::{SlotDelivery, SlotRegistration};
     // Register fixed slots before dispatch, including those beyond the
     // invocation's attempt bound. Keep each durable transaction bounded.
@@ -524,6 +547,7 @@ pub(crate) fn run_repository_with_progress(
         RunEventKind::RunStarted { attempt_slots },
     )?;
     let mut attempts = Vec::new();
+    let mut one_shot_failures = 0;
     let mut workers = Vec::new();
     let mut busy_repetitions = std::collections::BTreeSet::new();
     let mut measurement_series = std::collections::BTreeMap::<_, MeasurementSeries>::new();
@@ -616,7 +640,12 @@ pub(crate) fn run_repository_with_progress(
         for &(candidate, measurement) in &slots {
             resolved.candidates[candidate].measurements[measurement].execution_provenance = None;
         }
-        for attempt in completed {
+        for (attempt, &(candidate, _)) in completed.into_iter().zip(&slots) {
+            if attempt.status == RunAttemptStatus::Failed
+                && resolved.candidates[candidate].profile_policy().is_none()
+            {
+                one_shot_failures += 1;
+            }
             let attempt = Arc::new(attempt);
             emit(
                 &mut events,
@@ -628,7 +657,18 @@ pub(crate) fn run_repository_with_progress(
             attempts.push(attempt);
         }
     }
-    let fresh_sequences = store.fresh_progress()?;
+    let inspection = crate::runtime::inspection::Inspection::read_for_run(&output_directory)
+        .map_err(io::Error::other)?;
+    let fresh_sequences = inspection.run_fresh_sequences().to_vec();
+    let profile_outcomes = profile_selection.summarize(
+        &inspection,
+        &fresh_sequences,
+        options
+            .max_attempts
+            .is_some_and(|bound| attempts.len() as u64 >= bound),
+        blocked_calibration,
+        &busy_repetitions,
+    );
     let censored_profiles = fresh_sequences
         .iter()
         .filter(|p| p.status == "censored")
@@ -660,10 +700,9 @@ pub(crate) fn run_repository_with_progress(
             superseded_attempts,
         },
     )?;
-    let inspection = crate::runtime::inspection::Inspection::read_for_run(&output_directory)
-        .map_err(io::Error::other)?;
     let comparison = inspection.run_comparison_rows(&selected_candidates);
     Ok(RunReport {
+        one_shot_failures,
         adaptive_measurements: inspection
             .adaptive_measurements()
             .iter()
@@ -684,6 +723,7 @@ pub(crate) fn run_repository_with_progress(
         attempts,
         events,
         summary: RunSummary {
+            profile_outcomes,
             censored_profiles,
             censored_attempts,
             attempt_slots,

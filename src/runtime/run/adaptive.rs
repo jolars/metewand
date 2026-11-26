@@ -126,12 +126,20 @@ pub(super) fn calibrate(
     options: &RunOptions,
     is_selected: impl Fn((usize, usize)) -> bool,
     progress: &mut impl FnMut(&RunProgress) -> io::Result<()>,
-) -> Result<(Vec<AdaptiveBudgetDecision>, Vec<CalibrationAttemptOutput>), RunError> {
+) -> Result<
+    (
+        Vec<AdaptiveBudgetDecision>,
+        Vec<CalibrationAttemptOutput>,
+        bool,
+    ),
+    RunError,
+> {
     // Validate complete cohorts before allocating any pilot slots.
     let groups = groups(&resolved.candidates)?;
     let mut decisions = Vec::new();
     let mut attempts = Vec::new();
     let mut verified_saved = false;
+    let mut blocked = false;
     for group in groups {
         if !group.candidates.iter().any(|&index| {
             (0..resolved.candidates[index].measurements.len())
@@ -156,6 +164,7 @@ pub(super) fn calibrate(
                 options,
                 &mut attempts,
                 progress,
+                &mut blocked,
             )?
         };
         if let Some(decision) = decision {
@@ -173,9 +182,10 @@ pub(super) fn calibrate(
             decisions.push(decision);
         }
     }
-    Ok((decisions, attempts))
+    Ok((decisions, attempts, blocked))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn calibrate_group(
     repository: &CheckedRepository,
     resolved: &mut resolution::ResolvedRun,
@@ -184,6 +194,7 @@ fn calibrate_group(
     options: &RunOptions,
     attempts: &mut Vec<CalibrationAttemptOutput>,
     progress: &mut impl FnMut(&RunProgress) -> io::Result<()>,
+    blocked: &mut bool,
 ) -> Result<Option<AdaptiveBudgetDecision>, RunError> {
     let mut pilots = Vec::new();
     let mut limit = group
@@ -221,12 +232,12 @@ fn calibrate_group(
                         .max_attempts
                         .is_some_and(|n| attempts.len() as u64 >= n)
                     {
-                        return Ok(());
+                        return Ok(false);
                     }
                     let mut execution = match AttemptExecution::reserve(store, pilot, false) {
                         Ok(Some(execution)) => execution,
                         Ok(None) | Err(RunError::Store(RunStoreError::SequenceBusy)) => {
-                            return Ok(());
+                            return Ok(true);
                         }
                         Err(error) => return Err(error),
                     };
@@ -257,8 +268,9 @@ fn calibrate_group(
                             &mut execution,
                         )?,
                     });
-                    Ok(())
+                    Ok(true)
                 },
+                blocked,
             );
             (
                 candidate.profile,
@@ -396,7 +408,8 @@ fn run_pilot(
         &RunStore,
         &ResolvedMeasurement,
         &mut crate::runtime::worker_reuse::ReusableWorker,
-    ) -> Result<(), RunError>,
+    ) -> Result<bool, RunError>,
+    blocked: &mut bool,
 ) -> Result<Option<PilotEvidence>, RunError> {
     let first = &candidate.measurements[0];
     let repetition = first.scheduling.comparison_block.measurement_index;
@@ -467,10 +480,12 @@ fn run_pilot(
             Some(outcome) => outcome,
             None => {
                 if store.slot_progress(pilot.attempt_slot)?.active {
+                    *blocked = true;
                     return Ok(None);
                 }
-                dispatch(store, pilot, &mut worker)?;
+                let within_bound = dispatch(store, pilot, &mut worker)?;
                 let Some(outcome) = evidence(store)? else {
+                    *blocked |= within_bound;
                     return Ok(None);
                 };
                 outcome

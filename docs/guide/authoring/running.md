@@ -40,9 +40,22 @@ directory to `.gitignore` if you use it. Keep run directories outside the files
 you include as worker sources. The walkthrough includes only `benchmark.py`, so
 `comparison-run` beside it is suitable.
 
-The command shows its progress and finishes with a summary. A method can finish
-running yet fail the comparison because its answer misses the accuracy target.
-The measurements are still saved, so you can inspect what happened.
+The command shows its progress and finishes with a summary. In a one-shot
+comparison, a method can finish running and still fail its attempt if its
+answer misses the accuracy target. The measurements are saved for inspection.
+
+For profile runs, Metewand exits with code `0` when the selected measurements
+have valid outcomes. A profile that ends under its stopping policy can be
+censored, and a comparison can complete even when every solver misses the
+target. The summary shows censoring reasons and how many selected profiles
+reached their targets. Use `--verbose` for target attainment by input and
+problem setting. JSON and JSON Lines include
+these group counts in the final report.
+
+An unresolved profile failure or unfinished selected profile returns code
+`5`, including on resume. When `--max-attempts` pauses the remaining selected
+work, the summary reports a pause and the command exits with code `0` if the
+limit accounts for all outstanding work.
 
 ## Understand what gets timed {#choose-what-to-time}
 

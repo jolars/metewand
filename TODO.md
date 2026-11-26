@@ -226,12 +226,12 @@ configuration.
   the common limit from cumulative timed wall time across fresh fits or from
   active time at a streaming checkpoint. Keep pilot evidence separate from
   measured profiles and resume with the recorded budget.
-- [ ] Treat valid, policy-censored profiles as completed outcomes when deciding
+- [x] Treat valid, policy-censored profiles as completed outcomes when deciding
   the CLI exit status. By default, return zero when all scheduled profiles
   have valid terminal outcomes, including comparisons where no solver
   reaches the target. Return a nonzero status when execution fails or leaves
-  unfinished work. In the run summary, report target attainment by input and
-  parameter setting and preserve censoring counts and reasons.
+  work unfinished unexpectedly. Report target attainment by input and
+  parameter setting, with censoring counts and reasons, in the run summary.
 - [ ] Extend time-based adaptive measurement repetitions to fresh sequences,
   buffered profiles, and streaming profiles. Count whole profile repetitions
   and define which elapsed time contributes toward the threshold for each

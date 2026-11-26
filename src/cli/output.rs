@@ -307,8 +307,7 @@ impl CommandResult {
         }
         #[cfg(any(unix, windows))]
         if let Self::Run { report, .. } = self
-            && (report.summary.failed_attempts > 0
-                || (report.summary.censored_attempts > 0 || report.summary.censored_profiles > 0))
+            && report.failed()
         {
             return EXIT_RUN_FAILED;
         }
@@ -321,6 +320,7 @@ impl CommandResult {
             return report
                 .attempts
                 .iter()
+                .filter(|attempt| attempt.status == RunAttemptStatus::Failed)
                 .filter_map(|attempt| {
                     attempt.diagnostic.as_ref().map(|diagnostic| {
                         Diagnostic::new(diagnostic.code.clone(), diagnostic.message.clone())
@@ -2000,6 +2000,69 @@ fn write_run_report(
     }
     render_adaptive_budgets(&mut heading, &report.adaptive_budgets);
     render_adaptive_measurements(&mut heading, &report.adaptive_measurements);
+    if let Some(profiles) = &report.summary.profile_outcomes {
+        let mut counts = std::collections::BTreeMap::new();
+        for group in &profiles.groups {
+            for (reason, count) in &group.censoring_reasons {
+                *counts.entry(reason).or_insert(0usize) += count;
+            }
+        }
+        let accepted: usize = profiles.groups.iter().map(|group| group.accepted).sum();
+        let failed: usize = profiles.groups.iter().map(|group| group.failed).sum();
+        let unfinished: usize = profiles.groups.iter().map(|group| group.unfinished).sum();
+        let partial: usize = profiles.groups.iter().map(|group| group.partial).sum();
+        let censored: usize = counts.values().sum();
+        writeln!(heading, "  Profiles: {accepted} accepted, {censored} censored, {failed} failed, {unfinished} unfinished, {partial} partial.").expect("string write");
+        let (reached, selected) = profiles
+            .groups
+            .iter()
+            .filter_map(|group| {
+                group
+                    .target
+                    .as_ref()
+                    .map(|target| (target.reached, group.selected()))
+            })
+            .fold((0, 0), |(reached, selected), (hits, total)| {
+                (reached + hits, selected + total)
+            });
+        if selected > 0 {
+            writeln!(
+                heading,
+                "  Target attainment: {reached}/{selected} reached."
+            )
+            .expect("string write");
+        }
+        if !counts.is_empty() {
+            let reasons = counts
+                .iter()
+                .map(|(reason, count)| format!("{reason}: {count}"))
+                .collect::<Vec<_>>();
+            writeln!(heading, "  Censoring: {}.", reasons.join(", ")).expect("string write");
+        }
+        if verbose {
+            for group in &profiles.groups {
+                if let Some(target) = &group.target {
+                    let selected = group.selected();
+                    let operator = match target.direction {
+                        crate::core::profile::Direction::AtMost => "<=",
+                        crate::core::profile::Direction::AtLeast => ">=",
+                    };
+                    writeln!(
+                        heading,
+                        "  {} / {} / {} {}: {}/{selected} reached {} {operator} {}.",
+                        group.experiment,
+                        group.dataset,
+                        group.problem,
+                        group.parameters,
+                        target.reached,
+                        target.metric,
+                        target.threshold
+                    )
+                    .expect("string write");
+                }
+            }
+        }
+    }
     output.write_all(heading.as_bytes())?;
     if !verbose {
         return Ok(());
@@ -2066,11 +2129,7 @@ fn write_run_report(
             writeln!(output, "    metrics: {}", metrics.read()?)?;
         }
         if let Some(diagnostic) = &attempt.diagnostic {
-            writeln!(
-                output,
-                "    failure [{}]: {}",
-                diagnostic.code, diagnostic.message
-            )?;
+            writeln!(output, "    [{}] {}", diagnostic.code, diagnostic.message)?;
         }
     }
     Ok(())
@@ -2333,6 +2392,7 @@ mod tests {
     fn run_result(summary: RunSummary) -> super::CommandResult {
         super::CommandResult::Run {
             report: Box::new(RunReport {
+                one_shot_failures: summary.failed_attempts,
                 adaptive_measurements: Vec::new(),
                 calibration_attempts: Vec::new(),
                 adaptive_budgets: Vec::new(),
@@ -2360,6 +2420,7 @@ mod tests {
     #[test]
     fn successful_run_summary_has_one_completion_line_and_results_path() {
         let result = run_result(RunSummary {
+            profile_outcomes: None,
             attempt_slots: 36,
             accepted_attempts: 36,
             failed_attempts: 0,
@@ -2374,13 +2435,12 @@ mod tests {
     }
 
     #[test]
-    fn censored_and_superseded_runs_do_not_claim_success() {
-        for (censored_attempts, censored_profiles, superseded_attempts, expected) in [
-            (1, 0, 0, "1 censored"),
-            (0, 1, 0, "1 censored profile"),
-            (0, 0, 1, "1 superseded"),
-        ] {
+    fn invocation_counts_exclude_historical_censoring() {
+        for (censored_attempts, censored_profiles, superseded_attempts, expected) in
+            [(1, 1, 0, "1 censored"), (0, 0, 1, "1 superseded")]
+        {
             let result = run_result(RunSummary {
+                profile_outcomes: None,
                 attempt_slots: 2,
                 accepted_attempts: 1,
                 failed_attempts: 0,
@@ -2391,6 +2451,7 @@ mod tests {
             let text = human_output(&result);
             assert!(text.starts_with("! Benchmarks finished ·"), "{text}");
             assert!(text.contains(expected), "{text}");
+            assert!(!text.contains("censored profile"), "{text}");
             assert!(!text.contains("0 failed"), "{text}");
         }
     }
@@ -2398,6 +2459,7 @@ mod tests {
     #[test]
     fn compact_run_summary_preserves_censoring_and_failure_status() {
         let result = run_result(RunSummary {
+            profile_outcomes: None,
             attempt_slots: 3,
             accepted_attempts: 0,
             failed_attempts: 1,
@@ -2409,7 +2471,7 @@ mod tests {
         assert!(text.starts_with("✗ Benchmarks finished ·"), "{text}");
         assert!(text.contains("  Results (example): results"), "{text}");
         assert!(!text.contains("0 superseded"), "{text}");
-        for expected in ["1 failed", "2 censored", "1 censored profile", "results"] {
+        for expected in ["1 failed", "2 censored", "results"] {
             assert!(text.contains(expected), "{text}");
         }
         assert_eq!(result.exit_code(), super::EXIT_RUN_FAILED);
