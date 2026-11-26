@@ -994,7 +994,7 @@ fn concurrent_processes_converge_even_when_a_publisher_dies_after_rename() {
             .collect();
         let children: Vec<_> = (1..=2)
             .map(|index| {
-                command(
+                let child = command(
                     root.path(),
                     &format!("concurrent-{index}"),
                     traces[index - 1].path(),
@@ -1006,12 +1006,13 @@ fn concurrent_processes_converge_even_when_a_publisher_dies_after_rename() {
                 )
                 .stdout(Stdio::null())
                 .spawn()
-                .unwrap()
+                .unwrap();
+                // Serialize store opening while keeping both publishers staged
+                // at the barrier before either can rename its artifact.
+                wait_for(&root.path().join(format!("ready-{index}")));
+                child
             })
             .collect();
-        for index in 1..=2 {
-            wait_for(&root.path().join(format!("ready-{index}")));
-        }
         fs::write(root.path().join("go-1"), b"").unwrap();
         if !crash {
             fs::write(root.path().join("go-2"), b"").unwrap();
